@@ -71,3 +71,5 @@
 2026-10-08 12:44:07 | INFO | abracapocus.backends.codex_cli | backend=codex_cli retry_count=0
 2026-10-08 12:44:07 | INFO | abracapocus | run=0a768417-9a74-4774-ad62-2334887c3169 phases=1 verification=skipped
 2026-10-08 12:45:30 | INFO | abracapocus.backends.codex_cli | backend=codex_cli retry_count=0
+2026-10-08 12:45:30 | INFO | abracapocus | run=176dc038-19cd-4ca1-ac78-ed79208fdc7b phases=1 verification=skipped
+2026-10-08 12:51:06 | INFO | abracapocus.backends.claude_code_cli | backend=claude_code_cli retry_count=0
