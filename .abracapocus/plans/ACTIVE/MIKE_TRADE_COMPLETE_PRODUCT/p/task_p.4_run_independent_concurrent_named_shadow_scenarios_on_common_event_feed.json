@@ -1,0 +1,44 @@
+{
+  "schema_version": 1,
+  "task_id": "p.4",
+  "phase": "P",
+  "phase_id": "p",
+  "title": "Run independent concurrent named shadow scenarios on common event feed",
+  "description": "Implement mike_trade/shadow/scenarios.py, which runs multiple named SHADOW scenarios concurrently on one shared real-time market-data stream/snapshot. Market data is acquired once and shared read-only. All account and decision state stays isolated per scenario and isolated from PAPER/LIVE.\n\nProvide:\n- A ScenarioConfig with a unique scenario name/ID, a starting cash amount used only at first creation, per-symbol and total budgets, BUY/SELL strategy assignments, entry limits, loss-streak lockout settings, cooldowns, and fee/slippage/latency/participation assumptions.\n- A ScenarioRegistry/ScenarioRunner that creates or loads each scenario's ShadowAccount/ShadowLedger (from p.1) by its own account_id/scenario_id. On reload it does not re-apply starting cash.\n- Fan-out of each shared market event (completed bars and quotes) to every scenario's own strategy-evaluation and eligibility context. Evaluation concurrency is bounded. Mutations within each scenario's account are serialized.\n- A per-scenario read projection (cash, equity, positions, orders, P&L, eligibility counters, health), keyed by scenario ID and labeled SHADOW/estimated, for dashboard/report consumption. Projections are never summed or merged across scenarios or with live/paper accounts.\n\nShared market data objects must be immutable or copied so that a scenario cannot mutate another scenario's view. Duplicate scenario IDs, or IDs colliding with paper/live account IDs, are rejected. The runner must not accept or construct any Alpaca trading client or credentials. Order execution goes only through the shadow account path. Fill and stop simulator modules (fills.py, stops.py) are implemented concurrently in p.2/p.3. Depend on their public interfaces via injection/protocols rather than editing them.\n\nBefore editing, inspect:\n- mike_trade/brokers/shadow/account.py and mike_trade/brokers/shadow/ledger.py (from p.1)\n- the existing shared market-data service/cache, the scheduler and the bounded strategy evaluation modules under mike_trade/\n- the existing strategy registry/plugin interfaces and the eligibility/risk modules\n- existing execution-mode and account-isolation types (SHADOW/PAPER/LIVE)\n\nWrite tests/integration/test_shadow_isolation.py covering both positive and negative cases.",
+  "acceptance_criteria": [
+    "Two or more named scenarios with different starting cash, budgets and strategy assignments consume the same event sequence concurrently, and each ends with independently correct Decimal cash/positions",
+    "A fill, loss streak, entry-limit exhaustion or cooldown in scenario A does not change any counter, balance, position or order in scenario B (asserted in tests)",
+    "The shared market data source is invoked once per symbol/event regardless of scenario count (asserted via a counting fake feed)",
+    "A scenario attempting to mutate shared market data does not affect other scenarios' views",
+    "Reloading a scenario by ID from its ledger does not re-apply starting cash",
+    "Duplicate scenario IDs and IDs colliding with PAPER/LIVE account identifiers are rejected",
+    "Per-scenario projections are keyed by scenario ID, labeled SHADOW/estimated, and no API returns an aggregate balance merging scenarios or live/paper",
+    "The runner constructs no Alpaca trading client and reads no broker credentials (asserted by test with credential env vars absent or poisoned)",
+    "tests/integration/test_shadow_isolation.py exists with positive and negative tests and passes when run alone"
+  ],
+  "selected_backend": "pi_cli",
+  "model": "openrouter/meta/muse-spark-1.3-contributor",
+  "verification_profile": "focused",
+  "allowed_write_paths": [
+    "mike_trade/shadow/scenarios.py",
+    "tests/integration/test_shadow_isolation.py"
+  ],
+  "allowed_symbols": [
+    "ScenarioConfig",
+    "ScenarioRegistry",
+    "ScenarioRunner",
+    "ScenarioProjection"
+  ],
+  "forbidden_changes": [
+    "modify files outside allowed_write_paths, including mike_trade/brokers/shadow/*.py and shared market-data/strategy modules",
+    "change PLAN_SKELETON.json or other planning artifacts",
+    "merge or sum balances across scenarios or with paper/live accounts",
+    "open separate per-scenario market-data connections",
+    "import or call any Alpaca trading client, paper/live endpoint, or broker credential",
+    "create live broker orders or run broad test suites/backtests"
+  ],
+  "dependencies": [
+    "p.1"
+  ],
+  "task_timeout_seconds": 1800
+}

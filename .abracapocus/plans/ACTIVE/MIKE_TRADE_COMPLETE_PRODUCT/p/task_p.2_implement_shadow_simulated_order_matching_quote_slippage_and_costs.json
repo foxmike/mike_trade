@@ -1,0 +1,48 @@
+{
+  "schema_version": 1,
+  "task_id": "p.2",
+  "phase": "P",
+  "phase_id": "p",
+  "title": "Implement shadow simulated order matching quote slippage and costs",
+  "description": "Implement the shadow order-matching simulator in mike_trade/brokers/shadow/fills.py. It turns pending SHADOW market and limit orders into estimated fills using contemporaneous quote data from the shared market-data snapshot. It never calls a broker.\n\nRules:\n- Buys fill against the ask and sells against the bid.\n- Configurable latency: only quotes whose timestamp is at or after order time plus latency are eligible.\n- Configurable slippage in bps and/or ticks. It always moves the price against the trader.\n- Configurable fee model.\n- Liquidity participation/size policy: a fill can be at most a configured fraction of the displayed bid/ask size. The remainder stays pending, producing a partial fill, only where size evidence supports it.\n- Limit orders fill only when the opposing quote crosses the limit, at the better of the limit and the quote plus slippage, never better than the quote.\n- Regular-session-only restriction, using the exchange calendar in America/New_York.\n- Whole versus fractional precision policy. Unsupported fractional/order-type combinations fail closed.\n- Never fill at a candle close merely because a bar crossed. A bar without a quote is not fill evidence.\n- When quotes are missing, stale beyond a configured threshold, crossed/locked, have zero size, or otherwise cannot support a confident fill, produce no fill or an explicit UNCERTAIN outcome with a reason. Never fabricate a price.\n\nEvery fill result records the simulator version, the assumptions used (latency, slippage, participation, fee), the quote timestamp/price/size used, and feed provenance (for example IEX, not consolidated SIP). It is labeled estimated and not broker-confirmed. Fills are applied to ShadowAccount/ShadowLedger from p.1. That layer remains the authority for the cash/no-negative-cash and no-short checks. All prices, quantities and fees are Decimal, and times are UTC-aware.\n\nBefore editing, inspect:\n- mike_trade/brokers/shadow/account.py and mike_trade/brokers/shadow/ledger.py (from p.1)\n- existing quote/market-snapshot types and IEX provenance fields in the shared market-data service under mike_trade/\n- existing order types, the order-capability/fractional policy, and the exchange session calendar utilities\n\nWrite tests/unit/test_shadow_fills.py covering both positive and negative cases.",
+  "acceptance_criteria": [
+    "Market buy fills at ask plus slippage and market sell fills at bid minus slippage, with exact Decimal equality asserted in tests",
+    "Quotes timestamped before order time plus configured latency are not used for fills",
+    "A limit buy does not fill while ask > limit and fills when ask <= limit, at a price never better than the quote; the symmetric case is tested for a limit sell",
+    "With participation cap p and displayed size s, the filled quantity is <= p*s and the remainder stays pending as a partial fill",
+    "Missing, stale, crossed/locked or zero-size quotes produce no fill or an UNCERTAIN outcome with a recorded reason, never a fabricated price",
+    "A completed bar crossing a limit price without supporting quote evidence produces no fill (candle close is never used as the fill price)",
+    "Orders outside regular session hours are not filled when the session restriction is enabled",
+    "An unsupported fractional/order-type combination is rejected fail-closed",
+    "Each fill record includes simulator version, assumptions, quote evidence, feed provenance, estimated=True and broker_confirmed=False",
+    "Fees are deducted exactly, and a fill that would make cash negative (margin disabled) is rejected via the account layer",
+    "The module imports no Alpaca trading client or broker credential configuration",
+    "tests/unit/test_shadow_fills.py exists with positive and negative tests and passes when run alone"
+  ],
+  "selected_backend": "claude_code_cli",
+  "model": "claude-sonnet-5-5",
+  "verification_profile": "focused",
+  "allowed_write_paths": [
+    "mike_trade/brokers/shadow/fills.py",
+    "tests/unit/test_shadow_fills.py"
+  ],
+  "allowed_symbols": [
+    "ShadowFillSimulator",
+    "FillAssumptions",
+    "FillOutcome",
+    "SimulatedFill",
+    "SIMULATOR_VERSION"
+  ],
+  "forbidden_changes": [
+    "modify files outside allowed_write_paths, including mike_trade/brokers/shadow/account.py and ledger.py",
+    "change PLAN_SKELETON.json or other planning artifacts",
+    "fill at candle close or any price not supported by quote evidence",
+    "import or call any Alpaca trading client, paper/live endpoint, or broker credential",
+    "use float for prices, quantities, or fees",
+    "create live broker orders or run broad test suites/backtests"
+  ],
+  "dependencies": [
+    "p.1"
+  ],
+  "task_timeout_seconds": 1800
+}

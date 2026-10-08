@@ -1,0 +1,54 @@
+{
+  "schema_version": 1,
+  "task_id": "e.5",
+  "phase": "E",
+  "phase_id": "e",
+  "title": "Implement capabilities matrix and broker adapter conformance tests",
+  "description": "Implement the Alpaca BrokerCapabilities matrix, adapter conformance tests, and operator documentation.\n\nmike_trade/brokers/alpaca/capabilities.py:\n(1) Define a BrokerCapabilities matrix keyed by environment (PAPER/LIVE) and a capability descriptor. The descriptor combines: order type (market, limit, stop, stop_limit, trailing_stop), order class (simple, oto, oco, bracket), sizing (whole-share qty, fractional qty, notional), time-in-force (day, gtc, opg, cls, ioc, fok), side, and operation (submit, replace).\n(2) Each entry has a status of PROVEN, UNPROVEN, or UNSUPPORTED, plus an evidence reference: a doc URL or paper-verification record id with date. Default every combination not explicitly proven to UNPROVEN, which fails closed.\n(3) Initial statuses: whole-share market/limit DAY/GTC simple buy/sell are PROVEN-by-documentation, pending paper verification. Standalone whole-share trailing_stop sell with trail_price or trail_percent is documented. The following start as UNPROVEN: stop-only OTO, bracket/OCO, fractional stop or linked orders, fractional trailing stop, stop-price replace, trailing replace, OTO replace, and fractional GTC. Short selling is UNSUPPORTED (disabled) for initial long-only trading.\n(4) Provide is_available(descriptor, environment) -> bool and require(descriptor, environment) that raises CapabilityUnavailable with the reason. This is the callable to inject into the e.3 order service.\n(5) Provide a mechanism to promote a capability to PROVEN only from an explicit paper-verification record. Paper evidence never auto-promotes LIVE. A LIVE promotion requires a separate explicit operator-recorded entry.\n(6) Provide a conformance helper that, given an adapter instance, checks that it exposes the broker port operations (account, positions, assets, clock, open orders, lookup by id and client_order_id, submit, cancel, activities, trade update stream).\n\nCreate tests/contracts/test_broker_capabilities.py, with fixtures and fakes only, covering:\n(a) unproven combinations fail closed;\n(b) paper evidence does not promote LIVE;\n(c) trailing_stop with an order_class other than simple is never available;\n(d) notional replace is unavailable;\n(e) short selling is unavailable;\n(f) the matrix is complete: every descriptor resolves to a status, with no KeyError;\n(g) adapter conformance: the Alpaca adapter modules from e.1\u2013e.4 expose the required operations, and the order service rejects an UNPROVEN combination when wired with this matrix;\n(h) a credential-gated paper integration test that is skipped unless explicit paper credentials and an operator opt-in env var (for example MIKE_TRADE_ALPACA_PAPER_IT=1) are present, and that runs read-only paper account/clock/asset checks. It never touches LIVE and never places orders unless separately authorized.\n\ndocs/ALPACA.md: operator documentation covering Trading API vs Broker API; paper vs live endpoints; credential env vars; fingerprints and isolated state directories; the live authorization requirement; rate limits and retry semantics (reads retried, order creation never blindly retried); client_order_id scheme and unknown-outcome resolution; trade_updates reconnect/gap handling; the capability matrix table with current statuses and evidence; how to run the credential-gated paper verification; and a statement that mocks do not count as broker integration.\n\nBefore editing, inspect: mike_trade/brokers/alpaca/auth.py, http.py, account.py, assets.py, orders.py, activities.py, and updates.py (from e.1\u2013e.4); the broker port/protocol and capability-related domain types from earlier phases; and any existing docs/ directory conventions. Do not edit e.1\u2013e.4 files. If a conformance gap is found, record it as a failing or xfail test with a clear reason and in docs/ALPACA.md, rather than editing other modules.",
+  "acceptance_criteria": [
+    "capabilities.py defines a matrix keyed by environment and descriptor (order type, order class, sizing, TIF, side, operation) with statuses PROVEN/UNPROVEN/UNSUPPORTED and evidence references",
+    "Any descriptor not explicitly listed resolves to UNPROVEN and require() raises CapabilityUnavailable, verified by a test",
+    "Stop-only OTO, bracket/OCO, fractional stop/linked, fractional trailing stop, stop-price replace, and OTO replace are not available by default, verified by tests",
+    "trailing_stop with any order_class other than simple is never available; notional replace is unavailable; short selling is unavailable",
+    "Recording paper verification evidence promotes only the PAPER entry; the LIVE entry remains unchanged without a separate explicit operator record",
+    "Conformance tests verify the Alpaca adapter modules expose the required broker port operations and that the order service, wired with this matrix, rejects an UNPROVEN combination",
+    "A paper integration test exists that is skipped unless paper credentials and an explicit opt-in env var are set, performs read-only checks only, and never references LIVE endpoints",
+    "docs/ALPACA.md documents environments, credential isolation, live authorization, retry/rate-limit semantics, client_order_id/unknown-outcome resolution, stream reconnection, the capability matrix with statuses, and the paper verification procedure",
+    "tests/contracts/test_broker_capabilities.py passes (with the paper integration test skipped) without network access or credentials"
+  ],
+  "selected_backend": "pi_cli",
+  "model": "openrouter/meta/muse-spark-1.3-contributor",
+  "verification_profile": "focused",
+  "allowed_write_paths": [
+    "mike_trade/brokers/alpaca/capabilities.py",
+    "tests/contracts/test_broker_capabilities.py",
+    "docs/ALPACA.md"
+  ],
+  "allowed_symbols": [
+    "BrokerCapabilities",
+    "CapabilityDescriptor",
+    "CapabilityStatus",
+    "CapabilityEvidence",
+    "CapabilityUnavailable",
+    "default_alpaca_capabilities",
+    "record_paper_verification",
+    "check_adapter_conformance"
+  ],
+  "forbidden_changes": [
+    "modify files outside allowed_write_paths",
+    "edit auth.py, http.py, account.py, assets.py, orders.py, activities.py, or updates.py",
+    "change PLAN_SKELETON.json or any planning artifacts",
+    "mark any combination PROVEN for LIVE without an explicit operator-recorded entry",
+    "guess fractional/OTO/OCO/bracket/replace compatibility as available",
+    "run paper integration tests without operator-provided credentials and opt-in",
+    "access live credentials or submit any live order",
+    "run broad test suites or backtests"
+  ],
+  "dependencies": [
+    "e.1",
+    "e.2",
+    "e.3",
+    "e.4"
+  ],
+  "task_timeout_seconds": 1500
+}

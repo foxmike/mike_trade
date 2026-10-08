@@ -1,0 +1,49 @@
+{
+  "schema_version": 1,
+  "task_id": "f.1",
+  "phase": "F",
+  "phase_id": "f",
+  "title": "Implement durable order intent and exact order-status state transitions",
+  "description": "Build the provider-neutral OrderIntent model and the order-status finite state machine above the Broker port.\n\nmike_trade/execution/intents.py:\n(1) Define an immutable OrderIntent with these fields: intent_id, execution mode/account key (SHADOW/PAPER/LIVE plus account or scenario identity), symbol, side, purpose (ENTRY_LONG, EXIT_LONG, PROTECTIVE_STOP, TRAILING_STOP, MANUAL_CLOSE, SAFETY_EXIT), position_cycle_id, originating strategy id (optional), sizing (qty or notional, mutually exclusive, Decimal only), order type, limit/stop/trail fields (Decimal), time_in_force, signal_bar_time and signal_expires_at (UTC-aware), quote reference time, stable client_order_id, attempt number, and created_at (UTC-aware).\n(2) Add a persist_intent(...) function or IntentStore that writes the intent with initial status INTENT_PERSISTED through the existing persistence journal/repositories/transaction APIs. Write it as an append-only, trade-affecting event before any network submission is possible. Reject a duplicate client_order_id idempotently: return the existing record and do not create a second intent.\n(3) Validate the intent: positive Decimal quantity, no float values, no short-opening sides. Only long entry and long exit purposes are allowed. Any future short/cover purposes must exist only as declared, disabled capabilities.\n\nmike_trade/execution/order_fsm.py:\n(1) Define an OrderStatus enum containing exactly INTENT_PERSISTED, SUBMITTING, ACCEPTED, PENDING, PARTIALLY_FILLED, FILLED, REJECTED, CANCEL_PENDING, CANCELED, EXPIRED, REPLACED, SUSPENDED, and UNKNOWN.\n(2) Use an explicit transition table, not ad-hoc ifs. The main path is INTENT_PERSISTED -> SUBMITTING -> ACCEPTED/PENDING -> PARTIALLY_FILLED -> FILLED. Allow the documented branches: REJECTED, CANCEL_PENDING, CANCELED, EXPIRED, REPLACED, SUSPENDED, and UNKNOWN, where UNKNOWN is reachable from SUBMITTING and resolvable only by broker lookup.\n(3) Define terminal states as FILLED, REJECTED, CANCELED, EXPIRED, and REPLACED. They admit no further transitions except idempotent re-application of the same terminal state.\n(4) Handle out-of-order updates. A stale lower-rank update arriving after a higher-rank state must be recorded as ignored or out-of-order, not applied. A fill-bearing update may advance from CANCEL_PENDING to PARTIALLY_FILLED or FILLED.\n(5) Acceptance never implies a fill. filled_qty may change only through fill events (owned by f.4), never through status changes alone.\n(6) CANCEL_PENDING is not CANCELED, and a replace request or success response is not REPLACED until broker confirmation.\n(7) Expose a pure apply_transition(current, event) -> TransitionResult with accepted, ignored, and illegal outcomes, plus typed IllegalOrderTransition errors.\n\nCreate tests/unit/test_order_fsm.py with positive and negative tests covering every legal edge, a representative set of illegal edges, terminal immutability, out-of-order handling, CANCEL_PENDING-to-fill races, UNKNOWN resolution, intent validation, Decimal enforcement, persist-before-submit ordering, and duplicate client_order_id idempotency.\n\nBefore editing, inspect: mike_trade/domain/trading.py, mike_trade/domain/accounts.py, mike_trade/domain/errors.py, mike_trade/domain/serde.py, mike_trade/persistence/journal.py, mike_trade/persistence/repositories.py, mike_trade/persistence/transaction.py, mike_trade/persistence/schema.py, mike_trade/brokers/ports.py, and mike_trade/brokers/alpaca/orders.py (for the client_order_id helpers to reuse rather than duplicate). Bounded decision budget: if an existing domain type already models side, purpose, or status, reuse or wrap it rather than redefining it. Do not edit files outside allowed_write_paths. If a persistence table is missing, use the existing journal event mechanism instead of changing schema.py.",
+  "acceptance_criteria": [
+    "OrderStatus enumerates exactly INTENT_PERSISTED, SUBMITTING, ACCEPTED, PENDING, PARTIALLY_FILLED, FILLED, REJECTED, CANCEL_PENDING, CANCELED, EXPIRED, REPLACED, SUSPENDED, UNKNOWN",
+    "Transitions are defined by an explicit table; tests assert every legal edge succeeds and representative illegal edges raise IllegalOrderTransition or return an illegal result",
+    "Terminal states (FILLED, REJECTED, CANCELED, EXPIRED, REPLACED) reject further transitions, and re-applying the same terminal state is idempotent, verified by tests",
+    "A stale or out-of-order lower-rank status after a higher-rank status is ignored and not applied, verified by tests",
+    "ACCEPTED or PENDING status never changes filled quantity; CANCEL_PENDING is distinct from CANCELED; a replace request does not produce REPLACED without broker confirmation",
+    "OrderIntent is persisted with status INTENT_PERSISTED before any submission hook can run; persisting a duplicate client_order_id returns the existing intent without creating a second record",
+    "OrderIntent rejects float quantities/prices, non-positive quantity, both-or-neither qty/notional, and short-opening sides",
+    "tests/unit/test_order_fsm.py passes without network access or broker credentials"
+  ],
+  "selected_backend": "codex_cli",
+  "model": "gpt-5.6-sol",
+  "verification_profile": "focused",
+  "allowed_write_paths": [
+    "mike_trade/execution/order_fsm.py",
+    "mike_trade/execution/intents.py",
+    "tests/unit/test_order_fsm.py"
+  ],
+  "allowed_symbols": [
+    "OrderStatus",
+    "OrderEvent",
+    "TransitionResult",
+    "IllegalOrderTransition",
+    "apply_transition",
+    "TERMINAL_STATUSES",
+    "OrderIntent",
+    "OrderPurpose",
+    "IntentStore",
+    "persist_intent"
+  ],
+  "forbidden_changes": [
+    "modify files outside allowed_write_paths",
+    "edit persistence schema, journal, repositories, broker adapters, or domain modules",
+    "change PLAN_SKELETON.json or any planning artifacts",
+    "infer fills from ACCEPTED/PENDING status",
+    "treat a cancel request as cancellation or a replace response as final replacement",
+    "use float for money, quantities, or prices",
+    "access broker credentials, call live endpoints, or run broad test suites/backtests"
+  ],
+  "dependencies": [],
+  "task_timeout_seconds": 1800
+}

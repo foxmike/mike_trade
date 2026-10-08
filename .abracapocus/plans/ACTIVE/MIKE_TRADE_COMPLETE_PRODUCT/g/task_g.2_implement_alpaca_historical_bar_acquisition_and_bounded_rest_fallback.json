@@ -1,0 +1,36 @@
+{
+  "schema_version": 1,
+  "task_id": "g.2",
+  "phase": "G",
+  "phase_id": "g",
+  "title": "Implement Alpaca historical bar acquisition and bounded REST fallback",
+  "description": "Implement Alpaca historical stock bar acquisition in mike_trade/market_data/alpaca_history.py and a bounded REST polling fallback in mike_trade/market_data/polling.py, with contract tests in tests/contracts/test_alpaca_history.py.\n\nalpaca_history.py:\n- Fetch historical bars for warmup and backtests through an injected HTTP client: timeframe, start/end in UTC, feed (default 'iex'), and an explicit adjustment parameter.\n- Handle next_page_token pagination with a maximum page bound.\n- Return immutable bar records with Decimal OHLC/VWAP, integer or Decimal volume and trade count, timezone-aware UTC bar timestamps, feed_id, and adjustment provenance (raw/split/dividend/all).\n- Never silently mix adjusted and unadjusted bars, or bars from different feeds, in one result. A request whose provenance mismatches is rejected with a typed error.\n\npolling.py:\n- Implement a REST fallback poller that, on each cycle, fetches latest trade/quote/bar snapshots once per watched symbol. Use multi-symbol endpoints where available, and never fetch once per strategy or scenario.\n- Enforce a configurable request-rate budget with a token bucket on the injected clock.\n- Honor HTTP 429 and Retry-After with backoff.\n- Bound the poll interval and the maximum symbols per cycle.\n- Mark each snapshot with provider_source_ts, receive_ts, feed_id, and a source='rest_poll' provenance.\n- Flag a stale snapshot when the provider timestamp has not advanced, or its age exceeds a configured threshold, rather than presenting it as fresh.\n- Support bounded gap recovery: fetch missing completed bars for a gap window no larger than a configured maximum.\n\nTests use a fake HTTP transport with recorded or synthetic Alpaca JSON responses. They must not use the network or real credentials. Strategies must never call these modules directly; they are only for MarketDataService and backtest loaders.\n\nBefore editing, inspect:\n- mike_trade/ domain/ports modules from earlier phases that define bar/quote/trade event types, the clock port, and the historical-data port (if present)\n- mike_trade/config/settings modules for feed, rate-limit, and poll-interval configuration (if present)\n- pyproject.toml for the approved HTTP client dependency",
+  "acceptance_criteria": [
+    "alpaca_history.py follows next_page_token across pages, stops at the configured maximum page bound, and returns bars ordered by UTC timestamp; a contract test with a multi-page fake response verifies this.",
+    "Every returned bar carries Decimal OHLC/VWAP, a timezone-aware UTC timestamp, a feed_id, and an adjustment provenance value; a test asserts there are no float fields.",
+    "A request or merge that would combine different feed_ids or adjustment modes raises a typed provenance error; a negative test covers this.",
+    "polling.py issues at most one request per symbol per cycle, or one batched request for all symbols, regardless of how many strategies or scenarios consume the data; a test counts transport calls.",
+    "The token-bucket rate limiter blocks or defers requests that exceed the configured budget, and an HTTP 429 with Retry-After delays the next request by at least that duration on the injected clock; tests verify both.",
+    "Snapshots whose provider timestamp has not advanced, or whose age exceeds the stale threshold, are flagged stale; a test verifies this.",
+    "Gap recovery requests only the missing window and refuses windows larger than the configured maximum; positive and negative tests cover both.",
+    "Tests use no network access and no real or live credentials."
+  ],
+  "selected_backend": "codex_cli",
+  "model": "gpt-6-luna",
+  "verification_profile": "focused",
+  "allowed_write_paths": [
+    "mike_trade/market_data/alpaca_history.py",
+    "mike_trade/market_data/polling.py",
+    "tests/contracts/test_alpaca_history.py"
+  ],
+  "forbidden_changes": [
+    "modify files outside allowed_write_paths",
+    "change PLAN_SKELETON.json or other planning artifacts",
+    "use real Alpaca credentials, paid data, or network access in tests",
+    "create live broker orders",
+    "persist raw tick or full-session data archives",
+    "run broad test suites or large backtests"
+  ],
+  "dependencies": [],
+  "task_timeout_seconds": 1800
+}

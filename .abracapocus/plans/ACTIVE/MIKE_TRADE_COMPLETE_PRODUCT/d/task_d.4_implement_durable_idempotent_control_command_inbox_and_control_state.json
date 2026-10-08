@@ -1,0 +1,62 @@
+{
+  "schema_version": 1,
+  "task_id": "d.4",
+  "phase": "D",
+  "phase_id": "d",
+  "title": "Implement durable idempotent control command inbox and control state",
+  "description": "Implement the durable, idempotent operator ControlCommand inbox and the derived control state. The CLI writes commands; the engine consumes them.\n\nBuild on phase c persistence without modifying it:\n- transaction.py: WriterSession, unit_of_work, ScopedWriter.\n- journal.py: append-only domain_events with UNIQUE (account_scope_id, idempotency_key).\n- repositories.py: OperatorCommandRepository.record_command (append-only operator_commands), EntryControlRepository.set_paused / set_kill_switch / load_eligibility_state.\n- d.3's mike_trade/config/mutations.py for config changes.\n\nIf a needed repository operation is missing, append journal events through the ScopedWriter inside the same unit_of_work. Never add migrations or edit persistence files.\n\nmike_trade/controls/commands.py\n- **ControlCommandType** (StrEnum), with a category on each member:\n  - STATE: PAUSE, RESUME, DISABLE_ENTRIES, ENABLE_ENTRIES.\n  - CONFIG: APPLY_CONFIG_MUTATION.\n  - EXECUTABLE: CLOSE_POSITION, CLOSE_ALL, FLATTEN, CANCEL_ORDER, ADOPT_POSITION, RECONCILE_NOW, RESET_ENTRY_LOCKOUT, CLEAR_COOLDOWN. Later phases implement these handlers; this phase only defines and gates them.\n- **loosens_risk property**: True for RESUME, ENABLE_ENTRIES, APPLY_CONFIG_MUTATION, and every EXECUTABLE type. False for PAUSE and DISABLE_ENTRIES.\n- **ControlCommand** (frozen dataclass)\n  - command_id: uuid4 str.\n  - idempotency_key: non-empty, <= 128 chars.\n  - account_scope_id.\n  - environment: LIVE, PAPER, or SHADOW.\n  - command_type.\n  - payload: JSON-serializable mapping. Decimals become strings.\n  - actor.\n  - reason.\n  - live_confirmed: bool.\n  - created_at: tz-aware UTC.\n  - expires_at: tz-aware UTC or None.\n  - payload_sha256: sha256 of canonical JSON.\n- **CommandStatus**: PENDING, APPLIED, REJECTED, EXPIRED.\n- **CommandOutcome**: command_id, status, detail, decided_at.\n- **Exceptions**: ControlCommandError (base), IdempotencyConflictError, LiveConfirmationRequiredError, EngineOfflineError, CommandExpiredError, UnknownCommandTypeError.\n\nmike_trade/controls/inbox.py\nControlInbox(writer_session_factory, clock, engine_liveness, executable_max_age_seconds=30). engine_liveness is a Protocol with is_engine_online(account_scope_id) -> bool, backed later by service_health heartbeat age.\n\n**submit(command) -> SubmitResult(command, status, duplicate: bool)**\n- An existing command with the same (account_scope_id, idempotency_key) and the same payload_sha256 and type returns the stored command with duplicate=True. Nothing is written.\n- The same key with a different payload or type raises IdempotencyConflictError.\n- If environment is LIVE, command_type.loosens_risk is true, and live_confirmed is False, raise LiveConfirmationRequiredError. Nothing executable is recorded. Record a CommandRejected audit event only if it can be done without creating a pending command.\n- EXECUTABLE commands while engine_liveness reports offline:\n  - Record them as REJECTED with detail 'engine offline'.\n  - Raise EngineOfflineError.\n  - Never leave them PENDING for later reconnection.\n- EXECUTABLE commands always get expires_at = created_at + executable_max_age_seconds.\n- STATE commands are recorded and also applied immediately to durable control state in the same unit_of_work, even when the engine is offline. The engine reads that state on startup.\n- CONFIG commands are recorded PENDING. If the engine is offline, they are applied directly via apply_config_mutation by the submitting process, then marked APPLIED or REJECTED.\n- Every submit writes, in one unit_of_work:\n  - operator_commands row(s);\n  - a 'ControlCommandReceived' journal event with idempotency_key 'control:<idempotency_key>';\n  - the status events.\n\n**process_pending(handlers: Mapping[ControlCommandType, Callable]) -> list[CommandOutcome]**\n- Engine-side. Iterates PENDING commands in created_at order.\n- An EXECUTABLE command whose expires_at has passed becomes EXPIRED. It is never executed.\n- Otherwise the handler is called, and its result is recorded as 'ControlCommandApplied' or 'ControlCommandRejected'. That journal event uses idempotency_key 'control-outcome:<command_id>', so each command gets exactly one terminal outcome.\n- A missing handler marks the command REJECTED ('unsupported').\n- A handler exception marks it REJECTED with the error class name and keeps processing.\n- Status is derived by folding append-only events. Never UPDATE or DELETE rows.\n\n**Reads**\n- get_status(account_scope_id, command_id).\n- list_recent(account_scope_id, limit<=200).\n- Both work without the engine.\n\n**ControlState**\n- A frozen dataclass: paused, entries_disabled, updated_at, last_command_id.\n- allows_new_entries is False when paused or entries_disabled.\n- allows_strategy_exits is False only when paused.\n- There is NO field or property that can block protective stops, fills, reconciliation, manual closes, or safety exits. The class docstring must state this.\n\n**load_control_state(read_conn_or_session, account_scope_id) -> ControlState**\n- If the state was never set, returns paused=False and entries_disabled=False.\n\n**Scope isolation**\n- Commands, state, and idempotency keys are per account_scope_id.\n- The same idempotency_key in a SHADOW scope and a PAPER scope are independent.\n- A command whose environment differs from its scope's environment is rejected.\n\nTESTS: tests/unit/test_control_idempotency.py\nUse tmp_path databases created with schema.initialize_database, register scopes via AccountScopeRepository, and use a fixed clock and a fake liveness. Cover:\n- A duplicate submit with the same key and payload returns duplicate=True, and row counts are unchanged.\n- The same key with a different payload raises IdempotencyConflictError.\n- PAUSE and DISABLE_ENTRIES apply immediately while offline, and load_control_state reflects them.\n- RESUME on a LIVE scope without live_confirmed raises LiveConfirmationRequiredError; with it, the command succeeds.\n- PAUSE on LIVE needs no confirmation.\n- CLOSE_ALL while offline raises EngineOfflineError, ends REJECTED, and is not returned by process_pending after liveness flips online.\n- An executable command past expires_at becomes EXPIRED and its handler is never called.\n- process_pending applies each command exactly once across two calls.\n- A raising handler yields REJECTED and later commands still process.\n- A missing handler yields REJECTED unsupported.\n- An APPLY_CONFIG_MUTATION refused by apply_config_mutation (unsafe orphaning change) ends REJECTED with the reasons in detail, and the config file is unchanged.\n- The same idempotency key in two scopes stays independent.\n- Attempted UPDATE/DELETE on operator_commands still abort (trigger intact).\n- ControlState exposes no exit-blocking attribute (introspection test).\n\nDecision budget: make at most five design choices not covered here, and record them in the inbox.py module docstring.\n\nBefore editing, inspect:\n- mike_trade/persistence/schema.py and mike_trade/persistence/migrations/0001_initial.sql (read-only), for operator_commands, entry_controls, and domain_events.\n- mike_trade/persistence/journal.py, mike_trade/persistence/transaction.py, and mike_trade/persistence/repositories.py (read-only).\n- mike_trade/config/mutations.py and mike_trade/config/loader.py (read-only).\n- mike_trade/domain/accounts.py and mike_trade/domain/errors.py (read-only).",
+  "acceptance_criteria": [
+    "mike_trade/controls/commands.py defines ControlCommandType with STATE/CONFIG/EXECUTABLE categories and loosens_risk, plus ControlCommand, CommandStatus, CommandOutcome, and the exceptions listed in the description",
+    "mike_trade/controls/inbox.py defines ControlInbox (submit, process_pending, get_status, list_recent), ControlState, load_control_state, and an EngineLiveness protocol",
+    "Resubmitting the same (account_scope_id, idempotency_key) with an identical payload returns duplicate=True with zero new rows; a differing payload raises IdempotencyConflictError",
+    "Risk-loosening commands on a LIVE scope without live_confirmed raise LiveConfirmationRequiredError; PAUSE and DISABLE_ENTRIES never require confirmation",
+    "Executable commands submitted while the engine is offline are recorded REJECTED and raise EngineOfflineError, are never left PENDING, and expired executable commands become EXPIRED without invoking a handler",
+    "STATE commands durably update control state immediately even when the engine is offline, and load_control_state reflects them",
+    "process_pending records exactly one terminal outcome per command via append-only journal events, with no UPDATE or DELETE of operator_commands or domain_events",
+    "ControlState has no attribute that blocks protective stops, fills, reconciliation, manual closes, or safety exits; allows_new_entries is False when paused or entries_disabled",
+    "Commands, idempotency keys, and control state are isolated per account_scope_id",
+    "tests/unit/test_control_idempotency.py contains positive and negative tests for the behaviors above and passes with targeted pytest of that file only"
+  ],
+  "selected_backend": "claude_code_cli",
+  "model": "claude-sonnet-5-5",
+  "verification_profile": "focused",
+  "allowed_write_paths": [
+    "mike_trade/controls/commands.py",
+    "mike_trade/controls/inbox.py",
+    "tests/unit/test_control_idempotency.py"
+  ],
+  "allowed_symbols": [
+    "ControlCommandType",
+    "CommandCategory",
+    "ControlCommand",
+    "CommandStatus",
+    "CommandOutcome",
+    "SubmitResult",
+    "ControlCommandError",
+    "IdempotencyConflictError",
+    "LiveConfirmationRequiredError",
+    "EngineOfflineError",
+    "CommandExpiredError",
+    "UnknownCommandTypeError",
+    "EngineLiveness",
+    "ControlInbox",
+    "ControlState",
+    "load_control_state"
+  ],
+  "forbidden_changes": [
+    "modify files outside allowed_write_paths",
+    "change PLAN_SKELETON.json or other planning artifacts",
+    "edit persistence modules, add migrations, or add mike_trade/controls/__init__.py",
+    "update or delete rows in append-only tables",
+    "queue an executable trade command for later execution when the engine is offline",
+    "provide any control that blocks protective stops, fills, reconciliation, manual closes, or safety exits",
+    "access broker credentials or create broker orders",
+    "run broad test suites or backtests"
+  ],
+  "dependencies": [
+    "d.1",
+    "d.2",
+    "d.3"
+  ],
+  "task_timeout_seconds": 2400
+}

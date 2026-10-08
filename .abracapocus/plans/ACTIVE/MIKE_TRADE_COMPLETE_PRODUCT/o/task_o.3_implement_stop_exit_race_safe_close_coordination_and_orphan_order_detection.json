@@ -1,0 +1,47 @@
+{
+  "schema_version": 1,
+  "task_id": "o.3",
+  "phase": "O",
+  "phase_id": "o",
+  "title": "Implement stop exit race safe close coordination and orphan order detection",
+  "description": "Implement race-safe coordination between broker-held protective stops and discretionary/manual/strategy exits in mike_trade/execution/close_coordinator.py, with integration tests in tests/integration/test_stop_close_races.py. Overlapping sells must never create a short position.\n\nBefore editing, inspect: mike_trade/risk/trailing.py (o.1), (if present) existing execution/order-manager modules under mike_trade/execution/, position/order domain models and status enums, the serialized portfolio/order mutation mechanism, reconciliation drift types, the entry-block/kill-switch interface, and existing integration test fixtures (fake broker, fake clock, temporary SQLite).\n\nImplement a CloseCoordinator that, per position, serializes all sell-side intents (protective stop replace, discretionary strategy exit, manual close/close-all/flatten, safety exit):\n1. Before submitting a discretionary or manual market/limit sell, cancel the active protective stop and wait for broker-confirmed cancel. Then size the exit sell to broker-confirmed remaining quantity, never to the local intended quantity.\n2. If the stop fills or partially fills while cancel is in flight, recompute remaining quantity from confirmed fills and submit only the residual (or nothing when flat).\n3. If cancel status is UNKNOWN, freeze conflicting actions for that position, do not submit an overlapping sell, mark reconciliation required, and block new entries.\n4. If the exit sell partially fills or is rejected after the stop was canceled, re-establish protective coverage for the remaining quantity at no lower than the last confirmed stop price, or surface an explicit UNPROTECTED alert plus entry block if re-protection fails.\n5. Reject any sell intent whose quantity exceeds broker-confirmed position quantity minus quantity already committed to working sell orders (no-short invariant).\n6. Detect orphan orders: broker-open sell or stop orders with no matching local intent/position, or stop orders for a position that is now flat. Report them as explicit reconciliation drift items. Do not auto-cancel valid broker-held stops on shutdown, and do not silently adopt them.\n7. Keep minimum-hold rules applicable only to ordinary strategy exits. Safety exits, manual closes, and stop fills are never blocked by hold, cooldown, or entry locks.\n\nThe coordinator must depend only on injected ports (broker order port, clock, event sink) and must not open its own broker or data connections. Integration tests use an in-memory fake broker that can script interleavings, and they cover: stop fills during discretionary cancel; partial stop fill during cancel; cancel unknown; manual close vs pending trailing replace; exit partial fill followed by re-protection; quantity-exceeds-position rejection; orphan stop after flat; orphan sell with no local intent; and shutdown not canceling stops.",
+  "acceptance_criteria": [
+    "mike_trade/execution/close_coordinator.py defines a CloseCoordinator that serializes all sell-side intents per position through injected ports only.",
+    "A test proves that a discretionary exit is not submitted until the protective stop cancel is broker-confirmed.",
+    "A test proves that when the stop fully fills during cancel, no exit sell is submitted and the position is recorded flat.",
+    "A test proves that when the stop partially fills during cancel, the exit sell quantity equals the broker-confirmed remaining Decimal quantity.",
+    "A test proves that an UNKNOWN cancel freezes conflicting actions, submits no overlapping sell, and raises reconcile-required plus a new-entry block.",
+    "A test proves that any sell intent exceeding confirmed position minus working sell quantity is rejected, and that no test interleaving produces a negative (short) position.",
+    "A test proves that after a partial or rejected exit, remaining quantity is re-protected at a stop >= the last confirmed stop, or an explicit UNPROTECTED alert with entry block is emitted.",
+    "Tests prove that orphan stop/sell orders (no local intent, or position flat) are reported as reconciliation drift items and are not auto-canceled or auto-adopted.",
+    "A test proves that shutdown does not cancel a valid broker-held protective stop.",
+    "A test proves that manual close and safety exit bypass minimum-hold/cooldown/entry-lock checks while ordinary strategy exits respect minimum hold.",
+    "tests/integration/test_stop_close_races.py passes when run alone with pytest."
+  ],
+  "selected_backend": "codex_cli",
+  "model": "gpt-5.6-sol",
+  "verification_profile": "focused",
+  "allowed_write_paths": [
+    "mike_trade/execution/close_coordinator.py",
+    "tests/integration/test_stop_close_races.py"
+  ],
+  "allowed_symbols": [
+    "CloseCoordinator",
+    "SellIntent",
+    "CloseOutcome",
+    "OrphanOrder",
+    "detect_orphan_orders"
+  ],
+  "forbidden_changes": [
+    "modify files outside allowed_write_paths",
+    "modify mike_trade/risk/trailing.py or mike_trade/execution/replace.py",
+    "change PLAN_SKELETON.json or other planning artifacts",
+    "submit overlapping sells that could create a short position",
+    "cancel valid broker-held protective stops on shutdown or auto-adopt orphan orders",
+    "open broker or data connections directly, access credentials, create live orders, or run broad test suites/backtests"
+  ],
+  "dependencies": [
+    "o.1"
+  ],
+  "task_timeout_seconds": 1800
+}

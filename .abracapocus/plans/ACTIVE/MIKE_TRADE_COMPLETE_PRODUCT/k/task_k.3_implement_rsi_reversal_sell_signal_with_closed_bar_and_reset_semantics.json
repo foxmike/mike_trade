@@ -1,0 +1,41 @@
+{
+  "schema_version": 1,
+  "task_id": "k.3",
+  "phase": "K",
+  "phase_id": "k",
+  "title": "Implement RSI reversal sell signal with closed-bar and reset semantics",
+  "description": "Implement mike_trade/strategies/sell/rsi_reversal.py as a real SELL plugin using the k.1 SELL contract and the phase j SDK.\n\n1. Inputs. Use the shared, centrally computed RSI (Wilder) from the MarketContext/indicator service on completed bars only. The strategy never computes RSI from fetched data and never fetches data.\n\n2. Trigger. Fire on a documented overbought-reversal crossing: prior completed-bar RSI >= the overbought threshold AND latest completed-bar RSI < the overbought threshold.\n\n3. Validated parameters, through ParameterSchema with inclusive ranges and Decimal for thresholds:\n   - rsi_period, int\n   - overbought threshold, Decimal in (50, 100)\n   - optional reset threshold, Decimal, which must be strictly below the overbought threshold (cross-field validation)\n   - timeframe choice from supported completed-bar timeframes\n\n4. Reset/rearm semantics. After a signal, the rule stays disarmed until RSI first falls to or below the reset threshold (or, if no reset threshold is configured, until RSI has re-exceeded the overbought threshold), and only then can fire again.\n   - The arm/disarm state must be expressed through the declared persistent-state contract, so that k.4 rearm persistence can restore it after restart.\n   - The strategy itself never writes to the filesystem or database.\n   - Same-bar re-evaluation never duplicates a signal, because the signal ID is deterministic from the completed-bar UTC timestamp.\n\n5. Output. A trigger returns an ExitLongRecommendation for 100% of the confirmed remaining quantity only.\n\n6. NO_SIGNAL with explicit reason codes for:\n   - flat/unmanaged/non-long positions (never a short)\n   - minimum hold not elapsed\n   - incomplete or in-progress bar\n   - stale data\n   - missing or unwarmed RSI (fewer than the warmup bars)\n   - outside regular session\n   - disarmed state\n\n7. The spec declares: id rsi_reversal, semver, SELL side, timeframe(s), closed-bar-only, warmup equal to the RSI period plus required history, the EDGE_ON_CLOSED_BAR trigger, persistent state needs, methodology/source metadata (Wilder RSI, with an explicit statement that it is not a profitability claim), execution limitations, and reason codes. There are no confidence scores.\n\nIn tests/unit/test_sell_rsi.py, cover:\n- the crossing boundaries: prior == threshold with latest < threshold signals; latest == threshold does not signal; an upward cross does not signal\n- same-bar replay suppression\n- disarm after a signal and the reset-threshold rearm\n- state round-trip through the declared state representation, simulating a restart\n- incomplete/stale/unwarmed/out-of-session cases\n- flat/unmanaged producing no exit\n- minimum hold blocking\n- the full-quantity-only result after a partial fill\n- parameter validation rejection (reset >= overbought, out-of-range period, float threshold)\n\nUse Decimal throughout.\n\nBefore editing, inspect:\n- mike_trade/strategies/sell/base.py\n- tests/contracts/test_sell_strategy.py\n- mike_trade/strategies/base.py\n- mike_trade/strategies/registry.py\n- mike_trade/strategies/indicators/core.py\n- mike_trade/market_data/context.py\n- mike_trade/market_data/candles.py\n- mike_trade/domain/signals.py\n- mike_trade/risk/session_policy.py",
+  "acceptance_criteria": [
+    "RsiReversalSell declares spec id rsi_reversal, semver, SELL side, completed-bar timeframe, RSI-period-based warmup, the EDGE_ON_CLOSED_BAR trigger, persistent state needs, Wilder RSI methodology metadata stating no profitability claim, limitations, and reason codes.",
+    "It emits EXIT_LONG for the full confirmed remaining quantity if and only if prior completed RSI >= overbought AND latest completed RSI < overbought while armed, using only context-supplied RSI.",
+    "After a signal, the rule is disarmed and does not fire again until the documented reset condition is met, and tests prove both the suppressed and the re-armed cases.",
+    "Arm/disarm state round-trips through the declared persistent-state representation, and a restored state produces the same decisions as uninterrupted evaluation.",
+    "Re-evaluating the same completed bar never produces a duplicate signal, because signal IDs are deterministic from the completed-bar timestamp.",
+    "Incomplete, stale, unwarmed, out-of-session, flat/unmanaged, non-long, or min-hold-blocked inputs return NO_SIGNAL with explicit reason codes and never a short or partial recommendation.",
+    "Parameter validation rejects reset >= overbought, an out-of-range period or threshold, and float thresholds with a typed error.",
+    "The module has no broker/network/filesystem/secrets imports and no confidence scores, and tests/unit/test_sell_rsi.py passes when run in isolation."
+  ],
+  "selected_backend": "pi_cli",
+  "model": "openrouter/meta/muse-spark-1.3-contributor",
+  "verification_profile": "focused",
+  "allowed_write_paths": [
+    "mike_trade/strategies/sell/rsi_reversal.py",
+    "tests/unit/test_sell_rsi.py"
+  ],
+  "allowed_symbols": [
+    "RsiReversalSell"
+  ],
+  "forbidden_changes": [
+    "modify files outside allowed_write_paths",
+    "modify mike_trade/strategies/sell/base.py, mike_trade/strategies/base.py, registry.py, or indicator modules",
+    "change PLAN_SKELETON.json or other planning artifacts",
+    "compute RSI from fetched data, fetch data, persist state directly, or submit orders from the strategy",
+    "emit partial-exit quantities, short/opposite-side actions, confidence scores, or profitability claims",
+    "use float for thresholds, prices, or quantities",
+    "create live broker orders or run broad test suites/backtests"
+  ],
+  "dependencies": [
+    "k.1"
+  ],
+  "task_timeout_seconds": 1200
+}

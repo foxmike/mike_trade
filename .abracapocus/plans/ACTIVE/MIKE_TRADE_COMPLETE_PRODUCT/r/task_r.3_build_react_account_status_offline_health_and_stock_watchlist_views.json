@@ -1,0 +1,45 @@
+{
+  "schema_version": 1,
+  "task_id": "r.3",
+  "phase": "R",
+  "phase_id": "r",
+  "title": "Build React account status OFFLINE health and stock watchlist views",
+  "description": "Build the top-level React App shell, the global status header/banner, the account KPI ribbon, the health summary and the stock watchlist.\n\nBefore editing, inspect: mike_trade/dashboard/api.py (r.1) for the exact endpoint paths and response fields; dashboard/frontend/src/main.tsx, vite.config.ts and tsconfig.json (r.2); and the CLI/Makefile command names to display as operator guidance.\n\nShared contract with r.4 (r.4 runs concurrently, so do not create r.4's files):\n- dashboard/frontend/src/api/client.ts exports typed functions listAccounts(), getStatus(accountId), getKpis(accountId), getWatchlist(accountId), getHealth(accountId), getSymbolDetail(accountId, symbol), getAccountDetail(accountId), plus the matching response TypeScript types and an ApiError class.\n- dashboard/frontend/src/components/SymbolDetails.tsx exports a default component with props { accountId: string; symbol: string; onClose: () => void }.\n- dashboard/frontend/src/components/AccountDetail.tsx exports AccountSelector with props { selectedAccountId: string | null; onSelect: (accountId: string) => void } and a default AccountDetail component with props { accountId: string }.\nImport only these names.\n\nImplement dashboard/frontend/src/App.tsx:\n(1) Holds selectedAccountId and selectedSymbol state. Switching accounts discards all previously fetched account-scoped state before rendering new data, so values from different accounts/modes/scenarios are never rendered together.\n(2) Polls status/kpis/watchlist/health on a bounded interval with AbortController cancellation on account switch.\n(3) The global header shows the selected account/scenario and a prominent mode badge (LIVE/PAPER/SHADOW, with LIVE visually distinct); engine state RUNNING/PAUSED/DEGRADED/OFFLINE/RECONCILING; a live heartbeat age; broker and data connectivity/freshness; market OPEN/CLOSED/HALTED; exchange clock (America/New_York); next entry cutoff; entries-allowed reasons.\n(4) Heartbeat age keeps ticking client-side between polls from last_heartbeat_at relative to server_time offset. The UI shows OFFLINE once that age exceeds the threshold even if the next poll has not arrived. If the dashboard API itself is unreachable, it shows a distinct DASHBOARD API UNREACHABLE banner.\n(5) A STALE watermark overlays last-known values whenever engine_state is OFFLINE or a value has fresh=false.\n(6) The KPI ribbon shows cash, buying power, equity, total budget, reserved pending buys, deployed capital, open positions, pending orders, daily realized/unrealized P&L, lifetime P&L, unresolved protection/data/reconciliation error counts and provenance/as-of. Decimal strings are displayed as-is, without float arithmetic.\n(7) A health panel shows feed age/reconnects/subscriptions, broker status/rate errors, scheduler lag, persistence/backup state, last reconciliation and actionable errors with the CLI/Make command text.\n\nImplement dashboard/frontend/src/components/Watchlist.tsx:\n- A table of up to 10 symbol rows with every watchlist field from the API: price/bid/ask, data age and stale flag; composite phase; active BUY/SELL strategies; next due trigger/last evaluation; last signal with accepted/rejected reason; confirmed qty/cost basis/purchase time; budget/commitment/planned loss; daily entry count/cap; loss streak/lockout/reset mode; cooldown/next eligible; minimum-hold remaining; entry cutoff; protection mode/status/price/quantity; native broker HWM labeled 'broker HWM' vs stepped local anchor labeled 'stepped anchor'; desired vs confirmed stop; last protection update; realized/unrealized/lifetime P&L.\n- Shows a coverage warning when protection quantity differs from confirmed quantity.\n- Clicking a row calls onSelectSymbol.\n\nImplement dashboard/frontend/src/styles.css: restrained operational styling with clear state colors for OFFLINE/DEGRADED/STALE/LIVE, readable tables and a responsive layout. No charts.\n\nNo element may submit orders or change configuration. Where an action is relevant, render the CLI/Make command text in a <code> element.",
+  "acceptance_criteria": [
+    "App.tsx renders a header with mode badge, engine state, ticking heartbeat age, broker/data freshness, market state, exchange clock, next entry cutoff and a STALE watermark when engine_state is OFFLINE or values have fresh=false",
+    "The client-side heartbeat age turns the header OFFLINE once the age exceeds the API-provided threshold without waiting for a new engine flag; an unreachable dashboard API shows a distinct unreachable banner",
+    "Account switching clears previously loaded account-scoped KPI, watchlist and health state and aborts in-flight requests before showing the newly selected account",
+    "The KPI ribbon displays all listed account KPIs with provenance/as-of, rendering Decimal strings without parseFloat/Number arithmetic on money values",
+    "Watchlist.tsx renders up to 10 rows with every listed per-symbol field, separately labels broker HWM vs stepped anchor and desired vs confirmed stop, and flags protection quantity that differs from confirmed quantity",
+    "Budget, entry cutoff, lockout, cooldown and minimum-hold reasons are visible per symbol row",
+    "No button, form or fetch call in these files uses a non-GET method; operator actions are shown only as CLI/Make command text",
+    "Only App.tsx, Watchlist.tsx and styles.css are written; imports from r.4 files match the shared contract names exactly"
+  ],
+  "selected_backend": "pi_cli",
+  "model": "openrouter/meta/muse-spark-1.3-contributor",
+  "verification_profile": "focused",
+  "allowed_write_paths": [
+    "dashboard/frontend/src/App.tsx",
+    "dashboard/frontend/src/components/Watchlist.tsx",
+    "dashboard/frontend/src/styles.css"
+  ],
+  "allowed_symbols": [
+    "App",
+    "Watchlist"
+  ],
+  "forbidden_changes": [
+    "modify files outside allowed_write_paths",
+    "create or edit api/client.ts, SymbolDetails.tsx or AccountDetail.tsx (owned by r.4)",
+    "change PLAN_SKELETON.json or planning artifacts",
+    "add UI controls that place orders or mutate configuration",
+    "issue non-GET HTTP requests",
+    "merge or sum balances/positions across accounts, modes or scenarios",
+    "add charting-terminal features or chart libraries",
+    "run broad test suites or backtests"
+  ],
+  "dependencies": [
+    "r.1",
+    "r.2"
+  ],
+  "task_timeout_seconds": 1800
+}

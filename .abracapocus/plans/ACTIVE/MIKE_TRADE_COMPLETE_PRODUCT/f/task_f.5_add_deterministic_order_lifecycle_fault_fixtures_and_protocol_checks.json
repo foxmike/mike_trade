@@ -1,0 +1,47 @@
+{
+  "schema_version": 1,
+  "task_id": "f.5",
+  "phase": "F",
+  "phase_id": "f",
+  "title": "Add deterministic order lifecycle fault fixtures and protocol checks",
+  "description": "Create deterministic, reusable fault fixtures and an integration protocol test that exercise the full f-phase order-management stack: intents and FSM (f.1), coordinator (f.2), submitter (f.3), and fill processor (f.4).\n\ntests/fixtures/order_events.py:\n(1) Provide deterministic builders for normalized broker order updates and fills with stable event ids, client_order_ids, UTC-aware timestamps, and Decimal quantities and prices.\n(2) Provide a scriptable in-memory fake Broker port that can be programmed to: accept; reject; time out on submit while having actually accepted; time out with the order absent; fail lookups; emit duplicate events; emit events out of order; emit partial fills followed by cancel; emit a protective-stop fill racing an application exit; and simulate a crash between intent persistence and the broker response.\n(3) Use a fixed injected clock and no randomness; any seeds must be fixed constants. Use an isolated temporary SQLite database or in-memory store per test.\n\ntests/integration/test_order_lifecycle.py contains end-to-end protocol scenarios run through the public APIs only:\n(a) happy path: INTENT_PERSISTED -> SUBMITTING -> ACCEPTED -> PARTIALLY_FILLED -> FILLED, with the held qty and cost basis correct;\n(b) ambiguous submit where the order was actually accepted: a lookup by client_order_id finds it, there is exactly one submit, and no fill is inferred;\n(c) ambiguous submit with lookup failure: the order stays UNKNOWN, entries for the symbol are blocked, and there is no resubmit or new client_order_id;\n(d) duplicate and out-of-order events produce the same final ledger as the in-order stream;\n(e) partial fill then cancel: the remainder reservation is released and the cycle holds the partial qty;\n(f) cancel requested then fill arrives: the fill is applied and the order ends FILLED, not CANCELED;\n(g) a protective stop fill races an EXIT_LONG: the coordinator refuses the oversell, or the fill processor records drift, and the held quantity never goes below zero;\n(h) crash after a persisted intent and before the response: recover_inflight resolves it by lookup and does not auto-resubmit;\n(i) concurrent entries on one account cannot double-reserve cash;\n(j) SHADOW and PAPER account keys remain fully isolated.\n\nThe integration test must also assert that replaying the same fixture stream twice yields byte-identical persisted order/ledger projections, as a determinism check.\n\nBefore editing, inspect: mike_trade/execution/order_fsm.py, mike_trade/execution/intents.py, mike_trade/execution/coordinator.py, mike_trade/execution/submission.py, mike_trade/execution/fill_processor.py, mike_trade/brokers/ports.py, mike_trade/persistence/transaction.py, mike_trade/persistence/repositories.py, and the existing tests/unit/test_order_fsm.py, tests/unit/test_order_serialization.py, tests/unit/test_ambiguous_submit.py, and tests/unit/test_fill_processor.py, so you reuse their conventions. If a production defect is found, do not fix it here. Mark the scenario with pytest.mark.xfail(strict=True) and a clear reason that names the defect, so the failure stays visible.",
+  "acceptance_criteria": [
+    "tests/fixtures/order_events.py provides a scriptable fake Broker port and deterministic event builders using Decimal values, UTC-aware timestamps, stable ids, and a fixed clock with no unseeded randomness",
+    "tests/integration/test_order_lifecycle.py contains distinct test cases for scenarios (a) through (j) listed in the description",
+    "The ambiguous-submit scenarios assert exactly one submit call, a client_order_id lookup before any retry, and no new client_order_id while unresolved",
+    "Duplicate and out-of-order event streams produce a final ledger state identical to the in-order stream",
+    "Protective-stop vs exit race scenarios assert that held long quantity never becomes negative and that either the oversell is refused or drift blocks entries",
+    "Crash recovery scenarios assert that recovery resolves via lookup and never auto-resubmits an orphaned intent",
+    "Replaying the same fixture stream twice produces identical persisted order/ledger projections",
+    "Tests use only temporary/in-memory storage and no network access, broker credentials, or live endpoints; no production source files are modified"
+  ],
+  "selected_backend": "pi_cli",
+  "model": "openrouter/meta/muse-spark-1.3-contributor",
+  "verification_profile": "focused",
+  "allowed_write_paths": [
+    "tests/fixtures/order_events.py",
+    "tests/integration/test_order_lifecycle.py"
+  ],
+  "allowed_symbols": [
+    "ScriptedFakeBroker",
+    "FixedClock",
+    "make_order_update",
+    "make_fill_event",
+    "FaultScript"
+  ],
+  "forbidden_changes": [
+    "modify files outside allowed_write_paths",
+    "modify any production module under mike_trade/",
+    "change PLAN_SKELETON.json or any planning artifacts",
+    "use broker credentials, network access, or live/paper endpoints",
+    "weaken or skip assertions to make tests pass",
+    "run broad test suites or backtests"
+  ],
+  "dependencies": [
+    "f.1",
+    "f.2",
+    "f.3",
+    "f.4"
+  ],
+  "task_timeout_seconds": 1800
+}

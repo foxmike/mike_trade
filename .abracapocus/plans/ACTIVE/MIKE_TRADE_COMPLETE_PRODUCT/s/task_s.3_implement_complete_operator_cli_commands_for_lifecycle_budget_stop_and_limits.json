@@ -1,0 +1,59 @@
+{
+  "schema_version": 1,
+  "task_id": "s.3",
+  "phase": "S",
+  "phase_id": "s",
+  "title": "Implement complete operator CLI commands for lifecycle budget stop and limits",
+  "description": "Complete the provider-neutral operator CLI as the single operator surface that Make targets delegate to.\n\nBefore editing, inspect: the existing mike_trade/cli.py and its framework, entry point and command names; the controls package; the engine control channel/command interface used by a running engine (pause/resume, entries kill switch, close requests); the service lifecycle helpers and systemd unit files from earlier phases; the configuration loader and validators (the 1-10 symbol limit, strategy enable/set, trailing policy); the provider registry and its capability checks; the strategy registry; the shadow scenario manager; the paper/live mode guards and live preflight; the reconciliation service; the backtest runner; the market-data cache; the DB maintenance/backup/restore helpers; the dashboard process launcher; mike_trade/reporting/accounting.py, fees.py, metrics.py and export.py from tasks s.1 and s.2; and the heartbeat projection used to determine engine OFFLINE. Reuse these services. The CLI only parses, validates, confirms, routes and formats, and it duplicates no business logic.\n\nImplement in mike_trade/cli.py:\n(1) build_parser() and main(argv) runnable as 'python -m mike_trade.cli'.\n(2) A module-level CANONICAL_COMMANDS tuple containing exactly the canonical top-level subcommand names below. Existing nested forms from earlier phases may remain as aliases.\n(3) Global options --account/--scenario, --format table|json and --confirm-live. The confirmation also accepts the environment variable CONFIRM_LIVE=YES.\n(4) Stable exit codes, documented in the module docstring: 0 ok, 2 usage, 3 refused by a safety/confirmation guard, 4 engine offline or unreachable for an action that needs it, 5 unhealthy/check failed.\n\nCanonical commands:\n- doctor, config-show;\n- providers, provider-check, broker-check, data-check;\n- strategies, strategy-info, strategy-check, strategy-enable, strategy-disable, strategy-set;\n- symbols, symbols-add, symbols-remove, symbols-enable, symbols-disable;\n- start, stop, restart, status;\n- dashboard, dashboard-start, dashboard-stop, dashboard-health;\n- shadow-start, shadow-stop, shadow-list, shadow-create, shadow-reset;\n- paper-start, paper-stop, paper-status;\n- live-preflight, live-enable, live-start, live-disable;\n- pause, resume, pause-symbol, resume-symbol, entries-disable, entries-enable;\n- close, close-all, flatten;\n- trail-status, trail-history, trail-policy-show, trail-policy-set, trail-reconcile;\n- entry-limits, entry-limits-reset, cooldown-status;\n- stop-status, stops-audit;\n- positions, orders, balance, budget, reconcile;\n- signals, evaluations, events, logs, health;\n- report, report-daily, report-symbol, report-strategy, report-pairs, report-shadow, report-comparison, report-export;\n- backtest, backtest-status, backtest-report, backtest-list;\n- cache-status, cache-refresh;\n- db-check, db-backup, db-restore-dry-run;\n- service-install, service-uninstall, service-status.\n\nRouting:\n- The handlers for signals, evaluations, events, logs and health live in mike_trade/controls/history_commands.py, which task s.5 builds concurrently. cli.py registers these parsers and dispatches by lazily importing that module and calling run_history_command(name: str, args: argparse.Namespace) -> int. This task's tests monkeypatch that module and must not import or edit it.\n- Lifecycle, config, provider, strategy, symbol, mode, pause/entries, report, backtest, cache, db, dashboard and service handlers go in mike_trade/controls/cli_commands.py.\n- Position, order, balance, budget, reconcile, close/close-all/flatten, stop-status/stops-audit, trail-*, entry-limits/entry-limits-reset and cooldown-status handlers go in mike_trade/controls/position_commands.py.\n\nRequired semantics:\n(a) stop gracefully stops the engine only. It never cancels broker-held protective stops, never liquidates, and prints that open positions remain broker-protected.\n(b) pause and pause-symbol block new entry signals only. Fills, protective stops, trailing updates, reconciliation, manual closes and safety exits keep running. entries-disable sets the persisted entry kill switch.\n(c) close (SYMBOL), close-all (all managed positions in the selected account) and flatten (entries-disable, then cancel open entry orders, then close all managed positions) are sent to the running engine's serialized control channel. They wait for acknowledgement, and the engine coordinates them with protective stops so overlapping sells cannot create a short. If the engine heartbeat is stale or absent, these commands exit with code 4 and an explanatory message. They never persist a queued or pending intent that would execute later.\n(d) When the target account is LIVE, every command that submits, cancels or replaces broker orders, enables or starts live trading, resets entry limits, changes trailing policy, or changes strategies/symbols requires --confirm-live YES or CONFIRM_LIVE=YES. Otherwise it exits 3 without side effects. Risk-reducing commands (live-disable, pause, pause-symbol, entries-disable) never require confirmation.\n(e) live-enable and live-start run live-preflight first and refuse on failure.\n(f) Every command is scoped to one account/scenario, and SHADOW/PAPER/LIVE credentials and state are never mixed.\n(g) Report commands call the s.1/s.2 reporting functions. report-export writes through export.py.\n(h) Output is a table by default and stable JSON with --format json. Decimal values are strings in JSON. Secrets and full account identifiers are never printed.\n\nWrite tests/unit/test_operator_commands.py using fake/in-memory service doubles, a temporary DB and an injected clock. Cover:\n- every CANONICAL_COMMANDS entry parses;\n- stop issues no cancel/close calls;\n- pause leaves protection/reconciliation running;\n- the LIVE close without confirmation exits 3 with no service call, and succeeds with CONFIRM_LIVE=YES;\n- live-disable and entries-disable work without confirmation;\n- close with the engine offline exits 4 and writes no queued intent;\n- live-start with a failing preflight is refused;\n- account scoping;\n- JSON Decimal-as-string output;\n- history commands routed to run_history_command.\n\nNo real broker access and no credentials.",
+  "acceptance_criteria": [
+    "mike_trade/cli.py exposes build_parser, main and a CANONICAL_COMMANDS tuple containing every canonical command listed in this task, and each entry parses in tests",
+    "python -m mike_trade.cli is the entry point, and exit codes 0/2/3/4/5 follow the documented meanings",
+    "stop invokes no order cancellation, protective-stop cancellation or position close in tests",
+    "pause and pause-symbol leave fill handling, protective/trailing management and reconciliation active and block only new entries, as asserted against service doubles",
+    "For a LIVE account, close, close-all, flatten, live-enable, live-start, entry-limits-reset, trail-policy-set, strategy-*/symbols-* mutations and trail-reconcile exit 3 with zero service side effects unless --confirm-live YES or CONFIRM_LIVE=YES is supplied",
+    "live-disable, pause, pause-symbol and entries-disable succeed without live confirmation",
+    "close, close-all and flatten exit 4 when the engine heartbeat is stale or absent, and a test asserts that no queued or pending order intent is persisted",
+    "live-enable and live-start refuse to proceed when live-preflight fails",
+    "signals, evaluations, events, logs and health dispatch to mike_trade.controls.history_commands.run_history_command via lazy import",
+    "report commands delegate to the reporting modules, and JSON output renders Decimal values as strings with masked account identifiers",
+    "tests/unit/test_operator_commands.py contains passing positive and negative tests and uses no network access or broker credentials"
+  ],
+  "selected_backend": "codex_cli",
+  "model": "gpt-6-luna",
+  "verification_profile": "focused",
+  "allowed_write_paths": [
+    "mike_trade/cli.py",
+    "mike_trade/controls/cli_commands.py",
+    "mike_trade/controls/position_commands.py",
+    "tests/unit/test_operator_commands.py"
+  ],
+  "allowed_symbols": [
+    "build_parser",
+    "main",
+    "CANONICAL_COMMANDS",
+    "EXIT_OK",
+    "EXIT_USAGE",
+    "EXIT_REFUSED",
+    "EXIT_ENGINE_OFFLINE",
+    "EXIT_UNHEALTHY",
+    "require_live_confirmation",
+    "run_history_command"
+  ],
+  "forbidden_changes": [
+    "modify files outside allowed_write_paths",
+    "change PLAN_SKELETON.json or planning artifacts",
+    "create or edit mike_trade/controls/history_commands.py or mike_trade/observability/metrics.py",
+    "make stop cancel protective stops or liquidate positions",
+    "persist queued or deferred order intents when the engine is offline",
+    "bypass live confirmation for order-affecting LIVE commands",
+    "duplicate risk, sizing, reconciliation or order business logic inside CLI handlers",
+    "print secrets or full account identifiers",
+    "access live broker credentials or create real broker orders",
+    "run broad test suites or backtests"
+  ],
+  "dependencies": [
+    "s.1",
+    "s.2"
+  ],
+  "task_timeout_seconds": 2400
+}

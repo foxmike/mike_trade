@@ -1,0 +1,46 @@
+{
+  "schema_version": 1,
+  "task_id": "r.1",
+  "phase": "R",
+  "phase_id": "r",
+  "title": "Implement read-only FastAPI server and typed API endpoints",
+  "description": "Implement the dashboard as a separate, read-only FastAPI service process that stays independent of the trading engine process.\n\nBefore editing, inspect: the persistence package from earlier phases (SQLite WAL schema, migrations, read projections, the engine heartbeat record, and the feed/broker connectivity and freshness records); the configuration package (dashboard bind host/port, heartbeat/staleness thresholds, data paths, mode/account/scenario definitions); domain types for modes (LIVE/PAPER/SHADOW), Decimal money/quantity types, positions, orders, protective/trailing state, eligibility/lockout/cooldown state; the clock port and the America/New_York session calendar; and the existing CLI/Makefile command names, so the UI can show the matching operator command text. Reuse the existing projection readers and domain types. Do not duplicate business logic.\n\nImplement mike_trade/dashboard/api.py:\n(1) Pydantic response models for every endpoint. Money, quantity, price, P&L and budget fields are Decimal values serialized as JSON strings, never floats. All timestamps are timezone-aware UTC ISO-8601, and an exchange-local presentation field is included where useful.\n(2) A read service over read projections. It opens SQLite strictly read-only (file: URI with mode=ro and PRAGMA query_only=ON) and never runs migrations, writes, or broker/data-provider calls.\n(3) GET-only routes:\n- GET /api/live: dashboard liveness. It must not touch the DB.\n- GET /api/accounts: lists account_id, mode, scenario name, label.\n- GET /api/accounts/{account_id}/status: mode; engine_state RUNNING/PAUSED/DEGRADED/OFFLINE/RECONCILING; last_heartbeat_at; heartbeat_age_seconds; broker and data connectivity with as-of and freshness; market OPEN/CLOSED/HALTED; exchange clock; next entry cutoff; entries_allowed with reasons; is_stale watermark flag; server_time.\n- GET /api/accounts/{account_id}/kpis: cash; buying power; equity; configured total budget; reserved pending buys; deployed capital; open position count; pending order count; daily realized/unrealized P&L; lifetime P&L; unresolved protection/data/reconciliation error counts; provenance and as_of per value.\n- GET /api/accounts/{account_id}/watchlist: up to 10 symbol rows. Each row has every per-symbol field required by the phase goal: price/bid/ask/data age/stale; composite phase; active BUY/SELL strategies; next due trigger and last evaluation; last signal with accepted/rejected reason; confirmed qty/cost basis/purchase time; per-symbol budget/commitment/planned loss; daily entry count/cap; loss streak/lockout/reset mode; cooldown/next eligible time; minimum-hold remaining; entry cutoff; protection mode/status/price/quantity; native broker HWM vs stepped anchor; desired vs confirmed stop; last protection update; realized/unrealized/lifetime P&L.\n- GET /api/accounts/{account_id}/symbols/{symbol}: evaluation/signal timeline including NO_SIGNAL summaries; evidence and feed provenance (IEX); broker order tree; protective/trailing history with proposed vs confirmed changes; last 20 managed cycles with realized P&L, holding duration, slippage and policy decision reasons.\n- GET /api/accounts/{account_id}/detail: broker truth positions/balances; external/UNMANAGED holdings; cash/equity provenance; orders; fees/corporate activity; reconciliation drift.\n- GET /api/accounts/{account_id}/health: feed age, reconnects, subscription count; broker status and rate-limit errors; scheduler lag; persistence/backup state; last reconciliation timestamp; actionable errors, each with the CLI/Make command text to resolve it.\n(4) The dashboard computes OFFLINE itself from heartbeat age against the configured threshold, using an injected clock. It never depends on an engine-written offline flag. When OFFLINE or when an authoritative source is stale or disconnected, every affected value carries fresh=false plus a stale_reason. Broker positions, native HWM, stop status and balances are never reported fresh when the broker link is stale or disconnected. Feed stale with a fresh heartbeat yields DEGRADED with entries_allowed=false.\n(5) Every query is scoped by account_id. There is no cross-account or cross-mode aggregation, and an unknown account_id returns 404.\n\nImplement mike_trade/dashboard/server.py:\n(a) An app factory, create_app(settings, clock, db_path, static_dir), that mounts the API router.\n(b) It serves production-built frontend assets from dashboard/frontend/dist (index.html plus hashed assets, with SPA fallback for non-/api paths). It never proxies to or requires a Vite dev server. If dist is missing, UI routes return a clear 503 message while /api keeps working.\n(c) It rejects every non-GET/HEAD method with 405 and registers no write routes.\n(d) It runs under uvicorn as its own process entry point (python -m mike_trade.dashboard.server). It defaults to binding 127.0.0.1. Binding a non-loopback address requires an explicit config opt-in and logs a warning that remote exposure must go behind private auth/TLS/VPN/reverse proxy.\n(e) Startup does not require the engine to be running or the DB to have a recent heartbeat.\n\nWrite tests/integration/test_dashboard_api.py with FastAPI TestClient against a temporary migrated SQLite DB seeded through the existing persistence writers and an injected fixed clock. Cover the response shape of each endpoint, Decimal-as-string serialization, the 404 for an unknown account, the heartbeat-age OFFLINE computation, the 405 for POST, and static index serving from a temporary dist dir. Bounded decision budget: if a needed projection field does not exist, expose it as null with stale_reason='unavailable' rather than adding writes or schema changes outside allowed paths.",
+  "acceptance_criteria": [
+    "mike_trade/dashboard/api.py defines Pydantic response models and GET-only routes for /api/live, /api/accounts, and /api/accounts/{account_id}/status|kpis|watchlist|symbols/{symbol}|detail|health",
+    "All money, quantity, price, budget and P&L fields serialize as JSON strings derived from Decimal; no float money fields exist in response models",
+    "The SQLite connection is opened read-only (mode=ro URI and query_only) and the dashboard package imports no broker or market-data adapter modules",
+    "engine_state is OFFLINE when heartbeat_age_seconds exceeds the configured threshold according to an injected clock, with no reliance on an engine-written offline flag",
+    "When feed freshness is stale and the heartbeat is fresh, status reports DEGRADED with entries_allowed=false and a reason",
+    "When the broker connection is disconnected or stale, position, balance, stop-status and native HWM values are returned with fresh=false and a stale_reason",
+    "Every per-account endpoint returns only rows for the requested account_id, and an unknown account_id returns HTTP 404",
+    "Any POST/PUT/PATCH/DELETE request to any route returns HTTP 405, and no write route is registered",
+    "server.py serves index.html and hashed assets from the compiled dist directory with SPA fallback, returns 503 for UI routes when dist is missing, and never references a Vite dev server",
+    "Default bind host is 127.0.0.1; a non-loopback bind requires an explicit configuration opt-in and logs a remote-exposure warning",
+    "tests/integration/test_dashboard_api.py contains passing positive and negative tests for endpoint shapes, Decimal serialization, 404 scoping, OFFLINE computation, 405 rejection and static serving"
+  ],
+  "selected_backend": "claude_code_cli",
+  "model": "claude-sonnet-5-5",
+  "verification_profile": "focused",
+  "allowed_write_paths": [
+    "mike_trade/dashboard/server.py",
+    "mike_trade/dashboard/api.py",
+    "tests/integration/test_dashboard_api.py"
+  ],
+  "allowed_symbols": [
+    "create_app",
+    "DashboardReadService",
+    "compute_engine_state"
+  ],
+  "forbidden_changes": [
+    "modify files outside allowed_write_paths",
+    "change PLAN_SKELETON.json or planning artifacts",
+    "add any dashboard write, order, configuration-mutation or control endpoint",
+    "open the database read-write or run migrations from the dashboard",
+    "import or call broker, market-data or research adapters from the dashboard",
+    "access live broker credentials or create live broker orders",
+    "aggregate balances or positions across accounts, modes or scenarios",
+    "run broad test suites or backtests"
+  ],
+  "dependencies": [],
+  "task_timeout_seconds": 1800
+}

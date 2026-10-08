@@ -1,0 +1,46 @@
+{
+  "schema_version": 1,
+  "task_id": "l.1",
+  "phase": "L",
+  "phase_id": "l",
+  "title": "Implement serialized total and per-symbol budget reservations with atomicity",
+  "description": "Implement transactional capital budgets and reservations for each execution account/scenario (BACKTEST, SHADOW scenario, PAPER, LIVE are fully isolated keys). In mike_trade/portfolio/budgets.py define immutable budget policy/value types: total_budget_usd caps this application's managed open-position notional plus pending-entry commitment for one account/scenario; symbol_budget_usd caps one symbol's single entry cycle with no topping up or re-reservation while the cycle is open. Also define a budget snapshot/query (remaining total, remaining per symbol, committed open notional, pending reserved). Broker cash/buying power remains authoritative, so the snapshot must accept broker buying power as an input and report the effective cap as the minimum of application budget and broker buying power less the configured reserve; external/UNMANAGED holdings must not be counted as application commitment but are reflected via broker buying power. Margin is disabled unless explicitly configured: by default, effective buying power must not exceed settled cash/non-margin buying power. In mike_trade/portfolio/reservations.py implement a reservation ledger/service that: (1) creates a reservation for a pending BUY keyed by account/scenario + symbol + client order id under a single shared per-account budget lock (asyncio.Lock or equivalent serialized writer; no two concurrent reservations may overcommit); (2) converts reserved amount to actual filled notional as fills arrive (partial fills move reserved -> committed); (3) releases unused reserved amount on final cancel/reject/expire, including after partial fill, leaving only actual filled notional committed; (4) releases committed notional when the position cycle is fully closed; (5) is idempotent on repeated fill/cancel events (same broker activity id/fill id applied once); (6) persists through the existing SQLite single-writer persistence layer/ports from earlier phases so state survives restart, or exposes a repository port with a clear persistence adapter hook if the concrete repository lives elsewhere \u2014 do not edit files outside allowed_write_paths; (7) supports processing multiple simultaneous eligible signals under the shared lock in deterministic priority order (explicit symbol/strategy priority, then symbol name, then strategy id as stable tie-breakers). All money and quantities use Decimal only (reject float inputs); timestamps are timezone-aware UTC. Write tests in tests/unit/test_budget_reservations.py covering positive and negative cases.\n\nBefore editing, inspect:\n- Existing domain types for money/quantity/Decimal, account/scenario identity, execution mode, order and fill events (mike_trade/domain/ or equivalent created in earlier phases)\n- Existing persistence/repository ports and SQLite single-writer conventions (mike_trade/persistence/ or equivalent)\n- Existing configuration models for total_budget_usd, symbol_budget_usd, reserve/cushion, margin flags (mike_trade/config/ or equivalent)\n- Existing clock port and test fixtures/conftest conventions under tests/\n\nDecision budget: do not introduce new third-party dependencies; reuse existing ports and types; if a required port is missing, define a minimal Protocol inside the allowed files rather than editing other modules.",
+  "acceptance_criteria": [
+    "mike_trade/portfolio/budgets.py and mike_trade/portfolio/reservations.py exist and use Decimal for every monetary/quantity value; passing a float raises a TypeError or ValueError, verified by a test",
+    "A test proves two concurrent reservation attempts for different symbols that together exceed total_budget_usd result in exactly one success and one rejection, with no overcommit observable in the snapshot",
+    "A test proves a second reservation for the same account/scenario+symbol while a cycle is pending or open is rejected (no topping up past symbol_budget_usd)",
+    "A test proves a partial fill followed by final cancel leaves committed notional equal to actual filled notional and releases the remainder of the reservation",
+    "A test proves applying the same fill or cancel event twice changes state only once (idempotent ingestion)",
+    "A test proves reservations under one account/scenario key (e.g. SHADOW scenario A) do not affect remaining budget of another key (SHADOW scenario B, PAPER, or LIVE)",
+    "A test proves the effective cap is limited by broker buying power minus reserve when broker buying power is lower than remaining application budget, and that margin buying power is ignored unless margin is explicitly enabled",
+    "A test proves multiple simultaneous eligible signals are processed in deterministic priority order with stable tie-breaking, producing the same accept/reject outcome across repeated runs",
+    "A test proves closing a position cycle releases its committed notional back to the total budget",
+    "tests/unit/test_budget_reservations.py passes when run on its own with pytest"
+  ],
+  "selected_backend": "codex_cli",
+  "model": "gpt-5.6-sol",
+  "verification_profile": "focused",
+  "allowed_write_paths": [
+    "mike_trade/portfolio/budgets.py",
+    "mike_trade/portfolio/reservations.py",
+    "tests/unit/test_budget_reservations.py"
+  ],
+  "allowed_symbols": [
+    "BudgetPolicy",
+    "BudgetSnapshot",
+    "BudgetReservation",
+    "ReservationLedger",
+    "ReservationService",
+    "ReservationRepository"
+  ],
+  "forbidden_changes": [
+    "modify files outside allowed_write_paths",
+    "change PLAN_SKELETON.json or other planning artifacts",
+    "use float for money, quantity, fees, fills, or budgets",
+    "access broker credentials or create live/paper broker orders",
+    "run broad test suites or backtests",
+    "add new third-party dependencies"
+  ],
+  "dependencies": [],
+  "task_timeout_seconds": 1800
+}

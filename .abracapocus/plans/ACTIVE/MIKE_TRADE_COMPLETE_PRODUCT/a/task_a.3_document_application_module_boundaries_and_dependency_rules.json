@@ -1,0 +1,34 @@
+{
+  "schema_version": 1,
+  "task_id": "a.3",
+  "phase": "A",
+  "phase_id": "a",
+  "title": "Document application module boundaries and dependency rules",
+  "description": "Write the architecture document and the first ADR that freeze module boundaries for the modular single-engine product.\n\ndocs/ARCHITECTURE.md must describe: (1) the two-process topology: one trading engine process plus a separate read-only FastAPI dashboard process serving a compiled React + TypeScript + Vite build; (2) the package map and the responsibility of each module: domain, strategies, market_data, research, scheduling, signals, portfolio, risk, execution, brokers/alpaca, brokers/shadow, persistence, backtest, reporting, controls, dashboard, observability, config, plus tests, docs, deploy/systemd, and the gitignored state directory; (3) explicit dependency rules: domain/strategies/risk/policy code is broker-neutral and may not import adapters; adapters live behind ports (Protocols); only app.py/runtime.py compose concrete adapters through dependency injection; strategies never call brokers or open data connections; and the dashboard never mutates state or places orders; (4) data flow: market data acquired once per symbol into a shared cache, centralized candles/indicators, one internal scheduler, bounded concurrent strategy evaluation, and serialized account/portfolio/order mutations through a single writer; (5) the four execution modes (BACKTEST, SHADOW, PAPER, LIVE) and their strict credential/ledger isolation, with LIVE explicitly gated; (6) persistence: SQLite WAL, one authoritative writer, migrations, append-only trade-affecting events; (7) the fail-closed entry policy and the rule that broker truth is authoritative; (8) explicit non-goals: Kafka, Celery, Kubernetes, generic rules engines/DSLs, throwaway scripts, and the out-of-scope list from the plan purpose. Include an import-direction table or diagram.\n\ndocs/ADR/0001-modular-single-engine.md: use the standard ADR format (Title, Status: Accepted, Context, Decision, Consequences, Alternatives Considered). Record the choice of a modular single-engine process plus a separate dashboard process over microservices or message brokers, and give the rationale (1-10 symbols, operator-supervised, restart-safety, a single SQLite writer).\n\nBefore editing, inspect:\n- .abracapocus/plans/ACTIVE/MIKE_TRADE_COMPLETE_PRODUCT/PLAN_SKELETON.json purpose (read-only)\n- .abracapocus/plans/ACTIVE/MIKE_TRADE_COMPLETE_PRODUCT/ARCHITECTURE.md (read-only, if present) for consistency\n- docs/ directory (read-only) for any existing documents",
+  "acceptance_criteria": [
+    "docs/ARCHITECTURE.md exists and names every package module: domain, strategies, market_data, research, scheduling, signals, portfolio, risk, execution, brokers/alpaca, brokers/shadow, persistence, backtest, reporting, controls, dashboard, observability, config",
+    "docs/ARCHITECTURE.md contains an explicit dependency-rule section stating that domain/strategies/risk must not import brokers or adapters and that only app.py/runtime.py wire concrete adapters",
+    "docs/ARCHITECTURE.md states that strategies never submit orders or fetch data and that the dashboard is read-only and runs as a separate process",
+    "docs/ARCHITECTURE.md describes the BACKTEST, SHADOW, PAPER, and LIVE modes, their credential/ledger isolation, and the explicit gating of LIVE",
+    "docs/ARCHITECTURE.md describes SQLite WAL with a single authoritative writer and append-only trade-affecting events",
+    "docs/ARCHITECTURE.md lists non-goals including Kafka, Celery, Kubernetes, and a generic rules engine/DSL",
+    "docs/ADR/0001-modular-single-engine.md contains Status, Context, Decision, Consequences, and Alternatives Considered sections, with Status Accepted",
+    "Neither document claims strategy profitability or requires an external requirements document"
+  ],
+  "selected_backend": "pi_cli",
+  "model": "openrouter/meta/muse-spark-1.3-contributor",
+  "verification_profile": "focused",
+  "allowed_write_paths": [
+    "docs/ARCHITECTURE.md",
+    "docs/ADR/0001-modular-single-engine.md"
+  ],
+  "forbidden_changes": [
+    "modify files outside allowed_write_paths",
+    "change PLAN_SKELETON.json or other planning artifacts, including .abracapocus/plans/**/ARCHITECTURE.md",
+    "introduce frameworks, DSLs, or paid data sources not in the plan",
+    "make speculative alpha/profitability claims",
+    "run broad test suites, backtests, or create broker orders"
+  ],
+  "dependencies": [],
+  "task_timeout_seconds": 900
+}

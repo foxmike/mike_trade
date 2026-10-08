@@ -1,0 +1,45 @@
+{
+  "schema_version": 1,
+  "task_id": "n.3",
+  "phase": "N",
+  "phase_id": "n",
+  "title": "Implement fixed stop attachment and stop coverage checking for fill quantities",
+  "description": "Implement fixed protective stops and coverage reconciliation in mike_trade/risk/fixed_stop.py.\n\nComputing the stop price:\n- Provide compute_fixed_stop_price(policy, reference_price, atr=None, support=None, tick_rules) -> Decimal.\n- The reference defaults to the confirmed average fill price.\n- Supported distances: percent below the reference, a USD amount below the reference, an ATR multiple below the reference, or a support level (optionally with a buffer).\n- Rounding to broker tick rules must never move the stop above the computed level for a long position. Use the Alpaca equity convention: $0.01 increments at or above $1.00 and $0.0001 below $1.00, injected as tick_rules.\n- Reject a stop price that is less than or equal to zero, or greater than or equal to the reference price.\n- For STOP_LIMIT, compute the limit price from the configured offset (limit <= stop for a sell) and attach a risk note that it may not fill.\n\nBuilding the order:\n- Provide build_fixed_stop_order(cycle_id, symbol, covered_qty, stop_price, semantics, tif). It returns a provider-neutral protective order intent: a SELL stop or stop_limit with a deterministic client_order_id derived from cycle_id and a revision counter.\n\nCoverage checking:\n- Provide check_coverage(confirmed_remaining_qty, protective_orders) -> CoverageResult with one of these states:\n  - COVERED: exactly one effective protective order whose open quantity equals the remaining quantity\n  - UNDER_COVERED\n  - OVER_COVERED: open sell quantity exceeds the position, which is an oversell risk\n  - MULTIPLE_EFFECTIVE\n  - NONE\n- Each state has a recommended action: NO_OP, REPLACE_TO_QTY, CANCEL_EXCESS or PLACE.\n- Provide reconcile_after_fill(cycle_state, fill_event) for partial and full entry fills:\n  - after the first positive fill, place protection for the filled quantity\n  - after subsequent partial fills, replace (cancel-confirm then place, or atomic replace) so a single order covers the new cumulative quantity\n  - never place an additional overlapping order\n- The stop price must never move downward for a long position across replacements. Keep max(previous_stop, new_computed_stop) unless a lower value is an explicit operator policy change; even then, reject it in this module.\n- When exit fills reduce the position, coverage shrinks to the remaining quantity. When the remaining quantity is zero, the recommended action is to cancel protection.\n\nTests: write tests/unit/test_fixed_stop_coverage.py with positive and negative tests for:\n- each distance type\n- tick rounding at $0.9999 and $1.00 boundaries\n- invalid stops\n- coverage states\n- the partial-fill sequence (e.g. 3 then 7 of 10 shares) producing a single covering order\n- the no-downward-move rule\n- the zero-remaining case\nUse Decimal throughout.\n\nBefore editing, inspect:\n- mike_trade/risk/stop_policy.py and mike_trade/risk/protection.py from n.1 (ProtectionPolicy, coordinator protocol, reason codes)\n- existing domain Order/Fill/PositionCycle models\n- any tick-size or rounding helpers from earlier phases\n- ATR indicator output types from the indicator service\nDecision budget: reuse existing rounding/indicator helpers if present; otherwise implement local pure functions in fixed_stop.py.",
+  "acceptance_criteria": [
+    "compute_fixed_stop_price supports percent, USD, ATR-multiple and support-level distances from a confirmed-fill reference, and returns a Decimal rounded to the tick without exceeding the computed level for a long position (tests at the $1.00 tick boundary).",
+    "Stop prices that are less than or equal to zero, or greater than or equal to the reference price, are rejected (tested).",
+    "For STOP_LIMIT, the sell limit is less than or equal to the stop, and the result carries a may-not-fill risk note (tested).",
+    "check_coverage returns COVERED, UNDER_COVERED, OVER_COVERED, MULTIPLE_EFFECTIVE or NONE with the matching recommended action. Each state has a test.",
+    "A partial-fill sequence (e.g. 3 then 7 of 10) results in exactly one effective protective order covering the cumulative filled quantity, with no overlapping orders (tested).",
+    "Across replacements the stop price never decreases for a long position (tested).",
+    "When the remaining quantity reaches zero, the recommended action is to cancel protection, and no new protective order is produced (tested).",
+    "tests/unit/test_fixed_stop_coverage.py passes in isolation with no network or broker credential access."
+  ],
+  "selected_backend": "claude_code_cli",
+  "model": "claude-sonnet-5-5",
+  "verification_profile": "focused",
+  "allowed_write_paths": [
+    "mike_trade/risk/fixed_stop.py",
+    "tests/unit/test_fixed_stop_coverage.py"
+  ],
+  "allowed_symbols": [
+    "compute_fixed_stop_price",
+    "build_fixed_stop_order",
+    "check_coverage",
+    "CoverageResult",
+    "reconcile_after_fill"
+  ],
+  "forbidden_changes": [
+    "modify files outside allowed_write_paths",
+    "change PLAN_SKELETON.json or other planning artifacts",
+    "move a long stop downward",
+    "produce overlapping protective sell orders",
+    "create live or paper broker orders or read broker credentials",
+    "run broad test suites or backtests",
+    "use float for prices or quantities"
+  ],
+  "dependencies": [
+    "n.1"
+  ],
+  "task_timeout_seconds": 1500
+}

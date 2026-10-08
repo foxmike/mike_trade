@@ -1,0 +1,40 @@
+{
+  "schema_version": 1,
+  "task_id": "o.5",
+  "phase": "O",
+  "phase_id": "o",
+  "title": "Add stepped trail parity faults and stop never moves down regression tests",
+  "description": "Create end-to-end-in-process lifecycle and fault regression tests for stepped trailing protection in tests/integration/test_stepped_trailing_lifecycle.py, and a verification audit document at docs/verification/phase_o_stepped_stops.md. This is a verification task: write real tests and a real audit artifact, and do not modify production code.\n\nBefore editing, inspect: mike_trade/risk/trailing.py (o.1), mike_trade/execution/replace.py and mike_trade/brokers/alpaca/replacement.py (o.2), mike_trade/execution/close_coordinator.py (o.3), mike_trade/risk/trailing_state.py (o.4), and their tests (tests/unit/test_stepped_trailing.py, tests/contracts/test_stop_replacement.py, tests/integration/test_stop_close_races.py, tests/unit/test_trailing_state_restart.py) to reuse fakes and fixtures without editing them.\n\nWrite integration tests that wire the ratchet (o.1), replacement coordinator with the in-memory fake port (o.2), close coordinator (o.3), and trailing state store on temporary SQLite (o.4) together, and cover:\n1. Canonical lifecycle: entry 100, distance 2, step 1. After a confirmed positive fill, the initial broker-confirmed stop is 98. High 100.80 -> no replace request. High 101 -> intent persisted, then confirmed at 99. High 103.20 -> single replace to 101 (multi-step jump). A decline leaves 101 and produces no replace request.\n2. Stop-never-moves-down regression: a randomized or parameterized price path (seeded and deterministic) asserts that the confirmed stop series is non-decreasing and that no broker replace call ever carries a price <= the prior confirmed stop after rounding.\n3. Parity: for the same price path, the pure ratchet candidate sequence and the persisted/confirmed stop sequence agree whenever all replacements confirm.\n4. Faults: replace rejected (last verified stop retained, TRAIL_UPDATE_UNCONFIRMED, entries blocked); replace unknown followed by lookup-based reconciliation; stop fill during replace; partial stop fill during replace (remaining quantity protected correctly); discretionary close racing a pending replace (no short, no duplicate sell); no duplicate pending replacements under rapid highs; orphan stop detection after flat.\n5. Restart: persist mid-cycle with an outstanding intent, reload, and assert that advancement stays blocked until reconciliation, then resumes from the persisted watermark/anchor.\n6. Engine offline: mark stale. The last confirmed stop remains and the status reports TRAIL_STALE. New highs while stale do not advance or submit replacements.\n7. Protection begins only after a confirmed positive fill, and protected quantity equals actual remaining filled quantity.\n\nWrite docs/verification/phase_o_stepped_stops.md as an audit artifact with these contents: a table mapping each phase-o requirement (monotone ratchet, canonical example, rounding-before-compare, broker-confirmed effectiveness, intent-before-submit, no duplicate pending, unknown/rejected handling, fill-during-replace, close race/no-short, orphan detection, restart, offline TRAIL_STALE, fail-closed capability) to the specific test function names that prove it; the exact targeted pytest commands used; their observed pass/fail results; and an explicit statement of limitations. Those limitations must say that fakes are not broker integration evidence, that Alpaca paper verification is credential-gated and not performed here, and that no profitability claim is made.\n\nIf a test exposes a production defect, do not fix production code. Mark the test with an explicit xfail(strict=True) carrying a reason, and record the defect in the audit document.",
+  "acceptance_criteria": [
+    "tests/integration/test_stepped_trailing_lifecycle.py exists and exercises the o.1 ratchet, the o.2 replacement coordinator (fake port), the o.3 close coordinator, and the o.4 state store together.",
+    "The canonical lifecycle test asserts that the confirmed stops are exactly Decimal 98, 99, 101, and that the stop remains 101 after a decline, with exactly two replace requests (to 99 and to 101) and none for high 100.80 or the decline.",
+    "A seeded deterministic regression test asserts a non-decreasing confirmed stop series and that no replace request price is <= the prior confirmed stop after rounding.",
+    "Fault tests cover rejected replace, unknown replace with reconciliation, full and partial stop fill during replace, discretionary close racing a pending replace (no negative position), duplicate-pending suppression, and orphan stop after flat.",
+    "A restart test proves that advancement is blocked with an outstanding intent after reload and resumes from the persisted watermark/anchor after reconciliation.",
+    "An offline/stale test proves that TRAIL_STALE is reported, the last confirmed stop is retained, and no replacement is submitted while stale.",
+    "docs/verification/phase_o_stepped_stops.md contains a requirement-to-test mapping table naming concrete test functions, the targeted commands run with observed results, and explicit limitations (fakes are not broker integration; Alpaca paper verification is credential-gated and pending; no profitability claim).",
+    "No production files under mike_trade/ are modified by this task.",
+    "tests/integration/test_stepped_trailing_lifecycle.py passes when run alone with pytest, or any failing case is marked xfail(strict=True) with a reason and documented as a defect in the audit file."
+  ],
+  "selected_backend": "pi_cli",
+  "model": "openrouter/meta/muse-spark-1.3-contributor",
+  "verification_profile": "focused",
+  "allowed_write_paths": [
+    "tests/integration/test_stepped_trailing_lifecycle.py",
+    "docs/verification/phase_o_stepped_stops.md"
+  ],
+  "forbidden_changes": [
+    "modify files outside allowed_write_paths",
+    "modify any production module under mike_trade/ or any test file written by o.1-o.4",
+    "change PLAN_SKELETON.json or other planning artifacts",
+    "claim broker integration or profitability based on fakes",
+    "access broker credentials, create live or paper orders, or run broad test suites/backtests"
+  ],
+  "dependencies": [
+    "o.1",
+    "o.2",
+    "o.3",
+    "o.4"
+  ],
+  "task_timeout_seconds": 1800
+}

@@ -1,0 +1,54 @@
+{
+  "schema_version": 1,
+  "task_id": "b.4",
+  "phase": "B",
+  "phase_id": "b",
+  "title": "Define typed provider capability and account snapshot interfaces",
+  "description": "Define account and capability snapshots, operational command and health contracts, and the broker-neutral broker and market-data provider Protocols. Use only the standard library: frozen, slotted dataclasses; Enum; typing.Protocol with @runtime_checkable; decimal; datetime. No Alpaca SDK types may appear anywhere in these files. This task runs at the same time as b.1, b.2, and b.3, so the port modules must import their domain types (OrderIntent, BrokerOrder, Fill, Position from mike_trade.domain.trading; MarketEvent, Candle, Timeframe from mike_trade.domain.market) only under `if TYPE_CHECKING:` with string annotations, so they import cleanly without those modules. accounts.py must not import other wave-1 domain modules at runtime. Validate Decimals locally: reject float, NaN, and Infinity, and require UTC-aware datetimes.\n\nmike_trade/domain/accounts.py:\n- `AccountEnvironment` enum: BACKTEST, SHADOW, PAPER, LIVE.\n- `AccountScope` holds: environment, account_id (non-empty), scenario (str required for SHADOW and BACKTEST, forbidden for PAPER/LIVE), and a `scope_id` property giving a stable string such as 'shadow:<account_id>:<scenario>'. Scopes from different environments never compare equal. Cash and buying power belong to the account scope, never to a symbol.\n- `AccountSnapshot` holds: scope, as_of (UTC), currency 'USD', cash, equity, buying_power, optional daytrading_buying_power, portfolio_value, pattern_day_trader, trading_blocked, account_blocked, trade_suspended_by_user, shorting_enabled, and source (str provenance). Add a property `unsafe_flags -> tuple[str, ...]` listing any blocking flags so new entries can fail closed.\n- `BrokerCapabilities` holds: provider, environment, supported_order_types (frozenset of str), supports_fractional, supports_notional, supports_native_trailing_stop, supports_extended_hours, supports_short (default False), and paper_verified_combinations (frozenset of (order_type, fractional: bool) pairs). Add a method `supports_order(order_type: str, fractional: bool) -> bool` that fails closed: it returns False unless the combination is explicitly supported, and for fractional combinations it also requires the pair in paper_verified_combinations.\n- `MarketDataCapabilities` holds: provider, feed, is_consolidated, supports_streaming, supported_timeframes (frozenset of str), and max_streaming_symbols (optional int).\n- `HealthStatus` enum: HEALTHY, DEGRADED, OFFLINE, UNKNOWN. `HealthSnapshot` holds: component, status, observed_at (UTC), heartbeat_at (optional UTC), and details (a read-only mapping from str to str). Add a method `effective_status(now, max_heartbeat_age)` that returns OFFLINE when the heartbeat is missing or older than max_heartbeat_age.\n- `ControlCommandKind` enum: PAUSE, RESUME, ENTRY_KILL_SWITCH_ON, ENTRY_KILL_SWITCH_OFF, CLOSE_POSITION, CLOSE_ALL, FLATTEN, RECONCILE, ADOPT_POSITION, CLEAR_COOLDOWN, RESET_ENTRY_LIMIT. `ControlCommand` holds: command_id, kind, scope, issued_at (UTC), issued_by, symbol (required for CLOSE_POSITION/ADOPT_POSITION/CLEAR_COOLDOWN/RESET_ENTRY_LIMIT), reason, and live_confirmed (bool). Constructing a position-mutating command (CLOSE_POSITION, CLOSE_ALL, FLATTEN, ADOPT_POSITION) for a LIVE scope with live_confirmed False must raise, or be flagged through an explicit `requires_live_confirmation` check documented in the docstring. Pick one approach and test it.\n\nmike_trade/brokers/ports.py:\n- `@runtime_checkable class BrokerPort(Protocol)` with async methods:\n  - `capabilities() -> BrokerCapabilities` (may be sync)\n  - `get_account() -> AccountSnapshot`\n  - `list_positions() -> Sequence[Position]`\n  - `list_open_orders() -> Sequence[BrokerOrder]`\n  - `get_order(broker_order_id: str) -> BrokerOrder | None`\n  - `get_order_by_client_id(client_order_id: str) -> BrokerOrder | None`\n  - `submit_order(intent: OrderIntent) -> BrokerOrder`\n  - `replace_order(broker_order_id: str, *, stop_price=None, trail=None, quantity=None) -> BrokerOrder`\n  - `cancel_order(broker_order_id: str) -> None`\n  - `list_fills(since: datetime) -> Sequence[Fill]`\n- An `environment` attribute of type AccountEnvironment.\n- The docstring must state that adapters translate provider types at the boundary and never leak SDK objects.\n\nmike_trade/market_data/ports.py:\n- `@runtime_checkable class MarketDataPort(Protocol)` with:\n  - `capabilities() -> MarketDataCapabilities`\n  - async `subscribe(symbols: Sequence[str]) -> AsyncIterator[MarketEvent]`\n  - async `unsubscribe(symbols)`\n  - async `fetch_bars(symbol, timeframe, start, end) -> Sequence[Candle]`\n  - async `close()`\n- An optional `ResearchPort(Protocol)` with async `fetch(symbol, as_of) -> Mapping[str, object] | None` for optional, non-mandatory research.\n- The docstring must state that strategies never use these ports directly; only the shared market-data service does.\n\nThe expected changed files for this task contain no test file. Do not create one. Acceptance is checked by importing the modules and by inspection.\n\nDecision budget: make at most three design choices not covered here, and record them in the module docstrings.\n\nBefore editing, inspect:\n- mike_trade/domain/errors.py (read-only), including ModeIsolationError, LiveTradingNotAuthorizedError, and UnsupportedOrderCapabilityError\n- mike_trade/runtime.py (read-only), including ExecutionMode and the Protocol slot names, but do not import runtime from domain modules\n- docs/ARCHITECTURE.md (read-only, if present) for port/adapter rules",
+  "acceptance_criteria": [
+    "mike_trade/domain/accounts.py defines AccountEnvironment, AccountScope, AccountSnapshot, BrokerCapabilities, MarketDataCapabilities, HealthStatus, HealthSnapshot, ControlCommandKind, and ControlCommand",
+    "AccountScope rejects a SHADOW or BACKTEST scope without scenario and a PAPER or LIVE scope with a scenario; scopes with different environments are never equal and have distinct scope_id values",
+    "AccountSnapshot rejects float/NaN/Infinity money values and naive datetimes, and unsafe_flags is non-empty when trading_blocked or account_blocked is True",
+    "BrokerCapabilities.supports_order returns False for unlisted order types and for fractional combinations not in paper_verified_combinations; supports_short defaults to False",
+    "HealthSnapshot.effective_status returns OFFLINE when the heartbeat is missing or older than max_heartbeat_age",
+    "A position-mutating ControlCommand for a LIVE scope without live_confirmed is rejected or flagged by the documented, tested mechanism",
+    "mike_trade/brokers/ports.py defines a runtime_checkable BrokerPort Protocol with get_account, list_positions, list_open_orders, get_order, get_order_by_client_id, submit_order, replace_order, cancel_order, list_fills, and capabilities",
+    "mike_trade/market_data/ports.py defines a runtime_checkable MarketDataPort Protocol with capabilities, subscribe, unsubscribe, fetch_bars, and close, plus an optional ResearchPort",
+    "None of the three files imports alpaca or any third-party package, and the port modules import mike_trade.domain.trading/market only under TYPE_CHECKING",
+    "`import mike_trade.domain.accounts, mike_trade.brokers.ports, mike_trade.market_data.ports` succeeds with no network access or credential reads"
+  ],
+  "selected_backend": "codex_cli",
+  "model": "gpt-6-luna",
+  "verification_profile": "focused",
+  "allowed_write_paths": [
+    "mike_trade/domain/accounts.py",
+    "mike_trade/brokers/ports.py",
+    "mike_trade/market_data/ports.py"
+  ],
+  "allowed_symbols": [
+    "AccountEnvironment",
+    "AccountScope",
+    "AccountSnapshot",
+    "BrokerCapabilities",
+    "MarketDataCapabilities",
+    "HealthStatus",
+    "HealthSnapshot",
+    "ControlCommandKind",
+    "ControlCommand",
+    "BrokerPort",
+    "MarketDataPort",
+    "ResearchPort"
+  ],
+  "forbidden_changes": [
+    "modify files outside allowed_write_paths",
+    "change PLAN_SKELETON.json or other planning artifacts",
+    "import Alpaca SDK types or any third-party package",
+    "implement a concrete broker or market-data adapter",
+    "read credentials or open network connections at import time",
+    "enable short selling capability by default",
+    "import other wave-1 domain modules at runtime",
+    "run broad test suites, backtests, or create broker orders"
+  ],
+  "dependencies": [],
+  "task_timeout_seconds": 1200
+}

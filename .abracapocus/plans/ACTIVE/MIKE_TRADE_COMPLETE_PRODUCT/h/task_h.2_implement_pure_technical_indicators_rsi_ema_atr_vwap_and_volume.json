@@ -1,0 +1,35 @@
+{
+  "schema_version": 1,
+  "task_id": "h.2",
+  "phase": "H",
+  "phase_id": "h",
+  "title": "Implement pure technical indicators RSI EMA ATR VWAP and volume",
+  "description": "Implement pure, reusable technical indicator functions and incremental calculators in mike_trade/strategies/indicators/core.py, with unit tests in tests/unit/test_indicators.py.\n\nRequired behavior:\n- All inputs and outputs are Decimal. Use one explicit, documented Decimal context and precision, so results are bit-for-bit reproducible. Do no provider, network, clock, or broker I/O, and keep no global mutable state.\n- EMA(period): seed with the SMA of the first `period` values, then apply alpha = 2/(period+1). Return None (or an explicit NotReady marker) until `period` values are available.\n- RSI(period): use Wilder smoothing. The first average gain and loss is the simple mean over `period` changes, so `period + 1` closes are needed before the first value. Document and pin the edge cases deterministically: average loss zero with gain > 0 gives 100; both averages zero gives a documented neutral value. The output range is [0, 100].\n- ATR(period): true range = max(high - low, |high - prev_close|, |low - prev_close|). The first bar uses high - low. Seed with the simple mean of the first `period` true ranges, then apply Wilder smoothing.\n- Session VWAP: cumulative sum(typical_price * volume) / sum(volume), where typical price is (H+L+C)/3. Reset when the session identifier changes; the caller passes it per bar. VWAP is undefined (None) until cumulative session volume > 0. Zero-volume bars do not change VWAP.\n- Volume helpers: cumulative session volume (resets with the session id), a simple moving average of volume, and relative volume (current / SMA). Relative volume is None during warmup or when the SMA is zero.\n- Provide both batch functions (over a sequence) and incremental stateful calculators. A test must show they produce identical outputs on the same input.\n- Each calculator reports its required warmup length (for example `warmup_bars`) and whether it is ready.\n- Calculators accept candle-like inputs through a minimal protocol (open/high/low/close/volume, plus a session id for VWAP). Do not import mike_trade/market_data/candles.py, which is built concurrently in h.1.\n- Do not encode any trading thresholds or claim profitability.\n\nBefore editing, inspect:\n- mike_trade/strategies/base.py and mike_trade/domain/strategy_types.py (if present) for existing indicator declaration types or names to align with\n- mike_trade/domain/market.py (if present) for bar field names",
+  "acceptance_criteria": [
+    "A test confirms that EMA returns not-ready for the first period-1 inputs, and that the first value equals the SMA seed exactly, using a hand-computed Decimal fixture.",
+    "A test confirms that RSI is not ready with exactly `period` closes and ready with `period + 1`. Separate tests pin the all-gains (100) and flat-series (documented neutral) edge cases to exact Decimal values.",
+    "A test confirms that ATR uses the gap-inclusive true range (|high - prev_close| dominating) and matches a hand-computed fixture exactly.",
+    "A test confirms that session VWAP resets when the session id changes, returns None before any positive volume, and is unaffected by a zero-volume bar.",
+    "A test confirms that relative volume is None during warmup and when the volume SMA is zero.",
+    "A test confirms that batch and incremental outputs are identical for RSI, EMA, ATR, and VWAP on the same fixture.",
+    "A test confirms that every returned numeric value is a Decimal instance and that no float appears in outputs.",
+    "The module imports no network, broker, provider, or market_data modules. A test or import inspection asserts this."
+  ],
+  "selected_backend": "codex_cli",
+  "model": "gpt-6-luna",
+  "verification_profile": "focused",
+  "allowed_write_paths": [
+    "mike_trade/strategies/indicators/core.py",
+    "tests/unit/test_indicators.py"
+  ],
+  "forbidden_changes": [
+    "modify files outside allowed_write_paths",
+    "change PLAN_SKELETON.json or other planning artifacts",
+    "perform network, provider, clock, or broker I/O inside indicator code",
+    "use float arithmetic for indicator values",
+    "introduce hardcoded trading thresholds or profitability claims",
+    "run broad test suites or backtests"
+  ],
+  "dependencies": [],
+  "task_timeout_seconds": 1500
+}

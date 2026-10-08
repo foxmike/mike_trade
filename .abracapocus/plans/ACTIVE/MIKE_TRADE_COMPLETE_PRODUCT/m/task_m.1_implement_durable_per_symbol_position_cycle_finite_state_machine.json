@@ -1,0 +1,48 @@
+{
+  "schema_version": 1,
+  "task_id": "m.1",
+  "phase": "M",
+  "phase_id": "m",
+  "title": "Implement durable per-symbol position cycle finite state machine",
+  "description": "Implement the restart-safe composite lifecycle state machine for one managed long position cycle per (account_or_scenario_id, symbol) in mike_trade/portfolio/cycles.py, with unit tests in tests/unit/test_position_cycle.py.\n\nBefore editing, inspect: the existing mike_trade/portfolio/ package (if present), the domain types for orders/fills/positions/quantities (Decimal money and share types, UTC timestamp types), the persistence/event-store and migration modules for append-only trade-affecting events, and the execution/protection modules from earlier phases, so you reuse existing types and event APIs instead of duplicating them. Do not modify any of those files.\n\nRequirements:\n1. Define a CycleState enum with exactly these composite lifecycle states: DISABLED, WATCHING_BUY, ENTRY_RESERVED, BUY_SUBMITTING, BUY_PENDING, PARTIALLY_OWNED, PROTECTIVE_PENDING, WATCHING_SELL, SELL_SUBMITTING, SELL_PENDING, CLOSING, RECONCILING, PAUSED, ERROR, UNMANAGED, CLOSED (CLOSED is transient). Keep service status, order status and protection status as separate orthogonal fields/enums on the cycle record where that is clearer, rather than folding them into CycleState.\n2. Define an immutable PositionCycle record keyed by account/scenario id + symbol + cycle_id that holds: originating buy strategy id, entry intent id, linked broker/simulated order ids, filled_entry_qty, remaining_qty, average entry price, filled exit qty, the timestamp of the first positive fill, entry-slot-consumed flag, protection coverage status/qty, the reason for the last transition, and a monotonically increasing version. All quantities/prices are Decimal and all times are timezone-aware UTC.\n3. Implement a pure transition function (event in, new cycle plus emitted audit events out) over a closed set of cycle events: buy signal accepted, entry reserved, buy submitted, buy acknowledged, fill applied (buy/sell, with a fill id), entry canceled/expired, protection confirmed/lost, sell signal accepted, sell submitted, close confirmed flat, operator pause/resume, reconciliation required/resolved, error, and external/manual close detected. Reject an illegal transition with a typed error and leave state unchanged.\n4. Enforce these invariants: one accepted buy signal creates exactly one logical entry cycle. Buy signals in any non-WATCHING_BUY state are ignored and audited as ignored. The first positive buy fill records the actual quantity, sets entry_slot_consumed exactly once and moves to PARTIALLY_OWNED or PROTECTIVE_PENDING (protection reconciliation required). A full fill or a partially canceled entry keeps the actual shares and moves to protection/sell management, never re-buying the missing quantity. Once remaining_qty > 0, only sell, risk, protection and manual events are legal. A partial exit fill reduces remaining_qty and requires protection resize. Remaining quantity never goes negative (no short). CLOSED is reachable only when remaining_qty == 0 and no stale linked sell or protective order remains open. After CLOSED the cycle can be rearmed to WATCHING_BUY only by an explicit rearm event, after cooldown.\n5. Fill application is idempotent by fill id: re-applying the same fill is a no-op and produces no duplicate event.\n6. PAUSED blocks entry transitions only. Fills, sell, protection and reconciliation events stay legal while paused, and the cycle remembers its underlying state so it can resume.\n7. Provide serialize/deserialize helpers (plain dict/JSON with Decimal as string) so that a cycle restored from persisted events or snapshots is equal to the original. Persistence wiring itself is out of scope here, except for calling existing event-store interfaces if they already exist.\n8. Write unit tests covering the positive paths and these negative paths: second buy while BUY_PENDING/owned, oversell, illegal transitions, duplicate fill, CLOSED with stale order, and pause semantics.\n\nDecision budget: do not create new modules outside the allowed paths. If a needed shared type is missing, define a minimal local type in cycles.py and document it with a TODO comment.",
+  "acceptance_criteria": [
+    "mike_trade/portfolio/cycles.py defines a CycleState enum containing exactly DISABLED, WATCHING_BUY, ENTRY_RESERVED, BUY_SUBMITTING, BUY_PENDING, PARTIALLY_OWNED, PROTECTIVE_PENDING, WATCHING_SELL, SELL_SUBMITTING, SELL_PENDING, CLOSING, RECONCILING, PAUSED, ERROR, UNMANAGED, CLOSED",
+    "Order status and protection status are represented as fields separate from CycleState on the cycle record",
+    "All quantity and price fields in PositionCycle are Decimal and all timestamps are timezone-aware UTC; tests assert that naive datetimes or float quantities are rejected",
+    "A unit test shows that a buy signal delivered in BUY_PENDING, PARTIALLY_OWNED, PROTECTIVE_PENDING or WATCHING_SELL does not create a second entry and is recorded as ignored",
+    "A unit test shows the first positive partial buy fill sets entry_slot_consumed exactly once and moves to a state that requires protection reconciliation; a second partial fill does not consume another slot",
+    "A unit test shows a partially filled then canceled entry keeps the actual filled quantity and moves to sell/protection management without issuing a new buy",
+    "A unit test shows applying the same fill id twice leaves remaining_qty unchanged and emits no duplicate audit event",
+    "A unit test shows a sell fill greater than remaining_qty is rejected and remaining_qty never goes below zero",
+    "A unit test shows that CLOSED is refused while remaining_qty > 0 or while a linked sell/protective order is still open, and is allowed when flat with no open linked orders",
+    "A unit test shows PAUSED rejects entry events but accepts fill, sell, protection and reconciliation events",
+    "A unit test shows serialize -> deserialize round-trips a PositionCycle to an equal object, with Decimals preserved exactly",
+    "No files outside mike_trade/portfolio/cycles.py and tests/unit/test_position_cycle.py are modified"
+  ],
+  "selected_backend": "codex_cli",
+  "model": "gpt-5.6-sol",
+  "verification_profile": "focused",
+  "allowed_write_paths": [
+    "mike_trade/portfolio/cycles.py",
+    "tests/unit/test_position_cycle.py"
+  ],
+  "allowed_symbols": [
+    "CycleState",
+    "PositionCycle",
+    "CycleEvent",
+    "CycleTransitionError",
+    "apply_cycle_event",
+    "serialize_cycle",
+    "deserialize_cycle"
+  ],
+  "forbidden_changes": [
+    "modify files outside allowed_write_paths",
+    "change PLAN_SKELETON.json or other planning artifacts",
+    "create live broker orders or access live broker credentials",
+    "use float for money, quantity, price or fee values",
+    "allow a second entry or averaging-down while a cycle is pending or owned",
+    "run broad full-suite tests or backtests"
+  ],
+  "dependencies": [],
+  "task_timeout_seconds": 1800
+}

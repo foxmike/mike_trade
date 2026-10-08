@@ -1,0 +1,38 @@
+{
+  "schema_version": 1,
+  "task_id": "t.3",
+  "phase": "T",
+  "phase_id": "t",
+  "title": "Wire complete mike_trade app and reference VWAP shadow end-to-end lifecycle",
+  "description": "Wire the full production application composition root and runtime lifecycle. Then prove the mandatory credentials-free vwap_reference shadow lifecycle and the restart/offline recovery behavior with end-to-end tests that use production components rather than a demo runner.\n\nBefore editing, inspect:\n- mike_trade/app.py and mike_trade/runtime.py (existing composition/bootstrap code)\n- mike_trade/controls/service_manager.py (t.1 instance lock and graceful shutdown expectations)\n- mike_trade/persistence/ (SQLite WAL single writer, migrations, integrity checks, projections, heartbeat)\n- mike_trade/market_data/ (shared feed, cache, candle/indicator service, IEX provenance, warmup/freshness)\n- mike_trade/strategies/ (vwap_bounce, vwap_breakdown, vwap_reference pairing, registry)\n- mike_trade/execution/, mike_trade/risk/, mike_trade/protection/, mike_trade/reconciliation/, mike_trade/shadow/ (coordinator, eligibility, budgets, cooldown, lockouts, shadow broker and ledger)\n- mike_trade/brokers/ (port interfaces and adapters)\n- mike_trade/dashboard/ (heartbeat/OFFLINE logic consumers)\n- existing tests/end_to_end/ fixtures and tests/conftest.py\n\nImplementation requirements:\n1. mike_trade/app.py: a dependency-injected composition root that builds, for a selected mode (BACKTEST, SHADOW with one or more named scenarios, PAPER, LIVE), the clock, calendar, persistence (mode-specific database path), market-data service, candle/indicator engine, strategy registry, risk/eligibility, budget manager, execution coordinator, protection coordinator, reconciliation service, broker adapter (simulated/shadow for SHADOW and BACKTEST, Alpaca paper/live for PAPER/LIVE), and scheduler. It must keep cross-mode credentials, databases, and ledgers isolated and refuse LIVE without explicit authorization.\n2. mike_trade/runtime.py: an explicit startup state machine in this order: acquire instance lock -> open/migrate/integrity-check the mode database -> load durable controls and config fingerprint -> validate credentials, provider capabilities, clock/calendar (including early close), and asset eligibility -> fetch broker account, open/linked orders, positions, recent activities -> match broker facts to local intents/fills exactly once -> classify external positions as UNMANAGED and detect orphan stops -> resolve ambiguous cancel/fill/replace state -> verify budget reservations, entry eligibility, strategy state, and protective coverage -> warm required market data -> establish feed and order-update freshness -> RUNNING. New entries are allowed only when reconciled and authorized; any failure leaves entries blocked with explicit drift/reason. Write heartbeat rows for the dashboard. Graceful shutdown on SIGTERM/SIGINT: block new entries, drain in-flight evaluations, flush state, unsubscribe feeds cleanly, release the lock, and leave positions and valid protective stops untouched. Pause, stop, close, and flatten must remain distinct operations.\n3. tests/end_to_end/test_full_product_cycle.py (offline, deterministic, no credentials): drive the real production evaluator, coordinator, shadow broker, and ledger with deterministic completed 1-minute regular-session bars to prove: completed-bar VWAP upward cross triggers vwap_bounce BUY -> exactly one shadow entry (duplicate signals on the same bar and repeated signals/partial fills do not create a second entry) -> simulated protective order on the filled quantity -> (path A) vwap_breakdown SELL after minimum hold with coordinated stop cancellation and full remaining exit, and (path B) stop-first exit -> full close -> exact Decimal cash and P&L -> post-sale cooldown -> rearm -> WATCHING_BUY. Also cover 1-symbol and 10-symbol shared-feed fanout with one data acquisition per symbol, independent BUY/SELL parameterization, daily entry-cycle cap and session reset, symbol and buy-strategy loss lockouts, concurrent budget race, scenario isolation across concurrent named shadow scenarios, early-close-aware entry cutoff, default no EOD liquidation, exact ledger/report reconciliation for whole and fractional fills, and deterministic no-lookahead replay.\n4. tests/end_to_end/test_recovery_offline.py (offline): prove restart safety: restart mid-cycle preserves shadow state and accounting deterministically; restart with an outstanding order, an active protective stop, and an external position results in exact-once fill matching, an UNMANAGED external position, a detected orphan stop, and entries blocked until reconciled; a second instance fails to acquire the lock; migration/integrity failure blocks startup; graceful shutdown leaves stops/positions untouched; persistent cooldown and lockouts survive restart; and a stale heartbeat makes the dashboard read model report OFFLINE with stale-marked last-known values.",
+  "acceptance_criteria": [
+    "mike_trade/app.py builds the full object graph per mode through dependency injection. SHADOW and BACKTEST never construct an Alpaca adapter, and LIVE construction fails without explicit authorization.",
+    "mike_trade/runtime.py implements the documented startup order and permits new entries only after reconciliation succeeds and entries are authorized. Any failed step leaves entries blocked with a recorded reason.",
+    "Runtime graceful shutdown blocks entries, drains, flushes, unsubscribes, releases the instance lock, and does not cancel protective stops or close positions.",
+    "test_full_product_cycle.py exercises production vwap_bounce/vwap_breakdown via vwap_reference through the real coordinator, shadow broker, and ledger (no special demo runner) and asserts exactly one entry, duplicate-bar suppression, protective order creation, both the SELL-with-stop-cancel path and the stop-first path, exact Decimal cash/P&L, cooldown, and return to WATCHING_BUY.",
+    "test_full_product_cycle.py covers 1- and 10-symbol shared-feed fanout, daily entry-cycle cap/reset, loss lockouts, concurrent budget race, scenario isolation, early-close cutoff, default no EOD liquidation, fractional/whole ledger reconciliation, and no-lookahead replay.",
+    "test_recovery_offline.py asserts exact-once fill matching on restart, UNMANAGED classification of external positions, orphan stop detection, entries blocked until reconciled, lock contention failure, migration/integrity failure blocking, persistence of cooldown/lockouts across restart, and dashboard OFFLINE/stale behavior from heartbeat age.",
+    "Both end-to-end test modules run without network access or broker credentials."
+  ],
+  "selected_backend": "codex_cli",
+  "model": "gpt-5.6-sol",
+  "verification_profile": "focused",
+  "allowed_write_paths": [
+    "mike_trade/app.py",
+    "mike_trade/runtime.py",
+    "tests/end_to_end/test_full_product_cycle.py",
+    "tests/end_to_end/test_recovery_offline.py"
+  ],
+  "forbidden_changes": [
+    "modify files outside allowed_write_paths",
+    "change PLAN_SKELETON.json or any planning artifacts under .abracapocus/",
+    "create a special demo runner or hardcoded BUY fixture in place of production strategy evaluation",
+    "contact Alpaca paper or live endpoints from these tests",
+    "liquidate positions or cancel protective stops on shutdown",
+    "run broad test suites, backtests, or data downloads as incidental verification"
+  ],
+  "dependencies": [
+    "t.1"
+  ],
+  "task_timeout_seconds": 2400
+}

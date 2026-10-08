@@ -1,0 +1,55 @@
+{
+  "schema_version": 1,
+  "task_id": "a.2",
+  "phase": "A",
+  "phase_id": "a",
+  "title": "Add structured logging conventions and typed application exceptions",
+  "description": "Create the observability logging foundation and the typed application exception hierarchy using only the Python standard library.\n\nmike_trade/observability/logging.py: implement a JSON log formatter (`JsonFormatter`) that emits one JSON object per line with at least: timestamp as ISO-8601 UTC with an explicit offset, level, logger, message, and any structured `extra` context fields (for example mode, account_id, scenario, symbol, strategy, order_id, correlation_id). Provide `configure_logging(level: str = 'INFO', *, json_output: bool = True, stream=None) -> None`, which is idempotent (calling it twice must not duplicate handlers), and `get_logger(name: str) -> logging.Logger`. Implement secret redaction: any field whose key matches a sensitive pattern (api_key, secret, token, password, authorization, APCA-API-KEY-ID, APCA-API-SECRET-KEY, case-insensitive) is replaced with '***REDACTED***' before serialization. Decimal and datetime values must serialize deterministically (Decimal as a string, datetime as ISO-8601 UTC). No file handlers or network sinks in this task.\n\nmike_trade/domain/errors.py: define a broker-neutral exception hierarchy rooted at `MikeTradeError`, carrying an optional machine-readable `code` and a `context` mapping. Include at minimum: ConfigurationError, LiveTradingNotAuthorizedError, ModeIsolationError, StaleMarketDataError, ReconciliationDriftError, InsufficientBuyingPowerError, EntryBlockedError, UnsupportedOrderCapabilityError, BrokerError (with BrokerRejectedError and BrokerUnavailableError subclasses), PersistenceError, and StrategyError. This module must not import any adapter, broker SDK, or third-party package.\n\nBefore editing, inspect:\n- pyproject.toml (read-only) for ruff/mypy settings if present\n- mike_trade/ package layout (read-only)\n- PLAN_SKELETON.json purpose (read-only) for the fail-closed, mode-isolation, and reconciliation error categories",
+  "acceptance_criteria": [
+    "mike_trade/observability/logging.py defines JsonFormatter, configure_logging, and get_logger using only the standard library",
+    "Each log record is a single valid JSON line containing timestamp (UTC with offset), level, logger, and message keys",
+    "Structured extra fields appear as top-level JSON keys; Decimal values serialize as strings and datetimes as ISO-8601 UTC",
+    "Fields whose keys match api_key/secret/token/password/authorization (case-insensitive) are emitted as '***REDACTED***'",
+    "Calling configure_logging twice leaves exactly one handler attached by this module on the root/application logger",
+    "mike_trade/domain/errors.py defines MikeTradeError and every listed subclass; each subclass is an instance of MikeTradeError",
+    "BrokerRejectedError and BrokerUnavailableError subclass BrokerError",
+    "MikeTradeError accepts and exposes optional code and context attributes",
+    "mike_trade/domain/errors.py imports nothing from mike_trade.brokers, alpaca, or any third-party package"
+  ],
+  "selected_backend": "codex_cli",
+  "model": "gpt-6-luna",
+  "verification_profile": "focused",
+  "allowed_write_paths": [
+    "mike_trade/observability/logging.py",
+    "mike_trade/domain/errors.py"
+  ],
+  "allowed_symbols": [
+    "JsonFormatter",
+    "configure_logging",
+    "get_logger",
+    "MikeTradeError",
+    "ConfigurationError",
+    "LiveTradingNotAuthorizedError",
+    "ModeIsolationError",
+    "StaleMarketDataError",
+    "ReconciliationDriftError",
+    "InsufficientBuyingPowerError",
+    "EntryBlockedError",
+    "UnsupportedOrderCapabilityError",
+    "BrokerError",
+    "BrokerRejectedError",
+    "BrokerUnavailableError",
+    "PersistenceError",
+    "StrategyError"
+  ],
+  "forbidden_changes": [
+    "modify files outside allowed_write_paths",
+    "change PLAN_SKELETON.json or other planning artifacts",
+    "add third-party logging dependencies or edit pyproject.toml",
+    "import broker SDKs or adapters from domain/errors.py",
+    "log raw credentials or secrets",
+    "run broad test suites, backtests, or create broker orders"
+  ],
+  "dependencies": [],
+  "task_timeout_seconds": 900
+}

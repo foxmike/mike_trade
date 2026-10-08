@@ -1,0 +1,109 @@
+{
+  "plan_summary": "Task run: Establish Python packaging and reproducible dependency lock",
+  "backend_executions": [
+    {
+      "backend": "pi_cli",
+      "command": [
+        "pi",
+        "-p",
+        "--provider",
+        "openrouter",
+        "--model",
+        "meta/muse-spark-1.3-contributor",
+        "Task: Establish Python packaging and reproducible dependency lock\nDescription: Set up the standalone mike_trade project as a proper Python 3.12+ package with a reproducible uv-managed lock. In pyproject.toml, declare project name 'mike_trade', requires-python '>=3.12', a src-less flat package 'mike_trade', a PEP 621 [project] table, a console script entry point 'mike-trade = mike_trade.cli:main', and a build backend (hatchling or setuptools). Pin runtime dependencies to bounded version ranges only where later phases need them as foundations: fastapi, uvicorn, pydantic, pydantic-settings, httpx, and alpaca-py. Use no unpinned VCS or URL installs. Declare dev tooling in a dependency group or optional 'dev' extra: pytest, pytest-asyncio, ruff, and mypy. Configure [tool.ruff] (target-version py312, line-length, selected rule sets), [tool.mypy] (python_version 3.12, strict-ish settings for the mike_trade package), and [tool.pytest.ini_options] (testpaths=['tests'], asyncio mode, and a marker such as 'live' or 'paper' registered and excluded by default so ordinary test runs never touch broker credentials). Generate uv.lock with `uv lock` and commit the result; do not hand-edit it. In mike_trade/__init__.py, expose `__version__` (matching pyproject) and a short module docstring that identifies the complete operator-supervised trading product. The module must not import brokers, read credentials, open network connections, or do any I/O at import time.\n\nBefore editing, inspect:\n- Existing repository root (git ls-files) to confirm no current pyproject.toml/uv.lock conflicts\n- .gitignore for state/, .env, and venv exclusions (read-only; do not modify)\n- .abracapocus/plans/ACTIVE/MIKE_TRADE_COMPLETE_PRODUCT/PLAN_SKELETON.json (read-only) for the product purpose and module list\nPhase: A\nAcceptance criteria:\n  - pyproject.toml declares name 'mike_trade' and requires-python '>=3.12'\n  - pyproject.toml declares a console script 'mike-trade' pointing to 'mike_trade.cli:main'\n  - pyproject.toml declares dev tooling (pytest, pytest-asyncio, ruff, mypy) in a dependency group or extra, separate from runtime dependencies\n  - pyproject.toml contains [tool.ruff], [tool.mypy], and [tool.pytest.ini_options] sections; pytest config registers a broker/live marker that is excluded by default\n  - No dependency in pyproject.toml uses an unpinned git/URL source\n  - uv.lock exists, was produced by `uv lock`, and is consistent with pyproject.toml (`uv lock --check` succeeds)\n  - mike_trade/__init__.py defines __version__ equal to the pyproject.toml version string\n  - Importing mike_trade in a fresh environment performs no network access, credential reads, or broker imports\n  - No secrets, API keys, or .env contents are committed\nContext: AGENTS.md guidance:\n# AGENTS.md\n## Purpose\nThis repository is operated by an autonomous multi-agent system (abracapocus_2).\nAll agents must follow these rules when modifying the codebase.\n---\n## Core Principles\n- Minimal blast radius: only modify what is required for the task\n- Deterministic verification: all changes must be verifiable via code (tests, compile, scripts)\n- No architecture drift: do not introduce new frameworks or major design changes unless explicitly required\n- No unrelated refactors\n- All changes must be reproducible from a clean clone\n---\n## Project Structure\n- docs/ → design, plans, architecture constraints\n- plans/ → master plans\n- phases/ → phase definitions\n- tasks/ → executable task documents\n- backends/ → CLI backend adapters\n- agents/ → specialist agents\n- runtime/ → orchestration, routing, state\n...(truncated)\n\n## Task Contract Constraints\n\n{\n  \"allowed_symbols\": [\n    \"__version__\"\n  ],\n  \"allowed_write_paths\": [\n    \"pyproject.toml\",\n    \"uv.lock\",\n    \"mike_trade/__init__.py\"\n  ],\n  \"forbidden_changes\": [\n    \"modify files outside allowed_write_paths\",\n    \"change PLAN_SKELETON.json or other planning artifacts\",\n    \"add unpinned git/URL dependencies or dynamic install steps\",\n    \"commit secrets, credentials, or .env files\",\n    \"add import-time side effects (network, broker clients, credential loading) to mike_trade/__init__.py\",\n    \"touch EventEdge or any project outside mike_trade\",\n    \"run broad test suites, backtests, or create broker orders\"\n  ]\n}\nAGENTS.md:\n# AGENTS.md\n\n## Purpose\n\nThis repository is operated by an autonomous multi-agent system (abracapocus_2).\nAll agents must follow these rules when modifying the codebase.\n\n---\n\n## Core Principles\n\n- Minimal blast radius: only modify what is required for the task\n- Deterministic verification: all changes must be verifiable via code (tests, compile, scripts)\n- No architecture drift: do not introduce new frameworks or major design changes unless explicitly required\n- No unrelated refactors\n- All changes must be reproducible from a clean clone\n\n---\n\n## Project Structure\n\n- docs/ → design, plans, architecture constraints\n- plans/ → master plans\n- phases/ → phase definitions\n- tasks/ → executable task documents\n- backends/ → CLI backend adapters\n- agents/ → specialist agents\n- runtime/ → orchestration, routing, state\n- reports/ → execution reports (DO NOT MODIFY MANUALLY)\n- state/runtime_state.json → runtime state (DO NOT COMMIT)\n\n---\n\n## Task Execution Rules\n\n- Always operate from a task document when available\n- Respect:\n  - selected_backend\n  - verification_profile\n  - acceptance_criteria\n- If a task conflicts with architecture constraints or phase scope:\n  - STOP and report conflict\n\n---\n\n## Backend Rules\n\n- Backends must:\n  - execute commands deterministically\n  - capture stdout, stderr, exit_code\n  - not silently fail\n- Do not invent backend interfaces; use existing adapters\n- Codex CLI, Aider, Gemini, Claude Code should be invoked through backends only\n\n---\n\n## Verification Rules\n\n- Verification must be deterministic\n- Preferred checks:\n  - pytest\n  - python -m py_compile\n- Do not rely on model self-evaluation\n\n---\n\n## Execution Control Flow (PERMANENT ARCHITECTURAL RULE)\n\n**HEURISTIC INFERENCE MUST NEVER PARTICIPATE IN ABRACAPOCUS EXECUTION CONTROL FLOW.**\n\nAbracapocus must not determine execution success, failure, acceptance,\nrejection, blocking, retry eligibility, phase progression, or completion from\nheuristic inference. A heuristic is any conclusion that is *inferred* rather\nthan *directly established by an explicit executable contract or a concrete\nruntime fact*.\n\nRuntime status is derived ONLY from concrete, mechanically observable facts:\n\n1. The backend process exit code. A backend that exits `0` (with no hard\n   write-policy violation) is a successful execution.\n2. Objectively observed hard write-policy violations (changed paths outside the\n   declared allowed write paths).\n3. Explicit operator-authored commands (task/phase verification the plan\n   explicitly contains). Their raw results are reported, kept DISTINCT from\n   backend execution status.\n4. Objective orchestrator failures with direct evidence (backend could not\n   launch, required document could not be parsed, subprocess infrastructure\n   failed).\n\n**Verification results are observational and must not rewrite backend execution\nstatus.** A verifier returning non-zero must NEVER, by itself, turn a\nsuccessful backend execution into unverified, stop a phase, or trigger an\nautomatic rerun. Verification is the result of a command, not authority to\nrewrite history.\n\n**Execution control:** Task-local problems (non-zero exit, timeout,\nwrite-policy violation, frame failure, backend launch failure) produce\nacceptance status ``\"unverified\"`` with truthful evidence preserved. They\nMUST NOT stop sibling tasks, later phases, or the plan. Only operator\ncancellation (SIGINT/SIGTERM/dashboard cancel) may terminate a run\n(acceptance status ``\"interrupted\"``). Dependencies are ordering constraints,\nnot acceptance gates — any terminal attempt outcome satisfies a dependency\nedge. The status ``\"failed\"`` is banned from acceptance output.\n\nDo NOT reintroduce -- under any name, feature flag, \"advisory\" wrapper, or\ncompatibility mode -- context completeness/sufficiency scoring, change or\narchitecture assessment used as a gate, intent/scope matching, reconciliation\ngates, no-progress judgments, confidence/risk scores, model/LLM/reviewer\njudgments over status, shadow/adaptive/secondary-verification gates, or\nheuristic retry/failure-classification control flow. Failure classification may\nonly *summarize* an already-established concrete failure; it must never create\none. Retries are permitted only for explicitly defined mechanical backend\nfailures. Future agents must not add these systems back.\n\n---\n\n## Git Rules\n\n- Do not commit:\n  - runtime_state.json\n  - reports/\n  - logs/\n  - virtual environments\n- Do not modify .gitignore unless required by task\n- Do not create excessive commits; prefer grouped logical commits\n\n---\n\n## Allowed Changes\n\n- Implement task requirements\n- Fix failing verification\n- Update relevant tests\n- Improve documentation tied to the task\n\n---\n\n## Forbidden Changes\n\n- Changing architecture without explicit instruction\n- Adding dependencies without justification\n- Modifying unrelated files\n- Deleting important files\n- Bypassing verification\n\n---\n\n## Planning Rules\n\n- Plans are multi-phase\n- Completed sections are immutable\n- Remaining sections may be updated\n- Tasks must align with:\n  - project brief\n  - architecture constraints\n  - active phase\n\n---\n\n## Reporting\n\n- All executions must produce structured reports\n- Reports must include:\n  - changed files\n  - verification results\n  - assessment\n\n---\n\n## Behavior\n\n- Do not ask unnecessary questions\n- Do not stall execution\n- Do not perform broad scans unless required\n- Prefer direct action over analysis\n\n---\n\n## Priority Order\n\nThis ordering guides *implementation decisions* only. It does NOT make\nverification an acceptance authority: verification results are observational\n(see \"Execution Control Flow\"), and never override a concrete backend\nexecution result.\n\n1. Architecture constraints\n2. Task definition\n3. Verification results (observational signal, not acceptance authority)\n4. Plan guidance\n\nIf conflicts occur, follow this order.\n\nAGENTS metadata:\n{\"loaded\": true, \"path\": \"/home/mike/dev/mike/abracapocus/python/abracapocus_2/AGENTS.md\", \"rule_count\": 77, \"sha256_12\": \"3f9b549ba1ce\"}\n"
+      ],
+      "stdout": "Task a.1 complete — committed as `5ab1ea8`, touching only the three allowed paths.\n\n**What was verified (read-only before acting):**\n- `git ls-files` confirmed no prior `pyproject.toml`/`uv.lock` conflicts; `.gitignore` already excludes `.venv/`, `.env`/`.env.*`, `state/`; `PLAN_SKELETON.json` purpose confirms the operator-supervised trading product (left untouched — its pre-existing modification is not mine and was not staged).\n\n**Deliverables (all acceptance criteria pass):**\n- `pyproject.toml`: PEP 621 `name='mike_trade'`, `requires-python='>=3.12'`, version `0.1.0`, hatchling backend, flat `mike_trade` package, console script `mike-trade = mike_trade.cli:main`\n- Runtime deps bounded ranges only: `fastapi`, `uvicorn`, `pydantic`, `pydantic-settings`, `httpx`, `alpaca-py`; no git/URL/VCS sources\n- Dev tooling isolated in `[dependency-groups] dev`: `pytest`, `pytest-asyncio`, `ruff`, `mypy`\n- `[tool.ruff]` (py312, line-length 100, E/F/W/I/B/UP), `[tool.mypy]` (3.12, strict), `[tool.pytest.ini_options]` (`testpaths=['tests']`, asyncio auto, `live`/`paper` markers registered + excluded via `addopts`)\n- `uv.lock` generated by `uv lock`, un-hand-edited; `uv lock --check` succeeds (46 packages)\n- `mike_trade/__init__.py`: product docstring + `__version__ = \"0.1.0\"` matching pyproject; import audit shows zero network/broker/credential modules loaded and no I/O tokens in source\n- No secrets/API keys in committed files; only the 3 allowed paths staged — sibling tasks' files (`cli.py`, `app.py`, `Makefile`, etc.) and the `PLAN_SKELETON.json` modification left alone\n",
+      "stderr": "",
+      "exit_code": 0,
+      "duration_seconds": 30.759413480758667,
+      "model": "openrouter/meta/muse-spark-1.3-contributor",
+      "model_tags": [],
+      "working_directory": "/home/mike/dev/mike/stocks/python/mike_trade",
+      "changed_files": [],
+      "diff_summary": "No file changes detected",
+      "model_attempts": [
+        {
+          "backend": "pi_cli",
+          "model": "openrouter/meta/muse-spark-1.3-contributor",
+          "exit_code": 0,
+          "stdout": "Task a.1 complete — committed as `5ab1ea8`, touching only the three allowed paths.\n\n**What was verified (read-only before acting):**\n- `git ls-files` confirmed no prior `pyproject.toml`/`uv.lock` conflicts; `.gitignore` already excludes `.venv/`, `.env`/`.env.*`, `state/`; `PLAN_SKELETON.json` purpose confirms the operator-supervised trading product (left untouched — its pre-existing modification is not mine and was not staged).\n\n**Deliverables (all acceptance criteria pass):**\n- `pyproject.toml`: PEP 621 `name='mike_trade'`, `requires-python='>=3.12'`, version `0.1.0`, hatchling backend, flat `mike_trade` package, console script `mike-trade = mike_trade.cli:main`\n- Runtime deps bounded ranges only: `fastapi`, `uvicorn`, `pydantic`, `pydantic-settings`, `httpx`, `alpaca-py`; no git/URL/VCS sources\n- Dev tooling isolated in `[dependency-groups] dev`: `pytest`, `pytest-asyncio`, `ruff`, `mypy`\n- `[tool.ruff]` (py312, line-length 100, E/F/W/I/B/UP), `[tool.mypy]` (3.12, strict), `[tool.pytest.ini_options]` (`testpaths=['tests']`, asyncio auto, `live`/`paper` markers registered + excluded via `addopts`)\n- `uv.lock` generated by `uv lock`, un-hand-edited; `uv lock --check` succeeds (46 packages)\n- `mike_trade/__init__.py`: product docstring + `__version__ = \"0.1.0\"` matching pyproject; import audit shows zero network/broker/credential modules loaded and no I/O tokens in source\n- No secrets/API keys in committed files; only the 3 allowed paths staged — sibling tasks' files (`cli.py`, `app.py`, `Makefile`, etc.) and the `PLAN_SKELETON.json` modification left alone\n",
+          "stderr": "",
+          "duration_seconds": 30.759413480758667,
+          "changed_files": [],
+          "diff_summary": "No file changes detected",
+          "outcome_classification": "backend_completed_no_changes",
+          "backend_timeout": false,
+          "backend_verification_timeout": false,
+          "timeout_seconds": null
+        }
+      ],
+      "write_policy_violations": [],
+      "outcome_classification": "backend_completed_no_changes",
+      "backend_timeout": false,
+      "backend_verification_timeout": false,
+      "changed_files_at_timeout_exit": [],
+      "abracapocus_verification_ran_after_backend_timeout": false,
+      "verification_owner": "abracapocus",
+      "verification_result": "skipped"
+    }
+  ],
+  "review": {
+    "status": "approved",
+    "findings": [],
+    "summary": "a.1:Review complete",
+    "created_at": "2026-10-08T13:48:02.742389"
+  },
+  "verification": {
+    "status": "skipped",
+    "checks": [],
+    "created_at": "2026-10-08T13:48:02.742395",
+    "notes": "A:skipped",
+    "profile": "focused"
+  },
+  "metadata": {
+    "run_id": "4a94d26a-06e0-45e1-845b-32bcaa3bb5de",
+    "project_name": "mike_trade",
+    "plan_version": "task-a.1",
+    "task_id": "a.1",
+    "task_title": "Establish Python packaging and reproducible dependency lock",
+    "task_status": "completed",
+    "selected_backend": "pi_cli",
+    "verification_profile": "focused",
+    "backend_reason": "phase_based",
+    "frame_failures": [],
+    "agents_md": {
+      "loaded": true,
+      "path": "/home/mike/dev/mike/abracapocus/python/abracapocus_2/AGENTS.md",
+      "rule_count": 77,
+      "sha256_12": "3f9b549ba1ce"
+    },
+    "phase_results": [
+      {
+        "phase_name": "A",
+        "status": "passed",
+        "verification": "skipped",
+        "task_results": [
+          {
+            "task_id": "a.1",
+            "status": "passed",
+            "acceptance_status": "accepted",
+            "backend": "pi_cli",
+            "backend_outcome_classification": "backend_completed_no_changes",
+            "changed_files": [],
+            "backend_timeout": false,
+            "backend_elapsed_seconds": 30.759413480758667,
+            "backend_timeout_seconds": null,
+            "changed_files_at_timeout_exit": [],
+            "abracapocus_verification_ran_after_backend_timeout": false,
+            "verification_owner": "abracapocus",
+            "verification_result": "skipped",
+            "verification_status": "skipped",
+            "verification_checks": [],
+            "frame_failure": false,
+            "retry_attempts": []
+          }
+        ]
+      }
+    ]
+  }
+}

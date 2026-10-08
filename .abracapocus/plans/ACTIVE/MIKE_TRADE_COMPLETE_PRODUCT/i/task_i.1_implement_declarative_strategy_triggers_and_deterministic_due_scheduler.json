@@ -1,0 +1,38 @@
+{
+  "schema_version": 1,
+  "task_id": "i.1",
+  "phase": "I",
+  "phase_id": "i",
+  "title": "Implement declarative strategy triggers and deterministic due scheduler",
+  "description": "Build declarative strategy trigger types in mike_trade/scheduling/triggers.py and one engine-owned scheduler in mike_trade/scheduling/scheduler.py. Put the unit tests in tests/unit/test_scheduler_triggers.py.\n\nRequired behavior:\n- Trigger declarations are frozen value objects. Strategies attach them to their BUY or SELL class through configuration. Supported kinds:\n  - MARKET_DATA_ARRIVAL (any new trade or bar for the symbol)\n  - QUOTE_CHANGE (bid or ask actually changed)\n  - CANDLE_CLOSED(timeframe), for 1m, 5m, 15m and any other configured timeframe the h.1 candle builders support\n  - INTERVAL(seconds)\n  - SESSION_OPEN\n  - ENTRY_CUTOFF\n  - SESSION_CLOSE\n  - MANUAL\n  Trigger declarations are validated at load time. A positive interval and a supported timeframe are required. An unknown kind raises a typed configuration error.\n- The scheduler is a single asyncio-driven component owned by the engine. It is not a thread or task per symbol or per strategy. It keeps a registry of (symbol, strategy_id, side, trigger set) for roughly 1-10 watched symbols and every enabled strategy.\n- Inputs are scheduling events:\n  - market-data arrival or quote change carrying a snapshot version\n  - candle-closed carrying (symbol, timeframe, bar end UTC)\n  - session events from the h.3 calendar (open, entry cutoff, close)\n  - control ticks from an injected clock\n  - manual evaluation requests\n- Output is an ordered list of immutable DueEvaluation records: symbol, strategy_id, side, trigger kind, snapshot_version, bar key, due_at UTC.\n- A global control cadence is only an upper tick. A control tick must not make CANDLE_CLOSED or other closed-bar strategies re-evaluate when their (symbol, timeframe, last closed bar end, snapshot_version) watermark is unchanged. INTERVAL triggers fire at most once per elapsed interval, measured with the injected clock.\n- Duplicate suppression: the same (strategy_id, side, symbol, trigger kind, bar key or snapshot_version) never yields more than one DueEvaluation.\n- Ordering is deterministic for identical inputs. Sort by:\n  1. due_at\n  2. trigger priority: session events, then candle close, then quote/data, then interval, then manual\n  3. symbol\n  4. strategy_id\n  5. side\n- All times are timezone-aware UTC. Session boundaries come from the existing exchange calendar in America/New_York. Do not hardcode wall-clock hours.\n- Paused strategies, disabled strategies and unwatched symbols produce no DueEvaluation. MANUAL still produces one only when explicitly requested for an enabled strategy and watched symbol.\n- The scheduler never evaluates strategies, calls brokers, opens data connections, or submits orders. It only decides what is due.\n\nBefore editing, inspect:\n- mike_trade/scheduling/calendar.py (h.3) for session open, entry cutoff and close\n- mike_trade/market_data/candles.py (h.1) for timeframe and closed-bar types\n- mike_trade/market_data/context.py (h.4) for snapshot version semantics\n- mike_trade/strategies/base.py, mike_trade/strategies/registry.py and mike_trade/domain/strategy_types.py (if present) for strategy identity and side types\n- any existing clock port under mike_trade/ports/ or mike_trade/domain/ (if present)",
+  "acceptance_criteria": [
+    "A test constructs each supported trigger kind (MARKET_DATA_ARRIVAL, QUOTE_CHANGE, CANDLE_CLOSED for 1m/5m/15m, INTERVAL, SESSION_OPEN, ENTRY_CUTOFF, SESSION_CLOSE, MANUAL) and confirms it is frozen. Negative tests confirm that a non-positive interval, an unsupported timeframe and an unknown kind each raise a typed configuration error.",
+    "A test confirms that a CANDLE_CLOSED(1m) strategy yields exactly one DueEvaluation per newly closed bar. Repeated control ticks with an unchanged closed-bar watermark yield zero additional evaluations.",
+    "A test confirms that an INTERVAL(30s) trigger fires at most once per elapsed 30 seconds under an injected fake clock, regardless of how many control ticks occur.",
+    "A test confirms that QUOTE_CHANGE fires only when bid or ask actually changes. An identical repeated quote yields nothing.",
+    "A test confirms that SESSION_OPEN, ENTRY_CUTOFF and SESSION_CLOSE fire once per session at the times the injected calendar reports, including an early-close session.",
+    "A test feeds the same event sequence twice, including simultaneous events across several symbols and strategies, and confirms identical DueEvaluation output order both times, matching the documented sort key.",
+    "Tests confirm that disabled or paused strategies and unwatched symbols produce no DueEvaluation, and that MANUAL produces one only on explicit request.",
+    "A test or code-level assertion confirms the scheduler does not create a thread or asyncio task per symbol or per strategy. Registering 10 symbols with several strategies leaves the live task/thread count unchanged.",
+    "The scheduler modules import no broker or provider adapter, and tests run only with injected fakes and a fake clock."
+  ],
+  "selected_backend": "codex_cli",
+  "model": "gpt-5.6-sol",
+  "verification_profile": "focused",
+  "allowed_write_paths": [
+    "mike_trade/scheduling/triggers.py",
+    "mike_trade/scheduling/scheduler.py",
+    "tests/unit/test_scheduler_triggers.py"
+  ],
+  "forbidden_changes": [
+    "modify files outside allowed_write_paths",
+    "change PLAN_SKELETON.json or other planning artifacts",
+    "modify calendar.py, candles.py, context.py or strategy base/registry modules; adapt via their public APIs only",
+    "evaluate strategies, call brokers, open data connections or submit orders from the scheduler",
+    "create a thread, process or asyncio task per symbol or per strategy",
+    "use naive datetimes or hardcode session wall-clock hours",
+    "run broad test suites or backtests"
+  ],
+  "dependencies": [],
+  "task_timeout_seconds": 1800
+}

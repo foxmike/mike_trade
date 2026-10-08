@@ -1,0 +1,37 @@
+{
+  "schema_version": 1,
+  "task_id": "j.3",
+  "phase": "J",
+  "phase_id": "j",
+  "title": "Implement momentum breakout buy algorithm and explicit no-signal reasons",
+  "description": "Implement a real momentum_breakout BUY strategy in mike_trade/strategies/buy/momentum_breakout.py as a BuyStrategy subclass using the j.1 SDK.\n\nDefinition (objective and configurable):\n1. On completed 1-minute regular-session bars, compute the highest high of the `lookback_bars` completed bars that precede the latest completed bar. `lookback_bars` is a validated int range.\n2. A BUY signal triggers when the latest completed close is strictly greater than that lookback high and the prior completed close is less than or equal to its own corresponding lookback high. This makes the strategy edge-triggered.\n3. The breakout bar's volume must be at least `volume_multiple` (validated Decimal range) times the average volume of the lookback bars.\n\nThe spec must declare:\n- 1-minute timeframe\n- closed-bar-only input\n- volume requirement\n- warmup of lookback_bars + 2\n- trigger kind EDGE_ON_CLOSED_BAR\n- regular-session only\n- methodology/source metadata describing the classic N-bar high breakout with volume confirmation, stated as not an alpha claim\n- execution limitations\n- reason codes\n\nEvery non-signal path must return an explicit reason code:\n- INSUFFICIENT_DATA: warmup is not met, or bars are missing\n- STALE_DATA\n- invalid or incomplete bar\n- zero volume, or volume below the threshold, using a specific volume reason\n- NOT_ELIGIBLE: outside regular session, or the symbol is not WATCHING_BUY\n- NO_SIGNAL: no breakout\n\nSignal IDs are deterministic via the SDK helper. The same completed bar cannot emit twice. The strategy rearms only after the close falls back to or below the lookback high. Lookback windows do not span sessions. There is no broker, network, or filesystem access, and no confidence scores.\n\nWrite tests/unit/test_buy_momentum.py covering:\n- exact boundary (close == lookback high produces no signal)\n- a valid breakout\n- insufficient volume\n- zero volume\n- warmup\n- stale data\n- same-bar replay suppression\n- rearm\n- session reset\n- parameter validation failures\n\nUse Decimal for prices.\n\nBefore editing, inspect:\n- mike_trade/strategies/base.py\n- mike_trade/strategies/registry.py\n- tests/contracts/test_strategy_registry.py\n- mike_trade/market_data/context.py\n- mike_trade/market_data/candles.py\n- mike_trade/strategies/indicators/core.py\n- mike_trade/domain/signals.py\n- mike_trade/domain/strategy_types.py\n- mike_trade/risk/session_policy.py\n- mike_trade/signals/rearm.py",
+  "acceptance_criteria": [
+    "MomentumBreakoutBuy subclasses BuyStrategy, declares a complete StrategySpec (id momentum_breakout, semver, BUY side, 1m timeframe, closed-bar and volume requirements, warmup, edge trigger, validated lookback_bars and volume_multiple parameters, methodology metadata, limitations, reason codes), and can be registered in StrategyRegistry.",
+    "A BUY signal is emitted only when prior close <= its lookback high, latest completed close > the lookback high, and breakout volume >= volume_multiple x the average lookback volume.",
+    "A close exactly equal to the lookback high returns NO_SIGNAL, and insufficient volume returns a distinct volume reason code.",
+    "Every non-signal path returns an explicit reason code (INSUFFICIENT_DATA, STALE_DATA, invalid/zero-volume, NOT_ELIGIBLE, NO_SIGNAL), and none returns an empty or ambiguous result.",
+    "Replaying the same completed bar does not emit a second signal; the strategy rearms after the close returns to or below the lookback high; windows reset per session.",
+    "Signal IDs are deterministic; prices use Decimal; there are no confidence scores and no profitability claims; the module has no broker, network, filesystem, or secrets imports.",
+    "tests/unit/test_buy_momentum.py covers all of the above cases and passes when run in isolation."
+  ],
+  "selected_backend": "pi_cli",
+  "model": "openrouter/meta/muse-spark-1.3-contributor",
+  "verification_profile": "focused",
+  "allowed_write_paths": [
+    "mike_trade/strategies/buy/momentum_breakout.py",
+    "tests/unit/test_buy_momentum.py"
+  ],
+  "forbidden_changes": [
+    "modify files outside allowed_write_paths",
+    "modify mike_trade/strategies/base.py or registry.py",
+    "change PLAN_SKELETON.json or other planning artifacts",
+    "fetch data, open connections, or submit orders from the strategy",
+    "invent profitable defaults or confidence scores",
+    "use float for prices",
+    "create live broker orders or run broad test suites/backtests"
+  ],
+  "dependencies": [
+    "j.1"
+  ],
+  "task_timeout_seconds": 1200
+}

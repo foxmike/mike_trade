@@ -1,0 +1,47 @@
+{
+  "schema_version": 1,
+  "task_id": "o.2",
+  "phase": "O",
+  "phase_id": "o",
+  "title": "Implement stop replace and cancel broker adapter semantics with confirmation",
+  "description": "Implement the provider-neutral stop replacement/cancel workflow in mike_trade/execution/replace.py and its Alpaca adapter in mike_trade/brokers/alpaca/replacement.py, with contract tests in tests/contracts/test_stop_replacement.py.\n\nBefore editing, inspect: mike_trade/risk/trailing.py (o.1 ratchet API, should_replace, and policy types), (if present) the broker port/protocol definitions under mike_trade/brokers/ and mike_trade/execution/, the existing Alpaca order client/adapter modules under mike_trade/brokers/alpaca/, broker capability declarations, order status enums, trade-update stream handling, and existing contract test fixtures under tests/contracts/.\n\nImplement in mike_trade/execution/replace.py:\n1. A StopReplacementPort protocol that covers: capability query (supports standalone stop, supports replace, price increment), replace_stop(order_id, new_stop_price, qty, tif, client_order_id), cancel_stop(order_id), and lookup_order(order_id).\n2. A StopReplacementCoordinator / workflow that does the following:\n   - (a) Refuses to operate, failing closed with an explicit unsupported-capability result, when the provider lacks standalone stop or replace capability, or when the order combination is unsupported (for example fractional quantity plus stop).\n   - (b) Rejects any candidate whose broker-rounded price is <= the last confirmed stop.\n   - (c) Requires the caller to persist replacement intent before calling the broker. Accept an injected intent recorder callable or protocol; do not implement persistence here.\n   - (d) Allows at most one pending replacement per position/protected order. While one is pending, new candidates are coalesced (latest-wins, held locally) rather than submitted as duplicate requests.\n   - (e) Treats a replacement as effective ONLY after confirmation via provider status, trade update, or order lookup. It returns a typed outcome: CONFIRMED (with new broker order id/price/qty), REJECTED, or UNKNOWN.\n   - (f) On REJECTED or UNKNOWN, preserves the last verified protection as authoritative if it is still active, emits TRAIL_UPDATE_UNCONFIRMED, and signals that new entries and conflicting actions are blocked pending reconciliation.\n   - (g) Detects a stop that filled during cancel/replace (the old order is filled or partially filled) and returns STOP_FILLED_DURING_REPLACE with the filled quantity, so no new stop is placed for already-sold shares.\n   - (h) Respects replacement minimum interval via an injected clock.\n3. All prices and quantities use Decimal, and all timestamps are UTC-aware.\n\nImplement in mike_trade/brokers/alpaca/replacement.py: an Alpaca adapter that implements StopReplacementPort, mapping Alpaca replace (PATCH order) and cancel semantics. Alpaca replace yields a new order id, and the adapter maps it. Status values (accepted, pending_replace, replaced, filled, partially_filled, rejected, canceled) map to the neutral outcome types. Fractional+stop and other unsupported combinations fail closed unless a capability flag marks them verified in Alpaca paper. The adapter must take an injected HTTP/SDK client so contract tests run against a fake/recorded transport. It must never read live credentials or hit the network in tests.\n\nContract tests (tests/contracts/test_stop_replacement.py) run the same contract suite against an in-memory fake port and against the Alpaca adapter backed by a fake transport. They cover: confirmed replace; rejected replace; timeout/unknown; fill during replace; partial fill during replace (remaining quantity is reported correctly); duplicate-pending coalescing; downward/equal-after-rounding candidate refusal; unsupported capability fail-closed; and minimum interval enforcement. Mocks here verify contract semantics only and do not count as broker integration evidence.",
+  "acceptance_criteria": [
+    "mike_trade/execution/replace.py defines a provider-neutral StopReplacementPort protocol and a coordinator whose outcomes include at least CONFIRMED, REJECTED, UNKNOWN, STOP_FILLED_DURING_REPLACE, and UNSUPPORTED.",
+    "A test proves that a replacement is never reported effective without a confirmation signal (status, trade update, or lookup); an acknowledged-but-unconfirmed submit yields a pending/UNKNOWN state, not CONFIRMED.",
+    "A test proves that the replacement intent recorder is invoked before the broker replace call (call-order assertion).",
+    "A test proves that only one pending replacement exists per protected order and that additional candidates are coalesced, not submitted, while one is pending.",
+    "A test proves that on REJECTED/UNKNOWN the last verified stop remains authoritative and the outcome flags TRAIL_UPDATE_UNCONFIRMED plus an entry-block/reconcile-required signal.",
+    "A test proves that a fill or partial fill of the old stop during cancel/replace is reported with the filled Decimal quantity and that no replacement is placed for already-filled shares.",
+    "A test proves that candidates at or below the last confirmed stop after broker rounding are refused without a broker call.",
+    "A test proves that a provider lacking standalone-stop/replace capability, or an unverified fractional stop combination, fails closed with an UNSUPPORTED outcome.",
+    "The Alpaca adapter is exercised through the same contract suite using a fake transport; no test reads credentials or performs network I/O.",
+    "tests/contracts/test_stop_replacement.py passes when run alone with pytest."
+  ],
+  "selected_backend": "codex_cli",
+  "model": "gpt-5.6-sol",
+  "verification_profile": "focused",
+  "allowed_write_paths": [
+    "mike_trade/execution/replace.py",
+    "mike_trade/brokers/alpaca/replacement.py",
+    "tests/contracts/test_stop_replacement.py"
+  ],
+  "allowed_symbols": [
+    "StopReplacementPort",
+    "StopReplacementCoordinator",
+    "ReplacementOutcome",
+    "ReplacementStatus",
+    "AlpacaStopReplacementAdapter"
+  ],
+  "forbidden_changes": [
+    "modify files outside allowed_write_paths",
+    "modify mike_trade/risk/trailing.py (consume its API only)",
+    "change PLAN_SKELETON.json or other planning artifacts",
+    "treat a locally computed or submitted stop as effective before broker confirmation",
+    "read Alpaca live or paper credentials or perform network I/O in tests",
+    "create live broker orders or run broad test suites/backtests"
+  ],
+  "dependencies": [
+    "o.1"
+  ],
+  "task_timeout_seconds": 1800
+}

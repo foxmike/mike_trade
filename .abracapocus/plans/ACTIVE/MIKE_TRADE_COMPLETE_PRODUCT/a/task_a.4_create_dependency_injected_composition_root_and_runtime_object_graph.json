@@ -1,0 +1,49 @@
+{
+  "schema_version": 1,
+  "task_id": "a.4",
+  "phase": "A",
+  "phase_id": "a",
+  "title": "Create dependency-injected composition root and runtime object graph",
+  "description": "Implement the composition root that wires the engine object graph through explicit dependency injection, without importing concrete broker adapters at module import time.\n\nmike_trade/runtime.py: define `ExecutionMode` (an Enum: BACKTEST, SHADOW, PAPER, LIVE) and a frozen `Runtime` dataclass (or equivalent container) that holds Protocol-typed component slots for: clock, scheduler, broker, market_data, research (optional), persistence, portfolio, risk, execution, reporting, and controls, plus mode and logger. Define minimal `typing.Protocol` ports locally (for example ClockPort with `now() -> datetime` returning tz-aware UTC) only where needed to type the slots; keep them broker-neutral. Provide lifecycle hooks `start()` and `stop()` that do not liquidate positions, cancel orders, or contact a broker in this phase.\n\nmike_trade/app.py: define `AppSettings`-style input (a simple dataclass is fine; no secret values hardcoded) and `build_runtime(settings, *, overrides: Mapping[str, object] | None = None) -> Runtime`. It selects component factories by mode, with injected overrides taking precedence so tests can supply fakes. Default factories for this phase must be safe placeholders: a SystemClock (UTC) plus null/offline components that raise a typed error from mike_trade.domain.errors when trading operations are attempted. Building a LIVE runtime must raise `LiveTradingNotAuthorizedError` unless the settings carry an explicit live authorization flag. Even when that flag is set, no live broker adapter exists yet, so the function must fail closed with a typed error rather than constructing one. Concrete adapter imports, when added later, must be lazy inside factory functions. Use get_logger/configure_logging from mike_trade.observability.logging for a structured startup log line that includes the mode and excludes secrets.\n\nBefore editing, inspect:\n- pyproject.toml and mike_trade/__init__.py (from a.1)\n- mike_trade/observability/logging.py and mike_trade/domain/errors.py (from a.2)\n- docs/ARCHITECTURE.md and docs/ADR/0001-modular-single-engine.md (from a.3) for dependency rules",
+  "acceptance_criteria": [
+    "mike_trade/runtime.py defines ExecutionMode with exactly BACKTEST, SHADOW, PAPER, LIVE members",
+    "mike_trade/runtime.py defines a Runtime container with slots for clock, scheduler, broker, market_data, research, persistence, portfolio, risk, execution, reporting, controls, mode, and logger",
+    "The default clock returns timezone-aware UTC datetimes",
+    "mike_trade/app.py defines build_runtime(settings, *, overrides=None) and injected overrides replace the default components",
+    "build_runtime for LIVE without explicit authorization raises LiveTradingNotAuthorizedError",
+    "No module-level import in app.py or runtime.py references alpaca, mike_trade.brokers.alpaca, or any network client",
+    "Importing mike_trade.app and mike_trade.runtime, and building a SHADOW or BACKTEST runtime with defaults, performs no network access and places no orders",
+    "Runtime.stop() does not cancel orders, close positions, or contact a broker",
+    "Startup logging goes through mike_trade.observability.logging and includes the mode without secret values"
+  ],
+  "selected_backend": "claude_code_cli",
+  "model": "claude-sonnet-5-5",
+  "verification_profile": "focused",
+  "allowed_write_paths": [
+    "mike_trade/app.py",
+    "mike_trade/runtime.py"
+  ],
+  "allowed_symbols": [
+    "ExecutionMode",
+    "Runtime",
+    "ClockPort",
+    "SystemClock",
+    "build_runtime",
+    "AppSettings"
+  ],
+  "forbidden_changes": [
+    "modify files outside allowed_write_paths",
+    "change PLAN_SKELETON.json or other planning artifacts",
+    "import broker SDKs or concrete adapters at module import time",
+    "hardcode credentials or read live credentials",
+    "implement implicit liquidation or protective-stop cancellation on shutdown",
+    "add a Kafka/Celery/DI-framework dependency",
+    "run broad test suites, backtests, or create broker orders"
+  ],
+  "dependencies": [
+    "a.1",
+    "a.2",
+    "a.3"
+  ],
+  "task_timeout_seconds": 1200
+}

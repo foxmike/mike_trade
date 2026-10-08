@@ -1,0 +1,51 @@
+{
+  "schema_version": 1,
+  "task_id": "f.3",
+  "phase": "F",
+  "phase_id": "f",
+  "title": "Implement submission idempotency and unknown-outcome broker recovery",
+  "description": "Implement mike_trade/execution/submission.py, an OrderSubmitter that turns an authorized command (from the f.2 coordinator) and a persisted OrderIntent (from f.1) into a broker submission with exactly-once intent semantics.\n\n(1) Ordering: the intent must already be in INTENT_PERSISTED, otherwise refuse. Then persist the INTENT_PERSISTED -> SUBMITTING transition. Then call the Broker port submit with the intent's stable client_order_id. Finally apply the broker response through the f.1 FSM (ACCEPTED/PENDING/REJECTED, etc.). Persist each transition append-only before acting on the next step.\n(2) Pre-submit re-check: immediately before the network call, re-validate signal expiry and quote freshness through injected checkers and the clock. If either is stale, transition to a non-submitted terminal outcome (rejected locally with a typed reason) and make no broker call.\n(3) Unknown outcome: on timeout, transport error, or the broker port's unknown-outcome error, transition to UNKNOWN and look up by the same client_order_id via the Broker port.\n   - If the order is found, apply its reported status. Never infer a fill from acceptance.\n   - If not-found is confirmed, the intent may be retried only with the same client_order_id, and only via an explicit resolve step.\n   - If the lookup itself fails, leave the intent UNKNOWN, record an unresolved-order marker that blocks new entries for that account+symbol, and raise or return OrderOutcomeUnresolved.\n   - Never blindly resubmit, and never mint a new client_order_id or attempt number while a prior attempt is unresolved.\n(4) Crash recovery: provide recover_inflight(account_key) that scans intents persisted in INTENT_PERSISTED, SUBMITTING, or UNKNOWN (for example after a server crash between persisting and the response) and resolves each by client_order_id lookup using the rules in (3). Intents still in INTENT_PERSISTED with no broker record must not be auto-submitted on recovery. Mark them for explicit operator or engine decision, and expire them if their signal is stale.\n(5) Cancel and replace: request_cancel moves to CANCEL_PENDING only. CANCELED is applied solely from broker confirmation. request_replace is permitted only when an injected capability check reports replace as proven. A success response is recorded but REPLACED is applied only on confirmed broker update/lookup. Fail closed otherwise.\n(6) Live safety: refuse submission for LIVE account keys unless the explicit live-authorization flag is present.\n\nCreate tests/unit/test_ambiguous_submit.py using an in-memory fake Broker port and an in-memory intent store (no network, no credentials). The tests must cover:\n- persist-before-send ordering (no broker call when the persist fails);\n- stale signal and stale quote blocking submit;\n- timeout then lookup found ACCEPTED, with exactly one submit call and no fill recorded;\n- timeout then lookup not-found, with retry only using the same client_order_id;\n- timeout then lookup failure, leaving UNKNOWN, blocking entries, and producing zero additional submits and no new client_order_id;\n- crash recovery of SUBMITTING and INTENT_PERSISTED intents;\n- cancel request leaving CANCEL_PENDING until confirmation;\n- replace refused when the capability is unproven and REPLACED only after confirmation;\n- LIVE submit refused without authorization.\n\nBefore editing, inspect: mike_trade/execution/order_fsm.py, mike_trade/execution/intents.py, mike_trade/execution/coordinator.py, mike_trade/brokers/ports.py, mike_trade/brokers/alpaca/orders.py, mike_trade/brokers/alpaca/capabilities.py, mike_trade/domain/errors.py, mike_trade/persistence/journal.py, and mike_trade/persistence/repositories.py. Bounded decision budget: use only the public APIs of f.1, f.2, and the Broker port. If a needed hook is missing, adapt inside submission.py rather than editing those modules.",
+  "acceptance_criteria": [
+    "The broker submit call happens only after the SUBMITTING transition is persisted; a persistence failure results in zero broker calls, asserted by a test",
+    "Expired signals or stale quotes detected immediately before submit result in no broker call and a typed local rejection",
+    "On submit timeout or unknown outcome, exactly one lookup by the same client_order_id is performed before any retry; tests assert exactly one submit call when the lookup finds the order",
+    "When the lookup fails, the intent remains UNKNOWN, an unresolved marker blocks new entries for that account+symbol, no new client_order_id or attempt is minted, and no resubmission occurs",
+    "A confirmed not-found result permits retry only with the identical client_order_id via an explicit resolve step",
+    "recover_inflight resolves SUBMITTING/UNKNOWN intents by client_order_id lookup and never auto-submits orphaned INTENT_PERSISTED intents",
+    "request_cancel yields CANCEL_PENDING only; CANCELED requires broker confirmation; replace is refused when the capability is unproven and REPLACED is applied only after confirmation",
+    "Submission for a LIVE account key without explicit live authorization is refused",
+    "tests/unit/test_ambiguous_submit.py passes without network access or broker credentials"
+  ],
+  "selected_backend": "claude_code_cli",
+  "model": "claude-sonnet-5-5",
+  "verification_profile": "focused",
+  "allowed_write_paths": [
+    "mike_trade/execution/submission.py",
+    "tests/unit/test_ambiguous_submit.py"
+  ],
+  "allowed_symbols": [
+    "OrderSubmitter",
+    "SubmissionResult",
+    "OrderOutcomeUnresolved",
+    "StaleSubmission",
+    "UnresolvedOrderMarker",
+    "recover_inflight",
+    "request_cancel",
+    "request_replace"
+  ],
+  "forbidden_changes": [
+    "modify files outside allowed_write_paths",
+    "edit order_fsm.py, intents.py, coordinator.py, broker adapters, or persistence modules",
+    "change PLAN_SKELETON.json or any planning artifacts",
+    "blindly resubmit after an unknown outcome or mint a new client_order_id before resolution",
+    "infer fills from acceptance or treat a cancel/replace request as confirmed",
+    "assume unverified broker replace support",
+    "submit live orders, use broker credentials, or call real endpoints in tests",
+    "run broad test suites or backtests"
+  ],
+  "dependencies": [
+    "f.1",
+    "f.2"
+  ],
+  "task_timeout_seconds": 1800
+}

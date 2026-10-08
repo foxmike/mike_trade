@@ -1,0 +1,50 @@
+{
+  "schema_version": 1,
+  "task_id": "f.4",
+  "phase": "F",
+  "phase_id": "f",
+  "title": "Implement fill trade update and cancel event ingestion into ledger",
+  "description": "Implement mike_trade/execution/fill_processor.py, a FillProcessor that ingests normalized broker trade updates and activities (from the e-phase normalization layer, or simulated SHADOW fills) and applies them to the order FSM and the account ledger exactly once at the application level.\n\n(1) Deduplication: every event carries a provider event/activity id, or a deterministic composite key when the provider has none. Persist the dedupe key in the same transaction as the ledger effect. A duplicate key is a no-op returning DUPLICATE. Fill processing must survive restart: re-ingesting the same activity after a restart changes nothing.\n(2) Fill application: for each new fill, compute the incremental filled quantity and price in Decimal, using the cumulative filled_qty when available so that missed or out-of-order partial updates are reconciled without double counting. Update the order's filled_qty and avg fill price, transition through PARTIALLY_FILLED/FILLED via the f.1 FSM, and update the position cycle's actual held quantity and cost basis. For entries, consume the corresponding f.2 cash reservation proportionally. On a terminal zero-fill or partial-then-cancel/expire, release the unused remainder.\n(3) Status-only events: ACCEPTED/PENDING/NEW never change quantity. A cancel or expire event moves CANCEL_PENDING (or a working state) to CANCELED/EXPIRED and releases reservations for any unfilled quantity. A rejected event releases the full reservation. A fill arriving after a cancel request but before cancel confirmation is applied normally.\n(4) Out-of-order events: an older status arriving after a newer one is recorded but not applied, per the f.1 FSM. Fills are always applied by cumulative quantity, never by event order. Fills for an unknown client_order_id are recorded as an UNMANAGED/reconciliation-drift event that blocks new entries, and are never silently dropped.\n(5) Oversell safety: if a sell fill (for example a broker protective stop racing an application EXIT_LONG) would reduce held quantity below zero, clamp nothing. Record a critical reconciliation-drift event, mark the position for reconciliation, and block new entries. Held long quantity is the confirmed sum of buys minus sells, and a position cycle closes only when the remaining quantity reaches exactly zero.\n(6) Emit protection-relevant notifications (for example positive-fill-confirmed with the current remaining qty) through an injected callback, for later protective-stop management. Do not implement stop placement here.\n\nCreate tests/unit/test_fill_processor.py covering:\n- single full fill;\n- multiple partial fills;\n- partial fill then cancel with reservation release;\n- rejected and canceled zero-fill orders;\n- a duplicate event id producing no double count;\n- re-ingestion after a simulated restart;\n- out-of-order cumulative fills;\n- an ACCEPTED event not changing quantity;\n- a fill after a cancel request;\n- a protective stop fill plus an exit fill exceeding held qty, producing drift and an entry block with no negative position silently created;\n- a fill for an unknown client_order_id producing drift;\n- Decimal-only cost basis.\n\nBefore editing, inspect: mike_trade/execution/order_fsm.py, mike_trade/execution/intents.py, mike_trade/execution/coordinator.py, mike_trade/brokers/ports.py, mike_trade/brokers/alpaca/updates.py, mike_trade/brokers/alpaca/activities.py, mike_trade/domain/trading.py, mike_trade/domain/protection.py, mike_trade/persistence/journal.py, mike_trade/persistence/repositories.py, mike_trade/persistence/transaction.py, and mike_trade/persistence/projections.py. Bounded decision budget: use existing persistence transaction/journal APIs, and do not alter schema or other modules.",
+  "acceptance_criteria": [
+    "Each provider event/activity id is applied at most once; a duplicate or re-ingested event after a simulated restart returns DUPLICATE and leaves quantity, cost basis, and reservations unchanged",
+    "Partial fills update filled_qty, average fill price, held quantity, and cost basis using cumulative quantities in Decimal; out-of-order partial fills produce the correct final totals",
+    "ACCEPTED/PENDING/NEW events never change filled or held quantity",
+    "Partial-then-cancel, rejected, canceled zero-fill, and expired orders release exactly the unfilled cash reservation remainder",
+    "A fill arriving while an order is CANCEL_PENDING is applied, and the order reaches the correct final state",
+    "A sell fill that would take held long quantity below zero records a reconciliation-drift event and blocks new entries rather than creating a silent short",
+    "A fill for an unknown client_order_id is persisted as drift/UNMANAGED and blocks entries rather than being dropped",
+    "A position cycle closes only when the confirmed remaining quantity is exactly zero",
+    "tests/unit/test_fill_processor.py passes without network access or broker credentials"
+  ],
+  "selected_backend": "codex_cli",
+  "model": "gpt-6-luna",
+  "verification_profile": "focused",
+  "allowed_write_paths": [
+    "mike_trade/execution/fill_processor.py",
+    "tests/unit/test_fill_processor.py"
+  ],
+  "allowed_symbols": [
+    "FillProcessor",
+    "IngestResult",
+    "FillEvent",
+    "OrderUpdateEvent",
+    "ReconciliationDrift",
+    "PositionFillState"
+  ],
+  "forbidden_changes": [
+    "modify files outside allowed_write_paths",
+    "edit order_fsm.py, intents.py, coordinator.py, submission.py, broker adapters, or persistence modules",
+    "change PLAN_SKELETON.json or any planning artifacts",
+    "infer fills from acceptance events",
+    "apply any fill more than once or drop fills for unknown orders",
+    "allow held long quantity to go negative silently",
+    "place or modify protective stops in this module",
+    "use float for money, quantities, or prices",
+    "use broker credentials or run broad test suites/backtests"
+  ],
+  "dependencies": [
+    "f.1",
+    "f.2"
+  ],
+  "task_timeout_seconds": 1800
+}

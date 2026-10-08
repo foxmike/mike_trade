@@ -1,0 +1,40 @@
+{
+  "schema_version": 1,
+  "task_id": "g.3",
+  "phase": "G",
+  "phase_id": "g",
+  "title": "Implement shared subscription manager event fanout and immutable cache",
+  "description": "Implement MarketDataService in mike_trade/market_data/service.py and the shared market-data cache in mike_trade/market_data/cache.py, with unit tests in tests/unit/test_data_fanout.py.\n\nMarketDataService:\n- Owns exactly one streaming adapter, the Alpaca stream from g.1 or any adapter injected through the port, plus the REST fallback poller from g.2.\n- Maintains a reference-counted subscription registry keyed by (symbol, channel). Every live, paper, and shadow scenario consumer registers interest. The union is subscribed once: the first consumer triggers the upstream subscribe and the last unregister triggers the upstream unsubscribe.\n- Fans each normalized immutable event out to all registered consumers through bounded per-consumer queues. A slow consumer gets an explicit overflow/drop counter and degraded flag, and must not block other consumers or the ingest loop.\n- Switches to REST polling fallback when the stream is disconnected, and back when it recovers, while preserving provenance (source='stream' vs 'rest_poll').\n- Exposes read-only accessors only. Strategies receive context objects and never get a network handle.\n\ncache.py:\n- Stores the latest quote and latest trade per symbol, compact decision evidence, candle-builder inputs, completed candles in a bounded ring per symbol/timeframe, indicator rolling-state slots, and freshness metadata (provider_source_ts, receive_ts, feed_id).\n- All stored values are immutable, frozen dataclasses or tuples. Readers get snapshots, never mutable internals.\n- Every collection is bounded, so the cache cannot grow into a raw session tick archive.\n- The cache refuses to merge events whose feed_id differs from the symbol's established feed unless the feed is explicitly reset.\n\nUse asyncio with an injected clock. Tests use fake stream/poller adapters.\n\nBefore editing, inspect:\n- mike_trade/market_data/alpaca_stream.py (g.1) for event types, the state observer, and subscription API\n- mike_trade/market_data/alpaca_history.py and mike_trade/market_data/polling.py (g.2) for the fallback poller API and snapshot provenance\n- mike_trade/ domain/ports, candle and indicator modules from earlier phases that consume cached data (if present)",
+  "acceptance_criteria": [
+    "With N consumers (including at least two shadow scenarios and one paper consumer) registering the same (symbol, channel), the upstream adapter receives exactly one subscribe call; a test asserts the count.",
+    "The upstream unsubscribe happens only when the last consumer unregisters; a test verifies the reference counting.",
+    "Every registered consumer receives every event for its subscriptions, and the delivered event is the same immutable object or an equal frozen copy; mutating it raises an error, which a test verifies.",
+    "A blocked or slow consumer whose bounded queue fills records an overflow count and a degraded flag, while other consumers still receive events promptly; a test covers this.",
+    "When the fake stream reports DISCONNECTED, the service activates the polling fallback, cached updates carry source='rest_poll' provenance, and on reconnect it returns to source='stream'; a test covers this.",
+    "Cache collections enforce the configured maximum sizes (the completed-candle ring and evidence buffer), and older entries are evicted; a test verifies no unbounded growth over many events.",
+    "The cache rejects an event whose feed_id conflicts with the symbol's established feed_id; a negative test covers this.",
+    "Cache read accessors return immutable snapshots that carry provider_source_ts, receive_ts, and feed_id."
+  ],
+  "selected_backend": "codex_cli",
+  "model": "gpt-5.6-sol",
+  "verification_profile": "focused",
+  "allowed_write_paths": [
+    "mike_trade/market_data/service.py",
+    "mike_trade/market_data/cache.py",
+    "tests/unit/test_data_fanout.py"
+  ],
+  "forbidden_changes": [
+    "modify files outside allowed_write_paths",
+    "change PLAN_SKELETON.json or other planning artifacts",
+    "expose network clients or broker handles to strategies",
+    "subscribe per strategy or per scenario",
+    "store unbounded raw tick history",
+    "use network access or real credentials in tests",
+    "run broad test suites or backtests"
+  ],
+  "dependencies": [
+    "g.1",
+    "g.2"
+  ],
+  "task_timeout_seconds": 1800
+}

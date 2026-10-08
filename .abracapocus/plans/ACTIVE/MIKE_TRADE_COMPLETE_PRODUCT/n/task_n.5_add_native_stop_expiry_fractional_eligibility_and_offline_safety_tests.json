@@ -1,0 +1,41 @@
+{
+  "schema_version": 1,
+  "task_id": "n.5",
+  "phase": "N",
+  "phase_id": "n",
+  "title": "Add native stop expiry fractional eligibility and offline safety tests",
+  "description": "This is a verification task. Create integration tests and an audit document that exercise the phase n protection components together. Do not modify any production code.\n\nWrite tests/integration/test_native_stop_protection.py. It wires ProtectionCoordinator (n.1), the Alpaca trailing adapter (n.2, against an in-process fake transport that returns recorded Alpaca-shaped JSON), the fixed-stop coverage logic (n.3) and ProtectionStateRecord/apply_event (n.4, with the in-memory repository). It must cover these scenarios:\n\n(a) Trailing-native partial fill:\n- An entry fills partially (e.g. 4 of 10), and a single standalone trailing_stop SELL covers 4.\n- After the remaining 6 fill, protection is replaced to cover 10 with no overlapping working sells.\n- The broker hwm/stop_price are read from fake broker payloads and never computed locally.\n\n(b) DAY expiry:\n- A DAY trailing or fixed stop reports expired/done_for_day.\n- The state becomes EXPIRED with a PROTECTION_EXPIRED/OVERNIGHT reason, and fresh entries are blocked.\n\n(c) Fractional eligibility:\n- In LIVE mode, a fractional entry whose protective order/TIF combination is not paper_proven is rejected before entry submission.\n- The same combination with allow_fractional_protection and a documented risk acknowledgement in SHADOW/PAPER is allowed with risk notes.\n\n(d) Linked trailing:\n- A requested OTO/bracket/OCO trailing leg is rejected.\n\n(e) Placement failure:\n- The fake broker rejects the protective order after a fill.\n- This yields UNPROTECTED_POSITION, an entry block and no concealed gap.\n\n(f) Offline:\n- The engine heartbeat goes stale while the fake broker order remains active.\n- The dashboard projection shows OFFLINE with stale last-known hwm/stop, and the broker order is not cancelled by shutdown.\n\n(g) Manual close overlap:\n- A manual close request while protection is active results in protection being cancel-confirmed or resized before the exit sell.\n- Total working sell quantity never exceeds the position, so no short position can result.\n\n(h) Strategy pause and minimum hold:\n- Neither delays protective placement.\n\nTests must use no network and no real credentials. Assert that ALPACA live credential env vars are not read, for example by monkeypatching os.environ to an empty mapping.\n\nWrite docs/verification/phase_n_native_stops.md as an audit artifact. It must contain:\n- the scenario matrix (scenario, component, expected outcome, test name)\n- explicit statements that native trailing is continuous and broker-managed and continues only while the broker order is active\n- an explicit statement that native trailing is not stepped and never attached as a linked leg\n- an explicit statement that stop triggers are not guaranteed execution or maximum loss\n- the DAY/overnight residual risk\n- fractional gating rules\n- a section listing the remaining credential-gated Alpaca PAPER verification steps for the operator to run. These are not executed by this task.\n\nIf any scenario reveals a production defect, mark the test with xfail(strict=True) and a reason that references the defect, and document it in the audit file. Do not edit production code.\n\nBefore editing, inspect:\n- mike_trade/risk/protection.py, mike_trade/risk/stop_policy.py, mike_trade/brokers/alpaca/trailing.py, mike_trade/risk/fixed_stop.py and mike_trade/risk/stop_state.py\n- existing tests/integration conventions and fixtures (conftest)\n- tests/contracts/test_alpaca_native_trailing.py for payload shapes",
+  "acceptance_criteria": [
+    "tests/integration/test_native_stop_protection.py contains at least one test for each scenario (a) through (h) described in the task.",
+    "The partial-fill trailing test asserts that exactly one working protective SELL exists at every step, and that its quantity equals the confirmed filled quantity.",
+    "The expiry test asserts an EXPIRED condition with a PROTECTION_EXPIRED/OVERNIGHT reason and a non-empty entry block.",
+    "The fractional test asserts LIVE rejection when the combination is not paper_proven, and allowance with risk notes when the risk is explicitly acknowledged in a non-LIVE mode.",
+    "The placement-failure test asserts an UNPROTECTED_POSITION condition and an entry block.",
+    "The offline test asserts the OFFLINE projection with stale markers, and that no cancel request is sent to the fake broker on shutdown.",
+    "The manual-close test asserts that working sell quantity never exceeds position quantity at any recorded step.",
+    "The tests make no network calls and read no broker credentials.",
+    "docs/verification/phase_n_native_stops.md exists. It contains the scenario matrix mapping every scenario to a test name, the continuous-vs-stepped and no-linked-leg statements, the stop-trigger risk disclosure, the DAY/overnight residual risk and a pending credential-gated Alpaca PAPER verification checklist.",
+    "No production files are modified by this task."
+  ],
+  "selected_backend": "pi_cli",
+  "model": "openrouter/meta/muse-spark-1.3-contributor",
+  "verification_profile": "focused",
+  "allowed_write_paths": [
+    "tests/integration/test_native_stop_protection.py",
+    "docs/verification/phase_n_native_stops.md"
+  ],
+  "forbidden_changes": [
+    "modify files outside allowed_write_paths",
+    "modify production modules under mike_trade/",
+    "change PLAN_SKELETON.json or other planning artifacts",
+    "create live or paper broker orders or read broker credentials",
+    "run broad test suites, large backtests or paid data acquisition"
+  ],
+  "dependencies": [
+    "n.1",
+    "n.2",
+    "n.3",
+    "n.4"
+  ],
+  "task_timeout_seconds": 1800
+}

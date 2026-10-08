@@ -1,0 +1,52 @@
+{
+  "schema_version": 1,
+  "task_id": "q.1",
+  "phase": "Q",
+  "phase_id": "q",
+  "title": "Implement historical replay clock and as-of deterministic event provider",
+  "description": "Build the base of the production historical replay/backtest subsystem: a simulated Clock and an as-of historical MarketDataProvider. Later phase-q tasks (execution simulator, runner/manifest, CLI, integrity tests) build on these. This is production code, not a disposable script.\n\n1. mike_trade/backtest/clock.py: implement ReplayClock. It conforms to the application's existing Clock port, so engine/scheduler/strategy code reads time only through it.\n   - Time is timezone-aware UTC. It only moves forward, through explicit advance_to(t) calls driven by the replay event loop. Trying to move backwards or pass a naive datetime raises an error.\n   - It must not read the wall clock or sleep in real time.\n   - It exposes America/New_York session presentation through the existing exchange session calendar in mike_trade/scheduling/calendar.py. Covered: regular open/close, early closes, holidays/no-session days, session boundaries.\n\n2. mike_trade/backtest/feed.py: implement HistoricalReplayFeed, a MarketDataProvider adapter. It is injected in place of the live Alpaca feed and wraps a bounded, operator-supplied, offline dataset: in-memory records or local fixture files. No network download.\n   - It carries explicit provenance through a DataProvenance value: source, feed (for example IEX, not consolidated SIP), revision/vintage, adjustment policy and dataset content hash.\n   - It emits events in strict chronological order with a deterministic tie-break for equal timestamps: event kind, then symbol, then sequence.\n   - Point-in-time availability: a 1-minute bar covering [t, t+1m) becomes available only at its completion time t+1m plus an optional configured availability latency. Developing/partial candles are never exposed as completed. as_of(t) queries never return any record with availability time > t.\n   - Future-adjusted data is refused (fail closed) unless the provenance declares it point-in-time. This includes split-adjusted series that use adjustment factors announced after the evaluation time, and revised bars whose revision vintage is later than the evaluation time.\n   - Splits are represented as dated corporate-action events that are applied only from their effective time.\n   - Halts, gaps and missing bars are surfaced as explicit data-quality markers that reuse the existing freshness/quality types. They are never forward-filled into synthetic bars.\n   - Quotes/bid-ask: if the dataset has no quotes, the feed reports quote fidelity as UNAVAILABLE. When quotes exist but are sampled, it reports them as BAR_DERIVED/SAMPLED. Downstream fill logic can then flag the limitation instead of assuming quote evidence.\n   - A deterministic seed is accepted and exposed for any randomized tie-breaking or jitter. The same dataset + seed must yield an identical event sequence.\n   - All prices/volumes/quantities are Decimal.\n\n3. tests/unit/test_replay_clock.py: positive and negative tests for both modules, using only small synthetic in-memory fixtures. No network, no credentials, no Alpaca client imports.\n\nBefore editing, inspect:\n- mike_trade/market_data/ports.py (MarketDataProvider port and bar/quote types)\n- mike_trade/domain/market.py (bar, quote and provenance value types)\n- mike_trade/market_data/candles.py and mike_trade/market_data/context.py (completed-bar semantics, session VWAP context)\n- mike_trade/market_data/quality.py (freshness/gap/halt markers)\n- mike_trade/scheduling/calendar.py (exchange session calendar, early closes)\n- the existing Clock port and any system/fake clock implementations under mike_trade/\n- mike_trade/shadow/scenarios.py (how a feed is fanned out to consumers)\n\nDecision budget: if an existing port shape is ambiguous, adapt to it with a thin adapter class in feed.py or clock.py rather than changing the port. Record the choice in a module docstring.",
+  "acceptance_criteria": [
+    "mike_trade/backtest/clock.py defines ReplayClock satisfying the existing Clock port; its now() always returns a tz-aware UTC datetime",
+    "ReplayClock.advance_to raises on a backwards move or a naive datetime, and the module never calls datetime.now, time.time or time.sleep",
+    "ReplayClock reports session state (pre-open, regular, closed, early close) via the existing session calendar for a fixture that includes a holiday and an early-close day",
+    "mike_trade/backtest/feed.py defines HistoricalReplayFeed and DataProvenance; provenance includes source, feed, revision/vintage, adjustment policy and dataset content hash",
+    "A 1-minute bar for [09:30, 09:31) ET is not returned by as_of(09:30:59 ET) and is returned by as_of(09:31:00 ET) when latency is zero; a test asserts both",
+    "as_of(t) never returns any record whose availability time is greater than t; a test asserts this over every event of a multi-symbol fixture",
+    "Events with identical timestamps are ordered by the documented deterministic tie-break, and two iterations with the same dataset and seed yield identical sequences",
+    "A dataset marked future-adjusted, or containing a revision vintage later than the evaluation time, is rejected fail-closed with an explicit error",
+    "A split event affects prices/quantities only from its effective time; bars before it are unchanged in as_of results",
+    "Missing bars, gaps and halts produce explicit quality markers, and no synthetic forward-filled bar is emitted",
+    "Quote fidelity is reported as UNAVAILABLE for a bars-only dataset",
+    "All price/volume values in emitted records are Decimal",
+    "Neither module imports an Alpaca client, an HTTP library or broker credential configuration",
+    "tests/unit/test_replay_clock.py exists with positive and negative tests and passes when run alone"
+  ],
+  "selected_backend": "claude_code_cli",
+  "model": "claude-sonnet-5-5",
+  "verification_profile": "focused",
+  "allowed_write_paths": [
+    "mike_trade/backtest/clock.py",
+    "mike_trade/backtest/feed.py",
+    "tests/unit/test_replay_clock.py"
+  ],
+  "allowed_symbols": [
+    "ReplayClock",
+    "HistoricalReplayFeed",
+    "DataProvenance",
+    "QuoteFidelity",
+    "ReplayEvent",
+    "LookaheadError",
+    "FutureAdjustedDataError"
+  ],
+  "forbidden_changes": [
+    "modify files outside allowed_write_paths, including existing market_data ports, scheduling calendar or domain types",
+    "change PLAN_SKELETON.json or other planning artifacts",
+    "download or fetch historical data over the network, or read broker credentials",
+    "expose developing/partial candles as completed bars or forward-fill missing bars",
+    "read the wall clock or sleep in real time inside replay code",
+    "use float for prices, volumes or quantities",
+    "create live broker orders or run broad test suites/backtests"
+  ],
+  "dependencies": [],
+  "task_timeout_seconds": 1800
+}

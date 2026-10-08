@@ -1,0 +1,69 @@
+{
+  "schema_version": 1,
+  "task_id": "c.3",
+  "phase": "C",
+  "phase_id": "c",
+  "title": "Implement account cycle order fill and control repositories",
+  "description": "Implement the single-writer transaction layer and the account-scoped write repositories. They persist order intent before broker submission, apply broker fills and activities exactly once, and keep budget reservations, position cycles, protection coverage, the positions read model, and the journal atomically consistent. Build on c.1 (schema.py, 0001_initial.sql) and c.2 (journal.py) without modifying them.\n\nmike_trade/persistence/transaction.py:\n- `WriterLock(db_path)`: an exclusive advisory fcntl.flock on '<db_path>.writer.lock', acquired non-blocking.\n  - A second writer for the same database raises WriterLockHeldError, which enforces one authoritative writer per operational database.\n  - Release on close or context exit.\n- `WriterSession`: owns the lock plus one connection from schema.open_connection, and exposes `unit_of_work()`.\n- `unit_of_work()`: a context manager that does BEGIN IMMEDIATE, commits on success, rolls back on any exception, and re-raises. Nested use raises.\n- Surface SQLITE_BUSY after busy_timeout as WriterBusyError.\n- `bind_scope(account_scope_id)`:\n  - Returns a `ScopedWriter` whose repositories reject any entity whose account_scope_id differs (CrossScopeWriteError).\n  - Rejects scopes whose environment is not the database identity environment.\n\nmike_trade/persistence/repositories.py: repositories take a ScopedWriter and an injected clock, and map to the domain types in mike_trade/domain/trading.py and protection.py. Provide:\n- **AccountScopeRepository**\n  - register_scope.\n  - get_scope.\n- **RunConfigRepository**\n  - record_run_config: stores the fingerprint sha256 and config JSON; idempotent on the fingerprint.\n- **OrderIntentRepository**\n  - `record_intent(intent, reservation_amount)`:\n    - In one transaction it checks the budget and inserts order_intents (status RECORDED), an ACTIVE budget_reservation, and an 'OrderIntentRecorded' journal event with idempotency_key = client_order_id.\n    - It commits before returning an IntentReceipt.\n    - The budget check passes only when active reservations plus open-position cost basis stay within total_application_budget for the account scope, and within per_symbol_budget for the symbol. Otherwise it raises BudgetExceededError.\n    - A symbol is never a cash account.\n  - `submit_recorded_intent(receipt, submit)`:\n    - Uses journal.commit_then_effect semantics, so the broker submit callable runs only for a durably recorded intent.\n    - On a submit exception it marks the intent SUBMIT_FAILED or UNKNOWN; it never deletes the intent.\n  - mark_submitted.\n- **BrokerOrderRepository**\n  - upsert_broker_order: status transitions are recorded as broker_order_events.\n  - record_activity: idempotent on external_activity_id.\n- **FillRepository**\n  - `apply_fill(fill) -> FillApplyResult(applied | duplicate)`. In one unit_of_work it:\n    1. Inserts the fill keyed by (account_scope_id, external_activity_id).\n    2. Updates broker_orders filled_quantity and avg price.\n    3. Applies PositionCycle.apply_entry_fill or apply_exit_fill. Domain violations roll back the whole transaction.\n    4. Consumes or releases the budget reservation in proportion.\n    5. Upserts the positions read model.\n    6. Resizes covered_quantity on the active trailing_stop_state to the remaining quantity.\n    7. Appends a 'FillApplied' journal event.\n  - A duplicate activity ID returns duplicate and changes nothing. Partial fills accumulate correctly.\n- **PositionCycleRepository**\n  - open_cycle.\n  - get_cycle.\n  - list_open.\n- **ProtectionRepository**\n  - record_protection_order.\n  - save_trailing_state: rejects a downward long stop move by delegating to TrailingStopState.ratchet.\n  - append_trailing_event.\n  - mark_status: includes UNKNOWN.\n- **EntryControlRepository**\n  - increment_filled_entry_cycles: per symbol/session_date and optionally originating buy strategy.\n  - record_trade_result: updates consecutive losses and sets a lockout once the threshold is reached.\n  - set_cooldown.\n  - set_kill_switch.\n  - set_paused.\n  - load_eligibility_state.\n  - These affect entries only; there is no API to block exits.\n- **OperatorCommandRepository**\n  - record_command: append-only.\n- **ReconciliationRepository**\n  - start_run.\n  - record_drift: append-only; never rewrites fills or orders.\n  - resolve_drift: inserts into reconciliation_resolutions.\n  - has_unresolved_drift.\n- **StrategyStateRepository**\n  - save_state and load_state, including rearm.\n- **CashEquityRepository**\n  - append_cash_event.\n  - append_equity_snapshot.\n- **ServiceHealthRepository**\n  - heartbeat.\n- **Value handling.** Use schema.decimal_to_db and schema.to_db_timestamp for every value. Every trade-affecting mutation appends a journal event in the same transaction.\n\ntests/unit/test_repositories.py must use tmp_path databases initialized via schema.initialize_database and cover:\n- A second WriterLock raises WriterLockHeldError.\n- Writing an entity of another scope raises CrossScopeWriteError.\n- record_intent commits intent + reservation + event together. A journal append failure (monkeypatched) leaves none of them, and the submit callable is never invoked.\n- submit failure marks the intent SUBMIT_FAILED/UNKNOWN and keeps it.\n- Budget exceeded at both the total and the per-symbol level.\n- Two partial BUY fills accumulate into an OPEN cycle, and the positions read model is correct.\n- A duplicate external_activity_id is a no-op.\n- Over-exit and buy-after-exit fills roll back with no partial rows.\n- A full exit closes the cycle and releases the reservation.\n- Trailing coverage is resized to remaining quantity.\n- A downward stop save is rejected.\n- A consecutive-loss lockout is set at the threshold.\n- Drift recording does not alter existing fills, and has_unresolved_drift clears only after resolve_drift.\n- A unit_of_work exception rolls back everything.\n\nDecision budget: make at most five design choices not covered here, and record them in the repositories.py module docstring.\n\nBefore editing, inspect:\n- mike_trade/persistence/schema.py and mike_trade/persistence/migrations/0001_initial.sql (read-only)\n- mike_trade/persistence/journal.py (read-only)\n- mike_trade/domain/trading.py, mike_trade/domain/protection.py, mike_trade/domain/accounts.py, mike_trade/domain/errors.py (read-only)",
+  "acceptance_criteria": [
+    "mike_trade/persistence/transaction.py defines WriterLock, WriterSession, ScopedWriter, WriterLockHeldError, WriterBusyError, and CrossScopeWriteError; a second writer on the same database file raises WriterLockHeldError",
+    "unit_of_work uses BEGIN IMMEDIATE, commits on success, and rolls back all rows on any exception",
+    "repositories.py defines AccountScopeRepository, RunConfigRepository, OrderIntentRepository, BrokerOrderRepository, FillRepository, PositionCycleRepository, ProtectionRepository, EntryControlRepository, OperatorCommandRepository, ReconciliationRepository, StrategyStateRepository, CashEquityRepository, ServiceHealthRepository, and BudgetExceededError",
+    "record_intent durably commits the order intent, budget reservation, and journal event before returning; if the journal write fails, none persist and the broker submit callable is never invoked",
+    "apply_fill is exactly-once per (account_scope_id, external_activity_id): a duplicate returns duplicate with zero row changes",
+    "apply_fill atomically updates fill, broker order, position cycle, reservation, positions read model, trailing coverage, and journal; a domain violation leaves no partial writes",
+    "Budget checks enforce per_symbol_budget and total_application_budget per account scope, with no per-symbol cash account",
+    "Reconciliation drift and resolutions are appended without updating or deleting fills, orders, or prior drift rows",
+    "EntryControlRepository exposes no operation that blocks protective, manual, or safety exits",
+    "tests/unit/test_repositories.py contains positive and negative tests for the behaviors above and passes with targeted pytest of that file only"
+  ],
+  "selected_backend": "claude_code_cli",
+  "model": "claude-sonnet-5-5",
+  "verification_profile": "focused",
+  "allowed_write_paths": [
+    "mike_trade/persistence/repositories.py",
+    "mike_trade/persistence/transaction.py",
+    "tests/unit/test_repositories.py"
+  ],
+  "allowed_symbols": [
+    "WriterLock",
+    "WriterSession",
+    "ScopedWriter",
+    "WriterLockHeldError",
+    "WriterBusyError",
+    "CrossScopeWriteError",
+    "AccountScopeRepository",
+    "RunConfigRepository",
+    "OrderIntentRepository",
+    "IntentReceipt",
+    "BrokerOrderRepository",
+    "FillRepository",
+    "FillApplyResult",
+    "PositionCycleRepository",
+    "ProtectionRepository",
+    "EntryControlRepository",
+    "OperatorCommandRepository",
+    "ReconciliationRepository",
+    "StrategyStateRepository",
+    "CashEquityRepository",
+    "ServiceHealthRepository",
+    "BudgetExceededError"
+  ],
+  "forbidden_changes": [
+    "modify files outside allowed_write_paths",
+    "change PLAN_SKELETON.json or other planning artifacts",
+    "edit schema.py, 0001_initial.sql, or journal.py",
+    "add a new migration file",
+    "invoke a broker submit callable before the intent is durably committed",
+    "update or delete append-only rows or silently rewrite fills on drift",
+    "treat a symbol as an independent cash account",
+    "use float for money or quantities",
+    "access broker credentials or create broker orders",
+    "run broad test suites or backtests"
+  ],
+  "dependencies": [
+    "c.1",
+    "c.2"
+  ],
+  "task_timeout_seconds": 2400
+}

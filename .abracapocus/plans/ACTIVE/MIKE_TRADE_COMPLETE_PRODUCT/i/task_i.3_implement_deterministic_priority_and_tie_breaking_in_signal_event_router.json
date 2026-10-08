@@ -1,0 +1,40 @@
+{
+  "schema_version": 1,
+  "task_id": "i.3",
+  "phase": "I",
+  "phase_id": "i",
+  "title": "Implement deterministic priority and tie breaking in signal event router",
+  "description": "Build the single ordered decision router in mike_trade/signals/router.py. Put the unit tests in tests/unit/test_router_ordering.py.\n\nRequired behavior:\n- One DecisionRouter receives everything headed for decisions:\n  - evaluation results from the i.2 EvaluationPool\n  - CRITICAL events from the i.2 queueing layer: fills, broker order updates, reconciliation, stop/protective events, safety exits, manual close/flatten\n  It emits them to one serialized consumer, the portfolio/order decision path. Exactly one consumer mutates account, portfolio or order state at a time. Use a single asyncio consumer or an asyncio.Lock, documented in code.\n- Deterministic priority (highest first):\n  1. fills and broker order updates\n  2. reconciliation and drift events\n  3. protective stop events and safety exits\n  4. manual close/flatten requests\n  5. SELL/exit strategy signals\n  6. BUY/entry strategy signals\n- Tie-breaking within the same priority is deterministic:\n  1. event time UTC\n  2. snapshot_version\n  3. symbol\n  4. strategy_id\n  5. a monotonic sequence number assigned on arrival\n  Identical input sets in any arrival order produce identical output order when timestamps and keys are equal. Arrival sequence is the final tie-breaker.\n- Revalidation before authorization: a strategy signal is forwarded as actionable only if all of these hold, using an injected clock and a freshness provider:\n  - its expiry has not passed\n  - its snapshot_version is still the latest for that symbol\n  - market data is fresh within the configured max age\n  Otherwise it is recorded as REJECTED with a reason code (EXPIRED, SUPERSEDED or STALE_DATA) and not forwarded.\n- ERROR, TIMEOUT, CANCELLED and STALE_DISCARDED results are recorded as non-actionable outcomes and are never routed as entries or exits.\n- Duplicate suppression: the same (strategy_id, side, symbol, bar key) signal is forwarded at most once.\n- Fills, broker updates, reconciliation, stop and safety events are never dropped, expired or rejected by freshness checks. They bypass discretionary revalidation.\n- The router itself never calls brokers, sizes orders or applies risk rules. It only orders, revalidates and hands off to an injected consumer callable or port.\n\nBefore editing, inspect:\n- mike_trade/scheduling/workers.py and mike_trade/scheduling/queueing.py (i.2) for result and CRITICAL event types\n- mike_trade/scheduling/scheduler.py and triggers.py (i.1) for DueEvaluation keys\n- mike_trade/signals/ (existing modules, if present) and mike_trade/domain/ for signal, side and expiry types\n- mike_trade/market_data/context.py (h.4) for freshness and snapshot version",
+  "acceptance_criteria": [
+    "A test submits a mixed batch (BUY signal, SELL signal, manual close, stop event, reconciliation event, fill) in shuffled arrival orders. The emitted order follows the documented priority in every permutation.",
+    "A test with equal priority and equal timestamps confirms tie-breaking by snapshot_version, then symbol, then strategy_id, then arrival sequence, and that repeated runs produce byte-identical ordering.",
+    "A test confirms that a signal past its expiry is rejected with reason EXPIRED, a signal whose snapshot_version is superseded is rejected with SUPERSEDED, and a signal whose data age exceeds max age is rejected with STALE_DATA. None reaches the consumer.",
+    "A test confirms ERROR, TIMEOUT, CANCELLED and STALE_DISCARDED outcomes never reach the consumer as entries or exits.",
+    "A test confirms that a fill or stop event older than any freshness threshold is still delivered to the consumer exactly once.",
+    "A test confirms a duplicate signal for the same (strategy_id, side, symbol, bar key) is forwarded at most once.",
+    "A concurrency test submits events from many concurrent producers and confirms the consumer never runs re-entrantly, using an in-consumer overlap detector that records zero overlaps.",
+    "router.py imports no broker or provider adapter and performs no sizing or risk evaluation."
+  ],
+  "selected_backend": "claude_code_cli",
+  "model": "claude-sonnet-5-5",
+  "verification_profile": "focused",
+  "allowed_write_paths": [
+    "mike_trade/signals/router.py",
+    "tests/unit/test_router_ordering.py"
+  ],
+  "forbidden_changes": [
+    "modify files outside allowed_write_paths",
+    "change PLAN_SKELETON.json or other planning artifacts",
+    "modify scheduling/scheduler.py, triggers.py, workers.py or queueing.py; adapt via their public APIs only",
+    "drop, expire or freshness-reject fills, broker updates, reconciliation, stop or safety events",
+    "route ERROR/TIMEOUT/CANCELLED/STALE_DISCARDED outcomes as BUY or SELL",
+    "call brokers, size orders or apply risk rules in the router",
+    "allow concurrent portfolio/account/order mutation",
+    "run broad test suites or backtests"
+  ],
+  "dependencies": [
+    "i.1",
+    "i.2"
+  ],
+  "task_timeout_seconds": 1800
+}

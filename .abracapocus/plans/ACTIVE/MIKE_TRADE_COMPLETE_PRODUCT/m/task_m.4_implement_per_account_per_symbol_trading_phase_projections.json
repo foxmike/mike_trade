@@ -1,0 +1,44 @@
+{
+  "schema_version": 1,
+  "task_id": "m.4",
+  "phase": "M",
+  "phase_id": "m",
+  "title": "Implement per-account per-symbol trading phase projections",
+  "description": "Implement read-only per-account/scenario, per-symbol trading phase projections in mike_trade/portfolio/status.py, with unit tests in tests/unit/test_position_status.py. The CLI and the dashboard API consume these projections for symbol watch status, positions, protective state and eligibility.\n\nBefore editing, inspect: mike_trade/portfolio/cycles.py (CycleState, PositionCycle, the orthogonal order/protection status fields), the existing read-projection/persistence query modules, the eligibility/risk limit types (budgets, daily entry slots, cooldown, lockouts, entry cutoff), and any existing dashboard API schemas, so the projection fields line up with existing names. Do not modify any of them.\n\nRequirements:\n1. Define an immutable SymbolTradingStatus projection keyed by (account_or_scenario_id, mode, symbol) with these fields: cycle_state, the orthogonal order status and protection status, held quantity, remaining managed quantity, average entry price, entry slots used/allowed, cooldown-until, lockout flags, minimum-hold-until, entries_blocked plus an ordered list of block reasons (paused, kill switch, reconciling, unknown stop, stale data, unresolved orders, unsafe account, insufficient buying power, cutoff, cooldown, lockout, max positions, daily loss guard), unmanaged flag, last transition reason, updated_at (UTC) and a stale flag.\n2. Provide a pure builder from PositionCycle, eligibility inputs and the latest heartbeat/data age to SymbolTradingStatus, plus an account-level aggregator that returns the 1-10 watched symbols for exactly one account/scenario. Requesting one account must never include another account's or mode's rows.\n3. Map composite states to stable, display-friendly phase labels (for example WATCHING_BUY -> 'watching for entry', PROTECTIVE_PENDING -> 'awaiting protection') and keep the raw enum value alongside the label.\n4. Mark the projection stale when the source heartbeat/data age exceeds a configurable threshold, and preserve the last-known values instead of zeroing them.\n5. Serialize Decimal values as strings and datetimes as ISO-8601 UTC for JSON.\n6. Projections are read-only: they never call brokers and never mutate cycles or config.",
+  "acceptance_criteria": [
+    "mike_trade/portfolio/status.py exposes SymbolTradingStatus and a builder plus an account-level aggregator",
+    "A unit test shows that an aggregator built from mixed SHADOW scenario, PAPER and LIVE cycles returns only rows for the requested account/scenario and mode",
+    "A unit test shows that every CycleState value maps to a non-empty display label and that the raw enum value is preserved",
+    "A unit test shows entries_blocked=True with the correct reasons for PAUSED, RECONCILING, unknown protection, and cooldown inputs, and entries_blocked=False when all gates pass",
+    "A unit test shows UNMANAGED holdings are flagged unmanaged and are not counted as managed remaining quantity",
+    "A unit test shows that heartbeat age above the threshold sets stale=True while the last-known quantities and prices are retained",
+    "A unit test shows JSON serialization renders Decimals as exact strings and datetimes as ISO-8601 with UTC offset",
+    "The status module imports no broker adapter and performs no writes",
+    "No files outside mike_trade/portfolio/status.py and tests/unit/test_position_status.py are modified"
+  ],
+  "selected_backend": "codex_cli",
+  "model": "gpt-6-luna",
+  "verification_profile": "focused",
+  "allowed_write_paths": [
+    "mike_trade/portfolio/status.py",
+    "tests/unit/test_position_status.py"
+  ],
+  "allowed_symbols": [
+    "SymbolTradingStatus",
+    "build_symbol_status",
+    "build_account_status",
+    "phase_label"
+  ],
+  "forbidden_changes": [
+    "modify files outside allowed_write_paths",
+    "modify mike_trade/portfolio/cycles.py",
+    "change PLAN_SKELETON.json or other planning artifacts",
+    "call brokers, place orders or mutate configuration from projections",
+    "mix balances or rows across accounts, scenarios or modes",
+    "run broad full-suite tests or backtests"
+  ],
+  "dependencies": [
+    "m.1"
+  ],
+  "task_timeout_seconds": 1200
+}

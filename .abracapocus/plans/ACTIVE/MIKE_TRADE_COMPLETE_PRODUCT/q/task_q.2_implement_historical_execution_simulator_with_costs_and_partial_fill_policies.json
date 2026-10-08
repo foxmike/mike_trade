@@ -1,0 +1,56 @@
+{
+  "schema_version": 1,
+  "task_id": "q.2",
+  "phase": "Q",
+  "phase_id": "q",
+  "title": "Implement historical execution simulator with costs and partial fill policies",
+  "description": "Implement the historical execution simulator in mike_trade/backtest/execution.py. It is a broker-port-shaped, replay-only adapter that receives the same order intents the real position coordinator produces in live/shadow modes and turns them into simulated fills, driven by the HistoricalReplayFeed and ReplayClock from q.1. It never calls a real broker API.\n\nRequirements:\n- Reuse existing concepts rather than re-implementing them: order types/FSM, protection math (fixed stop, broker-native continuous trailing, stepped trailing), the never-move-down rule for long stops, and fractional/order-capability fail-closed policy. Where the shadow fill/stop simulator logic in mike_trade/brokers/shadow/fills.py and mike_trade/brokers/shadow/stops.py applies, call or compose it instead of duplicating it.\n- Fill evidence:\n  - When quote data is available (quote fidelity not UNAVAILABLE), buys fill at ask and sells at bid, plus adverse slippage.\n  - When only bars exist, use an explicit configured BarFillPolicy, for example next-completed-bar open plus adverse slippage. Never fill at the close of the bar that generated the signal. Mark each such fill with fidelity_limitation=BAR_ONLY.\n- Costs: configurable per-share/per-order/bps fees and slippage in bps/ticks. Everything is Decimal and recorded on each fill.\n- Latency: a configurable order-submission latency and a stop-replacement latency, measured in simulated time. A replaced stop is not active until its replacement latency has elapsed. The previous stop stays active in the meantime.\n- Partial fills: a configurable participation cap relative to bar volume (or quote size when available). Leftover quantity stays pending across bars. Protective stop coverage always equals the actual filled remaining quantity, and protection starts only after a confirmed positive fill.\n- Stop simulation with intrabar ambiguity:\n  - A stop triggers when the bar low <= the stop price for a long position.\n  - Gap-through opens fill at the open, not the stop price.\n  - If one bar both reaches a favorable level (a strategy limit/target, or a high that would ratchet a trailing stop) and touches the stop, the simulator must not assume the favorable order. Apply a configured AmbiguityPolicy whose default is STOP_FIRST/pessimistic. Record an AMBIGUOUS_INTRABAR_ORDER flag on the result.\n  - Trailing stops ratchet only on completed-bar information that was available before the evaluated bar. They never move down.\n- Overlap safety: when a discretionary/strategy SELL and the protective stop could both execute, total sold quantity never exceeds the held quantity, so the result never goes short.\n- Session rules: no fills outside regular hours. Halts/missing bars produce no fill. Early closes are respected.\n- Determinism: given the same events, config and seed, the output fill sequence is identical.\n- Every fill record carries a simulator version, the assumptions used, an estimated=True / broker_confirmed=False label, and data provenance.\n\nWrite tests/unit/test_backtest_execution.py with small synthetic in-memory bars/quotes only, covering positive and negative cases.\n\nBefore editing, inspect:\n- mike_trade/backtest/clock.py and mike_trade/backtest/feed.py (from q.1)\n- mike_trade/brokers/ports.py (broker port shape)\n- mike_trade/brokers/shadow/fills.py, mike_trade/brokers/shadow/stops.py, mike_trade/brokers/shadow/ledger.py\n- mike_trade/execution/coordinator.py, mike_trade/execution/close_coordinator.py, mike_trade/execution/order_fsm.py, mike_trade/execution/intents.py\n- mike_trade/risk/fixed_stop.py, mike_trade/risk/trailing.py, mike_trade/risk/protection.py, mike_trade/domain/protection.py\n- mike_trade/brokers/alpaca/capabilities.py (fractional/order-type capability rules to mirror fail-closed)",
+  "acceptance_criteria": [
+    "mike_trade/backtest/execution.py defines HistoricalExecutionSimulator, implementing the broker-port surface used by the position coordinator, plus BarFillPolicy, AmbiguityPolicy and ExecutionAssumptions",
+    "With bars only, a market BUY triggered on bar N fills at bar N+1 open plus adverse slippage (exact Decimal asserted), never at bar N close, and the fill is flagged BAR_ONLY",
+    "With quotes available, a buy fills at ask plus slippage and a sell at bid minus slippage, with exact Decimal equality asserted",
+    "Configured fees are deducted exactly and recorded on each fill",
+    "With a participation cap, the filled quantity per bar is <= cap*volume, the remainder stays pending, and stop coverage quantity equals the cumulative filled quantity after each partial fill",
+    "No protective stop exists before the first confirmed positive fill",
+    "A bar whose high would ratchet a trailing stop and whose low touches the existing stop resolves stop-first under the default policy and records AMBIGUOUS_INTRABAR_ORDER",
+    "A gap-down open below the stop fills at the open price, not the stop price",
+    "A trailing stop for a long position never decreases across a test sequence that includes falling highs",
+    "A stop replacement is not effective until the replacement latency has elapsed; a test shows the old stop executing inside the latency window",
+    "Concurrent strategy SELL and stop trigger on the same bar never sell more than the held quantity (no short position)",
+    "No fills occur outside regular hours, during a halt, or on a missing bar",
+    "An unsupported fractional/order-type combination is rejected fail-closed",
+    "Two runs with identical inputs and seed produce identical fill sequences",
+    "The module imports no Alpaca trading client, HTTP library or broker credential configuration",
+    "tests/unit/test_backtest_execution.py exists with positive and negative tests and passes when run alone"
+  ],
+  "selected_backend": "claude_code_cli",
+  "model": "claude-sonnet-5-5",
+  "verification_profile": "focused",
+  "allowed_write_paths": [
+    "mike_trade/backtest/execution.py",
+    "tests/unit/test_backtest_execution.py"
+  ],
+  "allowed_symbols": [
+    "HistoricalExecutionSimulator",
+    "ExecutionAssumptions",
+    "BarFillPolicy",
+    "AmbiguityPolicy",
+    "SimulatedExecution",
+    "AMBIGUOUS_INTRABAR_ORDER",
+    "EXECUTION_SIMULATOR_VERSION"
+  ],
+  "forbidden_changes": [
+    "modify files outside allowed_write_paths, including q.1 modules, shadow broker modules, risk or execution modules",
+    "change PLAN_SKELETON.json or other planning artifacts",
+    "infer a favorable intrabar order from candle high/low when ordering is ambiguous",
+    "fill at the close of the signal bar or at any price not supported by the configured fill policy",
+    "lower a long protective stop or allow sold quantity to exceed held quantity",
+    "import or call any Alpaca trading client, paper/live endpoint or broker credential",
+    "use float for prices, quantities, fees or slippage",
+    "create live broker orders or run broad test suites/backtests"
+  ],
+  "dependencies": [
+    "q.1"
+  ],
+  "task_timeout_seconds": 2100
+}

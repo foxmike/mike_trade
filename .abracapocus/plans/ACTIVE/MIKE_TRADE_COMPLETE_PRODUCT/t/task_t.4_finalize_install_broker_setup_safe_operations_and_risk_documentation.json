@@ -1,0 +1,39 @@
+{
+  "schema_version": 1,
+  "task_id": "t.4",
+  "phase": "T",
+  "phase_id": "t",
+  "title": "Finalize install broker setup safe operations and risk documentation",
+  "description": "Write the final operator-facing documentation for requirements, safety/risk controls, test plan, dashboard, and Alpaca broker setup. All of it must match the implemented product and the t.1 deployment artifacts.\n\nBefore editing, inspect:\n- deploy/systemd/mike-trade-engine.service and deploy/systemd/mike-trade-dashboard.service (from t.1)\n- mike_trade/controls/service_manager.py and the other mike_trade/controls/ modules (operator commands, live confirmation)\n- Makefile and the CLI entrypoint (complete operator command surface)\n- mike_trade/brokers/ (Alpaca adapter, capability matrix, paper/live endpoint isolation, IEX feed provenance)\n- mike_trade/risk/, mike_trade/protection/, mike_trade/reconciliation/ (budgets, lockouts, cooldown, stops, drift)\n- mike_trade/dashboard/ and the frontend build configuration\n- existing docs/ files\n\nImplementation requirements:\n1. docs/REQUIREMENTS.md: the self-contained product contract as implemented. Cover scope (1-10 U.S. equities, long-only, one entry and one full exit per cycle, no averaging/pyramiding/planned partials), the four modes (BACKTEST, SHADOW, PAPER, LIVE) and their isolation, Decimal/UTC conventions, persistence (SQLite WAL, migrations, append-only audit, no raw tick archive), strategies (vwap_bounce/vwap_breakdown/vwap_reference semantics), and the explicit out-of-scope list.\n2. docs/SAFETY_AND_RISK.md: per-symbol and total budgets, buying-power checks, planned-loss sizing, max open positions, daily loss guard, daily entry-cycle cap, symbol and buy-strategy loss lockouts, post-sale cooldown, minimum hold (ordinary exits only), regular-hours/entry cutoff/early close, optional EOD close disabled by default, protective stop coverage rules (fixed/native trailing/stepped trailing, post-fill start, remaining-quantity coverage, never downward, offline survival limits, no oversell), fail-closed conditions, the distinction between stop/pause/entry kill switch/close/close-all/flatten, shutdown semantics, startup reconciliation, UNMANAGED external positions, live confirmation requirements, credential storage (root-owned 0600 env files, per-mode separation), state directory permissions, backup/restore and integrity-check procedures, and the incident runbook.\n3. docs/TEST_PLAN.md: test layers (unit, integration, offline end-to-end, credential-gated paper), how to run targeted tests, the mapping of the required acceptance scenarios to test files (tests/end_to_end/test_full_product_cycle.py, tests/end_to_end/test_recovery_offline.py, tests/end_to_end/test_protective_live_guards.py, tests/paper_broker/test_alpaca_paper_cycle.py), paper gating env vars and the approval opt-in, a statement that no automated live orders are ever run, and the policy of one deliberate final comprehensive pass only with operator authorization.\n4. docs/DASHBOARD.md: the separate FastAPI read-only process serving the compiled React/TypeScript/Vite bundle, build and deploy steps (no Vite dev server in production), systemd unit usage, independence from the engine, OFFLINE determination from heartbeat age, stale value marking, account/scenario switching without mixed balances, the panels shown, and the statement that it never places orders or mutates configuration.\n5. docs/ALPACA.md: account and API key setup for paper and live, endpoint isolation, env file layout and permissions, Basic IEX feed limitations and provenance (not consolidated SIP), trade_updates stream, the order/protection capability matrix with each combination marked supported/verified-in-paper/blocked, fractional restrictions (fail closed until demonstrated in paper), the paper verification procedure, a warning that paper fills do not prove live performance, and live enablement prerequisites.\n6. Every Make/CLI command referenced must exist in the Makefile/CLI. Do not document nonexistent commands. Mark externally gated items (paper verification) as pending until performed by the operator.",
+  "acceptance_criteria": [
+    "All five files (docs/REQUIREMENTS.md, docs/SAFETY_AND_RISK.md, docs/TEST_PLAN.md, docs/DASHBOARD.md, docs/ALPACA.md) exist and contain substantive operator-usable content, not placeholders.",
+    "docs/SAFETY_AND_RISK.md explicitly distinguishes stop, pause, entry kill switch, close, close-all, and flatten, and states that shutdown does not liquidate positions or cancel valid protective stops.",
+    "docs/SAFETY_AND_RISK.md documents credential env file location/ownership/0600 permissions, per-mode separation, state directory permissions, backup/restore, and integrity-check steps.",
+    "docs/ALPACA.md states that Basic IEX is not consolidated SIP data, documents paper/live endpoint isolation, and contains a capability matrix that marks unsupported or unverified fractional/protective combinations as blocked.",
+    "docs/TEST_PLAN.md maps the required final acceptance scenarios to specific test files and states that the paper suite requires credentials plus explicit approval and that no automated live orders are run.",
+    "docs/DASHBOARD.md states that the dashboard is a separate read-only process serving a compiled build, determines OFFLINE from heartbeat age, and never places orders or mutates configuration.",
+    "Every Make target or CLI command named in these documents exists in the repository's Makefile or CLI.",
+    "No document contains real credentials or claims that paper or live verification has passed when it has not been performed."
+  ],
+  "selected_backend": "pi_cli",
+  "model": "openrouter/meta/muse-spark-1.3-contributor",
+  "verification_profile": "focused",
+  "allowed_write_paths": [
+    "docs/REQUIREMENTS.md",
+    "docs/SAFETY_AND_RISK.md",
+    "docs/TEST_PLAN.md",
+    "docs/DASHBOARD.md",
+    "docs/ALPACA.md"
+  ],
+  "forbidden_changes": [
+    "modify files outside allowed_write_paths",
+    "change PLAN_SKELETON.json or any planning artifacts under .abracapocus/",
+    "document commands, capabilities, or verification results that do not exist",
+    "include real credentials, account numbers, or tokens",
+    "claim profitability or live performance from paper or shadow results"
+  ],
+  "dependencies": [
+    "t.1"
+  ],
+  "task_timeout_seconds": 1500
+}

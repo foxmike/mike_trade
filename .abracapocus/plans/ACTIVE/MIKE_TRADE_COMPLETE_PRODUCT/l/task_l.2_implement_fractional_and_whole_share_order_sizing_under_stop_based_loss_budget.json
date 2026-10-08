@@ -1,0 +1,44 @@
+{
+  "schema_version": 1,
+  "task_id": "l.2",
+  "phase": "L",
+  "phase_id": "l",
+  "title": "Implement fractional and whole share order sizing under stop-based loss budget",
+  "description": "Implement pure, deterministic long-entry position sizing in mike_trade/portfolio/sizing.py. Inputs (all Decimal, no floats): reference/limit entry price, remaining symbol budget, remaining total budget, broker buying power, configured reserve and slippage cushion, allowed share precision (whole shares or provider-supported fractional increment), minimum order value, optional or required max_planned_loss_usd, validated protective stop price/distance, and a provider capability descriptor indicating whether fractional quantities and the selected protection type (fixed stop, broker-native trailing stop, stepped trailing) are supported together. Algorithm: compute the spendable notional as min(remaining symbol budget, remaining total budget, broker buying power minus reserve) adjusted down by the slippage cushion; if max_planned_loss_usd is configured, also cap quantity at max_planned_loss_usd / (entry price - stop price) and require a validated stop strictly below entry for longs (reject if missing when required, zero, or non-positive distance); round DOWN (ROUND_DOWN) to the allowed precision; return a sizing result with quantity, notional, planned loss, and an explicit rejection reason enum when it cannot size. Must reject: quantity rounds to zero or below minimum order value; insufficient buying power; fractional quantity requested but provider/protection combination unsupported (fail closed: fractional+trailing combos remain unavailable unless capability explicitly marked demonstrated); protection cannot be established; margin use when margin not explicitly enabled. Short sizing is not enabled: requesting a short side must be rejected. Write positive and negative unit tests in tests/unit/test_position_sizing.py.\n\nBefore editing, inspect:\n- Existing Decimal money/quantity domain types and rounding helpers (mike_trade/domain/ or equivalent)\n- Existing broker/provider capability descriptors for fractional and trailing-stop support (mike_trade/brokers/ or ports created in earlier phases)\n- Existing protective-stop validation types (mike_trade/protection/ or equivalent)\n- Existing configuration models for reserve, slippage cushion, min order value, max_planned_loss_usd\n\nDecision budget: keep sizing a pure function/class with no I/O, no broker calls, and no persistence; do not edit capability or config modules \u2014 accept them as inputs or define minimal Protocols in sizing.py.",
+  "acceptance_criteria": [
+    "mike_trade/portfolio/sizing.py exposes a pure sizing function or class that performs no I/O and uses only Decimal arithmetic with ROUND_DOWN to the allowed precision",
+    "A test proves quantity is bounded by the minimum of remaining symbol budget, remaining total budget, and broker buying power minus reserve and slippage cushion",
+    "A test proves that with max_planned_loss_usd configured, quantity * (entry - stop) never exceeds max_planned_loss_usd",
+    "A test proves a missing, equal-to-entry, or above-entry stop is rejected when max_planned_loss_usd is required",
+    "A test proves whole-share precision rounds down (e.g. computed 7.9 shares yields 7) and a result of 0 is rejected with an explicit reason",
+    "A test proves a quantity whose notional is below minimum order value is rejected",
+    "A test proves a fractional quantity is rejected (fail closed) when the provider capability does not support fractional with the selected protection type, and accepted when the capability is explicitly marked supported",
+    "A test proves insufficient broker buying power and margin-not-enabled cases are rejected with distinct reason codes",
+    "A test proves a short-side sizing request is rejected",
+    "tests/unit/test_position_sizing.py passes when run on its own with pytest"
+  ],
+  "selected_backend": "codex_cli",
+  "model": "gpt-5.6-sol",
+  "verification_profile": "focused",
+  "allowed_write_paths": [
+    "mike_trade/portfolio/sizing.py",
+    "tests/unit/test_position_sizing.py"
+  ],
+  "allowed_symbols": [
+    "SizingInput",
+    "SizingResult",
+    "SizingRejection",
+    "PositionSizer",
+    "size_long_entry"
+  ],
+  "forbidden_changes": [
+    "modify files outside allowed_write_paths",
+    "change PLAN_SKELETON.json or other planning artifacts",
+    "use float for money or quantities",
+    "perform broker, network, or database I/O in sizing",
+    "enable short sizing",
+    "run broad test suites or backtests"
+  ],
+  "dependencies": [],
+  "task_timeout_seconds": 1500
+}

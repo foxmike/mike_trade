@@ -1,0 +1,54 @@
+{
+  "schema_version": 1,
+  "task_id": "b.2",
+  "phase": "B",
+  "phase_id": "b",
+  "title": "Define strategy specifications evaluations signals and provenance contracts",
+  "description": "Define the strategy-facing contracts as frozen, slotted standard-library dataclasses and Enums. Strategies never call brokers or fetch data, so these contracts carry no broker or order fields. This task runs at the same time as b.1, b.3, and b.4. Do not import mike_trade.domain.market, instruments, trading, protection, or accounts at runtime. If a type annotation needs MarketContext, import it under `if TYPE_CHECKING:` and use string annotations. Validate Decimals locally: reject float, NaN, and Infinity, and require UTC-aware datetimes with small private helpers.\n\nmike_trade/domain/strategy_types.py:\n- `StrategyRole` enum: BUY, SELL.\n- `StrategyDefinition` holds: strategy_key (lowercase snake-case, e.g. 'vwap_bounce'), version (str), role, description, required_timeframes (tuple of str such as '1m'), warmup_bars (int >= 0), and default_parameters (a read-only mapping).\n- `StrategyInstance` holds: instance_id (non-empty str), strategy_key, strategy_version, role, symbol (uppercase), account_scope_id (opaque str identifying the account or shadow scenario), parameters (a read-only mapping), enabled (bool), and an optional pair_key (e.g. 'vwap_reference') for independently registered BUY/SELL pairing.\n- `EvaluationStatus` enum with exactly these members: NO_SIGNAL, SIGNAL, INSUFFICIENT_DATA, STALE_DATA, ERROR, NOT_DUE.\n- `Evaluation` holds: instance_id, symbol, evaluated_at (UTC), bar_time (optional UTC, the completed bar evaluated), status, optional signal, reason (str), and error_detail (optional str). Invariants: status SIGNAL requires a non-None signal whose instance_id and symbol match, and every other status requires signal None. ERROR requires error_detail.\n\nmike_trade/domain/signals.py:\n- `SignalAction` enum with ENTER_LONG and EXIT_LONG active, plus dormant ENTER_SHORT and COVER_SHORT reserved for future use. Add `ENABLED_SIGNAL_ACTIONS = frozenset({ENTER_LONG, EXIT_LONG})`. Constructing a Signal with a dormant action must raise, so shorts are not enabled.\n- `SignalProvenance` holds: data_provider (str), data_feed (str), is_consolidated (bool), timeframe (str), bar_time (UTC), indicator_snapshot (a read-only mapping from str to Decimal | None), and optional research_source/research_as_of.\n- `make_signal_id(instance_id, symbol, action, bar_time)` returns a deterministic stable ID: a hex SHA-256 of a canonical string, truncated to at least 32 characters. The same inputs on the same bar always give the same ID, which supports duplicate suppression.\n- `Signal` holds: signal_id, strategy_key, strategy_version, instance_id, symbol, action, bar_time (UTC), generated_at (UTC, >= bar_time), reference_price (optional Decimal > 0), reason (non-empty str), confidence (Optional[Decimal], default None, never invented; if given, 0 <= confidence <= 1), and provenance. Add a `create(...)` classmethod that computes signal_id. Direct construction with a mismatched signal_id must raise.\n- `DecisionOutcome` enum: ACCEPT, REJECT, IGNORE, DEFER. `SignalDecision` holds: decision_id, signal_id, outcome, decided_at (UTC), reason_codes (tuple of str, non-empty for REJECT/DEFER), detail (str), and defer_until (optional UTC, required for DEFER). SignalDecision must not hold order quantities, prices, broker IDs, or fills; Signal stays separate from the decision, order intent, broker order, fill, and position cycle.\n\ntests/contracts/test_signal_contracts.py should hold positive and negative tests for every invariant: exact EvaluationStatus members, dormant-action rejection, deterministic signal IDs (equal for the same bar, different for a different bar or action), confidence defaulting to None, Evaluation SIGNAL/non-SIGNAL consistency, SignalDecision DEFER/REJECT requirements, immutability, and naive-datetime rejection.\n\nDecision budget: make at most three design choices not covered here, and record them in the module docstrings.\n\nBefore editing, inspect:\n- mike_trade/domain/errors.py (read-only), including StrategyError\n- docs/ARCHITECTURE.md (read-only, if present) for strategy and domain boundaries\n- pyproject.toml (read-only) for pytest/mypy settings",
+  "acceptance_criteria": [
+    "mike_trade/domain/strategy_types.py defines StrategyRole, StrategyDefinition, StrategyInstance, EvaluationStatus, and Evaluation",
+    "EvaluationStatus has exactly the members NO_SIGNAL, SIGNAL, INSUFFICIENT_DATA, STALE_DATA, ERROR, NOT_DUE",
+    "mike_trade/domain/signals.py defines SignalAction, ENABLED_SIGNAL_ACTIONS, SignalProvenance, make_signal_id, Signal, DecisionOutcome, and SignalDecision",
+    "ENABLED_SIGNAL_ACTIONS equals {ENTER_LONG, EXIT_LONG}, and constructing a Signal with ENTER_SHORT or COVER_SHORT raises",
+    "make_signal_id returns identical IDs for identical (instance_id, symbol, action, bar_time) and different IDs when bar_time or action differ",
+    "Signal.confidence defaults to None, and values outside [0, 1], floats, or NaN are rejected",
+    "Evaluation with status SIGNAL and no signal raises; Evaluation with any non-SIGNAL status and a signal raises; ERROR without error_detail raises",
+    "SignalDecision has outcomes ACCEPT/REJECT/IGNORE/DEFER, has no order/fill/broker fields, and DEFER without defer_until raises",
+    "Neither module imports alpaca, mike_trade.brokers, mike_trade.market_data, or other wave-1 domain modules at runtime",
+    "tests/contracts/test_signal_contracts.py contains both positive and negative tests and passes with targeted pytest"
+  ],
+  "selected_backend": "codex_cli",
+  "model": "gpt-5.6-sol",
+  "verification_profile": "focused",
+  "allowed_write_paths": [
+    "mike_trade/domain/signals.py",
+    "mike_trade/domain/strategy_types.py",
+    "tests/contracts/test_signal_contracts.py"
+  ],
+  "allowed_symbols": [
+    "StrategyRole",
+    "StrategyDefinition",
+    "StrategyInstance",
+    "EvaluationStatus",
+    "Evaluation",
+    "SignalAction",
+    "ENABLED_SIGNAL_ACTIONS",
+    "SignalProvenance",
+    "make_signal_id",
+    "Signal",
+    "DecisionOutcome",
+    "SignalDecision"
+  ],
+  "forbidden_changes": [
+    "modify files outside allowed_write_paths",
+    "change PLAN_SKELETON.json or other planning artifacts",
+    "import Alpaca SDK types, broker adapters, or concrete strategy code",
+    "invent a default confidence score",
+    "enable short or cover actions",
+    "add order, fill, or broker fields to Signal or SignalDecision",
+    "import other wave-1 domain modules at runtime",
+    "run broad test suites, backtests, or create broker orders"
+  ],
+  "dependencies": [],
+  "task_timeout_seconds": 1200
+}

@@ -1,0 +1,62 @@
+{
+  "schema_version": 1,
+  "task_id": "c.5",
+  "phase": "C",
+  "phase_id": "c",
+  "title": "Add SQLite integrity migration backup restore and maintenance utilities",
+  "description": "Implement database maintenance as application services, so later CLI/Makefile recipes can delegate to them without business logic. The services cover integrity checks, migration status, online backups with manifests, verified restore and restore rehearsal, WAL checkpointing, and optimize. Then document the database. Ledger and account isolation must hold throughout, and corruption must be detected rather than ignored.\n\nmike_trade/persistence/maintenance.py:\n- `check_integrity(db_path) -> IntegrityReport`:\n  - Runs PRAGMA integrity_check, foreign_key_check, and journal_mode, plus schema version vs known migrations (via schema.current_schema_version / discover_migrations) and journal.DomainEventJournal.verify_chain for each account scope.\n  - Uses a read-only connection.\n  - ok is True only if every check passes.\n- `migration_status(db_path)`: applied versions, pending versions, and checksum mismatches.\n- `apply_pending_migrations(db_path, *, now)`: must hold transaction.WriterLock while running.\n- `create_backup(db_path, backup_dir, *, now) -> BackupManifest`:\n  - Uses sqlite3.Connection.backup from a read connection, so it is safe while the engine writes.\n  - Writes '<environment>-<database_id>-<UTC timestamp>.sqlite3' plus a JSON manifest sidecar. The manifest holds: environment and database_id from db_identity, account_scope_ids, schema_version, sha256 of the backup file, byte size, created_at, and the integrity result of the backup copy.\n  - Refuses to finalize when the backup's integrity_check fails.\n- `verify_backup(backup_path) -> BackupVerification`: recomputes sha256 against the manifest and runs integrity_check. Any mismatch or a missing manifest is a failure.\n- `rehearse_restore(backup_path, scratch_dir)`: restores to a scratch path, then runs check_integrity and the identity/version checks without touching the live database file. It returns a report.\n- `restore_backup(backup_path, target_db_path, *, confirm_environment)`:\n  - Verifies the backup first.\n  - Requires confirm_environment to equal the manifest environment.\n  - Refuses when the target exists with a different db_identity environment or database_id (a PAPER or SHADOW backup can never overwrite a LIVE ledger, and vice versa).\n  - Refuses while another process holds the target's WriterLock.\n  - Moves the existing target and its -wal/-shm files to a timestamped '.pre-restore' copy rather than deleting them, then copies the backup atomically (temp file + os.replace) and re-runs check_integrity.\n- `checkpoint(db_path, mode='TRUNCATE')`: requires the WriterLock.\n- `optimize(db_path)`: PRAGMA optimize and ANALYZE, under the WriterLock.\n- No function deletes ledger rows or prunes append-only tables.\n- Exceptions: BackupVerificationError, RestoreRefusedError, IntegrityCheckFailedError.\n\ntests/unit/test_backup_restore.py must use tmp_path databases created via schema.initialize_database and populated through the c.3 repositories with small fixtures. Cover:\n- The integrity report is ok on a fresh database.\n- A backup taken while a WriterSession holds the lock (online) succeeds and verifies.\n- The manifest has the correct environment, scope ids, and sha256.\n- Flipping bytes inside a backup copy is detected by verify_backup (checksum and/or integrity failure).\n- A missing manifest fails.\n- rehearse_restore leaves the original database byte-identical.\n- Restoring a PAPER backup onto a LIVE database is refused.\n- A wrong confirm_environment is refused.\n- Restore while the WriterLock is held is refused.\n- A successful restore preserves a '.pre-restore' copy and passes integrity.\n- migration_status reports no pending versions after initialize.\n- checkpoint without the lock is refused when another writer holds it.\n- verify_chain tampering surfaces in check_integrity.\n\ndocs/DATABASE.md must document:\n- One SQLite WAL database per operational environment (LIVE, PAPER, SHADOW with multiple named scenarios, and BACKTEST runs), and the db_identity/account_scopes isolation rules.\n- The single-writer lock, and read-only projection access for the dashboard.\n- PRAGMA settings.\n- Forward-only migrations and checksum rules.\n- Append-only tables and journal semantics, including intent-before-submit and exactly-once fill ingestion by external activity ID.\n- Reconciliation drift and resolution tables.\n- The no-raw-tick-archive policy.\n- Decimal-as-TEXT and the UTC timestamp format.\n- Backup, verify, rehearsal, and restore procedures, with the refusal rules.\n- Corruption detection and response steps.\n- A placeholder note that operator CLI/Makefile entrypoints delegate to mike_trade.persistence.maintenance.\n\nDecision budget: make at most four design choices not covered here, and record them in the maintenance.py module docstring.\n\nBefore editing, inspect:\n- mike_trade/persistence/schema.py and mike_trade/persistence/migrations/0001_initial.sql (read-only)\n- mike_trade/persistence/journal.py (read-only)\n- mike_trade/persistence/transaction.py and mike_trade/persistence/repositories.py (read-only)\n- mike_trade/persistence/readstore.py and mike_trade/persistence/projections.py (read-only)\n- docs/ARCHITECTURE.md (read-only, if present)",
+  "acceptance_criteria": [
+    "mike_trade/persistence/maintenance.py defines check_integrity, migration_status, apply_pending_migrations, create_backup, verify_backup, rehearse_restore, restore_backup, checkpoint, optimize, IntegrityReport, BackupManifest, BackupVerification, BackupVerificationError, RestoreRefusedError, and IntegrityCheckFailedError",
+    "create_backup uses the sqlite3 online backup API and writes a JSON manifest containing environment, database_id, account_scope_ids, schema_version, sha256, size, created_at, and integrity result",
+    "verify_backup fails on a byte-corrupted backup copy and on a missing manifest",
+    "restore_backup refuses cross-environment or cross-database_id restores, a mismatched confirm_environment, and a target whose WriterLock is held",
+    "A successful restore preserves the previous database files as a '.pre-restore' copy and passes check_integrity afterward",
+    "rehearse_restore never modifies the source database file (verified byte-identical in tests)",
+    "check_integrity reports failure on journal payload tampering, foreign-key violations, or a schema version mismatch",
+    "No maintenance function deletes or prunes ledger/append-only rows",
+    "docs/DATABASE.md documents environment isolation, the single-writer model, migrations, append-only/journal semantics, exactly-once fill ingestion, drift tables, the no-tick-archive policy, and backup/verify/rehearse/restore procedures with refusal rules",
+    "tests/unit/test_backup_restore.py contains positive and negative tests for the behaviors above and passes with targeted pytest of that file only"
+  ],
+  "selected_backend": "pi_cli",
+  "model": "openrouter/meta/muse-spark-1.3-contributor",
+  "verification_profile": "focused",
+  "allowed_write_paths": [
+    "mike_trade/persistence/maintenance.py",
+    "tests/unit/test_backup_restore.py",
+    "docs/DATABASE.md"
+  ],
+  "allowed_symbols": [
+    "check_integrity",
+    "migration_status",
+    "apply_pending_migrations",
+    "create_backup",
+    "verify_backup",
+    "rehearse_restore",
+    "restore_backup",
+    "checkpoint",
+    "optimize",
+    "IntegrityReport",
+    "BackupManifest",
+    "BackupVerification",
+    "BackupVerificationError",
+    "RestoreRefusedError",
+    "IntegrityCheckFailedError"
+  ],
+  "forbidden_changes": [
+    "modify files outside allowed_write_paths",
+    "change PLAN_SKELETON.json or other planning artifacts",
+    "edit schema.py, migrations, journal.py, repositories.py, transaction.py, projections.py, or readstore.py",
+    "delete or overwrite an existing database without preserving a pre-restore copy",
+    "restore across environments or database identities",
+    "prune or delete append-only ledger rows",
+    "touch real operational databases outside tmp_path in tests",
+    "run broad test suites, backtests, or create broker orders"
+  ],
+  "dependencies": [
+    "c.1",
+    "c.2",
+    "c.3",
+    "c.4"
+  ],
+  "task_timeout_seconds": 1800
+}

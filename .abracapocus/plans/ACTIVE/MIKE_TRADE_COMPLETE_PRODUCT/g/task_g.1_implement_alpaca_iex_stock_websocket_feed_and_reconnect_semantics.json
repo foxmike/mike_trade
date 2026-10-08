@@ -1,0 +1,36 @@
+{
+  "schema_version": 1,
+  "task_id": "g.1",
+  "phase": "G",
+  "phase_id": "g",
+  "title": "Implement Alpaca IEX stock WebSocket feed and reconnect semantics",
+  "description": "Implement the Alpaca real-time stock market-data WebSocket adapter in mike_trade/market_data/alpaca_stream.py, plus contract tests in tests/contracts/test_alpaca_stream.py. The adapter implements the market-data streaming port defined in earlier phases. It opens exactly one authenticated connection per MarketDataService instance. The feed is configurable and defaults to Alpaca Basic IEX ('iex'); the SIP option exists only behind an explicit entitlement flag. Required behavior: (1) An auth handshake that uses injected credentials from the configured mode's credential source only. Never read live credentials in tests, and never log secrets. (2) An idempotent subscribe/unsubscribe API that takes a set of (symbol, channel) pairs for trades, quotes, and minute bars. Subscribing a pair that is already active sends no new wire message. The adapter keeps a diff against the active subscription set and re-sends the full active set after a reconnect. (3) Normalize each wire message (T=t/q/b, plus subscription/success/error control messages) into immutable, frozen domain events. Prices and sizes are Decimal parsed from strings or JSON numbers without float rounding. provider_source_ts is the timezone-aware UTC time parsed from the provider 't' field. receive_ts comes from the injected clock. feed_id is the actual feed identity reported or configured, e.g. 'iex'. Events also carry the provider sequence/trade id where present. (4) Reconnect with exponential backoff, jitter, and a configurable cap, using an injected clock/sleeper so tests are deterministic. Emit connection state transitions CONNECTING, AUTHENTICATED, SUBSCRIBED, DISCONNECTED, and RECONNECTING to a callback/observer so the quality layer can mark DEGRADED. (5) Treat provider errors (auth failure, connection limit exceeded/406, insufficient subscription/entitlement, invalid syntax) as typed exceptions or state events. Auth and entitlement failures do not retry in a tight loop. (6) The stream is market data only. It must not carry or depend on broker trade/order update channels, which use a separate higher-priority channel. Contract tests use a fake WebSocket transport that replays recorded or synthetic Alpaca JSON frames. They must not use the network or real credentials. Do not import the broker SDK in any strategy module. Do not persist raw ticks.\n\nBefore editing, inspect:\n- mike_trade/ domain/ports modules from earlier phases that define market-data event types, the clock port, the streaming port, and Decimal/UTC conventions (if present)\n- mike_trade/config or settings modules that define feed selection and per-mode credential sources (if present)\n- existing tests/contracts/ fixtures and conftest for fake transport patterns (if present)\n- pyproject.toml for the locked websocket/HTTP client dependencies already approved",
+  "acceptance_criteria": [
+    "mike_trade/market_data/alpaca_stream.py exposes an Alpaca stream adapter class that implements the project's market-data streaming port and defaults the feed to IEX ('iex').",
+    "Every normalized trade/quote/bar event is immutable (frozen) and carries a Decimal price/size, a timezone-aware UTC provider_source_ts parsed from the provider timestamp, a separate receive_ts from the injected clock, and a non-empty feed_id; tests assert all four for each event type.",
+    "Subscribing the same (symbol, channel) twice produces exactly one subscribe wire message, and unsubscribe sends only the pairs that were removed; a contract test asserts the frames written to the fake transport.",
+    "After a simulated disconnect, the adapter re-authenticates and re-subscribes the full active set exactly once, and backoff delays grow exponentially up to the configured cap; this is verified with an injected fake sleeper/clock and no real sleeping.",
+    "The observer receives connection state transitions, including DISCONNECTED and RECONNECTING, in the correct order.",
+    "Auth failure and insufficient-subscription/entitlement errors raise or emit typed errors and do not enter a tight retry loop; a negative test covers each.",
+    "Malformed or unknown message types are rejected or counted without crashing the stream; a negative test covers this.",
+    "Tests use no network access and no real or live credentials, and the module contains no broker order/trade-update subscription logic."
+  ],
+  "selected_backend": "claude_code_cli",
+  "model": "claude-sonnet-5-5",
+  "verification_profile": "focused",
+  "allowed_write_paths": [
+    "mike_trade/market_data/alpaca_stream.py",
+    "tests/contracts/test_alpaca_stream.py"
+  ],
+  "forbidden_changes": [
+    "modify files outside allowed_write_paths",
+    "change PLAN_SKELETON.json or other planning artifacts",
+    "use real Alpaca credentials or network access in tests",
+    "create live broker orders",
+    "persist raw tick streams to disk or database",
+    "import broker SDK from strategy modules",
+    "run broad test suites or backtests"
+  ],
+  "dependencies": [],
+  "task_timeout_seconds": 1800
+}

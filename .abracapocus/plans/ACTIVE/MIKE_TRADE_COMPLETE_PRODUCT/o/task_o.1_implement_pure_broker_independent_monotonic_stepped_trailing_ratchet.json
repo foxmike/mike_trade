@@ -1,0 +1,45 @@
+{
+  "schema_version": 1,
+  "task_id": "o.1",
+  "phase": "O",
+  "phase_id": "o",
+  "title": "Implement pure broker-independent monotonic stepped trailing ratchet",
+  "description": "Implement the pure, deterministic, broker-independent stepped trailing-stop ratchet in mike_trade/risk/trailing.py, with unit tests in tests/unit/test_stepped_trailing.py. This module must not do any I/O. It must not import broker, persistence, clock, network, or execution modules, and must not submit, replace, or cancel orders. It only computes stop candidates.\n\nBefore editing, inspect: (if present) mike_trade/risk/ (existing risk/protection models, fixed-stop and native-trailing policy types from earlier phases), mike_trade/domain/ or equivalent money/quantity Decimal types, mike_trade/config/ per-symbol protection configuration schema, existing broker capability/price-increment rounding helpers, and tests/unit/ conventions (pytest style, fixtures).\n\nImplement:\n1. A frozen SteppedTrailingPolicy value type with these fields: trailing distance (kind USD or PERCENT, Decimal value > 0), step increment (kind USD or PERCENT, Decimal value > 0), replacement minimum interval (timedelta >= 0), TIF (for example DAY/GTC), policy revision identifier, and required broker capabilities (standalone stop, stop replace). Invalid values (zero, negative, non-Decimal, float inputs) are rejected with a clear validation error.\n2. A frozen SteppedTrailingState / RatchetResult value type carrying entry_reference, high_watermark, ratchet_anchor, candidate_stop, and steps_advanced.\n3. A pure function initial_state(entry_reference, policy) returning the initial stop = entry_reference - distance. Percent distance is entry_reference * pct / 100.\n4. A pure function advance(state, observed_high, policy) for LONG positions only. high_watermark = max(previous, observed_high). Count complete favorable steps of (high_watermark - ratchet_anchor) // step. The anchor advances by whole steps only, and a single jump may cross multiple steps. Sub-step highs do not reprice. Price declines never lower the watermark, anchor, or candidate stop. Percent step is computed on the documented basis (entry reference), and the module docstring must state this explicitly.\n5. A pure rounding hook should_replace(candidate_stop, last_confirmed_stop, tick_rounder). It applies broker price rounding to the candidate (rounding DOWN for long-side stop prices to a valid increment, via an injected rounder) BEFORE comparing to last_confirmed_stop. It returns True only when the rounded candidate is strictly greater than last_confirmed_stop, so it never proposes a downward or equal move.\n6. Explicit rejection (ValueError or NotImplementedError) for short side, which remains a future capability boundary.\n7. All arithmetic uses Decimal. Float inputs are rejected.\n\nThe canonical USD example must pass exactly: entry 100, distance 2, step 1 -> stop 98; high 100.80 -> stop 98; high 101 -> stop 99; high 103.20 -> stop 101; a subsequent decline (for example high observation 102 or 99) leaves stop 101.\n\nDecision budget: if a design choice is ambiguous (for example the percent-step basis), pick the simplest deterministic option, document it in the module docstring, and test it. Do not touch other modules.",
+  "acceptance_criteria": [
+    "mike_trade/risk/trailing.py exists and imports nothing from broker, persistence, execution, network, or clock modules (verifiable by inspecting its import statements).",
+    "Canonical USD example passes exactly in a test: entry Decimal('100'), distance USD 2, step USD 1 yields stops 98, 98 (high 100.80), 99 (high 101), 101 (high 103.20), and 101 after a later lower high.",
+    "A test proves that a single price jump crossing multiple whole steps advances the stop by all complete steps in one call.",
+    "A test proves that sub-step highs never change the candidate stop.",
+    "A test (property-style or parameterized over a sequence that includes declines) proves the candidate stop sequence is monotonically non-decreasing for a long position.",
+    "Percent-distance and percent-step policies are covered by at least one test each with exact Decimal expected values.",
+    "should_replace applies the injected broker rounding before comparison and returns False when the rounded candidate is <= last confirmed stop; tests cover equal-after-rounding and lower-after-rounding cases.",
+    "Float inputs, zero/negative distance or step, and short-side requests are rejected with tested exceptions.",
+    "tests/unit/test_stepped_trailing.py passes when run alone with pytest."
+  ],
+  "selected_backend": "claude_code_cli",
+  "model": "claude-sonnet-5-5",
+  "verification_profile": "focused",
+  "allowed_write_paths": [
+    "mike_trade/risk/trailing.py",
+    "tests/unit/test_stepped_trailing.py"
+  ],
+  "allowed_symbols": [
+    "SteppedTrailingPolicy",
+    "SteppedTrailingState",
+    "RatchetResult",
+    "DistanceKind",
+    "initial_state",
+    "advance",
+    "should_replace"
+  ],
+  "forbidden_changes": [
+    "modify files outside allowed_write_paths",
+    "change PLAN_SKELETON.json or other planning artifacts",
+    "perform I/O, broker calls, or order submission from mike_trade/risk/trailing.py",
+    "use float arithmetic for prices or quantities",
+    "allow any code path that lowers a long-position stop",
+    "create live broker orders, access broker credentials, or run broad test suites/backtests"
+  ],
+  "dependencies": [],
+  "task_timeout_seconds": 1200
+}

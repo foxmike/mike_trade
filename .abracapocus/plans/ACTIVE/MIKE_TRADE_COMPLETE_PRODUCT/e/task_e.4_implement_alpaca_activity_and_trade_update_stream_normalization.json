@@ -1,0 +1,58 @@
+{
+  "schema_version": 1,
+  "task_id": "e.4",
+  "phase": "E",
+  "phase_id": "e",
+  "title": "Implement Alpaca activity and trade update stream normalization",
+  "description": "Implement broker activity ingestion and trade_updates stream normalization.\n\nmike_trade/brokers/alpaca/activities.py:\n(1) Query GET /v2/account/activities, by type and with date/after/until filters, through the e.1 client. Paginate using page_token and page_size with a hard maximum page count so reads are bounded.\n(2) Normalize FILL activities: id, order_id, symbol, side, qty, cum_qty, leaves_qty, price, transaction_time in UTC, and type (fill or partial_fill). Normalize non-trade activities where present, such as fees (FEE, CFEE, PTC, and TAF-related where reported), dividends, and corporate actions (SPLIT, SPIN, MA, NC, and similar). All amounts are Decimal.\n(3) Each normalized activity has a stable idempotency key, the broker activity id plus environment/account fingerprint, so repeated ingestion of the same activity is detectable and can be deduplicated downstream. Provide a pure dedupe helper.\n(4) Unknown activity types are preserved as a raw, typed UnknownActivity rather than dropped or crashing.\n\nmike_trade/brokers/alpaca/updates.py:\n(1) Normalize trade_updates stream messages into a typed TradeUpdate covering at least: new/accepted, pending_new, partial_fill, fill, rejected, canceled, expired, replaced, pending_cancel, pending_replace, done_for_day, and stopped/suspended/calculated where documented. Include event, the full normalized order (Decimal filled_qty, filled_avg_price, hwm, stop_price, and so on), execution_id, price, qty, position_qty, and UTC timestamp. Partial fills must carry incremental and cumulative quantities correctly. Unknown events are preserved as typed unknowns.\n(2) Implement a stream session/state machine over an injectable websocket transport protocol, with no real network access in tests. It authenticates with environment-matched credentials, subscribes to trade_updates (listen), and handles auth failure as a typed error.\n(3) Reconnection uses bounded exponential backoff with jitter (injectable sleep) and a maximum attempt policy. Each reconnect emits an explicit Reconnected/Gap event so downstream reconciliation can query REST (open orders, orders by client_order_id, and activities since the last seen timestamp) to fill gaps. The session never assumes that no events were missed.\n(4) Updates are tagged with environment/account fingerprint. A message arriving on a session whose environment does not match is rejected.\n(5) This module only normalizes and emits. It never submits, cancels, or modifies orders.\n\nCreate tests/contracts/test_alpaca_trade_updates.py using JSON fixtures and fake transports, with no network access and no credentials. Positive and negative tests must cover: normalization of each listed event type; partial-fill then fill sequence quantities; Decimal fields; unknown event preservation; auth failure; that disconnect produces a Reconnected/Gap event followed by resubscription; that backoff is bounded by the injected sleep; activity pagination with a page cap; fill/fee/corporate activity normalization; idempotency-key stability and dedupe; and environment mismatch rejection.\n\nBefore editing, inspect: mike_trade/brokers/alpaca/http.py and auth.py (from e.1), account.py and assets.py (from e.2), any fill/activity/event domain types and the broker port from earlier phases, and existing async/clock abstractions. If orders.py from e.3 is present, reuse its order-normalization helper only when it exists. Otherwise implement a local normalizer and do not edit orders.py.",
+  "acceptance_criteria": [
+    "activities.py paginates account activities with page_token and enforces a hard maximum page count, verified by a fixture test",
+    "FILL, fee, dividend, and corporate-action activities normalize to typed objects with Decimal amounts/quantities and UTC timestamps; unknown types become a typed UnknownActivity",
+    "Each normalized activity has a stable idempotency key including environment/account fingerprint; the dedupe helper removes duplicates on repeated ingestion",
+    "updates.py normalizes accepted/new, partial_fill, fill, rejected, canceled, expired, replaced, pending_cancel, and pending_replace trade_updates into a typed TradeUpdate with Decimal quantities and prices",
+    "A partial_fill followed by fill fixture yields correct incremental qty, cumulative filled_qty, and position_qty",
+    "Stream session authenticates, subscribes to trade_updates, and raises a typed error on auth failure",
+    "A simulated disconnect emits an explicit reconnect/gap event, resubscribes, and uses bounded backoff via the injected sleep (no real delay)",
+    "Messages whose environment does not match the session are rejected",
+    "Neither module calls any order submit/cancel/replace endpoint",
+    "tests/contracts/test_alpaca_trade_updates.py passes without network access or credentials"
+  ],
+  "selected_backend": "codex_cli",
+  "model": "gpt-5.6-sol",
+  "verification_profile": "focused",
+  "allowed_write_paths": [
+    "mike_trade/brokers/alpaca/activities.py",
+    "mike_trade/brokers/alpaca/updates.py",
+    "tests/contracts/test_alpaca_trade_updates.py"
+  ],
+  "allowed_symbols": [
+    "AlpacaActivityService",
+    "FillActivity",
+    "FeeActivity",
+    "CorporateActivity",
+    "UnknownActivity",
+    "activity_idempotency_key",
+    "dedupe_activities",
+    "TradeUpdate",
+    "TradeUpdateEvent",
+    "TradeUpdateStream",
+    "StreamReconnected",
+    "StreamAuthError",
+    "ReconnectPolicy"
+  ],
+  "forbidden_changes": [
+    "modify files outside allowed_write_paths",
+    "edit orders.py, http.py, auth.py, account.py, or assets.py",
+    "change PLAN_SKELETON.json or any planning artifacts",
+    "submit, cancel, or replace orders",
+    "open real websocket or HTTP connections in tests",
+    "use float for money or quantities",
+    "silently drop unknown events or activities",
+    "run broad test suites or backtests"
+  ],
+  "dependencies": [
+    "e.1",
+    "e.2"
+  ],
+  "task_timeout_seconds": 1800
+}

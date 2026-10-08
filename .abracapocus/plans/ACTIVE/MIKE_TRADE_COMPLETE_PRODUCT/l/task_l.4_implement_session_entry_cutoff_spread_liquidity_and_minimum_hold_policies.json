@@ -1,0 +1,54 @@
+{
+  "schema_version": 1,
+  "task_id": "l.4",
+  "phase": "L",
+  "phase_id": "l",
+  "title": "Implement session entry cutoff spread liquidity and minimum hold policies",
+  "description": "Implement session and market-quality entry policies. In mike_trade/risk/session_policy.py: regular-hours-only entry gating using the New York exchange calendar (America/New_York); configurable entry cutoff (no new entries after N minutes before close) that respects early-close days by deriving cutoff from the actual session close; and discretionary minimum-hold policy that blocks ordinary strategy (discretionary) SELL exits until a configured minimum hold elapses from the first confirmed entry fill, while explicitly NOT applying to protective stops, trailing stops, risk/safety exits, daily-loss exits, manual close/close-all/flatten, reconciliation-driven actions, or optional end-of-day close. Optional end-of-day close remains disabled by default and is not implemented as an entry block. In mike_trade/risk/market_filters.py: spread filter (max spread in absolute Decimal and/or basis points from latest bid/ask), liquidity filter (minimum recent volume/quote size), and fail-closed handling when quote data is stale, missing, crossed/locked, or has unknown provenance; IEX feed provenance must be passed through in the decision for audit. Each policy returns a decision with explicit reason codes and is a pure evaluator taking clock/time and market snapshot inputs (no data fetching, no broker calls). All prices Decimal; times timezone-aware UTC. Write tests in tests/unit/test_session_policy.py covering both modules.\n\nBefore editing, inspect:\n- mike_trade/risk/entry_eligibility.py (from l.3 if present in the same wave branch; otherwise conventions from l.1/l.2) for reason-code and decision conventions\n- mike_trade/portfolio/sizing.py and mike_trade/portfolio/budgets.py (from l.2/l.1) for Decimal conventions\n- Existing exchange calendar/clock ports, early-close handling, and market data snapshot/quote types with feed provenance and staleness metadata from earlier phases\n- Existing configuration models for entry cutoff, spread, liquidity, minimum hold, end-of-day close\n\nDecision budget: do not edit calendar, market-data, or config modules; accept their types as inputs or define minimal Protocols in the allowed files.",
+  "acceptance_criteria": [
+    "A test proves entries are blocked before regular-session open and after regular-session close in America/New_York, including across a DST transition date",
+    "A test proves the entry cutoff is computed from the actual session close, so on an early-close day (13:00 ET) the cutoff moves earlier accordingly",
+    "A test proves a spread wider than the configured absolute or basis-point maximum blocks entry with a distinct reason code",
+    "A test proves insufficient liquidity blocks entry with a distinct reason code",
+    "A test proves stale, missing, crossed, or locked quotes fail closed and block entry",
+    "A test proves the market filter decision carries the feed provenance (e.g. IEX) through for audit",
+    "A test proves minimum hold blocks an ordinary strategy SELL before the hold elapses and permits it afterwards",
+    "A test proves minimum hold does not block protective stop, trailing stop, risk/safety exit, manual close/flatten, or reconciliation exits",
+    "A test proves end-of-day close is disabled by default",
+    "Neither module performs network, broker, or database I/O",
+    "tests/unit/test_session_policy.py passes when run on its own with pytest"
+  ],
+  "selected_backend": "codex_cli",
+  "model": "gpt-6-luna",
+  "verification_profile": "focused",
+  "allowed_write_paths": [
+    "mike_trade/risk/session_policy.py",
+    "mike_trade/risk/market_filters.py",
+    "tests/unit/test_session_policy.py"
+  ],
+  "allowed_symbols": [
+    "SessionPolicy",
+    "SessionDecision",
+    "EntryCutoffPolicy",
+    "MinimumHoldPolicy",
+    "ExitKind",
+    "SpreadFilter",
+    "LiquidityFilter",
+    "MarketFilterDecision",
+    "MarketFilterReason"
+  ],
+  "forbidden_changes": [
+    "modify files outside allowed_write_paths",
+    "change PLAN_SKELETON.json or other planning artifacts",
+    "apply minimum hold to protective, trailing, risk, manual, or reconciliation exits",
+    "enable end-of-day close by default",
+    "fetch market data or call brokers from policy modules",
+    "use float for prices",
+    "run broad test suites or backtests"
+  ],
+  "dependencies": [
+    "l.1",
+    "l.2"
+  ],
+  "task_timeout_seconds": 1800
+}

@@ -1,0 +1,52 @@
+{
+  "schema_version": 1,
+  "task_id": "s.1",
+  "phase": "S",
+  "phase_id": "s",
+  "title": "Implement broker fee activity ingestion and account equity reconciliation reports",
+  "description": "Implement broker fee/activity ingestion and account equity reconciliation reporting. Every account or scenario is reported separately and modes are never mixed.\n\nBefore editing, inspect: the broker port and the Alpaca trading adapter from earlier phases, especially any account-activities/fills/fees method, its pagination, and the idempotency keys it exposes; the persistence package (SQLite WAL single authoritative writer, migrations, append-only event store, idempotent broker activity ingestion records, read projections for fills/orders/positions/cycles/balances); the shadow ledger and its simulated fee model; the domain Decimal money/quantity types and the mode/account/scenario identifiers; the clock port and the America/New_York session calendar used for day/week boundaries; and any existing mike_trade/reporting package modules. Reuse existing persistence writers and readers. Do not add schema migrations outside allowed paths.\n\nImplement mike_trade/reporting/fees.py:\n(1) A FeeStatus str Enum whose values are exactly 'CONFIRMED', 'ESTIMATED' and 'UNAVAILABLE'. The phase s.2 task relies on these exact string values.\n(2) A function that normalizes broker activities from the broker port into filtered typed records. Only an allowlist of fields is kept (activity id, type, order id/client_order_id when present, symbol, qty, price, net amount, fee amount, timestamp UTC, description category). Raw unfiltered payloads, secrets and full account identifiers are never retained.\n(3) Classification of each activity as TRADE_FILL, FEE (regulatory/commission/other, with subtype), EXTERNAL_FLOW (deposits, withdrawals, transfers, journals), INCOME (dividends/interest), CORPORATE_ACTION or OTHER.\n(4) Idempotent ingestion keyed by broker activity id. Re-ingesting the same activity produces no duplicate record or event, and records are emitted through the existing single authoritative writer path only.\n(5) Per-order fee attribution. A fee is CONFIRMED only when a broker activity explicitly links it to that order. Otherwise the order fee is ESTIMATED from the configured fee schedule, labeled as estimated, or UNAVAILABLE when no schedule exists. An estimate is never stored or reported as confirmed, and there is no function that loads operator-supplied fee files (CSV or otherwise).\n(6) For SHADOW scenarios, fees come only from the scenario's configured simulated fee model and are labeled ESTIMATED.\n\nImplement mike_trade/reporting/accounting.py:\n(1) An AccountLedgerReport (or equivalently named) dataclass per account/scenario and period (day, week, lifetime; session boundaries in America/New_York, timestamps UTC). It holds these separate Decimal fields:\n- starting cash, ending cash and ending equity;\n- account buying power vs. authorized project budget (total and per symbol) vs. current symbol commitment (reserved pending buys plus deployed cost basis);\n- realized gross P&L, confirmed fees, estimated fees, net realized P&L and a fees_complete flag;\n- unrealized P&L with mark price source, as-of and stale flag;\n- external flows (deposits/withdrawals/transfers), income and corporate adjustments, each reported apart from trading P&L.\n(2) Reconciliation identity: starting equity + external flows + income/corporate adjustments + net realized P&L + change in unrealized P&L = ending equity. The residual is computed at full Decimal precision. The report has an explicit valuation convention (mark source and as-of) and an explicit rounding convention (presentation quantized to cents using ROUND_HALF_EVEN; internal math unrounded). It exposes residual and reconciled=true|false against a configurable tolerance, and a nonzero residual beyond tolerance is reported as drift rather than hidden.\n(3) A query helper that rejects requests mixing accounts or modes.\n\nWrite tests/unit/test_reporting_reconciliation.py using temporary migrated SQLite and fake broker activity fixtures. No network access and no credentials. Cover:\n- deposits/withdrawals excluded from trading P&L;\n- partial fills producing correct realized P&L;\n- confirmed vs. estimated vs. unavailable fee labeling, with net P&L flagged incomplete when any fee is unavailable;\n- idempotent re-ingestion;\n- filtering of raw payload fields and secrets;\n- identity holding to zero residual on a consistent fixture, and drift reported on an inconsistent fixture;\n- rounding convention;\n- cross-account/mode isolation;\n- absence of any manual fee-file loader.\n\nBounded decision budget: if the broker port lacks an activities method, add nothing outside allowed paths. Accept an iterable of activity records via dependency injection, and leave fees UNAVAILABLE when no source is wired.",
+  "acceptance_criteria": [
+    "mike_trade/reporting/fees.py defines FeeStatus with exactly the values CONFIRMED, ESTIMATED and UNAVAILABLE, plus activity normalization, classification and idempotent ingestion functions",
+    "Re-ingesting an identical broker activity id produces no additional persisted record or event, as demonstrated by a test",
+    "A fee is reported CONFIRMED only when a broker activity links it to the order; otherwise it is ESTIMATED with an estimated label or UNAVAILABLE, and no code path accepts an operator-supplied fee file",
+    "Normalized activity records keep only allowlisted fields; tests assert that secret-like keys, full account identifiers and unknown raw payload fields are absent",
+    "accounting.py reports cash, buying power, authorized budget, symbol commitment, realized gross, fees by status, net realized, unrealized (with mark source/as-of/stale), external flows and income as separate Decimal fields",
+    "The reconciliation identity yields residual 0 and reconciled=true on a consistent fixture, and a nonzero residual with reconciled=false on an inconsistent fixture",
+    "Deposits and withdrawals change equity and external_flows but never realized or unrealized trading P&L, as demonstrated by a test",
+    "Day and week periods use America/New_York session boundaries, while stored and returned timestamps are timezone-aware UTC",
+    "Requests spanning multiple accounts or modes are rejected, and SHADOW fees are always labeled ESTIMATED",
+    "tests/unit/test_reporting_reconciliation.py contains passing positive and negative tests and uses no network access or broker credentials"
+  ],
+  "selected_backend": "claude_code_cli",
+  "model": "claude-sonnet-5-5",
+  "verification_profile": "focused",
+  "allowed_write_paths": [
+    "mike_trade/reporting/accounting.py",
+    "mike_trade/reporting/fees.py",
+    "tests/unit/test_reporting_reconciliation.py"
+  ],
+  "allowed_symbols": [
+    "FeeStatus",
+    "ActivityCategory",
+    "normalize_broker_activity",
+    "ingest_broker_activities",
+    "attribute_order_fees",
+    "AccountLedgerReport",
+    "build_account_ledger_report",
+    "reconcile_equity"
+  ],
+  "forbidden_changes": [
+    "modify files outside allowed_write_paths",
+    "change PLAN_SKELETON.json or planning artifacts",
+    "add any manual or hand-loaded fee file import path",
+    "fabricate per-order fees or report estimated fees as confirmed",
+    "persist raw unfiltered provider payloads, secrets or full account identifiers",
+    "write to the database outside the existing single authoritative writer path",
+    "combine balances or P&L across accounts, modes or scenarios",
+    "use float for money, quantity or fee values",
+    "access broker credentials, call real broker endpoints, or create broker orders",
+    "run broad test suites or backtests"
+  ],
+  "dependencies": [],
+  "task_timeout_seconds": 1800
+}

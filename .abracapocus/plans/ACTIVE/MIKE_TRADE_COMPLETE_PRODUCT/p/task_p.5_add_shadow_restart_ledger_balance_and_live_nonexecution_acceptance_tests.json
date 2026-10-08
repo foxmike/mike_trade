@@ -1,0 +1,39 @@
+{
+  "schema_version": 1,
+  "task_id": "p.5",
+  "phase": "P",
+  "phase_id": "p",
+  "title": "Add shadow restart ledger balance and live-nonexecution acceptance tests",
+  "description": "This is a verification-only task. Write real acceptance tests and an audit artifact for the phase p SHADOW implementation. Do not modify production code. If a defect is found, record it in the verification doc as a failing/open item rather than editing source files.\n\ntests/integration/test_shadow_restart.py must use a temporary SQLite WAL database. It runs at least one named scenario (via mike_trade/shadow/scenarios.py) through a deterministic, fixed quote/bar sequence. The sequence must cover:\n- buy fill\n- partial fill\n- stop arming\n- trailing stop update\n- stop-triggered or discretionary exit\n- cash adjustment\n- cooldown/loss-streak counter changes\n\nThe test then closes everything and reopens from the same database file in a fresh account/ledger/runner instance. It asserts that cash, positions, open orders, stop state, realized/unrealized P&L, per-symbol session entry counts, loss streaks and cooldown expiry are identical after the restart. It also asserts that starting cash is not re-applied and positions are not reset. Include a second scenario to prove that restart restores each scenario independently.\n\nThe file must also include live-nonexecution tests:\n- With Alpaca trading client constructors/order submission patched to raise, and paper/live credential env vars poisoned, a full shadow run completes without any call to them.\n- SHADOW ledgers reject PAPER/LIVE account IDs.\n- All shadow fill and stop records are labeled estimated and not broker-confirmed, and carry simulator version and feed provenance.\n\ndocs/verification/phase_p_shadow.md must document: what was verified; the exact focused commands used to run these tests; their results; the simulator assumptions (quote side, latency, slippage, participation, stop trigger); the restart/isolation/nonexecution guarantees and evidence; any gaps or open defects; and the explicit statement that shadow results are estimates, not broker-confirmed, and imply no profitability claim.\n\nBefore editing, inspect:\n- mike_trade/brokers/shadow/account.py, mike_trade/brokers/shadow/ledger.py, mike_trade/brokers/shadow/fills.py, mike_trade/brokers/shadow/stops.py\n- mike_trade/shadow/scenarios.py\n- tests/unit/test_shadow_account.py, tests/unit/test_shadow_fills.py, tests/unit/test_shadow_stops.py, tests/integration/test_shadow_isolation.py\n- the existing Alpaca adapter module(s) under mike_trade/brokers/ (only to identify the symbols to patch, not to edit them)",
+  "acceptance_criteria": [
+    "tests/integration/test_shadow_restart.py exists and passes when run alone, using only a temporary database and deterministic fixtures",
+    "After the restart, cash, positions, open orders, stop state, realized/unrealized P&L, session entry counts, loss streaks and cooldown expiry exactly equal their pre-restart Decimal/UTC values",
+    "The restart test proves starting cash is not re-applied and positions are not reset, for at least two independent scenarios",
+    "The live-nonexecution test fails if any Alpaca trading client constructor or order-submission path is invoked during a full shadow run, and it passes with the current implementation",
+    "The test asserts that SHADOW ledgers reject PAPER/LIVE account identifiers",
+    "The test asserts that every shadow fill/stop record is estimated=True and broker_confirmed=False and carries simulator version and provenance",
+    "docs/verification/phase_p_shadow.md exists and lists the exact commands run, results, simulator assumptions, guarantees, open gaps, and the estimated/no-profitability-claim statement",
+    "No production source files are modified by this task"
+  ],
+  "selected_backend": "pi_cli",
+  "model": "openrouter/meta/muse-spark-1.3-contributor",
+  "verification_profile": "focused",
+  "allowed_write_paths": [
+    "tests/integration/test_shadow_restart.py",
+    "docs/verification/phase_p_shadow.md"
+  ],
+  "forbidden_changes": [
+    "modify files outside allowed_write_paths, including any mike_trade/ production source",
+    "change PLAN_SKELETON.json or other planning artifacts",
+    "use real broker credentials or network access in tests",
+    "create live or paper broker orders",
+    "run broad test suites, large backtests, or paid data acquisition"
+  ],
+  "dependencies": [
+    "p.1",
+    "p.2",
+    "p.3",
+    "p.4"
+  ],
+  "task_timeout_seconds": 1500
+}

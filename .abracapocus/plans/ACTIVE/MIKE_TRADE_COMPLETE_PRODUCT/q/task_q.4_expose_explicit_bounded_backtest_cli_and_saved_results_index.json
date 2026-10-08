@@ -1,0 +1,48 @@
+{
+  "schema_version": 1,
+  "task_id": "q.4",
+  "phase": "Q",
+  "phase_id": "q",
+  "title": "Expose explicit bounded backtest CLI and saved results index",
+  "description": "Implement the operator-facing backtest command layer in mike_trade/backtest/commands.py. The application CLI and Makefile recipes delegate to it. Business logic stays in the application layer, and these commands only parse, validate, delegate and render.\n\nCommands, as plain functions plus a registration hook compatible with the existing CLI command pattern:\n- backtest run: requires explicit --symbols (1-10), --start and --end (bounded window), --dataset (path to a local offline dataset), --seed and --config. Optional: --role research|dev|holdout and --holdout-lock. It builds a BacktestRequest and delegates to the backtest runner.\n  - It rejects a missing window, a window longer than the configured maximum, more than 10 symbols, missing dataset, or any network/download source with a clear nonzero-exit error.\n  - There is never an implicit history download.\n- backtest list: the saved results index. It lists prior runs with run_id, created_at, symbols, window, role, config hash, seed, trade count and net return. It is bounded by --limit (default e.g. 20).\n- backtest show <run_id>: prints the manifest and summary metrics.\n- backtest export <run_id> --format csv|json --out <path>: writes trades and metrics.\n\nThe results index reads from the runner's persisted results/manifest store. It is read-only and never mutates manifests. Output is deterministic (stable ordering) and supports a --json flag for machine-readable output.\n\nThe command layer must never load broker credentials or construct a broker client, and it must not touch live/paper/shadow account state.\n\nWrite tests/unit/test_backtest_cli.py. It must not run real backtests:\n- inject a fake runner/results store\n- assert argument validation (positive and negative)\n- assert delegation of exact parameters\n- assert index ordering and the --limit bound\n- assert --json output schema\n- assert export file contents\n- assert holdout without lock is refused\n- assert no credential environment variables are read (monkeypatch os.environ to contain fake ALPACA_* keys and assert they are not accessed or used)\n\nBefore editing, inspect:\n- mike_trade/cli.py and mike_trade/controls/commands.py, mike_trade/controls/config_commands.py (existing command/registration pattern and exit-code conventions)\n- mike_trade/backtest/runner.py and mike_trade/backtest/manifest.py interfaces as produced in q.3. If not yet present at execution time, code against the q.3 symbol names BacktestRunner, BacktestRequest, BacktestResult, RunManifest, PeriodRole and compute_metrics via injected protocols.\n- mike_trade/backtest/feed.py (q.1) for dataset/provenance loading entry points\n- mike_trade/persistence/readstore.py (read-only query conventions)\n\nDo not edit mike_trade/cli.py or the Makefile in this task. Expose a register function that the CLI can call.",
+  "acceptance_criteria": [
+    "mike_trade/backtest/commands.py defines run, list, show and export command handlers and a register function compatible with the existing CLI command pattern",
+    "backtest run with 0 or more than 10 symbols, a missing start/end, a window exceeding the configured maximum, or a missing dataset path exits nonzero with a clear error and does not call the runner",
+    "backtest run never downloads data; a dataset argument that is a URL/remote source is rejected",
+    "--role holdout without --holdout-lock is refused before the runner is invoked",
+    "A valid run delegates a BacktestRequest with exactly the parsed symbols, window, dataset, seed, config and role to the injected runner",
+    "backtest list returns runs in deterministic order (created_at desc, then run_id) and never more than --limit rows",
+    "backtest list/show --json output contains run_id, symbols, window, role, config_hash, seed, trade_count and net_return",
+    "backtest export writes CSV/JSON files whose trade rows and metrics match the fake store contents",
+    "Command handlers do not mutate manifests or results and do not construct any broker client or read ALPACA_* credentials",
+    "tests/unit/test_backtest_cli.py exists with positive and negative tests and passes when run alone"
+  ],
+  "selected_backend": "pi_cli",
+  "model": "openrouter/meta/muse-spark-1.3-contributor",
+  "verification_profile": "focused",
+  "allowed_write_paths": [
+    "mike_trade/backtest/commands.py",
+    "tests/unit/test_backtest_cli.py"
+  ],
+  "allowed_symbols": [
+    "register",
+    "cmd_backtest_run",
+    "cmd_backtest_list",
+    "cmd_backtest_show",
+    "cmd_backtest_export",
+    "BacktestResultsIndex"
+  ],
+  "forbidden_changes": [
+    "modify files outside allowed_write_paths, including mike_trade/cli.py, Makefile, runner.py and manifest.py",
+    "change PLAN_SKELETON.json or other planning artifacts",
+    "put backtest business logic in Makefile recipes or CLI parsing code",
+    "trigger implicit or broad historical data downloads",
+    "load broker credentials or construct a broker client",
+    "execute a real backtest inside unit tests",
+    "create live broker orders or run broad test suites/backtests"
+  ],
+  "dependencies": [
+    "q.1"
+  ],
+  "task_timeout_seconds": 1500
+}

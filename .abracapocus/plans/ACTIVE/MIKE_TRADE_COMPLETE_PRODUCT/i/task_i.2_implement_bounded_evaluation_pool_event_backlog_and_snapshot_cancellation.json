@@ -1,0 +1,40 @@
+{
+  "schema_version": 1,
+  "task_id": "i.2",
+  "phase": "I",
+  "phase_id": "i",
+  "title": "Implement bounded evaluation pool event backlog and snapshot cancellation",
+  "description": "Build bounded event queueing in mike_trade/scheduling/queueing.py and a bounded strategy evaluation pool in mike_trade/scheduling/workers.py. Put the unit tests in tests/unit/test_event_backpressure.py.\n\nQueueing (queueing.py):\n- Events fall into two classes, assigned by event type, never by caller choice.\n  - CRITICAL: fills, broker order/trade updates, reconciliation, stop/protective events, safety exits, manual close.\n  - COALESCIBLE: market-data snapshots, quote changes, discretionary evaluation requests.\n- CRITICAL events go to a bounded queue. They are never dropped, coalesced or discarded. When that queue is full, producers apply backpressure by awaiting; nothing is silently lost. Overflow raises a health-visible condition.\n- COALESCIBLE events are coalesced per key (symbol, strategy_id, side), keeping only the latest snapshot_version. An older version arriving after a newer one is discarded. Coalesced and discarded counts are recorded.\n- Per-symbol watermarks hold the latest snapshot_version.\n- The backlog exposes depth, oldest-age, coalesced, discarded and backpressure counters for health reporting.\n- Use asyncio primitives with explicit maxsize. Unbounded queues are not allowed.\n\nWorkers (workers.py):\n- An EvaluationPool wraps one bounded concurrent.futures.ThreadPoolExecutor, sized by configuration with a small default. The pool is not per stock or per strategy.\n- An opt-in ProcessPool path exists only for strategies that explicitly declare cpu_heavy=True. It is disabled by default.\n- Submit DueEvaluation work through asyncio (loop.run_in_executor or equivalent). In-flight count is capped by a semaphore. Beyond the cap, work waits or coalesces; no unbounded fan-out.\n- Each evaluation result is immutable. It carries:\n  - strategy_id, side, symbol, snapshot_version\n  - started_at and finished_at UTC\n  - outcome: SIGNAL, NO_SIGNAL, ERROR, TIMEOUT, CANCELLED or STALE_DISCARDED\n  - signal payload if any\n  - error detail if any\n- Strategy exceptions are caught and isolated. They become ERROR outcomes with a reason, never BUY or SELL, and never crash the pool or other evaluations.\n- A per-evaluation timeout becomes a TIMEOUT outcome, never a signal.\n- Stale-result cancellation: when a newer snapshot_version exists for the same key by completion time, the result is marked STALE_DISCARDED and must not be forwarded as an actionable signal. Pending not-yet-started work for a superseded version is cancelled.\n- Graceful shutdown stops accepting new work, lets in-flight evaluations finish or time out within a bound, and shuts the executor down.\n- Workers never call brokers, open data connections or mutate portfolio/account state.\n\nBefore editing, inspect:\n- mike_trade/scheduling/scheduler.py and mike_trade/scheduling/triggers.py (if already present from i.1) for the DueEvaluation shape; do not modify them\n- mike_trade/strategies/base.py and mike_trade/domain/strategy_types.py (if present) for strategy evaluate signatures and signal types\n- mike_trade/market_data/context.py (h.4) for snapshot versions",
+  "acceptance_criteria": [
+    "A test floods COALESCIBLE snapshot events for one (symbol, strategy, side) key and confirms only the latest snapshot_version remains pending. The coalesced counter increases accordingly.",
+    "A test interleaves CRITICAL events (fill, broker order update, stop event, reconciliation, safety exit) with a market-data flood under a tiny queue maxsize. Every CRITICAL event is delivered exactly once, in submission order, and none is dropped or coalesced.",
+    "A test confirms a full CRITICAL queue applies backpressure (the producer awaits) and records a backpressure/overflow counter instead of dropping events.",
+    "A test confirms that a strategy raising an exception yields an ERROR outcome with reason detail, that other concurrent evaluations complete normally, and that no ERROR, TIMEOUT or CANCELLED outcome carries a BUY or SELL signal.",
+    "A test confirms a hung strategy produces a TIMEOUT outcome within the configured bound.",
+    "A test confirms that a result computed for snapshot_version N is marked STALE_DISCARDED when version N+1 for the same key arrives before completion, and that pending superseded work is cancelled.",
+    "A test confirms the pool never exceeds its configured max concurrency (instrumented via an in-flight high-water mark), and that 10 symbols \u00d7 several strategies use one shared executor, not one per symbol or strategy.",
+    "A test confirms that process-pool execution is used only for strategies declaring cpu_heavy=True and is disabled by default.",
+    "A test confirms graceful shutdown rejects new submissions and completes or times out in-flight work within the bound.",
+    "No queue is created without an explicit maxsize. Workers import no broker or provider adapter."
+  ],
+  "selected_backend": "codex_cli",
+  "model": "gpt-5.6-sol",
+  "verification_profile": "focused",
+  "allowed_write_paths": [
+    "mike_trade/scheduling/workers.py",
+    "mike_trade/scheduling/queueing.py",
+    "tests/unit/test_event_backpressure.py"
+  ],
+  "forbidden_changes": [
+    "modify files outside allowed_write_paths",
+    "change PLAN_SKELETON.json or other planning artifacts",
+    "modify mike_trade/scheduling/scheduler.py or triggers.py (owned by i.1 in the same wave)",
+    "drop, coalesce or discard fills, broker updates, reconciliation, stop or safety events",
+    "convert a strategy exception, timeout or worker failure into a BUY or SELL signal",
+    "create unbounded queues, or a thread/process per symbol or strategy",
+    "call brokers, open data connections or mutate portfolio/account state from workers",
+    "run broad test suites or backtests"
+  ],
+  "dependencies": [],
+  "task_timeout_seconds": 1800
+}

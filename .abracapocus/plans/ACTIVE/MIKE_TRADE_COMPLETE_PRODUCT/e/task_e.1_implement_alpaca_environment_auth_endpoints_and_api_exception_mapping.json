@@ -1,0 +1,59 @@
+{
+  "schema_version": 1,
+  "task_id": "e.1",
+  "phase": "E",
+  "phase_id": "e",
+  "title": "Implement Alpaca environment auth endpoints and API exception mapping",
+  "description": "Build the authenticated, bounded HTTP foundation for the Alpaca individual Trading API. This uses the trading endpoints only, never the enterprise Broker API.\n\nmike_trade/brokers/alpaca/auth.py:\n(1) Define an AlpacaEnvironment enum with exactly two values: PAPER and LIVE. PAPER maps to the paper trading base URL (https://paper-api.alpaca.markets) and LIVE maps to the live trading base URL (https://api.alpaca.markets). Define the trade_updates stream URLs for each environment in the same place. No Broker API host (broker-api.*) may appear anywhere.\n(2) Define an immutable AlpacaCredentials value object holding key_id, a secret that is excluded from repr and str, and the environment. Load credentials from environment-specific variables or a config source, for example ALPACA_PAPER_KEY_ID/ALPACA_PAPER_SECRET_KEY and ALPACA_LIVE_KEY_ID/ALPACA_LIVE_SECRET_KEY. There is no fallback from one environment's variables to the other's.\n(3) Compute a non-reversible credential fingerprint, for example a truncated SHA-256 of environment + key_id. The fingerprint is used for state-directory and ledger isolation and never exposes the secret.\n(4) Provide a guard that raises a typed error when credentials, the base URL, or a persisted account fingerprint disagree on environment. Examples: paper keys used with the live URL, or a live fingerprint presented to a paper state directory.\n(5) Building a LIVE client requires an explicit live-authorization token or flag passed by the caller. Without it, raise LiveAuthorizationRequired.\n\nmike_trade/brokers/alpaca/http.py:\n(1) Implement AlpacaHttpClient on top of an injectable transport, preferably httpx with an injectable transport or client, so tests can use httpx.MockTransport with no network access.\n(2) Every request has explicit connect and read timeouts. Send the APCA-API-KEY-ID and APCA-API-SECRET-KEY headers. Never log the secret header.\n(3) Map provider errors to a structured exception hierarchy. The base is AlpacaApiError and carries status code, Alpaca error code, message, and request id where present. Subclasses: AlpacaAuthError (401/403), AlpacaNotFound (404), AlpacaUnprocessable (422), AlpacaRateLimited (429, carrying retry-after/reset), AlpacaServerError (5xx), AlpacaTimeout, and AlpacaTransportError. Include an explicit unknown-outcome marker for timeouts on non-idempotent requests.\n(4) Retry with bounded exponential backoff plus jitter, using an injectable sleep/clock, only for safe idempotent reads (GET). Retries cover 429, 5xx, and transport timeouts, up to a configurable maximum number of attempts. On 429, honor Retry-After and X-RateLimit-Reset.\n(5) POST, PATCH, and DELETE on orders are never retried automatically. A timeout or connection loss on an order POST raises a timeout or unknown-outcome error so callers resolve the outcome by looking up client_order_id.\n(6) Parse JSON numeric strings into Decimal, never float.\n\nCreate tests/contracts/test_alpaca_http.py using fixture and mock transports only, with no network access and no real credentials. Positive and negative tests must cover: URL selection per environment; rejection of the Broker API host; cross-environment credential mismatch; that the fingerprint is stable and excludes the secret; secret redaction in repr and logs; the live authorization requirement; mapping for each status code; GET retry and backoff with a fake sleep; 429 Retry-After handling; no retry on order POST; timeout on POST surfacing unknown outcome; and Decimal parsing.\n\nBefore editing, inspect: the existing mike_trade package layout, especially any broker port/protocol interfaces, domain value types (Decimal money/quantity, mode/account identifiers), configuration/settings loaders, and clock abstractions defined in earlier phases. Also inspect any existing mike_trade/brokers/__init__.py or mike_trade/brokers/alpaca/__init__.py, to reuse and not duplicate them. Do not create files outside allowed_write_paths. If a package __init__.py is missing and is required for import, report it instead of creating it.\n\nDecision budget: use at most one HTTP library already present in the dependency lock. Do not add new third-party dependencies.",
+  "acceptance_criteria": [
+    "auth.py defines exactly two environments (PAPER, LIVE) with distinct Trading API base URLs and trade-stream URLs; no Broker API hostname appears in either module",
+    "Constructing a client whose credential environment differs from the selected base URL or persisted fingerprint raises a typed environment-mismatch error, verified by a negative test",
+    "Constructing a LIVE client without explicit live authorization raises LiveAuthorizationRequired, verified by a test",
+    "The credential fingerprint is deterministic per environment+key_id, differs between paper and live, and never contains the secret; repr/str of credentials and logged request headers do not contain the secret",
+    "HTTP status codes 401/403/404/422/429/5xx and timeouts map to distinct typed exceptions carrying status code, Alpaca error code, and message where available",
+    "GET requests retry with bounded exponential backoff on 429/5xx/timeouts up to a configured maximum, honoring Retry-After; tests use an injected fake sleep with no real delay",
+    "Order-creating POST requests are never retried automatically; a timeout surfaces an unknown-outcome error, verified by a test asserting exactly one transport call",
+    "All requests have explicit finite timeouts; monetary and quantity fields parse to Decimal",
+    "tests/contracts/test_alpaca_http.py passes without network access or real credentials"
+  ],
+  "selected_backend": "pi_cli",
+  "model": "openrouter/meta/muse-spark-1.3-contributor",
+  "verification_profile": "focused",
+  "allowed_write_paths": [
+    "mike_trade/brokers/alpaca/auth.py",
+    "mike_trade/brokers/alpaca/http.py",
+    "tests/contracts/test_alpaca_http.py"
+  ],
+  "allowed_symbols": [
+    "AlpacaEnvironment",
+    "AlpacaCredentials",
+    "credential_fingerprint",
+    "LiveAuthorizationRequired",
+    "EnvironmentMismatchError",
+    "AlpacaHttpClient",
+    "AlpacaApiError",
+    "AlpacaAuthError",
+    "AlpacaNotFound",
+    "AlpacaUnprocessable",
+    "AlpacaRateLimited",
+    "AlpacaServerError",
+    "AlpacaTimeout",
+    "AlpacaTransportError",
+    "AlpacaUnknownOutcome",
+    "RetryPolicy"
+  ],
+  "forbidden_changes": [
+    "modify files outside allowed_write_paths",
+    "change PLAN_SKELETON.json or any planning artifacts",
+    "use or reference the Alpaca Broker API (enterprise) endpoints",
+    "share or fall back between paper and live credentials, URLs, fingerprints, or state directories",
+    "make real network calls or read real credentials in tests",
+    "submit any live broker order",
+    "automatically retry order-creating or order-mutating requests",
+    "use float for money or quantities",
+    "add new third-party dependencies",
+    "run broad test suites or backtests"
+  ],
+  "dependencies": [],
+  "task_timeout_seconds": 1500
+}

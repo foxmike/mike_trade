@@ -1,0 +1,56 @@
+{
+  "schema_version": 1,
+  "task_id": "s.2",
+  "phase": "S",
+  "phase_id": "s",
+  "title": "Implement strategy trade performance attribution and CSV JSON export",
+  "description": "Implement trade/strategy performance attribution and stable CSV/JSON export. These are read-only computations over persisted projections, scoped to one account or scenario.\n\nBefore editing, inspect: the persistence read projections from earlier phases for position cycles, orders, fills, signals, evaluations (including NO_SIGNAL and rejection reasons), trailing/protective stop updates, entry-cap/loss-lockout/cooldown decisions and reconciliation drift events; the strategy registry and strategy pair definitions (including vwap_reference); the domain Decimal money/quantity types; the mode/account/scenario identifiers; the clock port and America/New_York session calendar; and any existing mike_trade/reporting modules. Do not import mike_trade/reporting/fees.py or accounting.py; that work runs concurrently in task s.1. Read fee amounts and fee status from persisted fill/fee data as plain strings. Treat the values 'CONFIRMED', 'ESTIMATED' and 'UNAVAILABLE' as the contract, and treat a missing status as 'UNAVAILABLE'.\n\nImplement mike_trade/reporting/metrics.py:\n(1) A TradeCycleRecord built per completed or open managed position cycle. It holds:\n- account/scenario and symbol;\n- originating BUY strategy and SELL strategy, or exit cause when the exit was not a strategy exit (PROTECTIVE_STOP, TRAILING_STOP, MANUAL_CLOSE, FLATTEN, END_OF_DAY, SAFETY);\n- strategy pair;\n- entry and exit fill-weighted average prices and actual filled quantity, correct under broker partial fills;\n- gross P&L, fees by status, net P&L and fees_complete;\n- holding duration;\n- execution latency (signal to submit to first fill to final fill);\n- slippage vs. the signal reference price, in Decimal dollars and basis points;\n- trailing-stop update count and last confirmed stop.\n(2) Aggregations filterable by account/scenario (required), period (day/week/lifetime and explicit since/until), symbol, BUY strategy, SELL strategy, pair, and exit cause. They produce: trade count, wins/losses, win rate, average win/loss, profit factor, expectancy, total gross/net, average holding duration, and latency/slippage summaries, all in Decimal.\n(3) Signal/evaluation outcome counts, rejection reason counts, and entry-cap/loss-lockout/cooldown decision counts with the same filters.\n(4) A live-vs-shadow comparison between two explicitly named accounts/scenarios. It aligns trades by symbol, strategy pair and signal bar timestamp, then reports matched trades with fill price/P&L differences, plus missed and extra trades. It never sums balances across the two sides.\n(5) Every report carries sample size, a period label and a fixed 'performance_disclaimer' field stating that results are historical/simulated and do not establish profitability.\n\nImplement mike_trade/reporting/export.py:\n- Stable versioned CSV and JSON export of report rows, with schema_version, a fixed documented column order per report type, and deterministic row sorting.\n- Decimal values serialized as strings with no float conversion, and timestamps as UTC ISO-8601.\n- Account identifiers masked; no secrets or raw provider payloads.\n- Atomic file writes (temp file plus rename) to an operator-specified path, refusing to overwrite an existing file unless overwrite=True.\n- A to_stdout option.\n- The supported report types: cycles, strategy summary, pair summary, symbol summary, signals/evaluations, rejections, trailing updates, eligibility decisions, reconciliation drift, and comparison.\n\nWrite tests/unit/test_strategy_reports.py with a temporary migrated SQLite DB seeded through existing persistence writers, or with in-memory projection fixtures. Cover:\n- partial-fill-weighted P&L;\n- protective-stop exit attribution with BUY strategy preserved;\n- pair aggregation;\n- slippage/latency math;\n- missing fee status giving fees_complete=false;\n- filter correctness;\n- comparison missed/extra trade detection;\n- byte-identical CSV and JSON output for identical input;\n- Decimal-as-string serialization;\n- overwrite refusal;\n- account masking.",
+  "acceptance_criteria": [
+    "metrics.py builds TradeCycleRecord values whose entry/exit prices are fill-quantity-weighted and whose realized P&L is correct for a multi-partial-fill fixture",
+    "Exits by protective stop, trailing stop, manual close, flatten, end of day or safety are attributed to that exit cause while the originating BUY strategy is preserved",
+    "Aggregations filter by account/scenario, period, symbol, BUY strategy, SELL strategy, pair and exit cause, and every money value is a Decimal",
+    "Slippage is reported in Decimal dollars and basis points, and latency is reported as signal-to-submit, submit-to-first-fill and first-to-final-fill durations",
+    "A cycle whose fee status is missing or UNAVAILABLE reports fees_complete=false, and its net P&L excludes fabricated fees",
+    "The live-vs-shadow comparison reports matched, missed and extra trades for two named accounts/scenarios and never sums their balances",
+    "Every report payload includes sample size and a performance_disclaimer field",
+    "export.py emits CSV and JSON with schema_version, fixed column order, deterministic sorting, Decimal-as-string values, UTC ISO timestamps and masked account identifiers",
+    "Exporting the same input twice yields byte-identical output, and exporting to an existing path without overwrite=True raises an error",
+    "tests/unit/test_strategy_reports.py contains passing positive and negative tests and uses no network access or broker credentials"
+  ],
+  "selected_backend": "pi_cli",
+  "model": "openrouter/meta/muse-spark-1.3-contributor",
+  "verification_profile": "focused",
+  "allowed_write_paths": [
+    "mike_trade/reporting/metrics.py",
+    "mike_trade/reporting/export.py",
+    "tests/unit/test_strategy_reports.py"
+  ],
+  "allowed_symbols": [
+    "TradeCycleRecord",
+    "ExitCause",
+    "ReportFilter",
+    "build_trade_cycles",
+    "summarize_by_strategy",
+    "summarize_by_pair",
+    "summarize_by_symbol",
+    "count_evaluation_outcomes",
+    "compare_accounts",
+    "export_csv",
+    "export_json",
+    "REPORT_SCHEMAS"
+  ],
+  "forbidden_changes": [
+    "modify files outside allowed_write_paths",
+    "change PLAN_SKELETON.json or planning artifacts",
+    "import or modify mike_trade/reporting/fees.py or mike_trade/reporting/accounting.py",
+    "write to the trading database or mutate any persisted state from reporting code",
+    "convert money, quantity or price values to float",
+    "claim or label strategy profitability beyond reported historical/simulated figures",
+    "aggregate balances across accounts, modes or scenarios",
+    "build charting or visualization features",
+    "access broker credentials or create broker orders",
+    "run broad test suites or backtests"
+  ],
+  "dependencies": [],
+  "task_timeout_seconds": 1800
+}

@@ -1,0 +1,47 @@
+{
+  "schema_version": 1,
+  "task_id": "p.3",
+  "phase": "P",
+  "phase_id": "p",
+  "title": "Simulate fixed native-continuous and stepped trailing stop execution",
+  "description": "Implement shadow protective-stop simulation in mike_trade/brokers/shadow/stops.py. It must use the same provider-neutral protection policies that production uses, with no duplicated policy math. It simulates three types:\n- fixed stops\n- native-continuous-equivalent trailing stops: a high-water mark tracked from eligible quotes, with the stop at high-water minus trail amount/percent\n- stepped trailing stops: the stop ratchets in configured steps after configured gains\n\nRules:\n- Protection begins only after a confirmed positive shadow fill.\n- It always covers the actual remaining position quantity, including after partial fills.\n- For a long position the stop price never moves downward.\n- Stop trigger evaluation uses an explicit, configurable trigger assumption (for example bid <= stop, or last trade <= stop where available).\n- Triggered stop execution uses the bid plus configured stop slippage. The resulting sell is executed through the p.1 account/ledger so the sell quantity never exceeds the held quantity.\n- Coordinate with discretionary/manual exits. When an ordinary exit is pending or filled, the protective stop is cancelled or reduced so that overlapping sells cannot create a short position.\n- Gaps through the stop fill at the available bid, not at the stop price.\n- Missing or stale quotes leave the stop state as UNKNOWN/unevaluated with a reason. They do not produce fabricated triggers.\n- Every stop state change and trigger is recorded with simulator version, assumptions and feed provenance, and is labeled estimated and not broker-confirmed.\n- Stop state must be restorable from the ledger on restart.\n\nAll prices and quantities are Decimal, and times are UTC-aware.\n\nBefore editing, inspect:\n- mike_trade/brokers/shadow/account.py and mike_trade/brokers/shadow/ledger.py (from p.1)\n- the existing provider-neutral protective/trailing stop policy module(s) and stop state types under mike_trade/ from earlier phases\n- existing quote/market-snapshot types and the exit coordination/order-intent types\n\nWrite tests/unit/test_shadow_stops.py covering both positive and negative cases.",
+  "acceptance_criteria": [
+    "A fixed stop triggers when the configured trigger condition is met and sells the full remaining quantity at bid minus configured slippage (exact Decimal assertion)",
+    "The continuous trailing stop tracks the high-water mark and the stop price never decreases for a long position across a rising-then-falling quote sequence",
+    "The stepped trailing stop ratchets only at configured step thresholds and never moves downward",
+    "No stop is armed before a confirmed positive fill; after a partial fill the stop covers exactly the filled remaining quantity",
+    "A gap below the stop fills at the available bid, not at the stop price",
+    "When a discretionary exit fills first, the protective stop is cancelled/reduced and the total sold never exceeds the held quantity (no short position)",
+    "Missing or stale quotes leave the stop evaluation UNKNOWN with a recorded reason and produce no trigger",
+    "The policy computation calls the shared production provider-neutral policy functions rather than reimplementing separate stop math",
+    "Stop state/trigger records include simulator version, assumptions, provenance, estimated=True and broker_confirmed=False, and are restored identically from the ledger",
+    "The module imports no Alpaca trading client or broker credential configuration",
+    "tests/unit/test_shadow_stops.py exists with positive and negative tests and passes when run alone"
+  ],
+  "selected_backend": "codex_cli",
+  "model": "gpt-6-luna",
+  "verification_profile": "focused",
+  "allowed_write_paths": [
+    "mike_trade/brokers/shadow/stops.py",
+    "tests/unit/test_shadow_stops.py"
+  ],
+  "allowed_symbols": [
+    "ShadowStopSimulator",
+    "ShadowStopState",
+    "StopTriggerAssumptions",
+    "StopTriggerOutcome"
+  ],
+  "forbidden_changes": [
+    "modify files outside allowed_write_paths, including shared production stop policy modules and mike_trade/brokers/shadow/account.py, ledger.py, fills.py",
+    "change PLAN_SKELETON.json or other planning artifacts",
+    "move a long stop price downward",
+    "fabricate stop triggers or fill prices without quote evidence",
+    "import or call any Alpaca trading client, paper/live endpoint, or broker credential",
+    "use float for prices or quantities",
+    "create live broker orders or run broad test suites/backtests"
+  ],
+  "dependencies": [
+    "p.1"
+  ],
+  "task_timeout_seconds": 1800
+}

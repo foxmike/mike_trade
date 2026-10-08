@@ -1,0 +1,51 @@
+{
+  "schema_version": 1,
+  "task_id": "c.2",
+  "phase": "C",
+  "phase_id": "c",
+  "title": "Implement atomic append-only domain event journal and ID uniqueness",
+  "description": "Implement the append-only, auditable domain event journal over the domain_events table. It must give atomic multi-event appends, unique event IDs, idempotency-key deduplication, per-stream optimistic versioning, and a commit-before-effect guarantee. That guarantee means a failed journal write can never be followed by an accepted broker/live side effect.\n\nThis task runs at the same time as c.1 (schema.py / 0001_initial.sql). Do not import mike_trade.persistence.schema. Use the domain_events contract below, which c.1 creates identically.\n\nThe test fixture must create the tables directly from these DDL strings:\n- A minimal `account_scopes(account_scope_id TEXT PRIMARY KEY, environment TEXT NOT NULL)`.\n- The domain_events contract:\n```\nCREATE TABLE domain_events (\n  event_seq INTEGER PRIMARY KEY AUTOINCREMENT,\n  event_id TEXT NOT NULL UNIQUE,\n  account_scope_id TEXT NOT NULL REFERENCES account_scopes(account_scope_id),\n  stream_type TEXT NOT NULL,\n  stream_id TEXT NOT NULL,\n  stream_version INTEGER NOT NULL CHECK (stream_version >= 1),\n  event_type TEXT NOT NULL,\n  payload_json TEXT NOT NULL,\n  payload_sha256 TEXT NOT NULL,\n  idempotency_key TEXT,\n  causation_id TEXT,\n  correlation_id TEXT,\n  occurred_at TEXT NOT NULL,\n  recorded_at TEXT NOT NULL,\n  UNIQUE (account_scope_id, stream_type, stream_id, stream_version),\n  UNIQUE (account_scope_id, idempotency_key)\n);\n```\n- The append-only triggers, using RAISE(ABORT, 'append-only: domain_events').\n\nmike_trade/persistence/journal.py:\n- `NewEvent`: a frozen dataclass with account_scope_id, stream_type, stream_id, event_type, payload (Mapping), occurred_at (aware UTC), idempotency_key (optional), causation_id (optional), correlation_id (optional), and event_id (default uuid4 hex).\n- `RecordedEvent`: a frozen dataclass with all columns, including event_seq and stream_version.\n- `canonical_payload_json(payload)`:\n  - Deterministic JSON with sort_keys and compact separators.\n  - Decimal becomes its str; aware datetime becomes UTC 'YYYY-MM-DDTHH:MM:SS.ffffffZ'; Enum becomes .value.\n  - float, NaN, and naive datetimes are rejected with JournalPayloadError.\n  - Its sha256 is stored in payload_sha256.\n- `DomainEventJournal(conn, *, clock)`. Methods:\n  - `append(events, *, expected_versions=None) -> AppendResult`:\n    - Runs one BEGIN IMMEDIATE transaction for the whole batch, assigns the next stream_version per stream, and commits.\n    - All-or-nothing: any failure rolls back every event in the batch and raises JournalWriteError, chaining the cause.\n    - An expected_versions mismatch raises StreamVersionConflictError.\n    - A batch may not mix account_scope_ids (raise CrossScopeJournalError).\n  - `append_in_transaction(events, *, expected_versions=None)`: the same append for callers that already hold an open transaction. It must refuse to run when conn.in_transaction is False.\n  - Idempotency:\n    - When an event's (account_scope_id, idempotency_key) already exists with an identical payload_sha256 and event_type, return the existing RecordedEvent and mark it duplicate in AppendResult without inserting.\n    - When the payload differs, raise IdempotencyConflictError.\n    - Event IDs reused with different content raise DuplicateEventIdError.\n  - `read_stream(account_scope_id, stream_type, stream_id)`.\n  - `read_since(account_scope_id, after_event_seq, limit)`.\n  - `get_by_idempotency_key(account_scope_id, key)`.\n  - `verify_chain(account_scope_id)`: recomputes payload_sha256 and checks that stream versions are contiguous; returns a list of problems.\n- `commit_then_effect(journal, events, effect)`:\n  - Appends and commits the events first, then invokes `effect(recorded_events)` only after the commit succeeds.\n  - If the append raises, `effect` is never called and JournalWriteError propagates.\n  - If `effect` raises, the recorded intent stays durable, so the caller must reconcile it.\n  - Document the latter in the docstring.\n- The journal never issues UPDATE or DELETE.\n- Define all exceptions in journal.py. Subclass a persistence/base error from mike_trade/domain/errors.py if one exists.\n\ntests/unit/test_journal_atomicity.py must use tmp_path WAL databases and cover:\n- A multi-event batch is atomic: an injected failure on the 3rd event leaves zero rows.\n- Stream versions increment per stream.\n- A stale expected_versions raises a conflict.\n- A duplicate idempotency key with the same payload returns the original event and inserts no row.\n- The same key with a different payload raises.\n- Duplicate event_id handling.\n- Float payload rejected.\n- Canonical JSON is byte-identical regardless of dict ordering.\n- commit_then_effect never invokes the effect when the append fails (simulate with a trigger that aborts inserts, or a closed connection), and does invoke it exactly once after commit.\n- append_in_transaction refuses outside a transaction.\n- UPDATE/DELETE attempts hit the append-only triggers.\n- verify_chain detects a tampered payload. To set this up, drop the trigger, tamper the row, and recreate the trigger inside the test.\n- Two connections contending for BEGIN IMMEDIATE: the second gets a busy error that is surfaced as JournalWriteError, not silently dropped.\n\nDecision budget: make at most three design choices not covered here, and record them in the journal.py docstring.\n\nBefore editing, inspect:\n- mike_trade/domain/errors.py (read-only)\n- mike_trade/domain/serde.py (read-only, if present), to stay consistent with Decimal/datetime encoding\n- docs/ARCHITECTURE.md (read-only, if present)",
+  "acceptance_criteria": [
+    "mike_trade/persistence/journal.py defines NewEvent, RecordedEvent, AppendResult, canonical_payload_json, DomainEventJournal, commit_then_effect, JournalWriteError, JournalPayloadError, StreamVersionConflictError, IdempotencyConflictError, DuplicateEventIdError, and CrossScopeJournalError",
+    "DomainEventJournal.append is all-or-nothing: a failure mid-batch leaves zero new domain_events rows and raises JournalWriteError",
+    "A repeated idempotency_key with an identical payload returns the original event without inserting; with a different payload it raises IdempotencyConflictError",
+    "stream_version is contiguous per (account_scope_id, stream_type, stream_id), and an expected_versions mismatch raises StreamVersionConflictError",
+    "commit_then_effect never invokes the effect callable when the journal append fails, and invokes it exactly once after a successful commit",
+    "canonical_payload_json is deterministic, encodes Decimal as string, and rejects float, NaN, and naive datetimes",
+    "The journal issues no UPDATE or DELETE statements, and a batch mixing account_scope_ids is rejected",
+    "journal.py does not import mike_trade.persistence.schema, broker adapters, or Alpaca SDK modules",
+    "tests/unit/test_journal_atomicity.py contains positive and negative tests, including lock contention and tamper detection, and passes with targeted pytest of that file only"
+  ],
+  "selected_backend": "codex_cli",
+  "model": "gpt-5.6-sol",
+  "verification_profile": "focused",
+  "allowed_write_paths": [
+    "mike_trade/persistence/journal.py",
+    "tests/unit/test_journal_atomicity.py"
+  ],
+  "allowed_symbols": [
+    "NewEvent",
+    "RecordedEvent",
+    "AppendResult",
+    "canonical_payload_json",
+    "DomainEventJournal",
+    "commit_then_effect",
+    "JournalWriteError",
+    "JournalPayloadError",
+    "StreamVersionConflictError",
+    "IdempotencyConflictError",
+    "DuplicateEventIdError",
+    "CrossScopeJournalError"
+  ],
+  "forbidden_changes": [
+    "modify files outside allowed_write_paths",
+    "change PLAN_SKELETON.json or other planning artifacts",
+    "add mike_trade/persistence/__init__.py",
+    "import mike_trade.persistence.schema or any broker adapter",
+    "update or delete journal rows",
+    "allow a side effect to run after a failed journal append",
+    "run broad test suites, backtests, or create broker orders"
+  ],
+  "dependencies": [],
+  "task_timeout_seconds": 1500
+}

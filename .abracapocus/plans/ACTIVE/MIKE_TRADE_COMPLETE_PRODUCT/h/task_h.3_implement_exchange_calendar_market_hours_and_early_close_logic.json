@@ -1,0 +1,36 @@
+{
+  "schema_version": 1,
+  "task_id": "h.3",
+  "phase": "H",
+  "phase_id": "h",
+  "title": "Implement exchange calendar market hours and early close logic",
+  "description": "Implement a U.S. equity exchange session calendar in mike_trade/scheduling/calendar.py, with unit tests in tests/unit/test_market_calendar.py.\n\nRequired behavior:\n- Use zoneinfo America/New_York for all session arithmetic, and return tz-aware UTC datetimes. Host weekday or local time alone is never sufficient.\n- Compute NYSE full holidays by rule:\n  - New Year's Day: Sunday is observed on Monday. Saturday is NOT observed on the prior Friday Dec 31.\n  - MLK Day, Presidents' Day, Memorial Day, Labor Day, and Thanksgiving.\n  - Good Friday, via the Easter computus.\n  - Juneteenth, from 2022 onward.\n  - Independence Day and Christmas, with Saturday\u2192Friday and Sunday\u2192Monday observance.\n- Compute early closes at 13:00 ET:\n  - The day after Thanksgiving.\n  - Christmas Eve when it is a trading weekday.\n  - July 3 when it is a trading day and July 4 falls Tuesday\u2013Friday.\n- Provide an explicit override table for special closures and early closes, for example the 2025-01-09 national day of mourning closure.\n- Declare a supported year range. Queries outside that range fail closed: they raise or return an UNKNOWN session status, never assume a session is open.\n- API:\n  - is_trading_day(date)\n  - session_for(date) \u2192 an immutable Session with session_id (deterministic, e.g. 'XNYS-2026-11-27'), regular open 09:30 ET, effective close (16:00 or early-close time), an is_early_close flag, and UTC open/close\n  - session_status(at_utc) \u2192 PRE_OPEN / REGULAR / CLOSED / HOLIDAY / UNKNOWN\n  - next_session(after) and previous_session(before)\n  - is_regular_hours(at_utc), with a half-open [open, close) interval\n  - entry_cutoff(session, minutes_before_close) and entries_allowed_by_time(at_utc, cutoff_minutes), both evaluated against the EFFECTIVE close, so a half-day cutoff is relative to 13:00 ET\n- Keep the module pure, with no network calls. Any current time comes from an injected clock argument, never datetime.now().\n\nBefore editing, inspect:\n- mike_trade/backtest/clock.py (if present) for the clock protocol\n- mike_trade/config/models.py (if present) for existing entry-cutoff or session config names to align with",
+  "acceptance_criteria": [
+    "Tests confirm that 2026-04-03 (Good Friday), 2026-06-19 (Juneteenth), 2026-07-03 (Independence Day observed), 2026-11-26 (Thanksgiving), and 2026-12-25 are not trading days.",
+    "A test confirms that 2027-12-31 is a trading day, because New Year's Day 2028 falls on Saturday and is not observed on Friday.",
+    "Tests confirm that 2026-11-27 and 2026-12-24 have an effective close of 13:00 ET (18:00 UTC) with is_early_close=True, and that 2026-07-02 is a full 16:00 ET session.",
+    "DST tests confirm that the regular open is 14:30 UTC on 2026-03-06 (EST) and 13:30 UTC on 2026-03-09 (EDT), and that the close is 21:00 UTC on 2026-11-02 (EST).",
+    "Boundary tests confirm that is_regular_hours is True at exactly 09:30:00 ET, False at 09:29:59.999999 ET, and False at exactly the effective close.",
+    "A test confirms that, with a 15-minute entry cutoff, entries_allowed_by_time is False at 12:45 ET on 2026-11-27 (half day) and True at 12:44 ET.",
+    "A test confirms that the 2025-01-09 override closure is reported as not a trading day.",
+    "A negative test confirms that querying a date outside the supported year range fails closed (raises or returns UNKNOWN) and never reports REGULAR.",
+    "session_id is deterministic and identical across repeated calls; a test asserts this."
+  ],
+  "selected_backend": "codex_cli",
+  "model": "gpt-6-luna",
+  "verification_profile": "focused",
+  "allowed_write_paths": [
+    "mike_trade/scheduling/calendar.py",
+    "tests/unit/test_market_calendar.py"
+  ],
+  "forbidden_changes": [
+    "modify files outside allowed_write_paths",
+    "change PLAN_SKELETON.json or other planning artifacts",
+    "call datetime.now() or host-local time inside calendar logic",
+    "fetch calendar data over the network",
+    "assume an unknown/out-of-range date is a regular session",
+    "run broad test suites or backtests"
+  ],
+  "dependencies": [],
+  "task_timeout_seconds": 1500
+}

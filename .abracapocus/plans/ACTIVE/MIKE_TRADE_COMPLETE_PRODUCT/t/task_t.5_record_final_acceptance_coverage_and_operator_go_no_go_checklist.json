@@ -1,0 +1,37 @@
+{
+  "schema_version": 1,
+  "task_id": "t.5",
+  "phase": "T",
+  "phase_id": "t",
+  "title": "Record final acceptance coverage and operator-go/no-go checklist",
+  "description": "Write the final acceptance coverage record and the operator release go/no-go checklist. Each must state pass, fail, or pending honestly, based on evidence from the phase t artifacts.\n\nBefore editing, inspect:\n- deploy/systemd/mike-trade-engine.service, deploy/systemd/mike-trade-dashboard.service, mike_trade/controls/service_manager.py (t.1)\n- tests/paper_broker/test_alpaca_paper_cycle.py and tests/end_to_end/test_protective_live_guards.py (t.2)\n- mike_trade/app.py, mike_trade/runtime.py, tests/end_to_end/test_full_product_cycle.py, tests/end_to_end/test_recovery_offline.py (t.3)\n- docs/REQUIREMENTS.md, docs/SAFETY_AND_RISK.md, docs/TEST_PLAN.md, docs/DASHBOARD.md, docs/ALPACA.md (t.4)\n- Makefile/CLI, migrations directory, dependency lock files, dashboard frontend build output configuration\n\nImplementation requirements:\n1. docs/verification/phase_t_complete_product.md: an audit artifact with a coverage table. Each required final acceptance item gets one row with columns for requirement, evidence (test file and test name, or document section/file path), status (PASS / FAIL / PENDING-EXTERNAL / NOT-RUN), and notes. Rows must include: 1 and 10 symbol shared-feed fanout; independent BUY/SELL rules/parameters; exactly one entry per cycle under repeated signals/partial fills; full remaining exit after minimum hold; daily entry-cycle count and restart/session reset; symbol and buy-strategy loss lockouts; persistent cooldown; concurrent budget race; stop coverage and no oversell; native/stepped trailing init, monotonic/multi-step, replace/close races; protection on partial fills; scenario/live isolation; deterministic shadow restart accounting; dashboard OFFLINE/stale; restart with outstanding orders/stops/external trade; early-close cutoff and default no EOD liquidation; stop/pause/close/flatten distinction; ledger/report reconciliation for whole/fractional fills; no-lookahead replay; complete Make/CLI surface; reproducible repository/deployment artifacts (locks, migrations, systemd units, compiled dashboard); the vwap_reference end-to-end proof; and credential-gated Alpaca PAPER acceptance. Record only results that were actually observed. Mark anything not executed as NOT-RUN, and mark paper credential/approval-dependent items as PENDING-EXTERNAL unless the operator supplied evidence. Include a section that lists known gaps, blocked/unverified provider combinations, and the explicit statements that no live orders were part of automated verification and that paper fills do not prove live performance.\n2. docs/RELEASE_CHECKLIST.md: an operator go/no-go checklist with checkbox items grouped as: repository and dependency lock reproducibility; migrations and DB integrity/backup/restore drill; credential env files and permissions per mode; systemd install/enable for the engine and the independent dashboard; doctor/provider/capability checks; startup reconciliation clean with no drift; dashboard reachable with the engine stopped (shows OFFLINE); shadow reference scenario run reviewed; paper lifecycle verified per supported protective combination; entry kill switch, pause, close, and flatten rehearsed in shadow/paper; risk limits and budgets reviewed; live enablement prerequisites with explicit live confirmation; and rollback procedure. Each item references the relevant doc or command. End with explicit NO-GO conditions: any FAIL, unresolved reconciliation drift, unverified protective combination intended for use, missing paper verification for LIVE, or credential permission violations.\n3. Write documentation only. Do not modify code or tests.",
+  "acceptance_criteria": [
+    "docs/verification/phase_t_complete_product.md contains a table with one row per required final acceptance item listed in the description, and each row has a non-empty evidence reference and one status value from PASS, FAIL, PENDING-EXTERNAL, or NOT-RUN.",
+    "The vwap_reference end-to-end proof row references tests/end_to_end/test_full_product_cycle.py, and the Alpaca paper row references tests/paper_broker/test_alpaca_paper_cycle.py.",
+    "Alpaca paper acceptance is marked PENDING-EXTERNAL unless operator-supplied execution evidence is recorded, and no row claims that a live-order check passed.",
+    "The verification document states that no live orders were part of automated verification and that paper fills do not prove live performance, and it lists blocked or unverified provider combinations.",
+    "docs/RELEASE_CHECKLIST.md contains checkbox items covering lock reproducibility, migrations/backup/restore, credential permissions, systemd units, startup reconciliation, dashboard OFFLINE check, shadow reference review, paper verification, control rehearsals, risk limits, live enablement with explicit confirmation, and rollback.",
+    "docs/RELEASE_CHECKLIST.md ends with explicit NO-GO conditions, including any FAIL status, unresolved reconciliation drift, and missing paper verification before LIVE."
+  ],
+  "selected_backend": "pi_cli",
+  "model": "openrouter/meta/muse-spark-1.3-contributor",
+  "verification_profile": "focused",
+  "allowed_write_paths": [
+    "docs/verification/phase_t_complete_product.md",
+    "docs/RELEASE_CHECKLIST.md"
+  ],
+  "forbidden_changes": [
+    "modify files outside allowed_write_paths",
+    "change PLAN_SKELETON.json or any planning artifacts under .abracapocus/",
+    "record PASS for checks that were not actually executed and observed",
+    "claim Alpaca paper or live verification passed without operator-supplied credentials, approval, and evidence",
+    "run live orders, broad test suites, or backtests as incidental verification"
+  ],
+  "dependencies": [
+    "t.1",
+    "t.2",
+    "t.3",
+    "t.4"
+  ],
+  "task_timeout_seconds": 1200
+}

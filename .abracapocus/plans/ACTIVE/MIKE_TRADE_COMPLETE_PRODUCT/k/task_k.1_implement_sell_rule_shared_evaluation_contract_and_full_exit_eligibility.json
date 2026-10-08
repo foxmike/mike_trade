@@ -1,0 +1,45 @@
+{
+  "schema_version": 1,
+  "task_id": "k.1",
+  "phase": "K",
+  "phase_id": "k",
+  "title": "Implement sell-rule shared evaluation contract and full-exit eligibility",
+  "description": "Build the shared SELL-rule layer on top of the phase j strategy SDK. Do not redefine the SDK.\n\nIn mike_trade/strategies/sell/base.py, define the SELL-specific evaluation contract.\n\n1. Base class:\n   - Create a SellRule abstract base, or a thin helper layer on the existing SellStrategy from mike_trade/strategies/base.py.\n   - Concrete SELL plugins (vwap_breakdown, momentum_reversal, rsi_reversal) implement only their pure trigger logic.\n   - Shared pre-checks run before that logic.\n\n2. Immutable ExitLongRecommendation result type:\n   - Only one action exists: EXIT_LONG.\n   - The quantity is always the full confirmed remaining quantity of the managed position, as a Decimal.\n   - Required fields: deterministic signal_id from make_signal_id, strategy_id, version, symbol, position/cycle identifier, triggering completed-bar UTC timestamp, and reason codes.\n   - No field may hold a partial quantity, a confidence/probability score, an order type, or a broker reference.\n   - A recommendation is advisory only. It never submits orders.\n\n3. Full-exit eligibility evaluator, exposed as a pure function such as evaluate_exit_eligibility. It returns NO_SIGNAL / NOT_ELIGIBLE with explicit reason codes, never an exit, when:\n   - the symbol is flat or has no owned managed long position (for example UNMANAGED, external, or never-filled)\n   - the confirmed remaining quantity is zero or negative\n   - the position is not long. SELL must never imply short or opposite-side trading.\n   - the strategy is disabled/off\n   - data is missing, stale, incomplete, or not warmed. Off/no data is NO_SIGNAL, not an implicit exit.\n   - the ordinary-strategy minimum hold period has not elapsed. Use an injected clock/timestamp only and never wall-clock calls.\n\n4. Exit-source classification. Define an ExitSource enum (for example PROTECTIVE_STOP, MANUAL_CLOSE, HARD_RISK, FORCED_LIQUIDATION, STRATEGY_SELL) and a helper that reports whether minimum hold applies.\n   - Minimum hold applies only to STRATEGY_SELL.\n   - Protective stops, manual close, hard risk exits, and configured forced liquidation bypass it.\n   - Define a documented static priority ordering in which stop/manual/risk/forced exits outrank STRATEGY_SELL. Phase k.4 arbitration consumes this ordering.\n\n5. Purity. Strategies receive no broker, secrets, filesystem, or network access. Use Decimal for all quantities and prices.\n\nIn tests/contracts/test_sell_strategy.py, write contract tests for:\n- the full-quantity-only recommendation, including a partial-fill remaining quantity such as Decimal('7.5') yielding exactly that quantity\n- rejection when flat, unmanaged, zero quantity, or short\n- no-data/stale/disabled producing NO_SIGNAL\n- minimum hold blocking STRATEGY_SELL only, with every other ExitSource bypassing it\n- the priority ordering\n- deterministic signal IDs\n- the absence of confidence/order/broker fields\n- a static import check that base.py imports no broker, adapter, persistence, HTTP, or secrets modules\n\nBefore editing, inspect:\n- mike_trade/strategies/base.py\n- mike_trade/strategies/registry.py\n- tests/contracts/test_strategy_registry.py\n- mike_trade/domain/signals.py\n- mike_trade/domain/strategy_types.py\n- mike_trade/domain/market.py\n- mike_trade/market_data/context.py\n- any existing position/lifecycle domain types under mike_trade/domain/\n\nDecision budget: reuse existing domain types for side, signal, reason code, and position state. Add a new type only when none exists, and keep new public symbols to those listed in allowed_symbols.",
+  "acceptance_criteria": [
+    "mike_trade/strategies/sell/base.py defines a SELL rule contract built on the existing SellStrategy/StrategySpec SDK, an immutable ExitLongRecommendation with action EXIT_LONG only, and a pure exit-eligibility evaluator.",
+    "ExitLongRecommendation quantity always equals the confirmed remaining long quantity as Decimal (including a fractional partial-fill remainder), and the type has no partial-quantity, confidence/probability, order-type, or broker field.",
+    "Flat, UNMANAGED/external, zero/negative-quantity, or non-long positions yield NO_SIGNAL/NOT_ELIGIBLE with explicit reason codes and never an exit or short recommendation.",
+    "Disabled strategies and missing/stale/incomplete/unwarmed data yield NO_SIGNAL with explicit reason codes, not an implicit exit.",
+    "Minimum hold blocks only ExitSource.STRATEGY_SELL. PROTECTIVE_STOP, MANUAL_CLOSE, HARD_RISK, and FORCED_LIQUIDATION bypass it, and the documented priority ordering ranks all of them above STRATEGY_SELL.",
+    "Minimum-hold evaluation uses only injected timestamps/clock, with no direct wall-clock calls.",
+    "Identical inputs produce identical signal IDs, and a different completed-bar timestamp produces a different ID.",
+    "tests/contracts/test_sell_strategy.py contains positive and negative tests for each criterion above plus a static check that base.py imports no broker/adapter/persistence/HTTP/secrets modules, and it passes when run in isolation."
+  ],
+  "selected_backend": "codex_cli",
+  "model": "gpt-6-luna",
+  "verification_profile": "focused",
+  "allowed_write_paths": [
+    "mike_trade/strategies/sell/base.py",
+    "tests/contracts/test_sell_strategy.py"
+  ],
+  "allowed_symbols": [
+    "SellRule",
+    "ExitLongRecommendation",
+    "ExitSource",
+    "EXIT_PRIORITY",
+    "evaluate_exit_eligibility",
+    "min_hold_applies",
+    "SellReasonCode"
+  ],
+  "forbidden_changes": [
+    "modify files outside allowed_write_paths",
+    "modify mike_trade/strategies/base.py or mike_trade/strategies/registry.py",
+    "change PLAN_SKELETON.json or other planning artifacts",
+    "introduce partial-exit quantities, short/opposite-side actions, auto re-buy, or confidence scores",
+    "give SELL rules broker, secrets, filesystem, or network access or let them submit orders",
+    "use float for money, price, or quantity values",
+    "create live broker orders or run broad test suites/backtests"
+  ],
+  "dependencies": [],
+  "task_timeout_seconds": 1500
+}

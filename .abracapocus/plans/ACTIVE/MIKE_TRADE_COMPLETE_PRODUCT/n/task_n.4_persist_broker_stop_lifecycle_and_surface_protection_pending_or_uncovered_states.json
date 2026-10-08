@@ -1,0 +1,46 @@
+{
+  "schema_version": 1,
+  "task_id": "n.4",
+  "phase": "N",
+  "phase_id": "n",
+  "title": "Persist broker stop lifecycle and surface protection pending or uncovered states",
+  "description": "Implement persisted protection state in mike_trade/risk/stop_state.py.\n\nState model:\n- Define a ProtectionCondition enum: PENDING, ACTIVE, UPDATING, UNCONFIRMED, TRIGGERED, EXPIRED, UNPROTECTED, OFFLINE.\n- Define a ProtectionStateRecord with these fields:\n  - cycle_id, account/scenario/mode key, symbol, mode (FIXED/TRAILING_NATIVE/TRAILING_STEPPED)\n  - broker_order_id, client_order_id\n  - protected_qty, remaining_position_qty\n  - stop_price, limit_price, trail parameters, broker hwm (native only), tif, condition\n  - last_broker_confirmed_at (UTC), revision, reason\n\nTransitions:\n- Implement a pure transition function apply_event(record, event) -> (new_record, emitted_audit_events).\n- Events: placement requested, broker ack, replace requested/confirmed, cancel confirmed, trigger/fill, expiry (DAY TIF / done_for_day \u2192 EXPIRED with an explicit PROTECTION_EXPIRED/OVERNIGHT risk reason), placement or coverage failure (\u2192 UNPROTECTED with UNPROTECTED_POSITION), broker state unreadable (\u2192 UNCONFIRMED), and heartbeat/engine-offline observation (\u2192 OFFLINE for display, keeping last-known broker values marked stale).\n- Reject illegal transitions explicitly. Examples: TRIGGERED \u2192 ACTIVE, or any stop_price decrease for a long position.\n\nPersistence:\n- Provide a ProtectionStateRepository that uses the existing SQLite persistence layer/unit-of-work and the single-writer conventions.\n- Writes are append-only audit events plus an upserted current-state projection.\n- Broker activity ingestion is idempotent: the same broker order update applied twice yields no duplicate events.\n- Credentials, accounts and ledgers must never mix across modes. Every record is keyed by mode/account/scenario.\n- If the required table or migration does not exist and creating a migration falls outside allowed_write_paths, define the repository against an injected storage protocol and provide an in-memory implementation for tests. Record that the migration is still required in a module docstring TODO; do not edit migration files.\n\nEntry blocks:\n- Provide entry_block_reasons(records) -> list. It returns blocking reasons whenever any cycle is UNPROTECTED, UNCONFIRMED, EXPIRED-with-residual, or PENDING beyond a configurable grace period.\n- These are fresh-entry blocks only. They must never block fills, stops, reconciliation, manual closes or safety exits.\n\nProjection:\n- Provide a read projection helper, to_dashboard_view(record, now, heartbeat_age), that marks stale values and the OFFLINE condition for the read-only dashboard/CLI.\n\nTests: write tests/unit/test_stop_state.py covering:\n- every condition reachable via legal transitions\n- illegal transitions rejected\n- idempotent re-ingestion\n- expiry producing a PROTECTION_EXPIRED/OVERNIGHT reason\n- UNPROTECTED_POSITION producing an entry block\n- the OFFLINE projection marking stale values\n- mode isolation, where PAPER and SHADOW records do not leak into each other\n\nBefore editing, inspect:\n- mike_trade/risk/protection.py and mike_trade/risk/stop_policy.py from n.1\n- the existing persistence layer (SQLite WAL writer, repositories, audit event types, migrations directory)\n- existing entry-guard/eligibility aggregation interfaces\n- the heartbeat/health model used by the dashboard\nDecision budget: conform to existing repository/event patterns; never modify those files.",
+  "acceptance_criteria": [
+    "ProtectionCondition defines exactly PENDING, ACTIVE, UPDATING, UNCONFIRMED, TRIGGERED, EXPIRED, UNPROTECTED and OFFLINE, and each is reachable through apply_event in tests.",
+    "Illegal transitions (e.g. TRIGGERED to ACTIVE, or a long stop_price decrease) are rejected with an explicit error (tested).",
+    "A DAY expiry or done_for_day event yields EXPIRED with a PROTECTION_EXPIRED/OVERNIGHT risk reason (tested).",
+    "A placement or coverage failure yields UNPROTECTED with an UNPROTECTED_POSITION reason, and entry_block_reasons returns a blocking reason (tested).",
+    "entry_block_reasons blocks fresh entries for UNPROTECTED, UNCONFIRMED, residual EXPIRED and over-grace PENDING. It exposes no API that blocks exits, stops or reconciliation.",
+    "Applying the same broker order update twice produces no duplicate audit events and no state change (idempotency test).",
+    "Records are keyed by mode/account/scenario. A test shows that SHADOW and PAPER records with the same symbol and cycle number do not mix.",
+    "to_dashboard_view marks OFFLINE and stale last-known values when heartbeat age exceeds the threshold (tested).",
+    "tests/unit/test_stop_state.py passes in isolation with no network or broker credential access."
+  ],
+  "selected_backend": "codex_cli",
+  "model": "gpt-6-luna",
+  "verification_profile": "focused",
+  "allowed_write_paths": [
+    "mike_trade/risk/stop_state.py",
+    "tests/unit/test_stop_state.py"
+  ],
+  "allowed_symbols": [
+    "ProtectionCondition",
+    "ProtectionStateRecord",
+    "apply_event",
+    "ProtectionStateRepository",
+    "entry_block_reasons",
+    "to_dashboard_view"
+  ],
+  "forbidden_changes": [
+    "modify files outside allowed_write_paths",
+    "edit existing migrations, persistence modules or dashboard code",
+    "change PLAN_SKELETON.json or other planning artifacts",
+    "block exits, stops, reconciliation or manual closes via entry_block_reasons",
+    "create live or paper broker orders or read broker credentials",
+    "run broad test suites or backtests"
+  ],
+  "dependencies": [
+    "n.1"
+  ],
+  "task_timeout_seconds": 1500
+}

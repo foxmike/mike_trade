@@ -1,0 +1,42 @@
+{
+  "schema_version": 1,
+  "task_id": "m.3",
+  "phase": "M",
+  "phase_id": "m",
+  "title": "Implement startup broker reconciliation external holdings and unknown orders",
+  "description": "Implement startup/restart broker reconciliation in mike_trade/execution/reconcile.py, with integration tests in tests/integration/test_reconciliation.py.\n\nBefore editing, inspect: mike_trade/portfolio/cycles.py (CycleState including RECONCILING and UNMANAGED, PositionCycle, the fill idempotency API), the broker port interface and the Alpaca/shadow adapters (account, positions, open orders, activities/fills endpoints), the SQLite persistence layer for pending local intents, cancels, replacements, budget reservations, ingested broker activity ids and strategy state, and the protective-stop coordinator. Do not modify any of those files.\n\nRequirements:\n1. Provide a reconciler that, for one account/scenario, obtains broker truth before entries are enabled: account flags and buying power, current positions, open and linked orders, recent activities/fills since the last ingested cursor, pending local intents/cancels/replacements, protection coverage per held symbol, budget reservations, and persisted strategy/cycle state.\n2. Apply missing fills exactly once, keyed by broker activity/fill id. A second reconciliation run over the same activities changes nothing.\n3. Recompute position truth from actual fills and the broker snapshot, never by guessing. If the local remaining quantity disagrees with the broker position, record an explicit reconciliation drift event and keep the symbol RECONCILING/DEGRADED.\n4. Broker positions with no matching managed cycle are classified UNMANAGED. Never attribute or adopt them automatically. Report them for operator handling.\n5. Unknown broker orders (open orders not linked to any local intent) keep the affected symbol RECONCILING and block entries.\n6. A held managed position with missing or unknown protective-stop coverage, on a provider capable of supporting it, keeps the symbol RECONCILING/DEGRADED and blocks entries.\n7. A managed cycle whose broker position became zero through a sell that was not locally initiated is detected as an external/manual close. It is audited as external_manual_exit (not a strategy win or strategy exit), and the cycle closes once no linked orders remain.\n8. Unsafe account flags (for example trading blocked or account restricted) or insufficient buying power block entries for the whole account.\n9. Return a structured ReconciliationReport (per-symbol status, drift items, unmanaged holdings, unknown orders, applied fill ids, entries_permitted flag). New entries are permitted only when the report is clean.\n10. Paper, live and shadow credentials and state stay isolated: the reconciler is constructed with exactly one account/mode context and never reads another mode's ledger.\n11. Integration tests use a deterministic fake broker port plus a temporary SQLite database. No real Alpaca calls and no credentials.\n\nDecision budget: do not add new persistence tables or migrations. If a needed query is missing from the persistence layer, use an injected protocol and fake it in tests, and document the gap in a module docstring.",
+  "acceptance_criteria": [
+    "mike_trade/execution/reconcile.py exposes a reconciler that returns a ReconciliationReport with an entries_permitted flag",
+    "An integration test shows missing fills found in broker activities are applied exactly once, and that a second reconciliation run over the same activities leaves quantities and the event count unchanged",
+    "An integration test shows a broker position with no managed cycle is reported as UNMANAGED and is not adopted or attributed to any strategy",
+    "An integration test shows an unknown open broker order sets the symbol to RECONCILING and entries_permitted=False",
+    "An integration test shows a held managed position with no confirmed protective stop yields RECONCILING/DEGRADED and entries_permitted=False",
+    "An integration test shows a mismatch between the broker quantity and the locally computed quantity produces an explicit drift item and blocks entries",
+    "An integration test shows that a managed position closed outside the app is audited as an external/manual exit, not a strategy exit or win",
+    "An integration test shows unsafe account flags or insufficient buying power block entries for the account",
+    "An integration test shows that a clean broker snapshot matching local state yields entries_permitted=True",
+    "Tests use a temporary SQLite database and a fake broker port, with no network access and no credentials",
+    "No files outside mike_trade/execution/reconcile.py and tests/integration/test_reconciliation.py are modified"
+  ],
+  "selected_backend": "codex_cli",
+  "model": "gpt-5.6-sol",
+  "verification_profile": "focused",
+  "allowed_write_paths": [
+    "mike_trade/execution/reconcile.py",
+    "tests/integration/test_reconciliation.py"
+  ],
+  "forbidden_changes": [
+    "modify files outside allowed_write_paths",
+    "modify mike_trade/portfolio/cycles.py",
+    "add database migrations or schema changes",
+    "change PLAN_SKELETON.json or other planning artifacts",
+    "create live or paper broker orders or access broker credentials",
+    "automatically adopt or attribute external positions",
+    "cancel valid broker-held protective stops during reconciliation",
+    "run broad full-suite tests or backtests"
+  ],
+  "dependencies": [
+    "m.1"
+  ],
+  "task_timeout_seconds": 1800
+}

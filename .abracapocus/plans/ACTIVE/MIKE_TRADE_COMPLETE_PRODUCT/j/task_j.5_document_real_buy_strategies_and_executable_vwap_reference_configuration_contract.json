@@ -1,0 +1,40 @@
+{
+  "schema_version": 1,
+  "task_id": "j.5",
+  "phase": "J",
+  "phase_id": "j",
+  "title": "Document real buy strategies and executable VWAP reference configuration contract",
+  "description": "Document the shipped BUY strategies and provide executable BUY presets.\n\nIn docs/STRATEGIES.md:\n1. Describe the strategy SDK contract: spec fields, pure evaluate on immutable MarketContext, reason codes, deterministic signal IDs, rearm, explicit trusted registry, and the absence of a DSL or dynamic plugin loading.\n2. For each of opening_range_breakout, momentum_breakout, and vwap_bounce, document:\n   - the exact objective trigger definition\n   - parameters with their validated ranges and defaults, plus the provenance of each default\n   - data, closed-bar, volume, and warmup requirements\n   - session behavior\n   - rearm and duplicate-suppression rules\n   - every no-signal reason code\n   - methodology/source notes\n   - execution limitations\n3. State explicitly that implementation is not an alpha or profitability claim, and that no confidence scores exist.\n4. Document the vwap_reference configuration contract: vwap_bounce BUY is paired with vwap_breakdown SELL only through configuration/presets, there is no hard code dependency between them, and the reference configuration is shadow-only.\n\nIn mike_trade/strategies/presets/buy_presets.py, define executable, validated BUY preset objects that reference registered strategies by (strategy_id, version) with parameter dicts:\n- a vwap_reference BUY preset referencing vwap_bounce, marked shadow-only, which names its SELL partner id vwap_breakdown by string only and does not import it\n- documented baseline presets for opening_range_breakout and momentum_breakout\n\nAlso provide a function that validates every preset against StrategyRegistry parameter schemas and fails closed on an unknown strategy or invalid parameters. Presets must contain no invented 'profitable defaults' and no confidence values.\n\nBefore editing, inspect:\n- mike_trade/strategies/base.py\n- mike_trade/strategies/registry.py\n- mike_trade/strategies/buy/opening_range_breakout.py\n- mike_trade/strategies/buy/momentum_breakout.py\n- mike_trade/strategies/buy/vwap_bounce.py\n- tests/unit/test_buy_opening_range.py\n- tests/unit/test_buy_momentum.py\n- tests/unit/test_buy_vwap.py\n- tests/contracts/test_strategy_registry.py\n- any existing docs/ files, for style",
+  "acceptance_criteria": [
+    "docs/STRATEGIES.md documents the SDK contract and, for each of opening_range_breakout, momentum_breakout, and vwap_bounce, the exact trigger definition, parameters with ranges/defaults and provenance, data/closed-bar/volume/warmup requirements, session behavior, rearm/duplicate rules, no-signal reason codes, methodology, and limitations, all consistent with the implemented specs.",
+    "docs/STRATEGIES.md states the vwap_bounce rule exactly (completed 1m regular-session bars; prior close <= prior VWAP AND latest close > latest VWAP; session-reset warmed/fresh VWAP), and states that it is not a profitability claim.",
+    "docs/STRATEGIES.md documents the vwap_reference pairing as configuration-only and shadow-only, with no hard dependency between vwap_bounce and vwap_breakdown.",
+    "mike_trade/strategies/presets/buy_presets.py defines a shadow-only vwap_reference BUY preset referencing vwap_bounce by (id, version) and naming the vwap_breakdown SELL partner by string id only, without importing SELL modules.",
+    "buy_presets.py defines baseline presets for opening_range_breakout and momentum_breakout and a validation function that checks every preset against StrategyRegistry parameter schemas, failing closed on an unknown strategy or invalid parameters.",
+    "Neither file contains profitability claims, invented 'profitable defaults', or confidence scores."
+  ],
+  "selected_backend": "pi_cli",
+  "model": "openrouter/meta/muse-spark-1.3-contributor",
+  "verification_profile": "focused",
+  "allowed_write_paths": [
+    "docs/STRATEGIES.md",
+    "mike_trade/strategies/presets/buy_presets.py"
+  ],
+  "forbidden_changes": [
+    "modify files outside allowed_write_paths",
+    "modify strategy implementation modules, base.py, or registry.py",
+    "change PLAN_SKELETON.json or other planning artifacts",
+    "import SELL strategy modules from buy_presets.py",
+    "enable the vwap_reference preset for PAPER or LIVE modes",
+    "add profitability claims, profitable defaults, or confidence scores",
+    "create example placeholder strategies or a separate trading runner",
+    "create live broker orders or run broad test suites/backtests"
+  ],
+  "dependencies": [
+    "j.1",
+    "j.2",
+    "j.3",
+    "j.4"
+  ],
+  "task_timeout_seconds": 900
+}

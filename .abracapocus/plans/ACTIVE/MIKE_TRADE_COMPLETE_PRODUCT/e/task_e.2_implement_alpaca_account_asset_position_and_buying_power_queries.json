@@ -1,0 +1,51 @@
+{
+  "schema_version": 1,
+  "task_id": "e.2",
+  "phase": "E",
+  "phase_id": "e",
+  "title": "Implement Alpaca account asset position and buying power queries",
+  "description": "Implement read-only Alpaca Trading API queries that normalize provider JSON into the application's Decimal-based domain types. These modules must work against an injected HTTP client object that exposes a get(path, params) style interface, so they can be tested with fixtures before or independently of the concrete client in e.1.\n\nmike_trade/brokers/alpaca/account.py:\n(1) Read the account through GET /v2/account and normalize: account id, account number, status, currency, cash, equity, last_equity, buying_power, regt_buying_power, daytrading_buying_power, non_marginable_buying_power, portfolio_value, multiplier, pattern_day_trader, trading_blocked, transfers_blocked, account_blocked, trade_suspended_by_user, shorting_enabled, and daytrade_count. All money is Decimal.\n(2) Expose an unsafe-account-flags evaluation that returns explicit reasons. Reasons include: trading_blocked, account_blocked, trade_suspended_by_user, a status other than ACTIVE, and pattern-day-trader risk. Downstream entry gating uses this and fails closed.\n(3) List positions through GET /v2/positions and look up one through GET /v2/positions/{symbol}. Normalize symbol, asset_id, side, qty, qty_available, avg_entry_price, market_value, cost_basis, unrealized_pl, and current_price, all as Decimal. A 404 for one position means no position, not an error.\n(4) Read the broker clock through GET /v2/clock: is_open, plus timestamp, next_open, and next_close as timezone-aware UTC datetimes.\n(5) Every result records which environment it came from (PAPER or LIVE) and the account fingerprint, so different modes cannot be mixed.\n\nmike_trade/brokers/alpaca/assets.py:\n(1) Look up an asset through GET /v2/assets/{symbol_or_id} and list assets with filters. Normalize: id, symbol, exchange, class (us_equity only is accepted for trading), status, tradable, marginable, shortable, easy_to_borrow, fractionable, and min_order_size, min_trade_increment, and price_increment when present, as Decimal.\n(2) Provide helpers that validate and quantize a quantity or limit price to the asset's precision using Decimal. Invalid precision is rejected, never silently rounded upward.\n(3) A non-tradable, inactive, or non-us_equity asset is reported as ineligible with an explicit reason.\n\nCreate tests/contracts/test_alpaca_accounts.py using recorded or handwritten JSON fixtures and a fake HTTP client, with no network access and no credentials. Positive and negative tests must cover: Decimal parsing of all money fields; unsafe-flag detection; position normalization; a missing position returning None; clock UTC awareness; asset fractionable/tradable eligibility; precision quantization and rejection; and environment tagging on returned objects.\n\nBefore editing, inspect: existing domain types for money, quantity, symbol, account, position, and mode in the mike_trade package from earlier phases; any broker port/protocol that defines account/position/asset return types; and mike_trade/brokers/alpaca/ for existing modules. Conform to existing port signatures rather than inventing parallel types. Do not edit http.py or auth.py, which belong to e.1. Depend only on a minimal client protocol.",
+  "acceptance_criteria": [
+    "account.py returns a normalized account snapshot whose cash, equity, buying_power, regt_buying_power, daytrading_buying_power, and non_marginable_buying_power are Decimal, verified against a fixture",
+    "An unsafe-flags evaluation returns explicit reasons for trading_blocked, account_blocked, trade_suspended_by_user, and non-ACTIVE status; a clean fixture returns no reasons",
+    "Position listing and single lookup return Decimal qty, qty_available, avg_entry_price, market_value, and unrealized_pl; a 404 single-position lookup returns None rather than raising",
+    "Clock query returns timezone-aware UTC datetimes for timestamp, next_open, and next_close",
+    "assets.py exposes tradable, fractionable, shortable, status, and precision metadata; non-tradable/inactive/non-us_equity assets are reported ineligible with a reason",
+    "Quantity/price precision helpers quantize with Decimal and reject values that violate min_trade_increment/price_increment, verified with positive and negative tests",
+    "Every returned account/position/asset/clock object carries its source environment and account fingerprint",
+    "tests/contracts/test_alpaca_accounts.py passes with fixtures only, without network access or credentials"
+  ],
+  "selected_backend": "pi_cli",
+  "model": "openrouter/meta/muse-spark-1.3-contributor",
+  "verification_profile": "focused",
+  "allowed_write_paths": [
+    "mike_trade/brokers/alpaca/account.py",
+    "mike_trade/brokers/alpaca/assets.py",
+    "tests/contracts/test_alpaca_accounts.py"
+  ],
+  "allowed_symbols": [
+    "AlpacaAccountService",
+    "AlpacaAccountSnapshot",
+    "AccountSafetyReason",
+    "evaluate_account_flags",
+    "AlpacaPosition",
+    "AlpacaClock",
+    "AlpacaAssetService",
+    "AlpacaAsset",
+    "AssetEligibility",
+    "quantize_quantity",
+    "quantize_price"
+  ],
+  "forbidden_changes": [
+    "modify files outside allowed_write_paths",
+    "edit mike_trade/brokers/alpaca/http.py or auth.py",
+    "change PLAN_SKELETON.json or any planning artifacts",
+    "place, modify, or cancel any order",
+    "make real network calls or read real credentials in tests",
+    "use float for money, quantities, or prices",
+    "mix paper and live account data in shared objects or caches",
+    "run broad test suites or backtests"
+  ],
+  "dependencies": [],
+  "task_timeout_seconds": 1500
+}

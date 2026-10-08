@@ -1,0 +1,50 @@
+{
+  "schema_version": 1,
+  "task_id": "k.4",
+  "phase": "K",
+  "phase_id": "k",
+  "title": "Build signal arbitration valid-vs-rejected decision and rearm policy",
+  "description": "Build deterministic, auditable exit-signal arbitration and restart-stable rearm/duplicate suppression.\n\nIn mike_trade/signals/decisions.py implement a pure arbitration function (for example arbitrate_exit_decisions). Inputs:\n- the candidate exit requests for one managed position on one evaluation tick: protective stop, manual close, hard risk, forced liquidation, and zero or more strategy SELL recommendations from enabled SELL rules\n- the position snapshot (confirmed remaining quantity, side, managed/unmanaged, entry fill time)\n- the minimum-hold configuration\n- an injected evaluation time\n\nArbitration rules:\n1. Use the ExitSource priority from mike_trade/strategies/sell/base.py. Stop/manual/risk/forced exits always outrank STRATEGY_SELL and bypass minimum hold. STRATEGY_SELL is subject to minimum hold.\n2. The default policy is first valid exit. Among simultaneous valid strategy SELLs, select deterministically by a documented stable tie-break: priority, then completed-bar timestamp, then strategy_id, then signal_id. There is no weighted/confidence voting.\n3. Every non-selected candidate is recorded as a rejected decision with an explicit reason, for example SUPERSEDED_BY_HIGHER_PRIORITY, MIN_HOLD_ACTIVE, DUPLICATE_SIGNAL, POSITION_FLAT, NOT_MANAGED, EXIT_ALREADY_PENDING, STRATEGY_DISABLED, or STALE_SIGNAL.\n4. When flat or unmanaged, no exit is selected and SELL never becomes a short or opposite-side order.\n5. When an exit (including a broker-held stop fill in progress) is already pending, a new overlapping strategy SELL is rejected, so overlapping sells cannot oversell.\n6. The selected decision targets 100% of the confirmed remaining quantity only.\n7. Output is an immutable ArbitrationResult containing the selected decision (or none) and the full list of DecisionRecord entries (valid and rejected). Each DecisionRecord includes: a deterministic decision_id, signal_id, source, strategy_id/version, symbol, position/cycle id, UTC timestamps, outcome (SELECTED/REJECTED), and reason codes, serializable for an append-only audit log.\n8. Arbitration never submits orders and never touches brokers. It returns an advisory decision only.\n\nIn mike_trade/signals/rearm.py implement the rearm/duplicate-suppression policy:\n- a RearmState keyed by (strategy_id, version, symbol, side) that holds the last emitted signal_id, the last triggering completed-bar timestamp, arm/disarm status, and opaque per-strategy persistent state (for example the rsi_reversal arm flag)\n- a pure check_and_record (or equivalent) that suppresses any already-seen signal_id or a bar not newer than the last triggered bar, and returns explicit DUPLICATE_SIGNAL / REPLAY_SUPPRESSED reasons\n- deterministic, versioned to_dict/from_dict serialization so state survives restart through the existing persistence layer. This module performs no DB/file I/O itself.\n- a rehydrated state suppresses the same replays as the original\n- a position-cycle reset hook, so a new entry cycle does not inherit stale exit suppression incorrectly while same-bar replays stay suppressed\n\nIn tests/unit/test_signal_arbitration.py, cover:\n- stop vs strategy SELL on the same tick (the stop wins, the strategy SELL is rejected with SUPERSEDED_BY_HIGHER_PRIORITY)\n- manual/risk/forced bypassing minimum hold while STRATEGY_SELL is blocked by it\n- two simultaneous strategy SELLs resolved identically across shuffled input orders\n- flat/unmanaged positions yielding no selection\n- a pending exit rejecting an overlapping sell\n- full-quantity selection after a partial fill\n- every rejected candidate being logged with a reason\n- deterministic decision IDs\n- rearm replay suppression across a simulated restart (serialize, deserialize, then replay the same bar: suppressed)\n- a later bar being accepted\n- cycle reset behavior\n- the absence of confidence fields\n\nBefore editing, inspect:\n- mike_trade/strategies/sell/base.py\n- tests/contracts/test_sell_strategy.py\n- mike_trade/strategies/base.py\n- mike_trade/domain/signals.py\n- mike_trade/domain/strategy_types.py\n- any existing mike_trade/signals/ package files, including an existing rearm.py referenced by phase j BUY strategies, which you must extend compatibly rather than break\n- the existing persistence event/audit types under mike_trade/persistence/, to align the record shape. Do not modify them.\n\nDecision budget: if mike_trade/signals/rearm.py already exposes an API used by BUY strategies, preserve its existing public names and semantics and add to them.",
+  "acceptance_criteria": [
+    "mike_trade/signals/decisions.py exposes a pure arbitration function returning an immutable ArbitrationResult with at most one selected exit and a DecisionRecord for every candidate (SELECTED or REJECTED with explicit reason codes).",
+    "Protective stop, manual close, hard risk, and forced liquidation always outrank STRATEGY_SELL and bypass minimum hold, while STRATEGY_SELL is rejected with MIN_HOLD_ACTIVE until the hold elapses (tested).",
+    "Simultaneous valid strategy SELLs resolve to the same selection and identical decision IDs regardless of input order, using the documented stable tie-break and no weighting or confidence.",
+    "Flat or unmanaged positions select nothing, a pending exit causes overlapping sells to be rejected, and no path produces a short or partial-quantity decision; a selected exit equals the full confirmed remaining quantity.",
+    "DecisionRecord entries are deterministic and serializable for append-only audit, with signal_id, source, strategy id/version, symbol, cycle id, UTC timestamps, outcome, and reasons.",
+    "mike_trade/signals/rearm.py suppresses already-seen signal IDs and not-newer bars with explicit reasons, serializes/deserializes deterministically with a version tag, and a restored state suppresses the same replays (tested across a simulated restart).",
+    "Any pre-existing public rearm API used by BUY strategies remains backward compatible.",
+    "Neither module performs broker, network, file, or DB I/O, and tests/unit/test_signal_arbitration.py passes when run in isolation."
+  ],
+  "selected_backend": "claude_code_cli",
+  "model": "claude-sonnet-5-5",
+  "verification_profile": "focused",
+  "allowed_write_paths": [
+    "mike_trade/signals/decisions.py",
+    "mike_trade/signals/rearm.py",
+    "tests/unit/test_signal_arbitration.py"
+  ],
+  "allowed_symbols": [
+    "arbitrate_exit_decisions",
+    "ArbitrationResult",
+    "DecisionRecord",
+    "DecisionOutcome",
+    "DecisionReason",
+    "RearmState",
+    "RearmPolicy",
+    "check_and_record",
+    "reset_cycle"
+  ],
+  "forbidden_changes": [
+    "modify files outside allowed_write_paths",
+    "modify mike_trade/strategies/sell/base.py, strategy modules, or persistence modules",
+    "change PLAN_SKELETON.json or other planning artifacts",
+    "break existing public names in mike_trade/signals/rearm.py",
+    "add weighted/confidence voting, partial exits, auto re-buy, or short/opposite-side actions",
+    "submit orders or access brokers, network, files, or DB from arbitration/rearm",
+    "create live broker orders or run broad test suites/backtests"
+  ],
+  "dependencies": [
+    "k.1"
+  ],
+  "task_timeout_seconds": 1500
+}

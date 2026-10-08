@@ -1,0 +1,54 @@
+{
+  "schema_version": 1,
+  "task_id": "s.5",
+  "phase": "S",
+  "phase_id": "s",
+  "title": "Implement bounded filterable events signals logs and health read commands",
+  "description": "Implement read-only, bounded and filterable history/health commands, along with structured logging/metrics observability.\n\nBefore editing, inspect: the persistence read projections and event store for signals, evaluations (including NO_SIGNAL and rejection reasons) and append-only trade-affecting events; the heartbeat, feed freshness, scheduler, broker connectivity and reconciliation drift projections; the structured logging configuration and log file locations from earlier phases; the existing mike_trade/observability package, including any current metrics module and its public API (preserve it); the configuration for heartbeat/staleness thresholds; the clock port and America/New_York calendar; and the mode/account/scenario identifiers. Task s.3 concurrently builds mike_trade/cli.py, which lazily imports this module and calls run_history_command(name: str, args: argparse.Namespace) -> int. Implement exactly that function, and do not edit cli.py.\n\nImplement mike_trade/controls/history_commands.py:\n(1) run_history_command dispatches 'signals', 'evaluations', 'events', 'logs' and 'health'. It also exposes add_history_arguments(parser, name) so s.3 can attach the filter options.\n(2) Common filters:\n- account/scenario (required, resolved strictly to one mode);\n- symbol, strategy, since/until (ISO-8601 or an America/New_York session date; stored timestamps are UTC);\n- event type, outcome, rejection reason;\n- run_id, cycle_id, signal_id, intent_id, client_order_id;\n- limit, default 50 with a hard maximum of 1000. Larger values are clamped and noted.\n- --format table|json.\n(3) The DB is opened read-only (mode=ro URI and query_only). There are no writes and no broker/data provider calls.\n(4) logs reads structured JSON log files in reverse with bounded line and byte caps. It filters by level and correlation ids and never follows or streams unbounded output.\n(5) health computes engine state independently from heartbeat age vs. the configured threshold, using the injected clock (OFFLINE when stale or absent). It reports feed age and message rate, scheduler lag, evaluation duration, broker REST/WS error rates, unknown order states, position drift and reconciliation state, and active alert conditions, each with the CLI/Make command text to resolve it. It returns 0 when healthy and 5 when any critical condition is present.\n(6) Output never contains secrets, full account identifiers or raw provider payloads. Decimal values are rendered as strings in JSON.\n\nImplement or extend mike_trade/observability/metrics.py:\n(1) An in-process metrics registry with counters, gauges and histograms covering: market feed age and message rate, scheduler lag, evaluation duration, signal and rejection counts, broker REST/WS errors and rates, unknown order states, position drift, shadow fills, P&L gauges, heartbeat, stop placement failures, orphan or expired stops, unconfirmed stepped trailing replacement, stale trailing watermark, uncovered fills, live position with engine offline, unexpected short, risk breach, stale feed, and unhandled exception.\n(2) Correlation context binding for run_id, cycle_id, signal_id, intent_id and client_order_id in structured log records.\n(3) A redaction filter. It masks API keys, secrets and tokens, masks account identifiers to the last 4 characters, and passes provider payloads only through an allowlist.\n(4) Pure alert evaluators that turn a metrics/projection snapshot into typed HealthIssue records (severity, code, message, remediation command).\n\nWrite tests/unit/test_history_commands.py with a temporary migrated SQLite DB, temporary log files and an injected clock. Cover:\n- each filter;\n- the default limit and clamping at 1000;\n- account isolation;\n- that the read-only connection rejects writes;\n- the logs byte/line cap and correlation-id filtering;\n- health OFFLINE from heartbeat age with a nonzero exit, and healthy with exit 0;\n- each listed alert condition producing a HealthIssue with a remediation command;\n- redaction of secret-like and account-identifier values;\n- context id binding in log records.",
+  "acceptance_criteria": [
+    "history_commands.py exposes run_history_command(name, args) -> int and add_history_arguments(parser, name), handling signals, evaluations, events, logs and health",
+    "Results default to 50 rows, never exceed 1000, and are filterable by account/scenario, symbol, strategy, since/until, type, outcome, rejection reason and correlation ids, as demonstrated by tests",
+    "History commands open SQLite read-only; a test asserts that a write attempt through their connection fails, and no broker or data-provider module is imported",
+    "logs output is capped by both line and byte limits and filterable by level and run_id/cycle_id/signal_id/intent_id/client_order_id",
+    "health reports OFFLINE with exit code 5 when the heartbeat age exceeds the configured threshold under an injected clock, and exit code 0 when all conditions are healthy",
+    "observability/metrics.py defines metrics and alert evaluators for every condition listed in the description, each producing a HealthIssue with severity, code and remediation command text",
+    "The redaction filter masks API keys, secrets and tokens and masks account identifiers to the last 4 characters; tests assert that the raw values are absent from the output",
+    "Structured log records include bound run_id, cycle_id, signal_id, intent_id and client_order_id when set",
+    "tests/unit/test_history_commands.py contains passing positive and negative tests and uses no network access or broker credentials"
+  ],
+  "selected_backend": "pi_cli",
+  "model": "openrouter/meta/muse-spark-1.3-contributor",
+  "verification_profile": "focused",
+  "allowed_write_paths": [
+    "mike_trade/controls/history_commands.py",
+    "mike_trade/observability/metrics.py",
+    "tests/unit/test_history_commands.py"
+  ],
+  "allowed_symbols": [
+    "run_history_command",
+    "add_history_arguments",
+    "HISTORY_DEFAULT_LIMIT",
+    "HISTORY_MAX_LIMIT",
+    "MetricsRegistry",
+    "HealthIssue",
+    "evaluate_alerts",
+    "bind_log_context",
+    "RedactionFilter"
+  ],
+  "forbidden_changes": [
+    "modify files outside allowed_write_paths",
+    "change PLAN_SKELETON.json or planning artifacts",
+    "edit mike_trade/cli.py or other controls modules owned by task s.3",
+    "write to the database or mutate configuration from history or health commands",
+    "return unbounded result sets or stream logs without caps",
+    "log or print secrets, full account identifiers or raw unfiltered provider payloads",
+    "remove or rename existing public observability APIs",
+    "access broker credentials or create broker orders",
+    "run broad test suites or backtests"
+  ],
+  "dependencies": [
+    "s.1",
+    "s.2"
+  ],
+  "task_timeout_seconds": 1800
+}

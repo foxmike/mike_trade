@@ -1,0 +1,95 @@
+{
+  "run_at": "2026-10-08T13:52:51.493916",
+  "phase_dir": "/home/mike/dev/mike/stocks/python/mike_trade/.abracapocus/plans/ACTIVE/MIKE_TRADE_COMPLETE_PRODUCT/a",
+  "status": "passed",
+  "counts": {
+    "passed": 5,
+    "failed": 0,
+    "blocked": 0,
+    "skipped": 0,
+    "unverified": 0
+  },
+  "tasks": [
+    {
+      "task_id": "a.1",
+      "task_file": "/home/mike/dev/mike/stocks/python/mike_trade/.abracapocus/plans/ACTIVE/MIKE_TRADE_COMPLETE_PRODUCT/a/task_a.1_establish_python_packaging_and_reproducible_dependency_lock.json",
+      "status": "passed",
+      "acceptance_status": "accepted",
+      "task_verification": {
+        "status": "skipped",
+        "checks": [],
+        "owner": "abracapocus"
+      },
+      "run_id": "4a94d26a-06e0-45e1-845b-32bcaa3bb5de",
+      "write_policy_violations": [],
+      "failure_classification": null,
+      "reviewer_summary": "a.1:Review complete"
+    },
+    {
+      "task_id": "a.2",
+      "task_file": "/home/mike/dev/mike/stocks/python/mike_trade/.abracapocus/plans/ACTIVE/MIKE_TRADE_COMPLETE_PRODUCT/a/task_a.2_add_structured_logging_conventions_and_typed_application_exceptions.json",
+      "status": "passed",
+      "acceptance_status": "accepted",
+      "task_verification": {
+        "status": "skipped",
+        "checks": [],
+        "owner": "abracapocus"
+      },
+      "run_id": "efc9262e-e23c-4b14-8fe7-9e6f57f5733d",
+      "write_policy_violations": [],
+      "failure_classification": null,
+      "reviewer_summary": "a.2:Review complete"
+    },
+    {
+      "task_id": "a.3",
+      "task_file": "/home/mike/dev/mike/stocks/python/mike_trade/.abracapocus/plans/ACTIVE/MIKE_TRADE_COMPLETE_PRODUCT/a/task_a.3_document_application_module_boundaries_and_dependency_rules.json",
+      "status": "passed",
+      "acceptance_status": "accepted",
+      "task_verification": {
+        "status": "skipped",
+        "checks": [],
+        "owner": "abracapocus"
+      },
+      "run_id": "f16ed8fd-f274-49e2-8931-9f2f6915f3b3",
+      "write_policy_violations": [],
+      "failure_classification": null,
+      "reviewer_summary": "a.3:Review complete"
+    },
+    {
+      "task_id": "a.4",
+      "task_file": "/home/mike/dev/mike/stocks/python/mike_trade/.abracapocus/plans/ACTIVE/MIKE_TRADE_COMPLETE_PRODUCT/a/task_a.4_create_dependency_injected_composition_root_and_runtime_object_graph.json",
+      "status": "passed",
+      "acceptance_status": "accepted",
+      "task_verification": {
+        "status": "skipped",
+        "checks": [],
+        "owner": "abracapocus"
+      },
+      "run_id": "d2a40a93-e48c-4ee3-aacb-35589c7c7662",
+      "write_policy_violations": [],
+      "failure_classification": null,
+      "reviewer_summary": "a.4:Review complete"
+    },
+    {
+      "task_id": "a.5",
+      "task_file": "/home/mike/dev/mike/stocks/python/mike_trade/.abracapocus/plans/ACTIVE/MIKE_TRADE_COMPLETE_PRODUCT/a/task_a.5_create_baseline_make_help_and_install_doctor_shell_entrypoints.json",
+      "status": "passed",
+      "acceptance_status": "accepted",
+      "task_verification": {
+        "status": "skipped",
+        "checks": [],
+        "owner": "abracapocus"
+      },
+      "run_id": "a1dc91e4-3cf4-4a4e-adef-c2a2b9e53649",
+      "write_policy_violations": [],
+      "failure_classification": null,
+      "reviewer_summary": "a.5:Review complete"
+    }
+  ],
+  "phase_verification": {
+    "status": "warning",
+    "checks": [],
+    "notes": "phase verification complete",
+    "run_when": "all_tasks_pass"
+  }
+}

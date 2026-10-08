@@ -1,0 +1,58 @@
+{
+  "schema_version": 1,
+  "task_id": "e.3",
+  "phase": "E",
+  "phase_id": "e",
+  "title": "Implement stock order placement cancellation lookup and client order IDs",
+  "description": "Implement Alpaca stock order operations in mike_trade/brokers/alpaca/orders.py, using the e.1 AlpacaHttpClient and exceptions and the e.2 asset metadata and precision helpers.\n\n(1) Stable client_order_id: derive deterministically from mode/account fingerprint + position cycle id + purpose (for example entry, exit, protective_stop, trailing_stop, manual_close) + attempt number. Encode within Alpaca's client_order_id length limit (48 characters) using a compact, collision-resistant scheme, for example a short prefix plus a truncated hash. Expose a parse/inspect helper for audit. The ID must be generated and handed to an injected persistence callback or port (persist-before-send hook) before any HTTP submission. If persistence fails, submission is aborted.\n(2) Submission supports stock BUY/SELL market and limit orders with an explicit quantity-vs-notional choice made before submission; the two are mutually exclusive. Validate qty/notional/limit_price precision via the assets helpers. Fractional or notional orders are allowed only for fractionable assets and only with documented TIF (DAY). Enforce the known restriction that notional orders cannot be replaced.\n(3) Protective orders, exposed only through explicit methods: a standalone stop sell (stop_price) and a standalone native trailing_stop sell using exactly one of trail_price or trail_percent. Trailing stops are never OTO, bracket, or OCO legs. The methods accept a capability-check callable and refuse (fail closed, typed error) when the capability is not marked proven. Reject sell quantities greater than the caller-supplied known position quantity, so overlapping sells cannot create a short.\n(4) Unknown outcome: on timeout, transport loss, or AlpacaUnknownOutcome during submission, query GET /v2/orders:by_client_order_id with the same ID before anything else. If the order is found, return it. If 404 is confirmed, return a typed NotSubmitted result that permits retry only with the same ID. If the lookup itself fails, raise OrderOutcomeUnresolved and never mint a new attempt ID. A new attempt number is allowed only after the original status is resolved terminal or not-submitted.\n(5) Lookup by broker order id (GET /v2/orders/{id}), lookup by client_order_id, list open orders (status=open, bounded limit, nested where useful), and cancel by id (DELETE /v2/orders/{id}). A 404 or 422 on cancel of an already terminal order is mapped to a typed result. Replace (PATCH) is allowed only for limit price, stop price, or trail fields when the capability allows it. Never assume OTO replacement.\n(6) Normalize orders into Decimal fields: qty, notional, filled_qty, filled_avg_price, limit_price, stop_price, trail_price, trail_percent, and hwm. Include status, side, type, time_in_force, order_class, legs, timezone-aware UTC timestamps, and source environment.\n(7) Live safety: any submit, replace, or cancel against a LIVE client must require the explicit live-authorization flag carried by the client from e.1. Refuse otherwise.\n\nCreate tests/contracts/test_alpaca_orders.py with httpx.MockTransport or a fake client, with no network access and no credentials. Positive and negative tests must cover: deterministic client_order_id and length limit; that persist-before-send ordering is enforced (the transport is not called if persistence raises); qty-vs-notional exclusivity; notional replace rejection; fractional on a non-fractionable asset rejected; trailing stop requiring exactly one of trail_price or trail_percent and never having order_class; unproven capability failing closed; sell qty exceeding position rejected; timeout leading to lookup by client_order_id with no second POST; a NotSubmitted path; the unresolved path not minting a new ID; cancel of a terminal order; Decimal normalization; and live operations blocked without authorization.\n\nBefore editing, inspect: mike_trade/brokers/alpaca/http.py and auth.py (from e.1), mike_trade/brokers/alpaca/assets.py and account.py (from e.2), the broker port/protocol and order/intent domain types from earlier phases, and any persistence port for order intents or outbox. capabilities.py does not exist yet (e.5). Accept capability checks as an injected callable or protocol rather than importing it.",
+  "acceptance_criteria": [
+    "client_order_id is deterministic for identical (mode/account fingerprint, cycle, purpose, attempt), differs when any component changes, and is at most 48 characters, verified by tests",
+    "Submission invokes the persist-before-send hook before any transport call; if the hook raises, no HTTP request is made (asserted in a test)",
+    "Specifying both qty and notional, or neither, is rejected before submission; replacing a notional order is rejected with a typed error",
+    "Fractional/notional orders on a non-fractionable asset are rejected before submission",
+    "Native trailing stop is submitted as a standalone sell with type=trailing_stop and exactly one of trail_price/trail_percent and no order_class; violating requests are rejected",
+    "Protective/linked order methods fail closed with a typed error when the injected capability check reports the combination as unproven",
+    "A sell whose quantity exceeds the supplied known position quantity is rejected",
+    "On submission timeout, the adapter performs GET by client_order_id before any retry; tests assert exactly one POST and no new client_order_id when the lookup fails",
+    "Open-order listing, lookup by order id and by client_order_id, and cancel are implemented; cancel of an already-terminal order returns a typed non-exception result",
+    "Normalized orders use Decimal for all quantity/price/trail/hwm fields and UTC-aware timestamps",
+    "Submit/replace/cancel against a LIVE client without explicit live authorization is refused, verified by a test",
+    "tests/contracts/test_alpaca_orders.py passes without network access or credentials"
+  ],
+  "selected_backend": "codex_cli",
+  "model": "gpt-5.6-sol",
+  "verification_profile": "focused",
+  "allowed_write_paths": [
+    "mike_trade/brokers/alpaca/orders.py",
+    "tests/contracts/test_alpaca_orders.py"
+  ],
+  "allowed_symbols": [
+    "AlpacaOrderService",
+    "AlpacaOrder",
+    "OrderPurpose",
+    "make_client_order_id",
+    "parse_client_order_id",
+    "OrderSizing",
+    "NotSubmitted",
+    "OrderOutcomeUnresolved",
+    "CapabilityUnavailable",
+    "OversellRejected",
+    "CancelResult"
+  ],
+  "forbidden_changes": [
+    "modify files outside allowed_write_paths",
+    "edit http.py, auth.py, account.py, or assets.py",
+    "change PLAN_SKELETON.json or any planning artifacts",
+    "submit any live order or call live endpoints in tests",
+    "blindly retry order creation or generate a new client_order_id before resolving the original",
+    "assume OTO/bracket/OCO/fractional-stop/trailing-fractional support without a proven capability",
+    "send trailing stops as OTO/bracket/OCO legs",
+    "use float for money, quantities, or prices",
+    "run broad test suites or backtests"
+  ],
+  "dependencies": [
+    "e.1",
+    "e.2"
+  ],
+  "task_timeout_seconds": 1800
+}

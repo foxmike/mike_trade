@@ -1,0 +1,41 @@
+{
+  "schema_version": 1,
+  "task_id": "h.4",
+  "phase": "H",
+  "phase_id": "h",
+  "title": "Build immutable strategy market context and reference symbol binder",
+  "description": "Implement immutable MarketContext snapshots and a reference-symbol binder in mike_trade/market_data/context.py, with unit tests in tests/unit/test_market_context.py.\n\nRequired behavior:\n- MarketContext is a frozen value object keyed by (symbol, as_of UTC, version). Version increases monotonically per symbol. A context carries:\n  - latest quote and latest trade, with provider and receive timestamps\n  - completed candles per timeframe as tuples of h.1 Candle objects\n  - indicator values from h.2 calculators\n  - feed identity (feed_id, a consolidated flag that is False for IEX)\n  - freshness (data age relative to as_of, plus a stale flag and reason)\n  - session status and session_id from the h.3 calendar\n  - price_basis\n  - an optional, non-required research context\n  Collections are exposed read-only (tuples or MappingProxyType). Mutation attempts raise.\n- A ContextBuilder assembles a snapshot from injected sources: candle builder state, indicator calculators, calendar, quote/trade cache, and clock. It performs no network or broker I/O and never fetches data on demand.\n- Completed-bars rule: if a strategy declares completed bars only, the context it receives contains only CLOSED candles. A developing candle is included only when explicitly declared, and only in a separately named field.\n- Feed and basis integrity: building a context from candles or quotes with mixed feed_ids, or with SPLIT_ADJUSTED history together with RAW prices intended for stop calculation, fails closed. It raises a typed error or yields a context marked invalid with a reason code. Stop-relevant prices are always exposed on the RAW basis.\n- Selection: select_context(history, evaluation_time, max_age) returns the newest context with as_of <= evaluation_time that is fresh within max_age. Otherwise it returns an explicit STALE/MISSING result, never an older stale snapshot presented as fresh.\n- Reference symbol binder: takes a strategy's declared inputs (primary symbol, optional declared reference symbols, timeframes, indicators, completed_bars_only) and returns a bound view of the declared symbols' contexts only. Accessing an undeclared symbol raises a typed error. Do not build any separate market-alert subsystem.\n- Do not compute BUY or SELL decisions here.\n\nBefore editing, inspect:\n- mike_trade/market_data/candles.py (h.1), mike_trade/strategies/indicators/core.py (h.2), and mike_trade/scheduling/calendar.py (h.3)\n- mike_trade/strategies/base.py and mike_trade/domain/strategy_types.py (if present) for the strategy input-declaration type\n- mike_trade/market_data/cache.py, mike_trade/market_data/quality.py, and mike_trade/research/ports.py (if present) for quote/trade cache, freshness, and optional research types",
+  "acceptance_criteria": [
+    "A test confirms that MarketContext and its nested collections are immutable: assigning a field or mutating a candle or indicator mapping raises.",
+    "A test confirms that version increases monotonically per symbol across successive builds, and that equal inputs at the same as_of produce equal contexts.",
+    "A test confirms that a strategy declaring completed_bars_only receives no DEVELOPING candle, even while one exists in the builder.",
+    "A negative test confirms that mixing an IEX series with a different feed_id is rejected or marked invalid with a reason code.",
+    "A negative test confirms that SPLIT_ADJUSTED history combined with RAW stop-reference prices is rejected or marked invalid, and that stop-relevant prices are exposed on the RAW basis.",
+    "Tests confirm that select_context returns the newest fresh snapshot at or before evaluation_time, ignores snapshots with as_of after evaluation_time, and returns an explicit STALE/MISSING result when no snapshot is within max_age.",
+    "A test confirms that the binder exposes declared reference symbols and raises a typed error on access to an undeclared symbol.",
+    "A test confirms that context carries feed_id with consolidated=False for IEX, plus session status and session_id from the calendar for a half-day session.",
+    "The module performs no network or broker I/O. Tests run with only injected fakes."
+  ],
+  "selected_backend": "claude_code_cli",
+  "model": "claude-sonnet-5-5",
+  "verification_profile": "focused",
+  "allowed_write_paths": [
+    "mike_trade/market_data/context.py",
+    "tests/unit/test_market_context.py"
+  ],
+  "forbidden_changes": [
+    "modify files outside allowed_write_paths",
+    "change PLAN_SKELETON.json or other planning artifacts",
+    "modify candles.py, indicators/core.py, or calendar.py; adapt via their public APIs only",
+    "perform network, provider, or broker I/O or on-demand data fetching",
+    "add a separate market-alert subsystem for reference symbols",
+    "make BUY/SELL decisions in the context layer",
+    "run broad test suites or backtests"
+  ],
+  "dependencies": [
+    "h.1",
+    "h.2",
+    "h.3"
+  ],
+  "task_timeout_seconds": 1800
+}

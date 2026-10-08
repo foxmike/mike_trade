@@ -1,0 +1,54 @@
+{
+  "schema_version": 1,
+  "task_id": "q.3",
+  "phase": "Q",
+  "phase_id": "q",
+  "title": "Implement deterministic backtest run manifests and strategy research metrics",
+  "description": "Implement the deterministic backtest runner and the immutable run manifest plus research metrics.\n\n1. mike_trade/backtest/manifest.py: define RunManifest, a frozen dataclass/model.\n   - Fields: run_id, created_at (UTC), config hash (a canonical, sorted-key hash of the effective config), symbols, window start/end, period role (RESEARCH, DEV or HOLDOUT), code revision (git commit plus a dirty flag, captured without network), data provenance/revision/vintage and dataset hash from the q.1 DataProvenance, starting capital, fee/slippage/fill/ambiguity assumptions, deterministic seed, and strategy names plus versions from the real strategy registry.\n   - The manifest is written once and never mutated. A canonical serialization and content hash prove immutability, and rewriting an existing manifest raises.\n   - Holdout protection:\n     - A run tagged HOLDOUT requires an explicit holdout lock token/flag.\n     - It records its access in the manifest.\n     - It refuses a config whose hash differs from the locked research configuration, so retuning on a locked holdout is forbidden.\n     - Research/dev windows that overlap the holdout window are rejected.\n\n2. mike_trade/backtest/runner.py: implement BacktestRunner.\n   - It wires the real strategy registry/classes, the session calendar, scheduler trigger semantics, budget/eligibility policies, position coordinator, cycle accounting and protection math to the q.1 ReplayClock/HistoricalReplayFeed and the q.2 HistoricalExecutionSimulator, using dependency injection only.\n   - It replays strictly chronologically: evaluate strategies only on completed bars available as-of the clock, apply execution, and advance.\n   - It must refuse any configuration that would construct a real broker client.\n   - It persists durable trade/evaluation results per run: evaluations, signals, intents, fills, cycles and equity curve. Use the existing persistence journal/repositories where they fit; otherwise use a run-scoped results store keyed by run_id.\n   - It runs only over an operator-supplied bounded window and symbol list (1-10 symbols). There is no implicit broad history download.\n\n3. Metrics in runner.py, through a compute_metrics function over persisted results:\n   - total and net return; cash and equity curve\n   - per-trade P&L with entry/exit pairing, and hold duration\n   - max drawdown, profit factor, win rate, average win/loss, expectancy net of costs\n   - MFE/MAE (favorable/adverse excursion), using completed-bar data only within each holding window\n   - breakdowns by symbol, month and time-of-day bucket in America/New_York\n   - capital utilization\n   - sample size with an uncertainty estimate: a deterministic seeded bootstrap CI for expectancy, plus a small-sample warning below a configured trade count\n\n   Metrics never state or imply profitability beyond the computed numbers.\n\n4. tests/unit/test_backtest_repro.py: synthetic, offline, no credentials. Cover:\n   - identical manifest/results hash on rerun with the same inputs and seed\n   - a different seed or config producing a different config hash/run_id\n   - manifest immutability\n   - holdout lock and anti-retuning rejection\n   - hand-computed expected values on a small trade list for drawdown, profit factor, win rate, expectancy and MFE/MAE\n   - refusal of real broker construction\n\nBefore editing, inspect:\n- mike_trade/backtest/clock.py, mike_trade/backtest/feed.py (q.1) and mike_trade/backtest/execution.py (q.2)\n- mike_trade/strategies/registry.py, mike_trade/strategies/base.py, mike_trade/strategies/presets/pairs.py\n- mike_trade/scheduling/scheduler.py, mike_trade/scheduling/triggers.py, mike_trade/scheduling/calendar.py\n- mike_trade/execution/coordinator.py, mike_trade/portfolio/cycles.py, mike_trade/portfolio/budgets.py, mike_trade/risk/entry_eligibility.py\n- mike_trade/persistence/journal.py, mike_trade/persistence/repositories.py, mike_trade/persistence/schema.py\n- mike_trade/config/models.py (config canonicalization)\n\nDecision budget: if a persistence schema change would be needed, use a run-scoped store inside the allowed files instead of adding migrations in this task. Document the choice in the module docstring.",
+  "acceptance_criteria": [
+    "mike_trade/backtest/manifest.py defines an immutable RunManifest with config hash, symbols, window, period role, code revision, data provenance/revision/dataset hash, starting capital, fee/slippage/fill/ambiguity assumptions, seed and strategy versions",
+    "Writing a manifest for an existing run_id or modifying a persisted manifest raises; the canonical content hash is stable across serialize/deserialize",
+    "A HOLDOUT run without an explicit lock flag is rejected; a HOLDOUT run whose config hash differs from the locked research config is rejected; research/dev windows overlapping the holdout window are rejected",
+    "mike_trade/backtest/runner.py defines BacktestRunner, which resolves strategies through the real strategy registry (no hardcoded signal fixtures) and uses ReplayClock, HistoricalReplayFeed and HistoricalExecutionSimulator via injection",
+    "BacktestRunner raises before replay if any injected or configured broker resolves to a real Alpaca/paper/live client",
+    "Requests for more than 10 symbols or an unbounded/missing window are rejected",
+    "Two runs with identical dataset, config and seed produce byte-identical canonical results hashes; a test asserts this",
+    "compute_metrics returns total/net return, equity curve, per-trade P&L with entry/exit pairing, hold duration, max drawdown, profit factor, win rate, average win/loss, net expectancy, MFE/MAE, symbol/month/time-of-day breakdowns, utilization, sample size and a seeded bootstrap CI",
+    "Metric values on a hand-constructed trade list match hand-computed Decimal expectations in tests",
+    "A small-sample warning is emitted when the trade count is below the configured threshold",
+    "The modules import no Alpaca trading client, HTTP library or broker credential configuration",
+    "tests/unit/test_backtest_repro.py exists with positive and negative tests and passes when run alone"
+  ],
+  "selected_backend": "codex_cli",
+  "model": "gpt-6-luna",
+  "verification_profile": "focused",
+  "allowed_write_paths": [
+    "mike_trade/backtest/runner.py",
+    "mike_trade/backtest/manifest.py",
+    "tests/unit/test_backtest_repro.py"
+  ],
+  "allowed_symbols": [
+    "BacktestRunner",
+    "BacktestRequest",
+    "BacktestResult",
+    "RunManifest",
+    "PeriodRole",
+    "HoldoutLock",
+    "HoldoutViolationError",
+    "compute_metrics",
+    "BacktestMetrics"
+  ],
+  "forbidden_changes": [
+    "modify files outside allowed_write_paths, including q.1/q.2 backtest modules, strategy, scheduling, execution or persistence modules and migrations",
+    "change PLAN_SKELETON.json or other planning artifacts",
+    "use hardcoded BUY/SELL fixtures in place of real registered strategy classes",
+    "inspect, evaluate or retune against a locked holdout window without the explicit lock flag",
+    "download historical data or construct any real broker client",
+    "use float for money, quantities or metric inputs where Decimal is required",
+    "create live broker orders or run broad test suites/backtests"
+  ],
+  "dependencies": [
+    "q.1"
+  ],
+  "task_timeout_seconds": 2400
+}

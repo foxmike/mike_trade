@@ -1,0 +1,40 @@
+{
+  "schema_version": 1,
+  "task_id": "r.5",
+  "phase": "R",
+  "phase_id": "r",
+  "title": "Verify production dashboard offline stale isolation and read-only behavior",
+  "description": "Add acceptance tests and a verification record proving the dashboard behaviors required by this phase. This task writes only tests and documentation. It must not modify production code. Report any defects it finds in the verification document rather than silently patching them.\n\nBefore editing, inspect: mike_trade/dashboard/server.py, mike_trade/dashboard/api.py and tests/integration/test_dashboard_api.py (r.1) for the app factory, the injected clock and the seeding approach; the persistence writers and migration runner from earlier phases; and dashboard/frontend (r.2-r.4) for the build script and output directory.\n\nWrite tests/integration/test_dashboard_offline.py. Use a temporary migrated SQLite DB seeded through the persistence layer (not through the dashboard) and an injected controllable clock. Cover:\n(1) Engine killed: start a short-lived subprocess (or thread) that writes heartbeats, kill it, and advance the clock past the threshold. /api/live still returns 200, and status returns engine_state OFFLINE within the configured threshold, with last-known values returned and marked fresh=false/stale_reason.\n(2) Feed dead while the engine is alive: heartbeat fresh, feed age beyond threshold. Expect DEGRADED and entries_allowed=false with a reason.\n(3) Broker disconnected: positions, balances, stop status and native HWM are fresh=false and never reported fresh.\n(4) Partial fill plus protective order: entry for 10 shares, 6 filled, protective stop confirmed for 6. The watchlist/symbol detail report confirmed quantity '6' and protected quantity '6' as exact Decimal strings with full coverage. A variant with the stop at 4 reports under-coverage.\n(5) Trailing display: one position with native broker trailing (broker HWM) and one with stepped trailing (local anchor). They are differentiated, and desired vs confirmed stop values are distinct when an update is pending.\n(6) Symbol budget, entry cutoff, loss-streak lockout and cooldown reasons appear in watchlist rows.\n\nWrite tests/integration/test_dashboard_readonly.py:\n(1) Enumerate app.routes and assert that only GET/HEAD methods are registered.\n(2) POST/PUT/PATCH/DELETE against every /api route returns 405.\n(3) Hitting every endpoint leaves the DB file's content hash unchanged and creates no new rows in any table.\n(4) The dashboard package imports no broker or market-data adapter modules (AST or sys.modules check).\n(5) Scenario/mode isolation: seed a PAPER account and two SHADOW scenarios with distinct cash/positions. Each account endpoint returns only its own values, no response contains another account's identifiers or balances, and an unknown account returns 404.\n(6) Static serving: from a temporary dist containing index.html plus a hashed asset, GET / returns index.html and an unknown non-/api path falls back to it. If the real dashboard/frontend/dist exists, its index.html references hashed /assets/ files and contains no '/@vite/client'.\n(7) The default bind host is loopback.\n\nWrite docs/verification/phase_r_dashboard.md:\n- Each phase requirement mapped to its test name(s).\n- The exact targeted commands actually run (the two new test files plus test_dashboard_api.py, npm ci and npm run build in dashboard/frontend) with their observed pass/fail output summaries and the produced dist asset listing.\n- Deployment notes: compiled assets served by FastAPI, no Vite dev server, loopback default, remote exposure only behind private auth/TLS/VPN/reverse proxy.\n- Any defects or gaps found.\n\nDo not claim results that were not observed. Do not run broad suites, backtests, live brokers or trading.",
+  "acceptance_criteria": [
+    "tests/integration/test_dashboard_offline.py contains tests for engine-killed OFFLINE with /api/live reachable and stale last-known values, feed-dead DEGRADED with no new entries, broker-disconnected non-fresh positions, exact partial-fill protection coverage (6 of 10 filled, stop 6 full; stop 4 under-covered), native HWM vs stepped anchor with desired vs confirmed stop, and visible budget/cutoff/lockout/cooldown reasons",
+    "tests/integration/test_dashboard_readonly.py asserts GET/HEAD-only routes, 405 for every write method on every /api route, an unchanged DB content hash after exercising all endpoints, no broker/market-data adapter imports, per-account isolation across PAPER and two SHADOW scenarios with no foreign identifiers or balances, 404 for an unknown account, compiled static serving with SPA fallback and no Vite dev-client reference, and a loopback default bind",
+    "Tests use an injected clock and a temporary seeded SQLite DB, and need no network, broker credentials or running engine",
+    "docs/verification/phase_r_dashboard.md maps each phase behavior requirement to specific test names and records the exact targeted commands run, observed results and production build output listing",
+    "docs/verification/phase_r_dashboard.md documents loopback default binding and that remote exposure requires private auth/TLS/VPN/reverse proxy, and lists any discovered defects without claiming unobserved passes",
+    "No production source files are modified by this task"
+  ],
+  "selected_backend": "pi_cli",
+  "model": "openrouter/meta/muse-spark-1.3-contributor",
+  "verification_profile": "focused",
+  "allowed_write_paths": [
+    "tests/integration/test_dashboard_offline.py",
+    "tests/integration/test_dashboard_readonly.py",
+    "docs/verification/phase_r_dashboard.md"
+  ],
+  "forbidden_changes": [
+    "modify files outside allowed_write_paths",
+    "modify production dashboard backend or frontend source",
+    "change PLAN_SKELETON.json or planning artifacts",
+    "access live broker credentials, create broker orders or start trading",
+    "add dashboard write endpoints",
+    "run broad test suites, backtests or paid data acquisition",
+    "claim verification results that were not actually observed"
+  ],
+  "dependencies": [
+    "r.1",
+    "r.2",
+    "r.3",
+    "r.4"
+  ],
+  "task_timeout_seconds": 1800
+}

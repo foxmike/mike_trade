@@ -1,0 +1,47 @@
+{
+  "schema_version": 1,
+  "task_id": "o.4",
+  "phase": "O",
+  "phase_id": "o",
+  "title": "Implement persistent ratchet watermark broker confirmation and audit history",
+  "description": "Implement restart-safe persistence of stepped trailing state and its append-only audit history in mike_trade/risk/trailing_state.py, with unit tests in tests/unit/test_trailing_state_restart.py.\n\nBefore editing, inspect: mike_trade/risk/trailing.py (o.1 policy/state types), (if present) the SQLite WAL persistence layer, single-writer repository/unit-of-work conventions, the migration mechanism and existing schema under mike_trade/persistence/ (or equivalent), append-only event conventions, the reconciliation drift model, and tests/unit fixtures for temporary databases.\n\nImplement a TrailingStateStore (repository) plus domain record types that persist, per position cycle:\n- entry reference, observed high_watermark, ratchet_anchor, desired candidate stop, last broker-confirmed stop price, protected quantity, broker order id and broker status, policy revision, TIF, and a status flag (ACTIVE, PENDING_REPLACE, TRAIL_UPDATE_UNCONFIRMED, TRAIL_STALE, CLOSED).\n- An append-only history of ratchet/replacement events: RATCHET_ADVANCED, REPLACE_INTENT_RECORDED, REPLACE_CONFIRMED, REPLACE_REJECTED, REPLACE_UNKNOWN, STOP_FILLED, STOP_CANCELED, RECONCILED, MARKED_STALE. Each event has a UTC timestamp, idempotency key, prior and new values, and the policy revision.\n\nRules:\n1. last_confirmed_stop changes ONLY through a confirmation event carrying a broker order id. Recording a candidate or an intent never changes last_confirmed_stop.\n2. Confirmation with a price lower than the current last_confirmed_stop for a long position is refused and recorded as reconciliation drift, never applied.\n3. At most one outstanding replacement intent per position. Recording a second while one is pending returns the existing intent (idempotent) and does not create a duplicate.\n4. Event ingestion is idempotent by idempotency key: replaying the same broker update creates no duplicate rows or state changes.\n5. On restart (load from DB), state is restored exactly. Any outstanding intent is surfaced as requiring reconciliation/order lookup before further ratchet advancement, and the position is blocked for conflicting actions until resolved.\n6. A mark_stale(reason) operation for engine-offline/heartbeat loss sets TRAIL_STALE and suspends step advancement. The last confirmed broker stop is preserved and NOT represented as continuously adjusted.\n7. Decimal values are stored losslessly (TEXT), and timestamps are stored as UTC ISO-8601.\n\nIf the project uses a migrations mechanism that requires a new migration file outside allowed_write_paths, do NOT create it. Instead, expose the table DDL as a constant/function in trailing_state.py that a later migration can consume, and note this in the module docstring. Tests use a temporary SQLite database in WAL mode.",
+  "acceptance_criteria": [
+    "mike_trade/risk/trailing_state.py persists all of: entry reference, high_watermark, ratchet_anchor, candidate stop, last confirmed stop, protected quantity, broker order id/status, policy revision, and status flag.",
+    "A test proves that recording a candidate or replacement intent does not change last_confirmed_stop; only a confirmation event with a broker order id does.",
+    "A test proves that a confirmation lower than the current last confirmed stop is refused and recorded as drift, leaving the stored stop unchanged.",
+    "A test proves that recording a second replacement intent while one is pending creates no duplicate intent row.",
+    "A test proves that replaying the same broker update (same idempotency key) is a no-op for both history row count and state.",
+    "A restart test closes and reopens the SQLite database and asserts all persisted fields round-trip exactly as Decimal/UTC values.",
+    "A restart test proves that an outstanding intent after reload is surfaced as requiring reconciliation and blocks ratchet advancement until resolved.",
+    "A test proves that mark_stale sets TRAIL_STALE, suspends advancement, and preserves the last confirmed stop.",
+    "The history table is append-only: tests assert that no update/delete API exists for history rows and that each state change adds a history event.",
+    "tests/unit/test_trailing_state_restart.py passes when run alone with pytest."
+  ],
+  "selected_backend": "codex_cli",
+  "model": "gpt-6-luna",
+  "verification_profile": "focused",
+  "allowed_write_paths": [
+    "mike_trade/risk/trailing_state.py",
+    "tests/unit/test_trailing_state_restart.py"
+  ],
+  "allowed_symbols": [
+    "TrailingStateStore",
+    "TrailingStateRecord",
+    "TrailingEvent",
+    "TrailingEventType",
+    "TrailingStatus",
+    "TRAILING_STATE_DDL"
+  ],
+  "forbidden_changes": [
+    "modify files outside allowed_write_paths",
+    "modify mike_trade/risk/trailing.py",
+    "change PLAN_SKELETON.json or other planning artifacts",
+    "add or edit migration files or shared persistence modules outside allowed_write_paths",
+    "update or delete rows in the append-only trailing history",
+    "access broker credentials, create live orders, or run broad test suites/backtests"
+  ],
+  "dependencies": [
+    "o.1"
+  ],
+  "task_timeout_seconds": 1500
+}

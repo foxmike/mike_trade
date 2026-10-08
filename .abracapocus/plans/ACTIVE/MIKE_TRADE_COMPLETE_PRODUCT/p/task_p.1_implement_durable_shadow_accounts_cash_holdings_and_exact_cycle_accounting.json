@@ -1,0 +1,48 @@
+{
+  "schema_version": 1,
+  "task_id": "p.1",
+  "phase": "P",
+  "phase_id": "p",
+  "title": "Implement durable shadow accounts cash holdings and exact cycle accounting",
+  "description": "Implement the durable local SHADOW account model and its append-only ledger. SHADOW mode never calls Alpaca order submission or any live/paper broker endpoint.\n\nmike_trade/brokers/shadow/account.py must provide a ShadowAccount that implements the existing broker/account port. Each named scenario gets an independent account_id and scenario_id with a mode tag of SHADOW. Starting cash is set exactly once at creation; later attempts to set it again are rejected. All later cash changes go through explicit, audited adjustment records that carry a reason and actor. The account tracks cash, holdings (positions with Decimal quantity, including fractional quantities where configured, average cost and the originating BUY strategy), open orders, fills, realized P&L, unrealized P&L marked to a supplied quote, and equity. It also tracks per-scenario budgets (per-symbol and total) and these eligibility counters: filled entry cycles per symbol per exchange session (America/New_York session date), consecutive losing trades per symbol and optionally per originating buy strategy, and post-sale cooldown expiry timestamps. Position cycles are one intentional long entry followed by one complete exit. Broker-style partial fills accumulate correctly. Averaging down, pyramiding and planned partial exits are rejected. A sell may never exceed the held quantity, so no short position can result. Cash may not go negative unless margin is explicitly enabled by configuration (default disabled). Every value derived from fills, fees or slippage is labeled estimated=True and broker_confirmed=False.\n\nmike_trade/brokers/shadow/ledger.py must provide an append-only, idempotent (by event id) SQLite-backed shadow ledger that uses the project's existing persistence/writer conventions. It has no UPDATE/DELETE of trade-affecting events. Account state (cash, positions, counters, cooldowns) is rebuilt by replaying ledger events. Each record carries the simulator version, assumptions and feed provenance (for example IEX) when supplied. Restarting from the same database must reproduce identical cash, positions, P&L and counters, and must never reset the balance or positions. Ledgers are keyed by account_id/scenario_id and must refuse to read or write rows for another mode (PAPER/LIVE) or another scenario.\n\nAll money, quantities, fees and budgets use Decimal (floats are rejected). Event times are timezone-aware UTC.\n\nBefore editing, inspect:\n- the existing broker port/protocol and order/fill/position domain types under mike_trade/ (for example mike_trade/brokers/ and the domain/ports modules from earlier phases)\n- existing Decimal money/quantity helpers and clock/time utilities\n- existing SQLite WAL persistence, migration and single-writer modules\n- existing risk/eligibility types for entry limits, loss-streak lockouts and cooldowns, so they can be reused rather than duplicated\n\nWrite tests/unit/test_shadow_account.py covering both positive and negative cases.",
+  "acceptance_criteria": [
+    "ShadowAccount sets starting cash exactly once; a second initialization attempt raises an error and leaves the balance unchanged",
+    "Explicit cash adjustments are persisted as distinct audited ledger events with a reason, and they change cash by the exact Decimal amount",
+    "Buy fill then sell fill of the same quantity yields exact Decimal cash, realized P&L and fees with no float drift (asserted with Decimal equality in tests)",
+    "Multiple partial buy fills accumulate into one position with a correct weighted average cost and remaining quantity",
+    "A second entry on an already-open symbol (averaging down/pyramiding) and a sell that exceeds the held quantity are both rejected, and no negative position can be produced",
+    "A buy that would make cash negative is rejected when margin is disabled (the default)",
+    "Per-symbol and total budget checks, filled-entry-cycles-per-session, consecutive-loss lockout (by symbol and optionally by buy strategy) and post-sale cooldown counters are tracked per account and verified in tests",
+    "Ledger appends are idempotent by event id; re-applying the same event does not double-count cash or quantity",
+    "Replaying the ledger from a fresh process/connection on the same SQLite file reproduces identical cash, positions, P&L and counters",
+    "Ledger refuses to read or write events tagged with a different account_id/scenario_id or with mode PAPER/LIVE",
+    "All fill-derived records are labeled estimated and not broker-confirmed, and they carry simulator version/assumptions/provenance fields",
+    "Float inputs for money/quantity are rejected, and naive datetimes are rejected",
+    "tests/unit/test_shadow_account.py exists with positive and negative tests and passes when run alone"
+  ],
+  "selected_backend": "claude_code_cli",
+  "model": "claude-sonnet-5-5",
+  "verification_profile": "focused",
+  "allowed_write_paths": [
+    "mike_trade/brokers/shadow/account.py",
+    "mike_trade/brokers/shadow/ledger.py",
+    "tests/unit/test_shadow_account.py"
+  ],
+  "allowed_symbols": [
+    "ShadowAccount",
+    "ShadowLedger",
+    "ShadowLedgerEvent",
+    "ShadowPosition",
+    "ShadowAccountState"
+  ],
+  "forbidden_changes": [
+    "modify files outside allowed_write_paths",
+    "change PLAN_SKELETON.json or other planning artifacts",
+    "import or call any Alpaca trading client, paper/live endpoint, or broker credential",
+    "use float for money, quantity, fee, or budget values",
+    "UPDATE or DELETE trade-affecting ledger rows",
+    "create live broker orders or run broad test suites/backtests"
+  ],
+  "dependencies": [],
+  "task_timeout_seconds": 1800
+}

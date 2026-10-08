@@ -1,0 +1,37 @@
+{
+  "schema_version": 1,
+  "task_id": "g.4",
+  "phase": "G",
+  "phase_id": "g",
+  "title": "Add feed freshness provenance gaps and rate limit health tracking",
+  "description": "Implement market-data quality tracking in mike_trade/market_data/quality.py, with unit tests in tests/unit/test_data_freshness.py. Provide a FeedQualityTracker or equivalent with these responsibilities:\n- Per symbol/channel freshness. Compute data age as now (injected clock) minus provider_source_ts. Compute transport latency as receive_ts minus provider_source_ts. Use configurable staleness thresholds per channel. Treat regular-session context as an injected session-calendar predicate, so the market being closed is not flagged as stale.\n- Duplicate detection by provider sequence/trade id, or by a (symbol, source_ts, price, size) fallback key, using a bounded seen-window.\n- Out-of-order detection.\n- Gap detection for missing completed 1-minute bars and for missing stream activity beyond a threshold.\n- Entitlement and feed identity tracking: record the actual feed_id (e.g. iex) with a 'consolidated': False flag for IEX, and flag a mismatch when the observed feed differs from the configured one.\n- Rate-limit health: requests used, 429 count, and current backoff.\n- An overall health state per symbol and per service: HEALTHY, DEGRADED, or OFFLINE.\n- An entries_allowed(symbol) decision that fails closed (False, with a reason code) on stale data, unknown freshness, an unresolved gap, a disconnected stream without fresh fallback, an entitlement mismatch, or an unknown feed_id.\n\nThe tracker governs new entries only. It must expose no ability to block broker fills, order updates, stops, reconciliation, or manual closes; document this in the module docstring. All outputs are immutable snapshots suitable for health projections and dashboard display.\n\nBefore editing, inspect:\n- mike_trade/market_data/alpaca_stream.py (g.1) for connection state events and event provenance fields\n- mike_trade/market_data/polling.py (g.2) for rate-limit and stale-snapshot signals\n- mike_trade/ domain/ports and session-calendar modules from earlier phases (if present)",
+  "acceptance_criteria": [
+    "The tracker computes age and latency separately from provider_source_ts and receive_ts; a test uses an injected clock with distinct values to verify both.",
+    "During the regular session, a symbol whose last event is older than the configured threshold reports DEGRADED, and entries_allowed returns False with a stale reason code; a test covers this.",
+    "A symbol with no observed data (unknown freshness) fails closed for entries; a negative test covers this.",
+    "Duplicate events, by sequence id and by fallback key, are counted and flagged without being double-counted as fresh activity; a test covers this.",
+    "A missing completed 1-minute bar between two observed bars is recorded as a gap, and entries remain blocked until the gap is marked recovered; tests cover both the blocked and the recovered case.",
+    "The IEX feed is recorded with consolidated=False provenance, and an observed feed_id that differs from the configured one sets an entitlement-mismatch state that blocks entries; a test covers this.",
+    "429 responses and active backoff are reflected in the rate-limit health snapshot; a test verifies the counters.",
+    "The module exposes no API that blocks fills, order updates, stops, reconciliation, or manual closes; a test or docstring assertion confirms that the health state only affects entries_allowed."
+  ],
+  "selected_backend": "codex_cli",
+  "model": "gpt-6-luna",
+  "verification_profile": "focused",
+  "allowed_write_paths": [
+    "mike_trade/market_data/quality.py",
+    "tests/unit/test_data_freshness.py"
+  ],
+  "forbidden_changes": [
+    "modify files outside allowed_write_paths",
+    "change PLAN_SKELETON.json or other planning artifacts",
+    "block broker fills, order updates, stops, reconciliation, or manual closes based on market-data health",
+    "use network access or real credentials in tests",
+    "run broad test suites or backtests"
+  ],
+  "dependencies": [
+    "g.1",
+    "g.2"
+  ],
+  "task_timeout_seconds": 1500
+}

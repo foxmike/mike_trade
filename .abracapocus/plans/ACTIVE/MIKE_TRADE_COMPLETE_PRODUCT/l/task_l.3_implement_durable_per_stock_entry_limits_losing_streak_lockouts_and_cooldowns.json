@@ -1,0 +1,53 @@
+{
+  "schema_version": 1,
+  "task_id": "l.3",
+  "phase": "L",
+  "phase_id": "l",
+  "title": "Implement durable per-stock entry limits losing streak lockouts and cooldowns",
+  "description": "Implement durable, restart-safe entry-eligibility controls in mike_trade/risk/entry_eligibility.py, scoped by account/scenario + symbol (and optionally originating BUY strategy). (1) max_entry_cycles_per_day: the trading day is the New York exchange session (America/New_York); the first confirmed positive (quantity > 0) buy fill of an entry order consumes exactly one cycle slot; later partial fills of the same entry are the same cycle and consume nothing more; zero-fill rejected/canceled/expired entries consume nothing; counts reset at the next exchange trading session and are persisted so a restart cannot reset the count. (2) Consecutive losing-cycle lockout: on each fully closed cycle compute net realized P&L including fees; negative net increments the streak, positive net resets it to zero, exact breakeven (Decimal zero) leaves it unchanged; if fees are unavailable or estimated, record the result as provisional/estimated explicitly rather than silently treating it as final; lockout triggers when the streak reaches a configured threshold and may be scoped per symbol and optionally per originating BUY strategy; reset mode is either next_session (automatic at next NY session) or manual (only through an audited reset call that records operator, reason, and UTC timestamp as an append-only event). (3) post_sale_cooldown_seconds measured from the final closing fill time of any exit (strategy, stop, manual, risk), persisted and enforced across restart. (4) Account daily loss guard and max open positions per account/scenario. Provide an evaluator that returns an eligibility decision with all blocking reasons. Critically, these are ENTRY blockers only: the module must expose no API that blocks fill ingestion, protective stop placement/updates, reconciliation, manual close, or risk exits, and tests must prove exit/protection paths are unaffected when entries are blocked. State changes must be idempotent on repeated fill/close events and persisted via existing persistence ports. All money in Decimal; all times timezone-aware UTC with NY session derivation via the existing clock/calendar.\n\nBefore editing, inspect:\n- mike_trade/portfolio/budgets.py and mike_trade/portfolio/reservations.py (from l.1) for account/scenario keying, locking, and idempotency conventions\n- mike_trade/portfolio/sizing.py (from l.2) for rejection-reason conventions\n- Existing exchange calendar/clock ports and NY session helpers, fill/position-cycle domain events, and persistence/audit event ports from earlier phases\n- Existing configuration models for max_entry_cycles_per_day, loss streak threshold/scope/reset mode, post_sale_cooldown_seconds, daily loss, max open positions\n\nDecision budget: do not edit calendar, persistence, or config modules; define minimal Protocols in entry_eligibility.py where a dependency is absent.",
+  "acceptance_criteria": [
+    "A test proves the first positive partial buy fill consumes exactly one daily cycle and subsequent partial fills of the same entry order do not consume additional cycles",
+    "A test proves rejected or canceled entries with zero filled quantity consume no cycle",
+    "A test proves the cycle count persists across a simulated restart (new evaluator instance over the same persisted state) and resets only at the next New York exchange trading session, not at UTC midnight",
+    "A test proves negative net realized P&L increments the losing streak, positive net resets it to zero, and exact Decimal zero leaves it unchanged",
+    "A test proves a close with unavailable or estimated fees is recorded with an explicit provisional/estimated flag",
+    "A test proves lockout scope works per symbol and, when enabled, per originating BUY strategy (a different strategy on the same symbol is not locked)",
+    "A test proves manual reset mode clears a lockout only via the audited reset call, which records operator, reason, and UTC timestamp, and next_session mode clears automatically at the next session",
+    "A test proves post_sale_cooldown_seconds starts from the final closing fill time of any exit type and survives restart",
+    "A test proves daily loss guard and max open positions block new entries for the account/scenario",
+    "A test proves that while entries are blocked, exit, protective-stop, fill-ingestion, manual-close, and reconciliation paths are not gated by this module",
+    "A test proves repeated application of the same fill/close event does not double-count cycles or streaks",
+    "tests/unit/test_entry_eligibility.py passes when run on its own with pytest"
+  ],
+  "selected_backend": "claude_code_cli",
+  "model": "claude-sonnet-5-5",
+  "verification_profile": "focused",
+  "allowed_write_paths": [
+    "mike_trade/risk/entry_eligibility.py",
+    "tests/unit/test_entry_eligibility.py"
+  ],
+  "allowed_symbols": [
+    "EntryEligibilityEvaluator",
+    "EligibilityDecision",
+    "EntryBlockReason",
+    "EntryCycleCounter",
+    "LosingStreakTracker",
+    "LockoutResetMode",
+    "PostSaleCooldown",
+    "EntryEligibilityRepository"
+  ],
+  "forbidden_changes": [
+    "modify files outside allowed_write_paths",
+    "change PLAN_SKELETON.json or other planning artifacts",
+    "block or gate fills, protective stops, reconciliation, manual close, or risk exits",
+    "allow manual lockout reset without an audit record",
+    "use float for money",
+    "create broker orders or access broker credentials",
+    "run broad test suites or backtests"
+  ],
+  "dependencies": [
+    "l.1",
+    "l.2"
+  ],
+  "task_timeout_seconds": 2100
+}

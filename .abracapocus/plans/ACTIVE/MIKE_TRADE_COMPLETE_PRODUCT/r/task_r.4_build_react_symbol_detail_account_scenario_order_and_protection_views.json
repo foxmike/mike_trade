@@ -1,0 +1,55 @@
+{
+  "schema_version": 1,
+  "task_id": "r.4",
+  "phase": "R",
+  "phase_id": "r",
+  "title": "Build React symbol detail account scenario order and protection views",
+  "description": "Build the typed API client, the account/scenario selector and account detail view, and the symbol detail view with order, protection, trailing and trade history.\n\nBefore editing, inspect: mike_trade/dashboard/api.py (r.1) for the exact endpoint paths and response models; and dashboard/frontend/src/main.tsx and tsconfig.json (r.2).\n\nShared contract with r.3 (r.3 runs concurrently, so do not create r.3's files):\n- dashboard/frontend/src/api/client.ts exports typed functions listAccounts(), getStatus(accountId), getKpis(accountId), getWatchlist(accountId), getHealth(accountId), getSymbolDetail(accountId, symbol), getAccountDetail(accountId), the corresponding TypeScript response types mirroring the r.1 models (Decimal fields typed as string), and an ApiError class.\n- dashboard/frontend/src/components/SymbolDetails.tsx default-exports a component with props { accountId: string; symbol: string; onClose: () => void }.\n- dashboard/frontend/src/components/AccountDetail.tsx exports AccountSelector with props { selectedAccountId: string | null; onSelect: (accountId: string) => void } and default-exports AccountDetail with props { accountId: string }.\n\nImplement client.ts:\n- Same-origin relative /api URLs, GET only, and an optional AbortSignal parameter on every function.\n- Encodes path segments with encodeURIComponent.\n- Throws ApiError carrying status and message on non-2xx responses.\n- No hardcoded mock data, no retries that hide staleness, and no write helpers.\n\nImplement AccountDetail.tsx:\n(1) AccountSelector lists accounts grouped by mode (LIVE, PAPER, SHADOW scenarios), each showing mode and scenario name. It never shows a combined total.\n(2) AccountDetail shows broker-truth positions and balances, external/UNMANAGED holdings labeled as requiring explicit adoption via CLI, cash/equity provenance and as-of, orders, fees/corporate activity and reconciliation drift with the CLI command text to resolve it. Stale/disconnected broker data is labeled STALE with stale_reason and is never presented as fresh.\n(3) Fetched data is keyed by accountId and discarded on change.\n\nImplement SymbolDetails.tsx:\n- An evaluation/signal timeline including NO_SIGNAL summaries.\n- Trade-relevant evidence and feed provenance (e.g. IEX, not SIP).\n- The current broker order tree (parent entry, fills incl. partial fills, protective stop children).\n- Protection status that shows remaining confirmed quantity vs protected quantity with a coverage indicator.\n- Trailing history that distinguishes native broker HWM from stepped local anchor and shows proposed vs confirmed stop changes.\n- The last 20 managed cycles with realized P&L, holding duration, execution slippage and policy decision reasons.\n- Loading, error and stale states.\n\nNo element submits orders or changes configuration. Relevant actions are shown as CLI/Make command text in <code>.",
+  "acceptance_criteria": [
+    "client.ts exports listAccounts, getStatus, getKpis, getWatchlist, getHealth, getSymbolDetail, getAccountDetail and ApiError with TypeScript types matching r.1 response fields, Decimal fields typed as string",
+    "client.ts issues only GET requests to relative /api paths, URL-encodes path segments, supports AbortSignal and contains no mock data or write helpers",
+    "AccountSelector displays each account with mode and scenario and renders no cross-account or cross-mode totals",
+    "AccountDetail shows broker positions/balances, UNMANAGED external holdings, cash/equity provenance, orders, fees/corporate activity and reconciliation drift, labeling stale broker data STALE with its reason",
+    "SymbolDetails shows the signal timeline including NO_SIGNAL, feed provenance, the order tree with partial fills, and remaining quantity vs protected quantity with a coverage indicator",
+    "SymbolDetails trailing history separately labels broker-native HWM and stepped local anchor and shows proposed vs confirmed stop for each change",
+    "SymbolDetails lists up to the last 20 managed cycles with realized P&L, holding duration, slippage and policy decision reasons",
+    "Only client.ts, SymbolDetails.tsx and AccountDetail.tsx are written, and exported names match the shared contract exactly"
+  ],
+  "selected_backend": "pi_cli",
+  "model": "openrouter/meta/muse-spark-1.3-contributor",
+  "verification_profile": "focused",
+  "allowed_write_paths": [
+    "dashboard/frontend/src/components/SymbolDetails.tsx",
+    "dashboard/frontend/src/components/AccountDetail.tsx",
+    "dashboard/frontend/src/api/client.ts"
+  ],
+  "allowed_symbols": [
+    "listAccounts",
+    "getStatus",
+    "getKpis",
+    "getWatchlist",
+    "getHealth",
+    "getSymbolDetail",
+    "getAccountDetail",
+    "ApiError",
+    "AccountSelector",
+    "AccountDetail",
+    "SymbolDetails"
+  ],
+  "forbidden_changes": [
+    "modify files outside allowed_write_paths",
+    "create or edit App.tsx, Watchlist.tsx or styles.css (owned by r.3)",
+    "change PLAN_SKELETON.json or planning artifacts",
+    "add UI controls or client functions that place orders or mutate configuration",
+    "issue non-GET HTTP requests",
+    "merge or sum balances/positions across accounts, modes or scenarios",
+    "embed mock or fixture data in the production client",
+    "add charting-terminal features or chart libraries",
+    "run broad test suites or backtests"
+  ],
+  "dependencies": [
+    "r.1",
+    "r.2"
+  ],
+  "task_timeout_seconds": 1800
+}

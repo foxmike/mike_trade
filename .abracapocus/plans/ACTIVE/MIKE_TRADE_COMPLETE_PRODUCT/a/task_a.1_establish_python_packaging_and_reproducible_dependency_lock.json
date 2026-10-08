@@ -1,0 +1,41 @@
+{
+  "schema_version": 1,
+  "task_id": "a.1",
+  "phase": "A",
+  "phase_id": "a",
+  "title": "Establish Python packaging and reproducible dependency lock",
+  "description": "Set up the standalone mike_trade project as a proper Python 3.12+ package with a reproducible uv-managed lock. In pyproject.toml, declare project name 'mike_trade', requires-python '>=3.12', a src-less flat package 'mike_trade', a PEP 621 [project] table, a console script entry point 'mike-trade = mike_trade.cli:main', and a build backend (hatchling or setuptools). Pin runtime dependencies to bounded version ranges only where later phases need them as foundations: fastapi, uvicorn, pydantic, pydantic-settings, httpx, and alpaca-py. Use no unpinned VCS or URL installs. Declare dev tooling in a dependency group or optional 'dev' extra: pytest, pytest-asyncio, ruff, and mypy. Configure [tool.ruff] (target-version py312, line-length, selected rule sets), [tool.mypy] (python_version 3.12, strict-ish settings for the mike_trade package), and [tool.pytest.ini_options] (testpaths=['tests'], asyncio mode, and a marker such as 'live' or 'paper' registered and excluded by default so ordinary test runs never touch broker credentials). Generate uv.lock with `uv lock` and commit the result; do not hand-edit it. In mike_trade/__init__.py, expose `__version__` (matching pyproject) and a short module docstring that identifies the complete operator-supervised trading product. The module must not import brokers, read credentials, open network connections, or do any I/O at import time.\n\nBefore editing, inspect:\n- Existing repository root (git ls-files) to confirm no current pyproject.toml/uv.lock conflicts\n- .gitignore for state/, .env, and venv exclusions (read-only; do not modify)\n- .abracapocus/plans/ACTIVE/MIKE_TRADE_COMPLETE_PRODUCT/PLAN_SKELETON.json (read-only) for the product purpose and module list",
+  "acceptance_criteria": [
+    "pyproject.toml declares name 'mike_trade' and requires-python '>=3.12'",
+    "pyproject.toml declares a console script 'mike-trade' pointing to 'mike_trade.cli:main'",
+    "pyproject.toml declares dev tooling (pytest, pytest-asyncio, ruff, mypy) in a dependency group or extra, separate from runtime dependencies",
+    "pyproject.toml contains [tool.ruff], [tool.mypy], and [tool.pytest.ini_options] sections; pytest config registers a broker/live marker that is excluded by default",
+    "No dependency in pyproject.toml uses an unpinned git/URL source",
+    "uv.lock exists, was produced by `uv lock`, and is consistent with pyproject.toml (`uv lock --check` succeeds)",
+    "mike_trade/__init__.py defines __version__ equal to the pyproject.toml version string",
+    "Importing mike_trade in a fresh environment performs no network access, credential reads, or broker imports",
+    "No secrets, API keys, or .env contents are committed"
+  ],
+  "selected_backend": "pi_cli",
+  "model": "openrouter/meta/muse-spark-1.3-contributor",
+  "verification_profile": "focused",
+  "allowed_write_paths": [
+    "pyproject.toml",
+    "uv.lock",
+    "mike_trade/__init__.py"
+  ],
+  "allowed_symbols": [
+    "__version__"
+  ],
+  "forbidden_changes": [
+    "modify files outside allowed_write_paths",
+    "change PLAN_SKELETON.json or other planning artifacts",
+    "add unpinned git/URL dependencies or dynamic install steps",
+    "commit secrets, credentials, or .env files",
+    "add import-time side effects (network, broker clients, credential loading) to mike_trade/__init__.py",
+    "touch EventEdge or any project outside mike_trade",
+    "run broad test suites, backtests, or create broker orders"
+  ],
+  "dependencies": [],
+  "task_timeout_seconds": 900
+}

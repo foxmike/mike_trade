@@ -1,0 +1,51 @@
+{
+  "schema_version": 1,
+  "task_id": "b.5",
+  "phase": "B",
+  "phase_id": "b",
+  "title": "Implement deterministic domain serialization and roundtrip fixtures",
+  "description": "Implement deterministic, lossless serialization for every domain contract produced by b.1\u2013b.4. Use only the standard library (json, dataclasses, enum, decimal, datetime, types). No pydantic, and no Alpaca types.\n\nmike_trade/domain/serde.py:\n- A type registry mapping a stable type tag (e.g. 'Candle', 'Signal', 'PositionCycle') to each frozen dataclass from mike_trade.domain.instruments, market, signals, strategy_types, trading, protection, and accounts. Exclude Protocols. Add `register(cls, tag=None)` so later phases can add types.\n- `to_primitive(obj)` produces JSON-safe primitives:\n  - Decimal becomes a canonical string using str(Decimal), with no float conversion and with trailing digits and exponent preserved.\n  - datetime becomes an ISO-8601 UTC string with an explicit '+00:00'; naive datetimes raise.\n  - date and time become ISO strings.\n  - timedelta becomes total microseconds as an int or an ISO duration string, consistently.\n  - Enums become their member name.\n  - tuple and frozenset become lists; frozenset is sorted deterministically.\n  - Read-only mappings become dicts with sorted keys.\n  - Nested dataclasses become dicts carrying a '__type__' tag.\n- `from_primitive(data, expected_type=None)` reconstructs exact instances by running normal constructors, so domain invariants are re-validated on decode. It rejects unknown tags, unknown or missing fields, float values for Decimal fields, and naive datetime strings.\n- `dumps(obj) -> str` is canonical JSON: sort_keys=True, separators=(',', ':'), ensure_ascii=True. `loads(text)` is its inverse. A `content_hash(obj) -> str` returns the SHA-256 hex of dumps(obj), for idempotency and audit keys.\n\ntests/unit/test_domain_serde.py should build roundtrip fixtures (factory functions inside the test module) for at least: Instrument, MarketSession, TradingSessionPolicy, MarketEvent (IEX provenance), Candle, MarketContext, StrategyDefinition, StrategyInstance, Evaluation (SIGNAL and NO_SIGNAL), Signal, SignalDecision, OrderIntent, BrokerOrder, Fill, PositionCycle (with partial entry fills and a full exit), Position, BudgetPolicy, EntryEligibilityPolicy, EntryEligibilityState, ProtectionPolicy, TrailingStopState, AccountScope, AccountSnapshot, BrokerCapabilities, MarketDataCapabilities, HealthSnapshot, and ControlCommand. Tests must cover:\n- loads(dumps(x)) == x for every fixture\n- dumps output identical across two calls and independent of mapping insertion order\n- Decimal('1.10') and Decimal('1.1') preserved distinctly as written\n- a non-UTC aware datetime normalized to UTC on encode\n- negative cases: unknown __type__, an extra field, a float in a Decimal field, a naive datetime string, and a decoded payload that violates a domain invariant (e.g. a negative quantity or a dormant short action), each of which raises\n\nAdapt to the exact constructor signatures implemented in b.1\u2013b.4. Do not modify those modules. If a contract cannot be roundtripped without changing it, record that in a skipped test with a precise reason and do not edit the source module.\n\nDecision budget: make at most three design choices not covered here, and record them in the serde.py module docstring.\n\nBefore editing, inspect:\n- mike_trade/domain/instruments.py and mike_trade/domain/market.py (from b.1)\n- mike_trade/domain/signals.py and mike_trade/domain/strategy_types.py (from b.2)\n- mike_trade/domain/trading.py and mike_trade/domain/protection.py (from b.3)\n- mike_trade/domain/accounts.py (from b.4)\n- tests/unit/test_market_values.py, tests/contracts/test_signal_contracts.py, and tests/contracts/test_trading_contracts.py (read-only) for existing fixture conventions",
+  "acceptance_criteria": [
+    "mike_trade/domain/serde.py defines register, to_primitive, from_primitive, dumps, loads, and content_hash using only the standard library",
+    "Every frozen dataclass contract in instruments, market, signals, strategy_types, trading, protection, and accounts is registered with a stable type tag",
+    "For each fixture in tests/unit/test_domain_serde.py, loads(dumps(x)) == x and type(loads(dumps(x))) is type(x)",
+    "dumps produces byte-identical output across repeated calls and for mappings built in different insertion orders, and content_hash is stable",
+    "Decimal values are encoded as strings and never pass through float; Decimal('1.10') roundtrips with its exponent preserved",
+    "Datetimes are encoded as ISO-8601 with +00:00; encoding a naive datetime raises",
+    "Decoding an unknown __type__, an unexpected field, a float in a Decimal field, a naive datetime string, or an invariant-violating payload raises",
+    "serde.py does not import alpaca, pydantic, mike_trade.brokers adapters, or mike_trade.strategies",
+    "No file other than mike_trade/domain/serde.py and tests/unit/test_domain_serde.py is modified",
+    "tests/unit/test_domain_serde.py passes with targeted pytest"
+  ],
+  "selected_backend": "pi_cli",
+  "model": "openrouter/meta/muse-spark-1.3-contributor",
+  "verification_profile": "focused",
+  "allowed_write_paths": [
+    "mike_trade/domain/serde.py",
+    "tests/unit/test_domain_serde.py"
+  ],
+  "allowed_symbols": [
+    "register",
+    "to_primitive",
+    "from_primitive",
+    "dumps",
+    "loads",
+    "content_hash"
+  ],
+  "forbidden_changes": [
+    "modify files outside allowed_write_paths",
+    "change PLAN_SKELETON.json or other planning artifacts",
+    "edit domain contract modules created by b.1-b.4",
+    "convert Decimal values through float",
+    "add third-party serialization dependencies or edit pyproject.toml",
+    "import Alpaca SDK types",
+    "run broad test suites, backtests, or create broker orders"
+  ],
+  "dependencies": [
+    "b.1",
+    "b.2",
+    "b.3",
+    "b.4"
+  ],
+  "task_timeout_seconds": 1500
+}

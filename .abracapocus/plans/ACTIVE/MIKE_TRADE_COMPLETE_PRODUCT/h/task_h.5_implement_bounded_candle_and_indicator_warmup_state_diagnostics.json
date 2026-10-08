@@ -1,0 +1,42 @@
+{
+  "schema_version": 1,
+  "task_id": "h.5",
+  "phase": "H",
+  "phase_id": "h",
+  "title": "Implement bounded candle and indicator warmup state diagnostics",
+  "description": "Implement bounded warmup state tracking and data-quality gating diagnostics in mike_trade/market_data/warmup.py, with unit tests in tests/unit/test_warmup.py.\n\nRequired behavior:\n- A WarmupTracker keeps per-(symbol, timeframe) state and computes per-requirement readiness from declared needs: required completed-bar counts per timeframe, plus indicator warmup lengths from the h.2 calculators' warmup_bars. It uses only bounded buffers (deque maxlen or equivalent) and never stores an unbounded bar history.\n- States: COLD \u2192 WARMING \u2192 READY, plus DEGRADED and INVALID. Transitions are deterministic: the same ordered input sequence and injected clock always produce identical states and diagnostics.\n- An immutable WarmupDiagnostics snapshot reports, per symbol and requirement: bars_have / bars_needed, state, and a tuple of blocking reason codes. Reason codes include at least INSUFFICIENT_BARS, STALE_DATA, MISSING_DATA, BAR_GAP, ZERO_VOLUME, INVALID_OHLC, MIXED_FEED, UNCLOSED_BAR, PRICE_BASIS_MISMATCH, SESSION_NOT_REGULAR, and UNKNOWN_SESSION.\n- The buy_gate(symbol, context) decision returns allowed=True only when every declared requirement is READY and there are no blocking reasons. Otherwise it fails closed with reason codes. Specifically:\n  - stale or missing context, a gap in completed 1-minute bars within the current session, a zero-volume bar where the requirement declares volume relevance, invalid OHLC, mixed feed_id, an unclosed bar offered as completed, an adjusted/raw basis mismatch, or a non-regular/unknown session must each block BUY\n  - session VWAP readiness requires bars from the current session_id, and resets at a session change\n- The gate is for new entries only. The module must expose no API that blocks exits, fills, stops, reconciliation, or manual closes; document this in the module docstring.\n- Support seeding from historical completed bars (for example replay or REST warmup) followed by live bars. Seeding must yield the same state as feeding the same bars live.\n- Consume MarketContext (h.4), Candle (h.1), indicator warmup metadata (h.2), and session info (h.3) through their public APIs only. Do no network or broker I/O. Do not invent numerical trading thresholds; bar counts come from declarations.\n\nBefore editing, inspect:\n- mike_trade/market_data/context.py (h.4), mike_trade/market_data/candles.py (h.1), mike_trade/strategies/indicators/core.py (h.2), and mike_trade/scheduling/calendar.py (h.3)\n- mike_trade/market_data/quality.py (if present) for existing freshness and gap reason codes to align with\n- mike_trade/strategies/base.py (if present) for strategy input declarations",
+  "acceptance_criteria": [
+    "A test confirms that a requirement with N bars needed reports WARMING with INSUFFICIENT_BARS at N-1 completed bars and READY at exactly N.",
+    "A test confirms that replaying an identical input sequence twice yields equal WarmupDiagnostics, and that historical seeding yields the same state as live feeding of the same bars.",
+    "Negative tests confirm that each of these causes buy_gate to return allowed=False with the matching reason code: stale context, missing context, a 1-minute bar gap, a zero-volume bar (volume-relevant requirement), invalid OHLC, mixed feed_id, an unclosed bar, a price-basis mismatch, and a non-regular or unknown session.",
+    "A positive test confirms that buy_gate returns allowed=True when all requirements are READY with fresh, regular-session, single-feed RAW-basis closed bars.",
+    "A test confirms that VWAP-dependent readiness resets when the session_id changes and requires current-session bars.",
+    "A test confirms that internal buffers stay at or below the configured bound after feeding many more bars than needed.",
+    "A test or docstring assertion confirms that the module exposes no API affecting exits, fills, stops, reconciliation, or manual closes.",
+    "WarmupDiagnostics is immutable; a test confirms that mutation raises."
+  ],
+  "selected_backend": "pi_cli",
+  "model": "openrouter/meta/muse-spark-1.3-contributor",
+  "verification_profile": "focused",
+  "allowed_write_paths": [
+    "mike_trade/market_data/warmup.py",
+    "tests/unit/test_warmup.py"
+  ],
+  "forbidden_changes": [
+    "modify files outside allowed_write_paths",
+    "change PLAN_SKELETON.json or other planning artifacts",
+    "modify candles.py, context.py, indicators/core.py, or calendar.py",
+    "block exits, fills, stops, reconciliation, or manual closes based on warmup state",
+    "store unbounded bar or tick history",
+    "invent numerical trading thresholds",
+    "perform network, provider, or broker I/O",
+    "run broad test suites or backtests"
+  ],
+  "dependencies": [
+    "h.1",
+    "h.2",
+    "h.3",
+    "h.4"
+  ],
+  "task_timeout_seconds": 1500
+}

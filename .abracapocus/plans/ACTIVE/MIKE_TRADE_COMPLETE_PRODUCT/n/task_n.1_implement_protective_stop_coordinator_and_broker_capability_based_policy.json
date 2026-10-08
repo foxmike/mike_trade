@@ -1,0 +1,47 @@
+{
+  "schema_version": 1,
+  "task_id": "n.1",
+  "phase": "N",
+  "phase_id": "n",
+  "title": "Implement protective stop coordinator and broker capability-based policy",
+  "description": "Build the centralized protective-order manager and a provider-neutral ProtectionPolicy.\n\nIn mike_trade/risk/stop_policy.py:\n- Define a ProtectionMode enum with FIXED, TRAILING_NATIVE and TRAILING_STEPPED. Define TRAILING_STEPPED now so the policy type is complete, but the coordinator must report it as not yet available until a later phase implements it.\n- Define an immutable ProtectionPolicy dataclass with these fields:\n  - mode\n  - required (bool)\n  - order_semantics: STOP_MARKET or STOP_LIMIT, with an optional limit offset\n  - fixed reference: CONFIRMED_FILL_PRICE by default, or a configured reference\n  - distance: percent, USD, ATR multiple or support level. Validate that exactly one is set for FIXED.\n  - native trailing distance: trail_percent or trail_price. Validate that exactly one is set for TRAILING_NATIVE.\n  - time_in_force (DAY or GTC)\n  - allow_fractional_protection (bool, default False)\n  - optional documented_fractional_risk_ack (str)\n- Define a BrokerProtectionCapabilities value object. It declares whether the provider supports each of these, and whether each has been paper_proven:\n  - stop-market and stop-limit\n  - standalone trailing_stop with trail_price or trail_percent\n  - fractional protective orders per order type and TIF\n  - GTC vs DAY protective TIF\n  - linked/bracket/OTO/OCO legs per order type. Linked trailing legs must be representable as unsupported.\n- Implement evaluate_policy(policy, capabilities, execution_mode, quantity) -> ProtectionEligibility. It returns ALLOWED, or REJECTED with a reason code. Reason codes:\n  - UNSUPPORTED_MODE\n  - UNSUPPORTED_ORDER_TYPE\n  - FRACTIONAL_NOT_SUPPORTED\n  - FRACTIONAL_NOT_PAPER_PROVEN\n  - TIF_NOT_SUPPORTED\n  - LINKED_TRAILING_UNSUPPORTED\n  - STEPPED_NOT_AVAILABLE\n- Evaluation must fail closed:\n  - In LIVE mode, any fractional, TIF or linked combination that is not paper_proven is REJECTED.\n  - Fractional quantity is REJECTED unless allow_fractional_protection is set and a documented risk acknowledgement is present.\n- Every eligibility result carries explicit risk notes stating that:\n  - a stop trigger price is not a guaranteed execution price or maximum loss\n  - stop-limit may not fill\n  - DAY TIF expires and leaves an overnight residual\n\nIn mike_trade/risk/protection.py:\n- Implement ProtectionCoordinator. It is keyed by PositionCycle id and holds a broker-port protocol, injected by dependency injection, plus a clock.\n- Methods:\n  - check_entry_eligibility(policy, capabilities, mode, intended_qty). A required protection that is not eligible means the entry is rejected before submission.\n  - on_confirmed_fill(cycle_id, cumulative_filled_qty, avg_fill_price). Protection starts only after a confirmed positive fill.\n  - on_exit_requested(cycle_id, qty, reason). This coordinates discretionary, manual and strategy exits with the active protective order. Cancel the protective order or confirm it is cancelled or filled before releasing exit quantity, or reduce/replace it, so that total working sell quantity never exceeds the confirmed remaining long quantity.\n  - on_broker_order_update(...)\n  - current_protection(cycle_id)\n- The coordinator invariant is at most ONE effective full-position protective sell order per cycle. Any replacement must wait for cancel confirmation of the old order before the new one is submitted, or use a broker-atomic replace.\n- The coordinator must operate independently of BUY/SELL strategy cadence, the pause state and the minimum-hold rule. These must never be consulted to delay or skip protection.\n- A failed placement or failed coverage after a fill marks the cycle UNPROTECTED_POSITION and raises a fresh-entry block signal (an entry_block_reasons output). It must never be silently swallowed.\n- All quantities and prices use Decimal. All timestamps are timezone-aware UTC.\n- Keep the broker interaction behind a Protocol; do not import Alpaca-specific code here.\n\nWrite tests/unit/test_protection_policy.py with positive and negative cases for policy validation, capability gating, fractional rejection, the single-effective-order invariant and the overlapping-sell prevention.\n\nBefore editing, inspect:\n- existing mike_trade/risk/ modules from earlier phases (budgets, entry guards, eligibility)\n- the domain models for PositionCycle, Order, Fill and Position, and the execution-mode enum (BACKTEST/SHADOW/PAPER/LIVE)\n- the broker port/adapter protocols under mike_trade/brokers/\n- the clock abstraction\n- the Decimal/UTC conventions\nReuse existing types rather than redefining them. Decision budget: if a needed domain type is missing, define a minimal local Protocol in protection.py rather than editing files outside allowed_write_paths.",
+  "acceptance_criteria": [
+    "mike_trade/risk/stop_policy.py defines ProtectionMode with FIXED, TRAILING_NATIVE and TRAILING_STEPPED, plus ProtectionPolicy, BrokerProtectionCapabilities and evaluate_policy.",
+    "ProtectionPolicy validation rejects a FIXED policy with zero or multiple distance definitions, and a TRAILING_NATIVE policy with both or neither of trail_price and trail_percent. Each rejection case has a unit test.",
+    "evaluate_policy returns REJECTED with a specific reason code in each of these cases, and each case has a unit test: fractional quantity without allow_fractional_protection; fractional or TIF combinations that are not paper_proven in LIVE mode; a linked/bracket/OTO/OCO trailing leg; TRAILING_STEPPED while it is unavailable.",
+    "Eligibility results expose risk notes stating that a stop trigger is not a guaranteed execution price or maximum loss, and that DAY TIF leaves an overnight residual.",
+    "ProtectionCoordinator never has more than one effective protective sell order per PositionCycle. A test shows that replacement waits for cancel confirmation before a new order is submitted.",
+    "on_exit_requested never allows working sell quantity (protective plus exit) to exceed the confirmed remaining long quantity. Tests cover partial fills and manual close.",
+    "Protection is triggered only by a confirmed positive fill. A zero or unconfirmed fill creates no protective order (tested).",
+    "Protection behaviour does not depend on strategy pause state or minimum hold. A test shows protection is placed while the strategy is paused and during the minimum-hold window.",
+    "A placement failure after a fill yields UNPROTECTED_POSITION and an entry block reason (tested).",
+    "All money and quantity values are Decimal and all timestamps are timezone-aware UTC. No float is used for price or quantity in the new modules.",
+    "tests/unit/test_protection_policy.py passes when run in isolation and makes no network or broker credential access."
+  ],
+  "selected_backend": "codex_cli",
+  "model": "gpt-5.6-sol",
+  "verification_profile": "focused",
+  "allowed_write_paths": [
+    "mike_trade/risk/protection.py",
+    "mike_trade/risk/stop_policy.py",
+    "tests/unit/test_protection_policy.py"
+  ],
+  "allowed_symbols": [
+    "ProtectionMode",
+    "ProtectionPolicy",
+    "BrokerProtectionCapabilities",
+    "ProtectionEligibility",
+    "evaluate_policy",
+    "ProtectionCoordinator"
+  ],
+  "forbidden_changes": [
+    "modify files outside allowed_write_paths",
+    "change PLAN_SKELETON.json or other planning artifacts",
+    "import Alpaca-specific modules into mike_trade/risk/protection.py or mike_trade/risk/stop_policy.py",
+    "create live or paper broker orders or read broker credentials",
+    "run broad test suites or backtests",
+    "use float for prices, quantities or budgets"
+  ],
+  "dependencies": [],
+  "task_timeout_seconds": 1800
+}

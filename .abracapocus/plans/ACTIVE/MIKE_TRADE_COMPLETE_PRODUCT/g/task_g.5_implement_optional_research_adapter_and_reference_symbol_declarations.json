@@ -1,0 +1,41 @@
+{
+  "schema_version": 1,
+  "task_id": "g.5",
+  "phase": "G",
+  "phase_id": "g",
+  "title": "Implement optional research adapter and reference symbol declarations",
+  "description": "Implement the optional research data layer.\n\nmike_trade/research/ports.py:\n- Define a ResearchDataProvider port (Protocol/ABC) and immutable research records.\n- Each record carries: input key, symbol, value, source, publication_ts, observed_ts, ingestion_ts (all timezone-aware UTC), revision id/number, freshness/max-age, a missing flag with reason, and licensing/usage metadata.\n- Define a strategy research-requirement declaration: input key, mandatory vs optional, maximum age, and per-symbol applicability.\n\nmike_trade/research/service.py:\n- Implement ResearchService, which builds research context for strategy evaluation.\n- Fetch only the inputs that registered strategies declare as required for the watched symbols. Fetch each (symbol, input key) once per refresh cycle, shared across strategies and scenarios.\n- Cache with a bounded size.\n- Expose an immutable ResearchContext. When a mandatory input is missing or stale, the context reports no-signal-permitted for that strategy/symbol, with a reason code. Optional missing inputs are surfaced as missing without blocking.\n- Provide a built-in NullResearchProvider, the default, which requires no paid provider, no network access, and no manual upload. Basic operation must work with no research configured.\n- Provide reference symbol declarations: a small, documented declaration helper, plus example declarations showing how a strategy declares research inputs. vwap_reference declares none.\n\nStrategies receive only ResearchContext and never the provider.\n\nBefore editing, inspect:\n- mike_trade/market_data/service.py and mike_trade/market_data/cache.py (g.3) for the shared-fetch and immutable-snapshot patterns to mirror\n- mike_trade/market_data/quality.py (g.4) for freshness/reason-code conventions\n- mike_trade/ strategy base/registry and domain modules from earlier phases (if present)",
+  "acceptance_criteria": [
+    "mike_trade/research/ports.py defines a ResearchDataProvider port and frozen research record types. The records include source, publication_ts, observed_ts, ingestion_ts, revision, freshness/max-age, missing flag/reason, and licensing fields, and every timestamp is timezone-aware UTC.",
+    "ResearchService requests only the inputs declared by registered strategies; a test with a fake provider asserts that undeclared inputs are never requested.",
+    "When two strategies and two scenarios declare the same (symbol, input), the provider is called once per refresh cycle; a test counts the calls.",
+    "When a mandatory input is missing or older than its maximum age, ResearchContext reports no-signal-permitted with a reason code; a negative test covers both the missing and the stale case.",
+    "A missing optional input is marked missing but does not block signal permission; a test covers this.",
+    "With no research configured, the default NullResearchProvider lets ResearchService run without network access, paid providers, or files, and strategies that declare no inputs are unaffected; a test covers this.",
+    "Strategy-facing ResearchContext objects are immutable and expose no provider or network handle; a test verifies this.",
+    "The reference declaration helper and example declarations exist, and vwap_reference is documented as declaring no research inputs."
+  ],
+  "selected_backend": "pi_cli",
+  "model": "openrouter/meta/muse-spark-1.3-contributor",
+  "verification_profile": "focused",
+  "allowed_write_paths": [
+    "mike_trade/research/ports.py",
+    "mike_trade/research/service.py",
+    "tests/unit/test_research_context.py"
+  ],
+  "forbidden_changes": [
+    "modify files outside allowed_write_paths",
+    "change PLAN_SKELETON.json or other planning artifacts",
+    "require a paid research provider or manual upload for basic operation",
+    "expose research providers or network clients to strategies",
+    "use network access or real credentials in tests",
+    "run broad test suites or backtests"
+  ],
+  "dependencies": [
+    "g.1",
+    "g.2",
+    "g.3",
+    "g.4"
+  ],
+  "task_timeout_seconds": 1500
+}

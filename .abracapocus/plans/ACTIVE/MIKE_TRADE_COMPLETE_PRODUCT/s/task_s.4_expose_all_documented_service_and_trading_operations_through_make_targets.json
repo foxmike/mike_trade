@@ -1,0 +1,43 @@
+{
+  "schema_version": 1,
+  "task_id": "s.4",
+  "phase": "S",
+  "phase_id": "s",
+  "title": "Expose all documented service and trading operations through Make targets",
+  "description": "Expose every operator operation as a thin Make target and document operations.\n\nBefore editing, inspect: the existing Makefile; mike_trade/cli.py, especially CANONICAL_COMMANDS, the global options --account/--scenario/--format/--confirm-live and the exit codes, plus the controls handlers from task s.3; mike_trade/controls/history_commands.py from task s.5; the dependency lock tooling and virtualenv conventions established earlier (for example the lock file and sync command); the systemd unit files and service helpers; the dashboard launcher; and existing docs. Make recipes must only invoke the CLI (and the dependency lock tool for install/update). They contain no business logic.\n\nRewrite or extend the Makefile:\n(1) Variables: PYTHON ?= the project venv python, and CLI := $(PYTHON) -m mike_trade.cli. Pass-through operator variables are ACCOUNT, SCENARIO, SYMBOL, STRATEGY, KEY, VALUE, SINCE, UNTIL, LIMIT, FORMAT, OUT, RUN_ID and CONFIRM_LIVE. They are passed only as CLI flags or as the CONFIRM_LIVE environment variable.\n(2) .PHONY declarations and a '## description' comment on every target. help (the default goal) prints all targets with their descriptions.\n(3) Targets:\n- install, update, doctor, config-show;\n- providers, provider-check, broker-check, data-check;\n- strategies, strategy-info, strategy-check, strategy-enable, strategy-disable, strategy-set;\n- symbols, symbols-add, symbols-remove, symbols-enable, symbols-disable;\n- start, stop, restart, status;\n- dashboard, dashboard-start, dashboard-stop, dashboard-health, health;\n- shadow-start, shadow-stop, shadow-list, shadow-create, shadow-reset;\n- paper-start, paper-stop, paper-status;\n- live-preflight, live-enable, live-start, live-disable;\n- pause, resume, pause-symbol, resume-symbol, entries-disable, entries-enable;\n- close, close-all, flatten;\n- trail-status, trail-history, trail-policy-show, trail-policy-set, trail-reconcile;\n- entry-limits, entry-limits-reset, cooldown-status;\n- stop-status, stops-audit;\n- positions, orders, balance, budget, reconcile;\n- signals, evaluations, events, logs;\n- report, report-daily, report-symbol, report-strategy, report-pairs, report-shadow, report-comparison, report-export;\n- backtest, backtest-status, backtest-report, backtest-list;\n- cache-status, cache-refresh;\n- db-check, db-backup, db-restore-dry-run;\n- test, test-unit, test-integration, test-paper, lint, typecheck;\n- service-install, service-uninstall, service-status.\n(4) Each non-tooling target invokes '$(CLI) <same-named canonical subcommand>' with pass-through flags. test/test-unit/test-integration are bounded by explicit test paths/markers. test-paper is credential-gated: it is skipped by the test suite when paper credentials are absent, and it never uses live credentials. lint and typecheck invoke the configured linters only.\n(5) Live confirmation is enforced by the CLI. Make only forwards CONFIRM_LIVE and never sets it to YES by default.\n\nWrite docs/OPERATIONS.md, an operator runbook that documents every target with its variables and examples. It must explain:\n- stop vs. flatten vs. close-all;\n- pause vs. entries-disable, including that protection and reconciliation continue while paused;\n- the live confirmation rule and the risk-reducing commands that are exempt;\n- that order commands refuse while the engine is offline and nothing is queued;\n- startup reconciliation and entry blocking;\n- that UNMANAGED external positions are handled;\n- the fee policy: broker-imported fees, labeled estimates, no hand-loaded fee files;\n- report/export formats and reconciliation identity conventions;\n- health and OFFLINE semantics;\n- service install/uninstall on Ubuntu systemd;\n- backup and restore dry run;\n- test tiers, with the statement that ordinary tests never use live credentials.\n\nWrite tests/unit/test_make_targets.py. It parses the Makefile text and, when make is available, runs 'make -n <target>' with dummy variables (dry run only; never executes recipes). It asserts:\n- every required target exists, is .PHONY, has a ## description and appears in the help output;\n- each non-tooling recipe invokes '-m mike_trade.cli' with a subcommand present in mike_trade.cli.CANONICAL_COMMANDS;\n- recipes contain no business-logic markers ('python -c', 'sqlite3', 'curl', 'alpaca', inline SQL, shell arithmetic on prices);\n- no recipe sets CONFIRM_LIVE=YES;\n- stop and flatten map to distinct subcommands;\n- every target is documented in docs/OPERATIONS.md.",
+  "acceptance_criteria": [
+    "The Makefile defines every target listed in this task as .PHONY, with a ## description, and help is the default goal and lists all of them",
+    "Every non-tooling target recipe invokes $(PYTHON) -m mike_trade.cli with the same-named subcommand, and each such subcommand exists in mike_trade.cli.CANONICAL_COMMANDS",
+    "No recipe contains python -c, sqlite3, curl, provider SDK calls, inline SQL or other business logic; install/update invoke only the established dependency lock tool plus CLI doctor",
+    "No Makefile line sets CONFIRM_LIVE=YES; CONFIRM_LIVE is only forwarded from the operator environment",
+    "stop and flatten invoke different CLI subcommands, and the stop documentation states that protective stops and positions are left in place",
+    "test-paper is credential-gated and never references live credentials; test, test-unit and test-integration are bounded to explicit paths or markers",
+    "docs/OPERATIONS.md documents every Make target and covers stop/flatten/close-all, pause vs. entries-disable, live confirmation and exemptions, offline refusal without queuing, fee policy, report/export, health/OFFLINE, systemd service management, backup/restore dry run and test tiers",
+    "tests/unit/test_make_targets.py passes and uses only Makefile parsing and make -n dry runs, never executing recipes"
+  ],
+  "selected_backend": "pi_cli",
+  "model": "openrouter/meta/muse-spark-1.3-contributor",
+  "verification_profile": "focused",
+  "allowed_write_paths": [
+    "Makefile",
+    "docs/OPERATIONS.md",
+    "tests/unit/test_make_targets.py"
+  ],
+  "forbidden_changes": [
+    "modify files outside allowed_write_paths",
+    "change PLAN_SKELETON.json or planning artifacts",
+    "put business logic, SQL, provider calls or inline Python in Make recipes",
+    "default or hardcode CONFIRM_LIVE=YES",
+    "make stop call flatten, close-all or protective-stop cancellation",
+    "execute Make recipes (other than dry-run -n) from tests",
+    "access live broker credentials or create broker orders",
+    "run broad test suites or backtests"
+  ],
+  "dependencies": [
+    "s.1",
+    "s.2",
+    "s.3",
+    "s.5"
+  ],
+  "task_timeout_seconds": 1500
+}

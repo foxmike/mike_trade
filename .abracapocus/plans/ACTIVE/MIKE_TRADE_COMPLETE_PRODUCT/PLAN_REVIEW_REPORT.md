@@ -1,0 +1,1924 @@
+# Plan Review Report
+
+Plan directory: /home/mike/dev/mike/stocks/python/mike_trade/.abracapocus/plans/ACTIVE/MIKE_TRADE_COMPLETE_PRODUCT
+
+## Warnings
+- [/home/mike/dev/mike/stocks/python/mike_trade/.abracapocus/plans/ACTIVE/MIKE_TRADE_COMPLETE_PRODUCT/a/task_a.1_establish_python_packaging_and_reproducible_dependency_lock.json] acceptance_criteria list length > 5
+- [/home/mike/dev/mike/stocks/python/mike_trade/.abracapocus/plans/ACTIVE/MIKE_TRADE_COMPLETE_PRODUCT/a/task_a.1_establish_python_packaging_and_reproducible_dependency_lock.json] acceptance_criteria item length > 120 characters
+- [/home/mike/dev/mike/stocks/python/mike_trade/.abracapocus/plans/ACTIVE/MIKE_TRADE_COMPLETE_PRODUCT/a/task_a.1_establish_python_packaging_and_reproducible_dependency_lock.json] acceptance_criteria references pytest or test without a test allowed_write_path
+- [/home/mike/dev/mike/stocks/python/mike_trade/.abracapocus/plans/ACTIVE/MIKE_TRADE_COMPLETE_PRODUCT/a/task_a.1_establish_python_packaging_and_reproducible_dependency_lock.json] description field length > 300 characters
+- [/home/mike/dev/mike/stocks/python/mike_trade/.abracapocus/plans/ACTIVE/MIKE_TRADE_COMPLETE_PRODUCT/a/task_a.1_establish_python_packaging_and_reproducible_dependency_lock.json] description contains broad word: complete
+- [/home/mike/dev/mike/stocks/python/mike_trade/.abracapocus/plans/ACTIVE/MIKE_TRADE_COMPLETE_PRODUCT/a/task_a.2_add_structured_logging_conventions_and_typed_application_exceptions.json] acceptance_criteria list length > 5
+- [/home/mike/dev/mike/stocks/python/mike_trade/.abracapocus/plans/ACTIVE/MIKE_TRADE_COMPLETE_PRODUCT/a/task_a.2_add_structured_logging_conventions_and_typed_application_exceptions.json] acceptance_criteria item length > 120 characters
+- [/home/mike/dev/mike/stocks/python/mike_trade/.abracapocus/plans/ACTIVE/MIKE_TRADE_COMPLETE_PRODUCT/a/task_a.2_add_structured_logging_conventions_and_typed_application_exceptions.json] description field length > 300 characters
+- [/home/mike/dev/mike/stocks/python/mike_trade/.abracapocus/plans/ACTIVE/MIKE_TRADE_COMPLETE_PRODUCT/a/task_a.2_add_structured_logging_conventions_and_typed_application_exceptions.json] acceptance_criteria[5] contains broad word: every
+- [/home/mike/dev/mike/stocks/python/mike_trade/.abracapocus/plans/ACTIVE/MIKE_TRADE_COMPLETE_PRODUCT/a/task_a.3_document_application_module_boundaries_and_dependency_rules.json] acceptance_criteria list length > 5
+- [/home/mike/dev/mike/stocks/python/mike_trade/.abracapocus/plans/ACTIVE/MIKE_TRADE_COMPLETE_PRODUCT/a/task_a.3_document_application_module_boundaries_and_dependency_rules.json] acceptance_criteria item length > 120 characters
+- [/home/mike/dev/mike/stocks/python/mike_trade/.abracapocus/plans/ACTIVE/MIKE_TRADE_COMPLETE_PRODUCT/a/task_a.3_document_application_module_boundaries_and_dependency_rules.json] acceptance_criteria references pytest or test without a test allowed_write_path
+- [/home/mike/dev/mike/stocks/python/mike_trade/.abracapocus/plans/ACTIVE/MIKE_TRADE_COMPLETE_PRODUCT/a/task_a.3_document_application_module_boundaries_and_dependency_rules.json] description field length > 300 characters
+- [/home/mike/dev/mike/stocks/python/mike_trade/.abracapocus/plans/ACTIVE/MIKE_TRADE_COMPLETE_PRODUCT/a/task_a.3_document_application_module_boundaries_and_dependency_rules.json] acceptance_criteria[0] contains broad word: every
+- [/home/mike/dev/mike/stocks/python/mike_trade/.abracapocus/plans/ACTIVE/MIKE_TRADE_COMPLETE_PRODUCT/a/task_a.4_create_dependency_injected_composition_root_and_runtime_object_graph.json] acceptance_criteria list length > 5
+- [/home/mike/dev/mike/stocks/python/mike_trade/.abracapocus/plans/ACTIVE/MIKE_TRADE_COMPLETE_PRODUCT/a/task_a.4_create_dependency_injected_composition_root_and_runtime_object_graph.json] acceptance_criteria item length > 120 characters
+- [/home/mike/dev/mike/stocks/python/mike_trade/.abracapocus/plans/ACTIVE/MIKE_TRADE_COMPLETE_PRODUCT/a/task_a.4_create_dependency_injected_composition_root_and_runtime_object_graph.json] acceptance_criteria references pytest or test without a test allowed_write_path
+- [/home/mike/dev/mike/stocks/python/mike_trade/.abracapocus/plans/ACTIVE/MIKE_TRADE_COMPLETE_PRODUCT/a/task_a.4_create_dependency_injected_composition_root_and_runtime_object_graph.json] description field length > 300 characters
+- [/home/mike/dev/mike/stocks/python/mike_trade/.abracapocus/plans/ACTIVE/MIKE_TRADE_COMPLETE_PRODUCT/a/task_a.5_create_baseline_make_help_and_install_doctor_shell_entrypoints.json] acceptance_criteria list length > 5
+- [/home/mike/dev/mike/stocks/python/mike_trade/.abracapocus/plans/ACTIVE/MIKE_TRADE_COMPLETE_PRODUCT/a/task_a.5_create_baseline_make_help_and_install_doctor_shell_entrypoints.json] acceptance_criteria item length > 120 characters
+- [/home/mike/dev/mike/stocks/python/mike_trade/.abracapocus/plans/ACTIVE/MIKE_TRADE_COMPLETE_PRODUCT/a/task_a.5_create_baseline_make_help_and_install_doctor_shell_entrypoints.json] description field length > 300 characters
+- [/home/mike/dev/mike/stocks/python/mike_trade/.abracapocus/plans/ACTIVE/MIKE_TRADE_COMPLETE_PRODUCT/a/task_a.5_create_baseline_make_help_and_install_doctor_shell_entrypoints.json] description contains broad word: complete
+- [/home/mike/dev/mike/stocks/python/mike_trade/.abracapocus/plans/ACTIVE/MIKE_TRADE_COMPLETE_PRODUCT/a/task_a.5_create_baseline_make_help_and_install_doctor_shell_entrypoints.json] description contains broad word: all
+- [/home/mike/dev/mike/stocks/python/mike_trade/.abracapocus/plans/ACTIVE/MIKE_TRADE_COMPLETE_PRODUCT/a/task_a.5_create_baseline_make_help_and_install_doctor_shell_entrypoints.json] acceptance_criteria[5] contains broad word: all
+- [/home/mike/dev/mike/stocks/python/mike_trade/.abracapocus/plans/ACTIVE/MIKE_TRADE_COMPLETE_PRODUCT/a/task_a.5_create_baseline_make_help_and_install_doctor_shell_entrypoints.json] acceptance_criteria[8] contains broad word: complete
+- Task 'a.1' missing anti-inference instruction: Do not infer APIs, schemas, behavior, or file contents; inspect the referenced files first.
+- Task 'a.1' missing explicit strict file-scope language
+- Task 'a.1' missing acceptance criterion equivalent to: No file outside allowed_write_paths is modified.
+- Task 'a.2' missing anti-inference instruction: Do not infer APIs, schemas, behavior, or file contents; inspect the referenced files first.
+- Task 'a.2' missing explicit strict file-scope language
+- Task 'a.2' missing acceptance criterion equivalent to: No file outside allowed_write_paths is modified.
+- Task 'a.3' missing anti-inference instruction: Do not infer APIs, schemas, behavior, or file contents; inspect the referenced files first.
+- Task 'a.3' missing explicit strict file-scope language
+- Task 'a.3' missing acceptance criterion equivalent to: No file outside allowed_write_paths is modified.
+- Task 'a.4' missing anti-inference instruction: Do not infer APIs, schemas, behavior, or file contents; inspect the referenced files first.
+- Task 'a.4' missing explicit strict file-scope language
+- Task 'a.4' missing acceptance criterion equivalent to: No file outside allowed_write_paths is modified.
+- Task 'a.5' missing anti-inference instruction: Do not infer APIs, schemas, behavior, or file contents; inspect the referenced files first.
+- Task 'a.5' missing explicit strict file-scope language
+- Task 'a.5' missing acceptance criterion equivalent to: No file outside allowed_write_paths is modified.
+- Task 'a.1' acceptance_criteria[7] may produce unsatisfied reconciliation: 'Importing mike_trade in a fresh environment performs no netw...' lacks file reference or test command
+- Task 'a.1' acceptance_criteria[8] may produce unsatisfied reconciliation: 'No secrets, API keys, or .env contents are committed...' lacks file reference or test command
+- Task 'a.2' acceptance_criteria[1] may produce unsatisfied reconciliation: 'Each log record is a single valid JSON line containing times...' lacks file reference or test command
+- Task 'a.2' acceptance_criteria[2] may produce unsatisfied reconciliation: 'Structured extra fields appear as top-level JSON keys; Decim...' lacks file reference or test command
+- Task 'a.2' acceptance_criteria[3] may produce unsatisfied reconciliation: 'Fields whose keys match api_key/secret/token/password/author...' lacks file reference or test command
+- Task 'a.2' acceptance_criteria[4] may produce unsatisfied reconciliation: 'Calling configure_logging twice leaves exactly one handler a...' lacks file reference or test command
+- Task 'a.2' acceptance_criteria[6] may produce unsatisfied reconciliation: 'BrokerRejectedError and BrokerUnavailableError subclass Brok...' lacks file reference or test command
+- Task 'a.2' acceptance_criteria[7] may produce unsatisfied reconciliation: 'MikeTradeError accepts and exposes optional code and context...' lacks file reference or test command
+- Task 'a.3' acceptance_criteria[7] may produce unsatisfied reconciliation: 'Neither document claims strategy profitability or requires a...' lacks file reference or test command
+- Task 'a.4' acceptance_criteria[2] may produce unsatisfied reconciliation: 'The default clock returns timezone-aware UTC datetimes...' lacks file reference or test command
+- Task 'a.4' acceptance_criteria[4] may produce unsatisfied reconciliation: 'build_runtime for LIVE without explicit authorization raises...' lacks file reference or test command
+- Task 'a.5' acceptance_criteria[0] may produce unsatisfied reconciliation: 'Running `make` with no target prints the help listing, which...' lacks file reference or test command
+- Task 'a.5' acceptance_criteria[4] may produce unsatisfied reconciliation: '`mike-trade version` prints a value equal to mike_trade.__ve...' lacks file reference or test command
+- Task 'a.5' acceptance_criteria[5] may produce unsatisfied reconciliation: '`mike-trade doctor` reports each check with a pass/fail stat...' lacks file reference or test command
+- Task 'a.5' acceptance_criteria[6] may produce unsatisfied reconciliation: 'doctor reports credential environment variables only as pres...' lacks file reference or test command
+- Task 'a.5' acceptance_criteria[7] may produce unsatisfied reconciliation: 'doctor performs no network or broker calls and never resolve...' lacks file reference or test command
+- Phase a phase_verification.json has no checks
+- [/home/mike/dev/mike/stocks/python/mike_trade/.abracapocus/plans/ACTIVE/MIKE_TRADE_COMPLETE_PRODUCT/b/task_b.1_define_assets_sessions_money_and_immutable_market_event_value_objects.json] allowed_write_paths entry 'mike_trade/domain/instruments.py' does not exist in working root
+- [/home/mike/dev/mike/stocks/python/mike_trade/.abracapocus/plans/ACTIVE/MIKE_TRADE_COMPLETE_PRODUCT/b/task_b.1_define_assets_sessions_money_and_immutable_market_event_value_objects.json] allowed_write_paths entry 'mike_trade/domain/market.py' does not exist in working root
+- [/home/mike/dev/mike/stocks/python/mike_trade/.abracapocus/plans/ACTIVE/MIKE_TRADE_COMPLETE_PRODUCT/b/task_b.1_define_assets_sessions_money_and_immutable_market_event_value_objects.json] allowed_write_paths entry 'tests/unit/test_market_values.py' does not exist in working root
+- [/home/mike/dev/mike/stocks/python/mike_trade/.abracapocus/plans/ACTIVE/MIKE_TRADE_COMPLETE_PRODUCT/b/task_b.1_define_assets_sessions_money_and_immutable_market_event_value_objects.json] acceptance_criteria list length > 5
+- [/home/mike/dev/mike/stocks/python/mike_trade/.abracapocus/plans/ACTIVE/MIKE_TRADE_COMPLETE_PRODUCT/b/task_b.1_define_assets_sessions_money_and_immutable_market_event_value_objects.json] acceptance_criteria item length > 120 characters
+- [/home/mike/dev/mike/stocks/python/mike_trade/.abracapocus/plans/ACTIVE/MIKE_TRADE_COMPLETE_PRODUCT/b/task_b.1_define_assets_sessions_money_and_immutable_market_event_value_objects.json] description field length > 300 characters
+- [/home/mike/dev/mike/stocks/python/mike_trade/.abracapocus/plans/ACTIVE/MIKE_TRADE_COMPLETE_PRODUCT/b/task_b.1_define_assets_sessions_money_and_immutable_market_event_value_objects.json] description contains broad word: every
+- [/home/mike/dev/mike/stocks/python/mike_trade/.abracapocus/plans/ACTIVE/MIKE_TRADE_COMPLETE_PRODUCT/b/task_b.1_define_assets_sessions_money_and_immutable_market_event_value_objects.json] acceptance_criteria[2] contains broad word: all
+- [/home/mike/dev/mike/stocks/python/mike_trade/.abracapocus/plans/ACTIVE/MIKE_TRADE_COMPLETE_PRODUCT/b/task_b.2_define_strategy_specifications_evaluations_signals_and_provenance_contracts.json] allowed_write_paths entry 'mike_trade/domain/signals.py' does not exist in working root
+- [/home/mike/dev/mike/stocks/python/mike_trade/.abracapocus/plans/ACTIVE/MIKE_TRADE_COMPLETE_PRODUCT/b/task_b.2_define_strategy_specifications_evaluations_signals_and_provenance_contracts.json] allowed_write_paths entry 'mike_trade/domain/strategy_types.py' does not exist in working root
+- [/home/mike/dev/mike/stocks/python/mike_trade/.abracapocus/plans/ACTIVE/MIKE_TRADE_COMPLETE_PRODUCT/b/task_b.2_define_strategy_specifications_evaluations_signals_and_provenance_contracts.json] allowed_write_paths entry 'tests/contracts/test_signal_contracts.py' does not exist in working root
+- [/home/mike/dev/mike/stocks/python/mike_trade/.abracapocus/plans/ACTIVE/MIKE_TRADE_COMPLETE_PRODUCT/b/task_b.2_define_strategy_specifications_evaluations_signals_and_provenance_contracts.json] acceptance_criteria list length > 5
+- [/home/mike/dev/mike/stocks/python/mike_trade/.abracapocus/plans/ACTIVE/MIKE_TRADE_COMPLETE_PRODUCT/b/task_b.2_define_strategy_specifications_evaluations_signals_and_provenance_contracts.json] acceptance_criteria item length > 120 characters
+- [/home/mike/dev/mike/stocks/python/mike_trade/.abracapocus/plans/ACTIVE/MIKE_TRADE_COMPLETE_PRODUCT/b/task_b.2_define_strategy_specifications_evaluations_signals_and_provenance_contracts.json] description field length > 300 characters
+- [/home/mike/dev/mike/stocks/python/mike_trade/.abracapocus/plans/ACTIVE/MIKE_TRADE_COMPLETE_PRODUCT/b/task_b.2_define_strategy_specifications_evaluations_signals_and_provenance_contracts.json] description contains broad word: every
+- [/home/mike/dev/mike/stocks/python/mike_trade/.abracapocus/plans/ACTIVE/MIKE_TRADE_COMPLETE_PRODUCT/b/task_b.3_define_order_position_fill_budget_and_protective_stop_contracts.json] allowed_write_paths entry 'mike_trade/domain/trading.py' does not exist in working root
+- [/home/mike/dev/mike/stocks/python/mike_trade/.abracapocus/plans/ACTIVE/MIKE_TRADE_COMPLETE_PRODUCT/b/task_b.3_define_order_position_fill_budget_and_protective_stop_contracts.json] allowed_write_paths entry 'mike_trade/domain/protection.py' does not exist in working root
+- [/home/mike/dev/mike/stocks/python/mike_trade/.abracapocus/plans/ACTIVE/MIKE_TRADE_COMPLETE_PRODUCT/b/task_b.3_define_order_position_fill_budget_and_protective_stop_contracts.json] allowed_write_paths entry 'tests/contracts/test_trading_contracts.py' does not exist in working root
+- [/home/mike/dev/mike/stocks/python/mike_trade/.abracapocus/plans/ACTIVE/MIKE_TRADE_COMPLETE_PRODUCT/b/task_b.3_define_order_position_fill_budget_and_protective_stop_contracts.json] acceptance_criteria list length > 5
+- [/home/mike/dev/mike/stocks/python/mike_trade/.abracapocus/plans/ACTIVE/MIKE_TRADE_COMPLETE_PRODUCT/b/task_b.3_define_order_position_fill_budget_and_protective_stop_contracts.json] acceptance_criteria item length > 120 characters
+- [/home/mike/dev/mike/stocks/python/mike_trade/.abracapocus/plans/ACTIVE/MIKE_TRADE_COMPLETE_PRODUCT/b/task_b.3_define_order_position_fill_budget_and_protective_stop_contracts.json] description field length > 300 characters
+- [/home/mike/dev/mike/stocks/python/mike_trade/.abracapocus/plans/ACTIVE/MIKE_TRADE_COMPLETE_PRODUCT/b/task_b.3_define_order_position_fill_budget_and_protective_stop_contracts.json] description contains broad word: complete
+- [/home/mike/dev/mike/stocks/python/mike_trade/.abracapocus/plans/ACTIVE/MIKE_TRADE_COMPLETE_PRODUCT/b/task_b.3_define_order_position_fill_budget_and_protective_stop_contracts.json] description contains broad word: full
+- [/home/mike/dev/mike/stocks/python/mike_trade/.abracapocus/plans/ACTIVE/MIKE_TRADE_COMPLETE_PRODUCT/b/task_b.3_define_order_position_fill_budget_and_protective_stop_contracts.json] description contains broad word: all
+- [/home/mike/dev/mike/stocks/python/mike_trade/.abracapocus/plans/ACTIVE/MIKE_TRADE_COMPLETE_PRODUCT/b/task_b.3_define_order_position_fill_budget_and_protective_stop_contracts.json] description contains broad word: every
+- [/home/mike/dev/mike/stocks/python/mike_trade/.abracapocus/plans/ACTIVE/MIKE_TRADE_COMPLETE_PRODUCT/b/task_b.3_define_order_position_fill_budget_and_protective_stop_contracts.json] acceptance_criteria[3] contains broad word: all
+- [/home/mike/dev/mike/stocks/python/mike_trade/.abracapocus/plans/ACTIVE/MIKE_TRADE_COMPLETE_PRODUCT/b/task_b.3_define_order_position_fill_budget_and_protective_stop_contracts.json] acceptance_criteria[11] contains broad word: all
+- [/home/mike/dev/mike/stocks/python/mike_trade/.abracapocus/plans/ACTIVE/MIKE_TRADE_COMPLETE_PRODUCT/b/task_b.4_define_typed_provider_capability_and_account_snapshot_interfaces.json] allowed_write_paths entry 'mike_trade/domain/accounts.py' does not exist in working root
+- [/home/mike/dev/mike/stocks/python/mike_trade/.abracapocus/plans/ACTIVE/MIKE_TRADE_COMPLETE_PRODUCT/b/task_b.4_define_typed_provider_capability_and_account_snapshot_interfaces.json] allowed_write_paths entry 'mike_trade/brokers/ports.py' does not exist in working root
+- [/home/mike/dev/mike/stocks/python/mike_trade/.abracapocus/plans/ACTIVE/MIKE_TRADE_COMPLETE_PRODUCT/b/task_b.4_define_typed_provider_capability_and_account_snapshot_interfaces.json] allowed_write_paths entry 'mike_trade/market_data/ports.py' does not exist in working root
+- [/home/mike/dev/mike/stocks/python/mike_trade/.abracapocus/plans/ACTIVE/MIKE_TRADE_COMPLETE_PRODUCT/b/task_b.4_define_typed_provider_capability_and_account_snapshot_interfaces.json] acceptance_criteria list length > 5
+- [/home/mike/dev/mike/stocks/python/mike_trade/.abracapocus/plans/ACTIVE/MIKE_TRADE_COMPLETE_PRODUCT/b/task_b.4_define_typed_provider_capability_and_account_snapshot_interfaces.json] acceptance_criteria item length > 120 characters
+- [/home/mike/dev/mike/stocks/python/mike_trade/.abracapocus/plans/ACTIVE/MIKE_TRADE_COMPLETE_PRODUCT/b/task_b.4_define_typed_provider_capability_and_account_snapshot_interfaces.json] acceptance_criteria references pytest or test without a test allowed_write_path
+- [/home/mike/dev/mike/stocks/python/mike_trade/.abracapocus/plans/ACTIVE/MIKE_TRADE_COMPLETE_PRODUCT/b/task_b.4_define_typed_provider_capability_and_account_snapshot_interfaces.json] description field length > 300 characters
+- [/home/mike/dev/mike/stocks/python/mike_trade/.abracapocus/plans/ACTIVE/MIKE_TRADE_COMPLETE_PRODUCT/b/task_b.5_implement_deterministic_domain_serialization_and_roundtrip_fixtures.json] allowed_write_paths entry 'mike_trade/domain/serde.py' does not exist in working root
+- [/home/mike/dev/mike/stocks/python/mike_trade/.abracapocus/plans/ACTIVE/MIKE_TRADE_COMPLETE_PRODUCT/b/task_b.5_implement_deterministic_domain_serialization_and_roundtrip_fixtures.json] allowed_write_paths entry 'tests/unit/test_domain_serde.py' does not exist in working root
+- [/home/mike/dev/mike/stocks/python/mike_trade/.abracapocus/plans/ACTIVE/MIKE_TRADE_COMPLETE_PRODUCT/b/task_b.5_implement_deterministic_domain_serialization_and_roundtrip_fixtures.json] acceptance_criteria list length > 5
+- [/home/mike/dev/mike/stocks/python/mike_trade/.abracapocus/plans/ACTIVE/MIKE_TRADE_COMPLETE_PRODUCT/b/task_b.5_implement_deterministic_domain_serialization_and_roundtrip_fixtures.json] acceptance_criteria item length > 120 characters
+- [/home/mike/dev/mike/stocks/python/mike_trade/.abracapocus/plans/ACTIVE/MIKE_TRADE_COMPLETE_PRODUCT/b/task_b.5_implement_deterministic_domain_serialization_and_roundtrip_fixtures.json] description field length > 300 characters
+- [/home/mike/dev/mike/stocks/python/mike_trade/.abracapocus/plans/ACTIVE/MIKE_TRADE_COMPLETE_PRODUCT/b/task_b.5_implement_deterministic_domain_serialization_and_roundtrip_fixtures.json] description contains broad word: full
+- [/home/mike/dev/mike/stocks/python/mike_trade/.abracapocus/plans/ACTIVE/MIKE_TRADE_COMPLETE_PRODUCT/b/task_b.5_implement_deterministic_domain_serialization_and_roundtrip_fixtures.json] description contains broad word: every
+- [/home/mike/dev/mike/stocks/python/mike_trade/.abracapocus/plans/ACTIVE/MIKE_TRADE_COMPLETE_PRODUCT/b/task_b.5_implement_deterministic_domain_serialization_and_roundtrip_fixtures.json] acceptance_criteria[1] contains broad word: every
+- Task 'b.1' missing anti-inference instruction: Do not infer APIs, schemas, behavior, or file contents; inspect the referenced files first.
+- Task 'b.1' missing explicit strict file-scope language
+- Task 'b.1' missing acceptance criterion equivalent to: No file outside allowed_write_paths is modified.
+- Task 'b.2' missing anti-inference instruction: Do not infer APIs, schemas, behavior, or file contents; inspect the referenced files first.
+- Task 'b.2' missing explicit strict file-scope language
+- Task 'b.2' missing acceptance criterion equivalent to: No file outside allowed_write_paths is modified.
+- Task 'b.3' missing anti-inference instruction: Do not infer APIs, schemas, behavior, or file contents; inspect the referenced files first.
+- Task 'b.3' missing explicit strict file-scope language
+- Task 'b.3' missing acceptance criterion equivalent to: No file outside allowed_write_paths is modified.
+- Task 'b.3' has 4 broad words (limit 2)
+- Task 'b.4' missing anti-inference instruction: Do not infer APIs, schemas, behavior, or file contents; inspect the referenced files first.
+- Task 'b.4' missing explicit strict file-scope language
+- Task 'b.4' missing acceptance criterion equivalent to: No file outside allowed_write_paths is modified.
+- Task 'b.5' missing anti-inference instruction: Do not infer APIs, schemas, behavior, or file contents; inspect the referenced files first.
+- Task 'b.5' missing explicit strict file-scope language
+- Task 'b.5' missing acceptance criterion equivalent to: No file outside allowed_write_paths is modified.
+- Task 'b.1' acceptance_criteria[2] may produce unsatisfied reconciliation: 'All value objects are frozen; assigning to an attribute rais...' lacks file reference or test command
+- Task 'b.1' acceptance_criteria[5] may produce unsatisfied reconciliation: 'Candle rejects high < max(open, close), low > min(open, clos...' lacks file reference or test command
+- Task 'b.1' acceptance_criteria[6] may produce unsatisfied reconciliation: 'FeedProvenance for Alpaca IEX can be constructed with is_con...' lacks file reference or test command
+- Task 'b.1' acceptance_criteria[8] may produce unsatisfied reconciliation: 'TradingSessionPolicy defaults to regular_hours_only=True and...' lacks file reference or test command
+- Task 'b.2' acceptance_criteria[1] may produce unsatisfied reconciliation: 'EvaluationStatus has exactly the members NO_SIGNAL, SIGNAL, ...' lacks file reference or test command
+- Task 'b.2' acceptance_criteria[3] may produce unsatisfied reconciliation: 'ENABLED_SIGNAL_ACTIONS equals {ENTER_LONG, EXIT_LONG}, and c...' lacks file reference or test command
+- Task 'b.2' acceptance_criteria[4] may produce unsatisfied reconciliation: 'make_signal_id returns identical IDs for identical (instance...' lacks file reference or test command
+- Task 'b.2' acceptance_criteria[6] may produce unsatisfied reconciliation: 'Evaluation with status SIGNAL and no signal raises; Evaluati...' lacks file reference or test command
+- Task 'b.2' acceptance_criteria[7] may produce unsatisfied reconciliation: 'SignalDecision has outcomes ACCEPT/REJECT/IGNORE/DEFER, has ...' lacks file reference or test command
+- Task 'b.3' acceptance_criteria[2] may produce unsatisfied reconciliation: 'PositionCycle accepts multiple partial BUY fills before exit...' lacks file reference or test command
+- Task 'b.3' acceptance_criteria[4] may produce unsatisfied reconciliation: 'OrderIntent with SELL side and ENTRY purpose raises; supplyi...' lacks file reference or test command
+- Task 'b.3' acceptance_criteria[5] may produce unsatisfied reconciliation: 'BrokerOrder with filled_quantity > quantity, or filled_quant...' lacks file reference or test command
+- Task 'b.3' acceptance_criteria[6] may produce unsatisfied reconciliation: 'Position without explicit management defaults to UNMANAGED, ...' lacks file reference or test command
+- Task 'b.3' acceptance_criteria[7] may produce unsatisfied reconciliation: 'EntryEligibilityState/exit_allowed lets PROTECTIVE_STOP, MAN...' lacks file reference or test command
+- Task 'b.3' acceptance_criteria[9] may produce unsatisfied reconciliation: 'start_protection raises when the cycle has zero filled entry...' lacks file reference or test command
+- Task 'b.3' acceptance_criteria[10] may produce unsatisfied reconciliation: 'combined_sell_exposure returns True when protective plus pen...' lacks file reference or test command
+- Task 'b.3' acceptance_criteria[11] may produce unsatisfied reconciliation: 'All money/quantity fields reject float, NaN, Infinity, and i...' lacks file reference or test command
+- Task 'b.4' acceptance_criteria[1] may produce unsatisfied reconciliation: 'AccountScope rejects a SHADOW or BACKTEST scope without scen...' lacks file reference or test command
+- Task 'b.4' acceptance_criteria[2] may produce unsatisfied reconciliation: 'AccountSnapshot rejects float/NaN/Infinity money values and ...' lacks file reference or test command
+- Task 'b.4' acceptance_criteria[5] may produce unsatisfied reconciliation: 'A position-mutating ControlCommand for a LIVE scope without ...' lacks file reference or test command
+- Task 'b.5' acceptance_criteria[1] may produce unsatisfied reconciliation: 'Every frozen dataclass contract in instruments, market, sign...' lacks file reference or test command
+- Task 'b.5' acceptance_criteria[3] may produce unsatisfied reconciliation: 'dumps produces byte-identical output across repeated calls a...' lacks file reference or test command
+- Task 'b.5' acceptance_criteria[5] may produce unsatisfied reconciliation: 'Datetimes are encoded as ISO-8601 with +00:00; encoding a na...' lacks file reference or test command
+- Task 'b.5' acceptance_criteria[6] may produce unsatisfied reconciliation: 'Decoding an unknown __type__, an unexpected field, a float i...' lacks file reference or test command
+- Phase b phase_verification.json has no checks
+- [/home/mike/dev/mike/stocks/python/mike_trade/.abracapocus/plans/ACTIVE/MIKE_TRADE_COMPLETE_PRODUCT/c/task_c.1_design_versioned_sqlite_schema_and_forward_only_migrations.json] allowed_write_paths entry 'mike_trade/persistence/schema.py' does not exist in working root
+- [/home/mike/dev/mike/stocks/python/mike_trade/.abracapocus/plans/ACTIVE/MIKE_TRADE_COMPLETE_PRODUCT/c/task_c.1_design_versioned_sqlite_schema_and_forward_only_migrations.json] allowed_write_paths entry 'mike_trade/persistence/migrations/0001_initial.sql' does not exist in working root
+- [/home/mike/dev/mike/stocks/python/mike_trade/.abracapocus/plans/ACTIVE/MIKE_TRADE_COMPLETE_PRODUCT/c/task_c.1_design_versioned_sqlite_schema_and_forward_only_migrations.json] allowed_write_paths entry 'tests/unit/test_schema_migrations.py' does not exist in working root
+- [/home/mike/dev/mike/stocks/python/mike_trade/.abracapocus/plans/ACTIVE/MIKE_TRADE_COMPLETE_PRODUCT/c/task_c.1_design_versioned_sqlite_schema_and_forward_only_migrations.json] acceptance_criteria list length > 5
+- [/home/mike/dev/mike/stocks/python/mike_trade/.abracapocus/plans/ACTIVE/MIKE_TRADE_COMPLETE_PRODUCT/c/task_c.1_design_versioned_sqlite_schema_and_forward_only_migrations.json] acceptance_criteria item length > 120 characters
+- [/home/mike/dev/mike/stocks/python/mike_trade/.abracapocus/plans/ACTIVE/MIKE_TRADE_COMPLETE_PRODUCT/c/task_c.1_design_versioned_sqlite_schema_and_forward_only_migrations.json] description field length > 300 characters
+- [/home/mike/dev/mike/stocks/python/mike_trade/.abracapocus/plans/ACTIVE/MIKE_TRADE_COMPLETE_PRODUCT/c/task_c.1_design_versioned_sqlite_schema_and_forward_only_migrations.json] description contains broad word: full
+- [/home/mike/dev/mike/stocks/python/mike_trade/.abracapocus/plans/ACTIVE/MIKE_TRADE_COMPLETE_PRODUCT/c/task_c.1_design_versioned_sqlite_schema_and_forward_only_migrations.json] description contains broad word: all
+- [/home/mike/dev/mike/stocks/python/mike_trade/.abracapocus/plans/ACTIVE/MIKE_TRADE_COMPLETE_PRODUCT/c/task_c.1_design_versioned_sqlite_schema_and_forward_only_migrations.json] description contains broad word: every
+- [/home/mike/dev/mike/stocks/python/mike_trade/.abracapocus/plans/ACTIVE/MIKE_TRADE_COMPLETE_PRODUCT/c/task_c.1_design_versioned_sqlite_schema_and_forward_only_migrations.json] acceptance_criteria[1] contains broad word: full
+- [/home/mike/dev/mike/stocks/python/mike_trade/.abracapocus/plans/ACTIVE/MIKE_TRADE_COMPLETE_PRODUCT/c/task_c.1_design_versioned_sqlite_schema_and_forward_only_migrations.json] acceptance_criteria[3] contains broad word: every
+- [/home/mike/dev/mike/stocks/python/mike_trade/.abracapocus/plans/ACTIVE/MIKE_TRADE_COMPLETE_PRODUCT/c/task_c.1_design_versioned_sqlite_schema_and_forward_only_migrations.json] Task appears to modify blocking governance; ensure docs/operations.md Governance Blocking Policy requirements are met.
+- [/home/mike/dev/mike/stocks/python/mike_trade/.abracapocus/plans/ACTIVE/MIKE_TRADE_COMPLETE_PRODUCT/c/task_c.2_implement_atomic_append_only_domain_event_journal_and_id_uniqueness.json] allowed_write_paths entry 'mike_trade/persistence/journal.py' does not exist in working root
+- [/home/mike/dev/mike/stocks/python/mike_trade/.abracapocus/plans/ACTIVE/MIKE_TRADE_COMPLETE_PRODUCT/c/task_c.2_implement_atomic_append_only_domain_event_journal_and_id_uniqueness.json] allowed_write_paths entry 'tests/unit/test_journal_atomicity.py' does not exist in working root
+- [/home/mike/dev/mike/stocks/python/mike_trade/.abracapocus/plans/ACTIVE/MIKE_TRADE_COMPLETE_PRODUCT/c/task_c.2_implement_atomic_append_only_domain_event_journal_and_id_uniqueness.json] acceptance_criteria list length > 5
+- [/home/mike/dev/mike/stocks/python/mike_trade/.abracapocus/plans/ACTIVE/MIKE_TRADE_COMPLETE_PRODUCT/c/task_c.2_implement_atomic_append_only_domain_event_journal_and_id_uniqueness.json] acceptance_criteria item length > 120 characters
+- [/home/mike/dev/mike/stocks/python/mike_trade/.abracapocus/plans/ACTIVE/MIKE_TRADE_COMPLETE_PRODUCT/c/task_c.2_implement_atomic_append_only_domain_event_journal_and_id_uniqueness.json] description field length > 300 characters
+- [/home/mike/dev/mike/stocks/python/mike_trade/.abracapocus/plans/ACTIVE/MIKE_TRADE_COMPLETE_PRODUCT/c/task_c.2_implement_atomic_append_only_domain_event_journal_and_id_uniqueness.json] description contains broad word: all
+- [/home/mike/dev/mike/stocks/python/mike_trade/.abracapocus/plans/ACTIVE/MIKE_TRADE_COMPLETE_PRODUCT/c/task_c.2_implement_atomic_append_only_domain_event_journal_and_id_uniqueness.json] description contains broad word: every
+- [/home/mike/dev/mike/stocks/python/mike_trade/.abracapocus/plans/ACTIVE/MIKE_TRADE_COMPLETE_PRODUCT/c/task_c.2_implement_atomic_append_only_domain_event_journal_and_id_uniqueness.json] acceptance_criteria[1] contains broad word: all
+- [/home/mike/dev/mike/stocks/python/mike_trade/.abracapocus/plans/ACTIVE/MIKE_TRADE_COMPLETE_PRODUCT/c/task_c.3_implement_account_cycle_order_fill_and_control_repositories.json] allowed_write_paths entry 'mike_trade/persistence/repositories.py' does not exist in working root
+- [/home/mike/dev/mike/stocks/python/mike_trade/.abracapocus/plans/ACTIVE/MIKE_TRADE_COMPLETE_PRODUCT/c/task_c.3_implement_account_cycle_order_fill_and_control_repositories.json] allowed_write_paths entry 'mike_trade/persistence/transaction.py' does not exist in working root
+- [/home/mike/dev/mike/stocks/python/mike_trade/.abracapocus/plans/ACTIVE/MIKE_TRADE_COMPLETE_PRODUCT/c/task_c.3_implement_account_cycle_order_fill_and_control_repositories.json] allowed_write_paths entry 'tests/unit/test_repositories.py' does not exist in working root
+- [/home/mike/dev/mike/stocks/python/mike_trade/.abracapocus/plans/ACTIVE/MIKE_TRADE_COMPLETE_PRODUCT/c/task_c.3_implement_account_cycle_order_fill_and_control_repositories.json] acceptance_criteria list length > 5
+- [/home/mike/dev/mike/stocks/python/mike_trade/.abracapocus/plans/ACTIVE/MIKE_TRADE_COMPLETE_PRODUCT/c/task_c.3_implement_account_cycle_order_fill_and_control_repositories.json] acceptance_criteria item length > 120 characters
+- [/home/mike/dev/mike/stocks/python/mike_trade/.abracapocus/plans/ACTIVE/MIKE_TRADE_COMPLETE_PRODUCT/c/task_c.3_implement_account_cycle_order_fill_and_control_repositories.json] description field length > 300 characters
+- [/home/mike/dev/mike/stocks/python/mike_trade/.abracapocus/plans/ACTIVE/MIKE_TRADE_COMPLETE_PRODUCT/c/task_c.3_implement_account_cycle_order_fill_and_control_repositories.json] description contains broad word: full
+- [/home/mike/dev/mike/stocks/python/mike_trade/.abracapocus/plans/ACTIVE/MIKE_TRADE_COMPLETE_PRODUCT/c/task_c.3_implement_account_cycle_order_fill_and_control_repositories.json] description contains broad word: every
+- [/home/mike/dev/mike/stocks/python/mike_trade/.abracapocus/plans/ACTIVE/MIKE_TRADE_COMPLETE_PRODUCT/c/task_c.3_implement_account_cycle_order_fill_and_control_repositories.json] acceptance_criteria[1] contains broad word: all
+- [/home/mike/dev/mike/stocks/python/mike_trade/.abracapocus/plans/ACTIVE/MIKE_TRADE_COMPLETE_PRODUCT/c/task_c.3_implement_account_cycle_order_fill_and_control_repositories.json] Task appears to modify blocking governance; ensure docs/operations.md Governance Blocking Policy requirements are met.
+- [/home/mike/dev/mike/stocks/python/mike_trade/.abracapocus/plans/ACTIVE/MIKE_TRADE_COMPLETE_PRODUCT/c/task_c.4_build_query_projections_for_latest_status_and_account_snapshots.json] allowed_write_paths entry 'mike_trade/persistence/projections.py' does not exist in working root
+- [/home/mike/dev/mike/stocks/python/mike_trade/.abracapocus/plans/ACTIVE/MIKE_TRADE_COMPLETE_PRODUCT/c/task_c.4_build_query_projections_for_latest_status_and_account_snapshots.json] allowed_write_paths entry 'mike_trade/persistence/readstore.py' does not exist in working root
+- [/home/mike/dev/mike/stocks/python/mike_trade/.abracapocus/plans/ACTIVE/MIKE_TRADE_COMPLETE_PRODUCT/c/task_c.4_build_query_projections_for_latest_status_and_account_snapshots.json] acceptance_criteria list length > 5
+- [/home/mike/dev/mike/stocks/python/mike_trade/.abracapocus/plans/ACTIVE/MIKE_TRADE_COMPLETE_PRODUCT/c/task_c.4_build_query_projections_for_latest_status_and_account_snapshots.json] acceptance_criteria item length > 120 characters
+- [/home/mike/dev/mike/stocks/python/mike_trade/.abracapocus/plans/ACTIVE/MIKE_TRADE_COMPLETE_PRODUCT/c/task_c.4_build_query_projections_for_latest_status_and_account_snapshots.json] acceptance_criteria references pytest or test without a test allowed_write_path
+- [/home/mike/dev/mike/stocks/python/mike_trade/.abracapocus/plans/ACTIVE/MIKE_TRADE_COMPLETE_PRODUCT/c/task_c.4_build_query_projections_for_latest_status_and_account_snapshots.json] description field length > 300 characters
+- [/home/mike/dev/mike/stocks/python/mike_trade/.abracapocus/plans/ACTIVE/MIKE_TRADE_COMPLETE_PRODUCT/c/task_c.4_build_query_projections_for_latest_status_and_account_snapshots.json] description contains broad word: all
+- [/home/mike/dev/mike/stocks/python/mike_trade/.abracapocus/plans/ACTIVE/MIKE_TRADE_COMPLETE_PRODUCT/c/task_c.4_build_query_projections_for_latest_status_and_account_snapshots.json] description contains broad word: every
+- [/home/mike/dev/mike/stocks/python/mike_trade/.abracapocus/plans/ACTIVE/MIKE_TRADE_COMPLETE_PRODUCT/c/task_c.4_build_query_projections_for_latest_status_and_account_snapshots.json] acceptance_criteria[1] contains broad word: every
+- [/home/mike/dev/mike/stocks/python/mike_trade/.abracapocus/plans/ACTIVE/MIKE_TRADE_COMPLETE_PRODUCT/c/task_c.4_build_query_projections_for_latest_status_and_account_snapshots.json] acceptance_criteria[4] contains broad word: every
+- [/home/mike/dev/mike/stocks/python/mike_trade/.abracapocus/plans/ACTIVE/MIKE_TRADE_COMPLETE_PRODUCT/c/task_c.4_build_query_projections_for_latest_status_and_account_snapshots.json] acceptance_criteria[6] contains broad word: all
+- [/home/mike/dev/mike/stocks/python/mike_trade/.abracapocus/plans/ACTIVE/MIKE_TRADE_COMPLETE_PRODUCT/c/task_c.5_add_sqlite_integrity_migration_backup_restore_and_maintenance_utilities.json] allowed_write_paths entry 'mike_trade/persistence/maintenance.py' does not exist in working root
+- [/home/mike/dev/mike/stocks/python/mike_trade/.abracapocus/plans/ACTIVE/MIKE_TRADE_COMPLETE_PRODUCT/c/task_c.5_add_sqlite_integrity_migration_backup_restore_and_maintenance_utilities.json] allowed_write_paths entry 'tests/unit/test_backup_restore.py' does not exist in working root
+- [/home/mike/dev/mike/stocks/python/mike_trade/.abracapocus/plans/ACTIVE/MIKE_TRADE_COMPLETE_PRODUCT/c/task_c.5_add_sqlite_integrity_migration_backup_restore_and_maintenance_utilities.json] allowed_write_paths entry 'docs/DATABASE.md' does not exist in working root
+- [/home/mike/dev/mike/stocks/python/mike_trade/.abracapocus/plans/ACTIVE/MIKE_TRADE_COMPLETE_PRODUCT/c/task_c.5_add_sqlite_integrity_migration_backup_restore_and_maintenance_utilities.json] acceptance_criteria list length > 5
+- [/home/mike/dev/mike/stocks/python/mike_trade/.abracapocus/plans/ACTIVE/MIKE_TRADE_COMPLETE_PRODUCT/c/task_c.5_add_sqlite_integrity_migration_backup_restore_and_maintenance_utilities.json] acceptance_criteria item length > 120 characters
+- [/home/mike/dev/mike/stocks/python/mike_trade/.abracapocus/plans/ACTIVE/MIKE_TRADE_COMPLETE_PRODUCT/c/task_c.5_add_sqlite_integrity_migration_backup_restore_and_maintenance_utilities.json] description field length > 300 characters
+- [/home/mike/dev/mike/stocks/python/mike_trade/.abracapocus/plans/ACTIVE/MIKE_TRADE_COMPLETE_PRODUCT/c/task_c.5_add_sqlite_integrity_migration_backup_restore_and_maintenance_utilities.json] description contains broad word: every
+- Task 'c.1' missing anti-inference instruction: Do not infer APIs, schemas, behavior, or file contents; inspect the referenced files first.
+- Task 'c.1' missing explicit strict file-scope language
+- Task 'c.1' missing acceptance criterion equivalent to: No file outside allowed_write_paths is modified.
+- Task 'c.1' acceptance criterion names 'db_identity.environment' for modification but it is not in allowed_write_paths
+- Task 'c.1' has 3 broad words (limit 2)
+- Task 'c.2' missing anti-inference instruction: Do not infer APIs, schemas, behavior, or file contents; inspect the referenced files first.
+- Task 'c.2' missing explicit strict file-scope language
+- Task 'c.2' missing acceptance criterion equivalent to: No file outside allowed_write_paths is modified.
+- Task 'c.3' missing anti-inference instruction: Do not infer APIs, schemas, behavior, or file contents; inspect the referenced files first.
+- Task 'c.3' missing explicit strict file-scope language
+- Task 'c.3' missing acceptance criterion equivalent to: No file outside allowed_write_paths is modified.
+- Task 'c.4' missing anti-inference instruction: Do not infer APIs, schemas, behavior, or file contents; inspect the referenced files first.
+- Task 'c.4' missing explicit strict file-scope language
+- Task 'c.4' missing acceptance criterion equivalent to: No file outside allowed_write_paths is modified.
+- Task 'c.4' acceptance criterion names 'repositories.py' for modification but it is not in allowed_write_paths
+- Task 'c.4' acceptance criterion names 'transaction.py' for modification but it is not in allowed_write_paths
+- Task 'c.5' missing anti-inference instruction: Do not infer APIs, schemas, behavior, or file contents; inspect the referenced files first.
+- Task 'c.5' missing explicit strict file-scope language
+- Task 'c.5' missing acceptance criterion equivalent to: No file outside allowed_write_paths is modified.
+- Task 'c.1' acceptance_criteria[1] may produce unsatisfied reconciliation: 'Writer connections report journal_mode 'wal', foreign_keys 1...' lacks file reference or test command
+- Task 'c.1' acceptance_criteria[2] may produce unsatisfied reconciliation: 'apply_migrations is idempotent, records version/name/sha256/...' lacks file reference or test command
+- Task 'c.1' acceptance_criteria[5] may produce unsatisfied reconciliation: 'fills enforces UNIQUE(account_scope_id, external_activity_id...' lacks file reference or test command
+- Task 'c.1' acceptance_criteria[6] may produce unsatisfied reconciliation: 'UPDATE and DELETE on domain_events, fills, broker_order_even...' lacks file reference or test command
+- Task 'c.1' acceptance_criteria[7] may produce unsatisfied reconciliation: 'Money/quantity/price columns are TEXT with typeof CHECKs; ti...' lacks file reference or test command
+- Task 'c.1' acceptance_criteria[8] may produce unsatisfied reconciliation: 'The domain_events DDL matches the shared contract column-for...' lacks file reference or test command
+- Task 'c.2' acceptance_criteria[2] may produce unsatisfied reconciliation: 'A repeated idempotency_key with an identical payload returns...' lacks file reference or test command
+- Task 'c.2' acceptance_criteria[3] may produce unsatisfied reconciliation: 'stream_version is contiguous per (account_scope_id, stream_t...' lacks file reference or test command
+- Task 'c.2' acceptance_criteria[4] may produce unsatisfied reconciliation: 'commit_then_effect never invokes the effect callable when th...' lacks file reference or test command
+- Task 'c.2' acceptance_criteria[5] may produce unsatisfied reconciliation: 'canonical_payload_json is deterministic, encodes Decimal as ...' lacks file reference or test command
+- Task 'c.2' acceptance_criteria[6] may produce unsatisfied reconciliation: 'The journal issues no UPDATE or DELETE statements, and a bat...' lacks file reference or test command
+- Task 'c.3' acceptance_criteria[1] may produce unsatisfied reconciliation: 'unit_of_work uses BEGIN IMMEDIATE, commits on success, and r...' lacks file reference or test command
+- Task 'c.3' acceptance_criteria[3] may produce unsatisfied reconciliation: 'record_intent durably commits the order intent, budget reser...' lacks file reference or test command
+- Task 'c.3' acceptance_criteria[4] may produce unsatisfied reconciliation: 'apply_fill is exactly-once per (account_scope_id, external_a...' lacks file reference or test command
+- Task 'c.3' acceptance_criteria[5] may produce unsatisfied reconciliation: 'apply_fill atomically updates fill, broker order, position c...' lacks file reference or test command
+- Task 'c.3' acceptance_criteria[6] may produce unsatisfied reconciliation: 'Budget checks enforce per_symbol_budget and total_applicatio...' lacks file reference or test command
+- Task 'c.3' acceptance_criteria[7] may produce unsatisfied reconciliation: 'Reconciliation drift and resolutions are appended without up...' lacks file reference or test command
+- Task 'c.3' acceptance_criteria[8] may produce unsatisfied reconciliation: 'EntryControlRepository exposes no operation that blocks prot...' lacks file reference or test command
+- Task 'c.4' acceptance_criteria[3] may produce unsatisfied reconciliation: 'EngineStatusView state is computed from heartbeat age agains...' lacks file reference or test command
+- Task 'c.4' acceptance_criteria[4] may produce unsatisfied reconciliation: 'Every projection query filters by a required account_scope_i...' lacks file reference or test command
+- Task 'c.4' acceptance_criteria[5] may produce unsatisfied reconciliation: 'List queries are bounded by a limit (default 50, max 500) an...' lacks file reference or test command
+- Task 'c.4' acceptance_criteria[6] may produce unsatisfied reconciliation: 'All money values are Decimal and all timestamps aware UTC; e...' lacks file reference or test command
+- Task 'c.5' acceptance_criteria[1] may produce unsatisfied reconciliation: 'create_backup uses the sqlite3 online backup API and writes ...' lacks file reference or test command
+- Task 'c.5' acceptance_criteria[2] may produce unsatisfied reconciliation: 'verify_backup fails on a byte-corrupted backup copy and on a...' lacks file reference or test command
+- Task 'c.5' acceptance_criteria[3] may produce unsatisfied reconciliation: 'restore_backup refuses cross-environment or cross-database_i...' lacks file reference or test command
+- Task 'c.5' acceptance_criteria[4] may produce unsatisfied reconciliation: 'A successful restore preserves the previous database files a...' lacks file reference or test command
+- Task 'c.5' acceptance_criteria[5] may produce unsatisfied reconciliation: 'rehearse_restore never modifies the source database file (ve...' lacks file reference or test command
+- Task 'c.5' acceptance_criteria[6] may produce unsatisfied reconciliation: 'check_integrity reports failure on journal payload tampering...' lacks file reference or test command
+- Task 'c.5' acceptance_criteria[7] may produce unsatisfied reconciliation: 'No maintenance function deletes or prunes ledger/append-only...' lacks file reference or test command
+- Phase c phase_verification.json has no checks
+- [/home/mike/dev/mike/stocks/python/mike_trade/.abracapocus/plans/ACTIVE/MIKE_TRADE_COMPLETE_PRODUCT/d/task_d.1_implement_versioned_yaml_settings_schema_with_strict_defaults_and_validation.json] allowed_write_paths entry 'mike_trade/config/models.py' does not exist in working root
+- [/home/mike/dev/mike/stocks/python/mike_trade/.abracapocus/plans/ACTIVE/MIKE_TRADE_COMPLETE_PRODUCT/d/task_d.1_implement_versioned_yaml_settings_schema_with_strict_defaults_and_validation.json] allowed_write_paths entry 'mike_trade/config/loader.py' does not exist in working root
+- [/home/mike/dev/mike/stocks/python/mike_trade/.abracapocus/plans/ACTIVE/MIKE_TRADE_COMPLETE_PRODUCT/d/task_d.1_implement_versioned_yaml_settings_schema_with_strict_defaults_and_validation.json] allowed_write_paths entry 'tests/unit/test_config_schema.py' does not exist in working root
+- [/home/mike/dev/mike/stocks/python/mike_trade/.abracapocus/plans/ACTIVE/MIKE_TRADE_COMPLETE_PRODUCT/d/task_d.1_implement_versioned_yaml_settings_schema_with_strict_defaults_and_validation.json] acceptance_criteria list length > 5
+- [/home/mike/dev/mike/stocks/python/mike_trade/.abracapocus/plans/ACTIVE/MIKE_TRADE_COMPLETE_PRODUCT/d/task_d.1_implement_versioned_yaml_settings_schema_with_strict_defaults_and_validation.json] acceptance_criteria item length > 120 characters
+- [/home/mike/dev/mike/stocks/python/mike_trade/.abracapocus/plans/ACTIVE/MIKE_TRADE_COMPLETE_PRODUCT/d/task_d.1_implement_versioned_yaml_settings_schema_with_strict_defaults_and_validation.json] description field length > 300 characters
+- [/home/mike/dev/mike/stocks/python/mike_trade/.abracapocus/plans/ACTIVE/MIKE_TRADE_COMPLETE_PRODUCT/d/task_d.1_implement_versioned_yaml_settings_schema_with_strict_defaults_and_validation.json] description contains broad word: full
+- [/home/mike/dev/mike/stocks/python/mike_trade/.abracapocus/plans/ACTIVE/MIKE_TRADE_COMPLETE_PRODUCT/d/task_d.1_implement_versioned_yaml_settings_schema_with_strict_defaults_and_validation.json] description contains broad word: all
+- [/home/mike/dev/mike/stocks/python/mike_trade/.abracapocus/plans/ACTIVE/MIKE_TRADE_COMPLETE_PRODUCT/d/task_d.1_implement_versioned_yaml_settings_schema_with_strict_defaults_and_validation.json] description contains broad word: every
+- [/home/mike/dev/mike/stocks/python/mike_trade/.abracapocus/plans/ACTIVE/MIKE_TRADE_COMPLETE_PRODUCT/d/task_d.1_implement_versioned_yaml_settings_schema_with_strict_defaults_and_validation.json] acceptance_criteria[0] contains broad word: all
+- [/home/mike/dev/mike/stocks/python/mike_trade/.abracapocus/plans/ACTIVE/MIKE_TRADE_COMPLETE_PRODUCT/d/task_d.1_implement_versioned_yaml_settings_schema_with_strict_defaults_and_validation.json] acceptance_criteria[5] contains broad word: all
+- [/home/mike/dev/mike/stocks/python/mike_trade/.abracapocus/plans/ACTIVE/MIKE_TRADE_COMPLETE_PRODUCT/d/task_d.1_implement_versioned_yaml_settings_schema_with_strict_defaults_and_validation.json] Task appears to modify blocking governance; ensure docs/operations.md Governance Blocking Policy requirements are met.
+- [/home/mike/dev/mike/stocks/python/mike_trade/.abracapocus/plans/ACTIVE/MIKE_TRADE_COMPLETE_PRODUCT/d/task_d.2_create_full_reference_config_for_live_paper_shadow_stock_and_stop_policies.json] allowed_write_paths entry 'config/mike_trade.example.yaml' does not exist in working root
+- [/home/mike/dev/mike/stocks/python/mike_trade/.abracapocus/plans/ACTIVE/MIKE_TRADE_COMPLETE_PRODUCT/d/task_d.2_create_full_reference_config_for_live_paper_shadow_stock_and_stop_policies.json] allowed_write_paths entry 'config/providers.example.yaml' does not exist in working root
+- [/home/mike/dev/mike/stocks/python/mike_trade/.abracapocus/plans/ACTIVE/MIKE_TRADE_COMPLETE_PRODUCT/d/task_d.2_create_full_reference_config_for_live_paper_shadow_stock_and_stop_policies.json] allowed_write_paths entry '.env.example' does not exist in working root
+- [/home/mike/dev/mike/stocks/python/mike_trade/.abracapocus/plans/ACTIVE/MIKE_TRADE_COMPLETE_PRODUCT/d/task_d.2_create_full_reference_config_for_live_paper_shadow_stock_and_stop_policies.json] acceptance_criteria list length > 5
+- [/home/mike/dev/mike/stocks/python/mike_trade/.abracapocus/plans/ACTIVE/MIKE_TRADE_COMPLETE_PRODUCT/d/task_d.2_create_full_reference_config_for_live_paper_shadow_stock_and_stop_policies.json] acceptance_criteria item length > 120 characters
+- [/home/mike/dev/mike/stocks/python/mike_trade/.abracapocus/plans/ACTIVE/MIKE_TRADE_COMPLETE_PRODUCT/d/task_d.2_create_full_reference_config_for_live_paper_shadow_stock_and_stop_policies.json] description field length > 300 characters
+- [/home/mike/dev/mike/stocks/python/mike_trade/.abracapocus/plans/ACTIVE/MIKE_TRADE_COMPLETE_PRODUCT/d/task_d.2_create_full_reference_config_for_live_paper_shadow_stock_and_stop_policies.json] description contains broad word: complete
+- [/home/mike/dev/mike/stocks/python/mike_trade/.abracapocus/plans/ACTIVE/MIKE_TRADE_COMPLETE_PRODUCT/d/task_d.2_create_full_reference_config_for_live_paper_shadow_stock_and_stop_policies.json] description contains broad word: every
+- [/home/mike/dev/mike/stocks/python/mike_trade/.abracapocus/plans/ACTIVE/MIKE_TRADE_COMPLETE_PRODUCT/d/task_d.2_create_full_reference_config_for_live_paper_shadow_stock_and_stop_policies.json] acceptance_criteria[1] contains broad word: all
+- [/home/mike/dev/mike/stocks/python/mike_trade/.abracapocus/plans/ACTIVE/MIKE_TRADE_COMPLETE_PRODUCT/d/task_d.2_create_full_reference_config_for_live_paper_shadow_stock_and_stop_policies.json] Task appears to modify blocking governance; ensure docs/operations.md Governance Blocking Policy requirements are met.
+- [/home/mike/dev/mike/stocks/python/mike_trade/.abracapocus/plans/ACTIVE/MIKE_TRADE_COMPLETE_PRODUCT/d/task_d.3_implement_safe_atomic_operator_configuration_mutation_rules.json] allowed_write_paths entry 'mike_trade/config/mutations.py' does not exist in working root
+- [/home/mike/dev/mike/stocks/python/mike_trade/.abracapocus/plans/ACTIVE/MIKE_TRADE_COMPLETE_PRODUCT/d/task_d.3_implement_safe_atomic_operator_configuration_mutation_rules.json] allowed_write_paths entry 'tests/unit/test_config_mutations.py' does not exist in working root
+- [/home/mike/dev/mike/stocks/python/mike_trade/.abracapocus/plans/ACTIVE/MIKE_TRADE_COMPLETE_PRODUCT/d/task_d.3_implement_safe_atomic_operator_configuration_mutation_rules.json] acceptance_criteria list length > 5
+- [/home/mike/dev/mike/stocks/python/mike_trade/.abracapocus/plans/ACTIVE/MIKE_TRADE_COMPLETE_PRODUCT/d/task_d.3_implement_safe_atomic_operator_configuration_mutation_rules.json] acceptance_criteria item length > 120 characters
+- [/home/mike/dev/mike/stocks/python/mike_trade/.abracapocus/plans/ACTIVE/MIKE_TRADE_COMPLETE_PRODUCT/d/task_d.3_implement_safe_atomic_operator_configuration_mutation_rules.json] description field length > 300 characters
+- [/home/mike/dev/mike/stocks/python/mike_trade/.abracapocus/plans/ACTIVE/MIKE_TRADE_COMPLETE_PRODUCT/d/task_d.3_implement_safe_atomic_operator_configuration_mutation_rules.json] description contains broad word: every
+- [/home/mike/dev/mike/stocks/python/mike_trade/.abracapocus/plans/ACTIVE/MIKE_TRADE_COMPLETE_PRODUCT/d/task_d.3_implement_safe_atomic_operator_configuration_mutation_rules.json] acceptance_criteria[5] contains broad word: all
+- [/home/mike/dev/mike/stocks/python/mike_trade/.abracapocus/plans/ACTIVE/MIKE_TRADE_COMPLETE_PRODUCT/d/task_d.3_implement_safe_atomic_operator_configuration_mutation_rules.json] acceptance_criteria[6] contains broad word: all
+- [/home/mike/dev/mike/stocks/python/mike_trade/.abracapocus/plans/ACTIVE/MIKE_TRADE_COMPLETE_PRODUCT/d/task_d.4_implement_durable_idempotent_control_command_inbox_and_control_state.json] allowed_write_paths entry 'mike_trade/controls/commands.py' does not exist in working root
+- [/home/mike/dev/mike/stocks/python/mike_trade/.abracapocus/plans/ACTIVE/MIKE_TRADE_COMPLETE_PRODUCT/d/task_d.4_implement_durable_idempotent_control_command_inbox_and_control_state.json] allowed_write_paths entry 'mike_trade/controls/inbox.py' does not exist in working root
+- [/home/mike/dev/mike/stocks/python/mike_trade/.abracapocus/plans/ACTIVE/MIKE_TRADE_COMPLETE_PRODUCT/d/task_d.4_implement_durable_idempotent_control_command_inbox_and_control_state.json] allowed_write_paths entry 'tests/unit/test_control_idempotency.py' does not exist in working root
+- [/home/mike/dev/mike/stocks/python/mike_trade/.abracapocus/plans/ACTIVE/MIKE_TRADE_COMPLETE_PRODUCT/d/task_d.4_implement_durable_idempotent_control_command_inbox_and_control_state.json] acceptance_criteria list length > 5
+- [/home/mike/dev/mike/stocks/python/mike_trade/.abracapocus/plans/ACTIVE/MIKE_TRADE_COMPLETE_PRODUCT/d/task_d.4_implement_durable_idempotent_control_command_inbox_and_control_state.json] acceptance_criteria item length > 120 characters
+- [/home/mike/dev/mike/stocks/python/mike_trade/.abracapocus/plans/ACTIVE/MIKE_TRADE_COMPLETE_PRODUCT/d/task_d.4_implement_durable_idempotent_control_command_inbox_and_control_state.json] description field length > 300 characters
+- [/home/mike/dev/mike/stocks/python/mike_trade/.abracapocus/plans/ACTIVE/MIKE_TRADE_COMPLETE_PRODUCT/d/task_d.4_implement_durable_idempotent_control_command_inbox_and_control_state.json] description contains broad word: every
+- [/home/mike/dev/mike/stocks/python/mike_trade/.abracapocus/plans/ACTIVE/MIKE_TRADE_COMPLETE_PRODUCT/d/task_d.5_expose_redacted_effective_config_and_non_mutating_configuration_cli.json] allowed_write_paths entry 'mike_trade/controls/config_commands.py' does not exist in working root
+- [/home/mike/dev/mike/stocks/python/mike_trade/.abracapocus/plans/ACTIVE/MIKE_TRADE_COMPLETE_PRODUCT/d/task_d.5_expose_redacted_effective_config_and_non_mutating_configuration_cli.json] allowed_write_paths entry 'tests/unit/test_config_cli.py' does not exist in working root
+- [/home/mike/dev/mike/stocks/python/mike_trade/.abracapocus/plans/ACTIVE/MIKE_TRADE_COMPLETE_PRODUCT/d/task_d.5_expose_redacted_effective_config_and_non_mutating_configuration_cli.json] acceptance_criteria list length > 5
+- [/home/mike/dev/mike/stocks/python/mike_trade/.abracapocus/plans/ACTIVE/MIKE_TRADE_COMPLETE_PRODUCT/d/task_d.5_expose_redacted_effective_config_and_non_mutating_configuration_cli.json] acceptance_criteria item length > 120 characters
+- [/home/mike/dev/mike/stocks/python/mike_trade/.abracapocus/plans/ACTIVE/MIKE_TRADE_COMPLETE_PRODUCT/d/task_d.5_expose_redacted_effective_config_and_non_mutating_configuration_cli.json] description field length > 300 characters
+- [/home/mike/dev/mike/stocks/python/mike_trade/.abracapocus/plans/ACTIVE/MIKE_TRADE_COMPLETE_PRODUCT/d/task_d.5_expose_redacted_effective_config_and_non_mutating_configuration_cli.json] description contains broad word: all
+- [/home/mike/dev/mike/stocks/python/mike_trade/.abracapocus/plans/ACTIVE/MIKE_TRADE_COMPLETE_PRODUCT/d/task_d.5_expose_redacted_effective_config_and_non_mutating_configuration_cli.json] description contains broad word: every
+- [/home/mike/dev/mike/stocks/python/mike_trade/.abracapocus/plans/ACTIVE/MIKE_TRADE_COMPLETE_PRODUCT/d/task_d.5_expose_redacted_effective_config_and_non_mutating_configuration_cli.json] acceptance_criteria[6] contains broad word: all
+- Task 'd.1' missing anti-inference instruction: Do not infer APIs, schemas, behavior, or file contents; inspect the referenced files first.
+- Task 'd.1' missing explicit strict file-scope language
+- Task 'd.1' missing acceptance criterion equivalent to: No file outside allowed_write_paths is modified.
+- Task 'd.1' has 3 broad words (limit 2)
+- Task 'd.2' missing anti-inference instruction: Do not infer APIs, schemas, behavior, or file contents; inspect the referenced files first.
+- Task 'd.2' missing explicit strict file-scope language
+- Task 'd.2' missing acceptance criterion equivalent to: No file outside allowed_write_paths is modified.
+- Task 'd.3' missing anti-inference instruction: Do not infer APIs, schemas, behavior, or file contents; inspect the referenced files first.
+- Task 'd.3' missing explicit strict file-scope language
+- Task 'd.3' missing acceptance criterion equivalent to: No file outside allowed_write_paths is modified.
+- Task 'd.3' acceptance criterion names 'stop_policy.type' for modification but it is not in allowed_write_paths
+- Task 'd.4' missing anti-inference instruction: Do not infer APIs, schemas, behavior, or file contents; inspect the referenced files first.
+- Task 'd.4' missing explicit strict file-scope language
+- Task 'd.4' missing acceptance criterion equivalent to: No file outside allowed_write_paths is modified.
+- Task 'd.5' missing anti-inference instruction: Do not infer APIs, schemas, behavior, or file contents; inspect the referenced files first.
+- Task 'd.5' missing explicit strict file-scope language
+- Task 'd.5' missing acceptance criterion equivalent to: No file outside allowed_write_paths is modified.
+- Task 'd.1' acceptance_criteria[1] may produce unsatisfied reconciliation: 'Unknown keys, duplicate YAML keys, a missing or unsupported ...' lacks file reference or test command
+- Task 'd.1' acceptance_criteria[3] may produce unsatisfied reconciliation: 'load_config applies precedence defaults -> main -> mode -> a...' lacks file reference or test command
+- Task 'd.1' acceptance_criteria[4] may produce unsatisfied reconciliation: 'Any secret-like YAML key raises SecretInConfigError without ...' lacks file reference or test command
+- Task 'd.1' acceptance_criteria[5] may produce unsatisfied reconciliation: 'All cross-field rules in the description are enforced, inclu...' lacks file reference or test command
+- Task 'd.1' acceptance_criteria[6] may produce unsatisfied reconciliation: 'load_provider_catalog and validate_against_catalog reject a ...' lacks file reference or test command
+- Task 'd.1' acceptance_criteria[7] may produce unsatisfied reconciliation: 'compute_config_fingerprint returns a 64-char lowercase sha25...' lacks file reference or test command
+- Task 'd.2' acceptance_criteria[1] may produce unsatisfied reconciliation: 'The example config contains no YAML float values anywhere; a...' lacks file reference or test command
+- Task 'd.2' acceptance_criteria[3] may produce unsatisfied reconciliation: 'symbols contains SPY, AAPL, and MSFT, using fixed, native_tr...' lacks file reference or test command
+- Task 'd.2' acceptance_criteria[4] may produce unsatisfied reconciliation: 'strategies defines vwap_bounce_default (plugin vwap_bounce, ...' lacks file reference or test command
+- Task 'd.2' acceptance_criteria[7] may produce unsatisfied reconciliation: 'No YAML file contains a key matching api_key, secret, passwo...' lacks file reference or test command
+- Task 'd.3' acceptance_criteria[2] may produce unsatisfied reconciliation: 'An audit sink failure restores the original file bytes and r...' lacks file reference or test command
+- Task 'd.3' acceptance_criteria[3] may produce unsatisfied reconciliation: 'A stale expected_file_sha256 raises ConcurrentConfigModifica...' lacks file reference or test command
+- Task 'd.3' acceptance_criteria[4] may produce unsatisfied reconciliation: 'Enabling live (account_mode=live or live_trading_enabled=tru...' lacks file reference or test command
+- Task 'd.3' acceptance_criteria[6] may produce unsatisfied reconciliation: 'Unknown exposure refuses all non-reporting mutations, while ...' lacks file reference or test command
+- Task 'd.4' acceptance_criteria[2] may produce unsatisfied reconciliation: 'Resubmitting the same (account_scope_id, idempotency_key) wi...' lacks file reference or test command
+- Task 'd.4' acceptance_criteria[3] may produce unsatisfied reconciliation: 'Risk-loosening commands on a LIVE scope without live_confirm...' lacks file reference or test command
+- Task 'd.4' acceptance_criteria[4] may produce unsatisfied reconciliation: 'Executable commands submitted while the engine is offline ar...' lacks file reference or test command
+- Task 'd.4' acceptance_criteria[5] may produce unsatisfied reconciliation: 'STATE commands durably update control state immediately even...' lacks file reference or test command
+- Task 'd.4' acceptance_criteria[6] may produce unsatisfied reconciliation: 'process_pending records exactly one terminal outcome per com...' lacks file reference or test command
+- Task 'd.4' acceptance_criteria[7] may produce unsatisfied reconciliation: 'ControlState has no attribute that blocks protective stops, ...' lacks file reference or test command
+- Task 'd.4' acceptance_criteria[8] may produce unsatisfied reconciliation: 'Commands, idempotency keys, and control state are isolated p...' lacks file reference or test command
+- Task 'd.5' acceptance_criteria[2] may produce unsatisfied reconciliation: 'Sentinel secret values supplied via environ never appear in ...' lacks file reference or test command
+- Task 'd.5' acceptance_criteria[3] may produce unsatisfied reconciliation: 'fingerprint output equals compute_config_fingerprint for the...' lacks file reference or test command
+- Task 'd.5' acceptance_criteria[5] may produce unsatisfied reconciliation: 'Invalid or missing config exits 2 with path-qualified error ...' lacks file reference or test command
+- Task 'd.5' acceptance_criteria[6] may produce unsatisfied reconciliation: 'All subcommands run with no database or engine present, make...' lacks file reference or test command
+- Phase d phase_verification.json has no checks
+- [/home/mike/dev/mike/stocks/python/mike_trade/.abracapocus/plans/ACTIVE/MIKE_TRADE_COMPLETE_PRODUCT/e/task_e.1_implement_alpaca_environment_auth_endpoints_and_api_exception_mapping.json] allowed_write_paths entry 'mike_trade/brokers/alpaca/auth.py' does not exist in working root
+- [/home/mike/dev/mike/stocks/python/mike_trade/.abracapocus/plans/ACTIVE/MIKE_TRADE_COMPLETE_PRODUCT/e/task_e.1_implement_alpaca_environment_auth_endpoints_and_api_exception_mapping.json] allowed_write_paths entry 'mike_trade/brokers/alpaca/http.py' does not exist in working root
+- [/home/mike/dev/mike/stocks/python/mike_trade/.abracapocus/plans/ACTIVE/MIKE_TRADE_COMPLETE_PRODUCT/e/task_e.1_implement_alpaca_environment_auth_endpoints_and_api_exception_mapping.json] allowed_write_paths entry 'tests/contracts/test_alpaca_http.py' does not exist in working root
+- [/home/mike/dev/mike/stocks/python/mike_trade/.abracapocus/plans/ACTIVE/MIKE_TRADE_COMPLETE_PRODUCT/e/task_e.1_implement_alpaca_environment_auth_endpoints_and_api_exception_mapping.json] acceptance_criteria list length > 5
+- [/home/mike/dev/mike/stocks/python/mike_trade/.abracapocus/plans/ACTIVE/MIKE_TRADE_COMPLETE_PRODUCT/e/task_e.1_implement_alpaca_environment_auth_endpoints_and_api_exception_mapping.json] acceptance_criteria item length > 120 characters
+- [/home/mike/dev/mike/stocks/python/mike_trade/.abracapocus/plans/ACTIVE/MIKE_TRADE_COMPLETE_PRODUCT/e/task_e.1_implement_alpaca_environment_auth_endpoints_and_api_exception_mapping.json] description field length > 300 characters
+- [/home/mike/dev/mike/stocks/python/mike_trade/.abracapocus/plans/ACTIVE/MIKE_TRADE_COMPLETE_PRODUCT/e/task_e.1_implement_alpaca_environment_auth_endpoints_and_api_exception_mapping.json] description contains broad word: every
+- [/home/mike/dev/mike/stocks/python/mike_trade/.abracapocus/plans/ACTIVE/MIKE_TRADE_COMPLETE_PRODUCT/e/task_e.1_implement_alpaca_environment_auth_endpoints_and_api_exception_mapping.json] acceptance_criteria[7] contains broad word: all
+- [/home/mike/dev/mike/stocks/python/mike_trade/.abracapocus/plans/ACTIVE/MIKE_TRADE_COMPLETE_PRODUCT/e/task_e.1_implement_alpaca_environment_auth_endpoints_and_api_exception_mapping.json] Task appears to modify blocking governance; ensure docs/operations.md Governance Blocking Policy requirements are met.
+- [/home/mike/dev/mike/stocks/python/mike_trade/.abracapocus/plans/ACTIVE/MIKE_TRADE_COMPLETE_PRODUCT/e/task_e.2_implement_alpaca_account_asset_position_and_buying_power_queries.json] allowed_write_paths entry 'mike_trade/brokers/alpaca/account.py' does not exist in working root
+- [/home/mike/dev/mike/stocks/python/mike_trade/.abracapocus/plans/ACTIVE/MIKE_TRADE_COMPLETE_PRODUCT/e/task_e.2_implement_alpaca_account_asset_position_and_buying_power_queries.json] allowed_write_paths entry 'mike_trade/brokers/alpaca/assets.py' does not exist in working root
+- [/home/mike/dev/mike/stocks/python/mike_trade/.abracapocus/plans/ACTIVE/MIKE_TRADE_COMPLETE_PRODUCT/e/task_e.2_implement_alpaca_account_asset_position_and_buying_power_queries.json] allowed_write_paths entry 'tests/contracts/test_alpaca_accounts.py' does not exist in working root
+- [/home/mike/dev/mike/stocks/python/mike_trade/.abracapocus/plans/ACTIVE/MIKE_TRADE_COMPLETE_PRODUCT/e/task_e.2_implement_alpaca_account_asset_position_and_buying_power_queries.json] acceptance_criteria list length > 5
+- [/home/mike/dev/mike/stocks/python/mike_trade/.abracapocus/plans/ACTIVE/MIKE_TRADE_COMPLETE_PRODUCT/e/task_e.2_implement_alpaca_account_asset_position_and_buying_power_queries.json] acceptance_criteria item length > 120 characters
+- [/home/mike/dev/mike/stocks/python/mike_trade/.abracapocus/plans/ACTIVE/MIKE_TRADE_COMPLETE_PRODUCT/e/task_e.2_implement_alpaca_account_asset_position_and_buying_power_queries.json] description field length > 300 characters
+- [/home/mike/dev/mike/stocks/python/mike_trade/.abracapocus/plans/ACTIVE/MIKE_TRADE_COMPLETE_PRODUCT/e/task_e.2_implement_alpaca_account_asset_position_and_buying_power_queries.json] description contains broad word: all
+- [/home/mike/dev/mike/stocks/python/mike_trade/.abracapocus/plans/ACTIVE/MIKE_TRADE_COMPLETE_PRODUCT/e/task_e.2_implement_alpaca_account_asset_position_and_buying_power_queries.json] description contains broad word: every
+- [/home/mike/dev/mike/stocks/python/mike_trade/.abracapocus/plans/ACTIVE/MIKE_TRADE_COMPLETE_PRODUCT/e/task_e.2_implement_alpaca_account_asset_position_and_buying_power_queries.json] acceptance_criteria[6] contains broad word: every
+- [/home/mike/dev/mike/stocks/python/mike_trade/.abracapocus/plans/ACTIVE/MIKE_TRADE_COMPLETE_PRODUCT/e/task_e.3_implement_stock_order_placement_cancellation_lookup_and_client_order_ids.json] allowed_write_paths entry 'mike_trade/brokers/alpaca/orders.py' does not exist in working root
+- [/home/mike/dev/mike/stocks/python/mike_trade/.abracapocus/plans/ACTIVE/MIKE_TRADE_COMPLETE_PRODUCT/e/task_e.3_implement_stock_order_placement_cancellation_lookup_and_client_order_ids.json] allowed_write_paths entry 'tests/contracts/test_alpaca_orders.py' does not exist in working root
+- [/home/mike/dev/mike/stocks/python/mike_trade/.abracapocus/plans/ACTIVE/MIKE_TRADE_COMPLETE_PRODUCT/e/task_e.3_implement_stock_order_placement_cancellation_lookup_and_client_order_ids.json] acceptance_criteria list length > 5
+- [/home/mike/dev/mike/stocks/python/mike_trade/.abracapocus/plans/ACTIVE/MIKE_TRADE_COMPLETE_PRODUCT/e/task_e.3_implement_stock_order_placement_cancellation_lookup_and_client_order_ids.json] acceptance_criteria item length > 120 characters
+- [/home/mike/dev/mike/stocks/python/mike_trade/.abracapocus/plans/ACTIVE/MIKE_TRADE_COMPLETE_PRODUCT/e/task_e.3_implement_stock_order_placement_cancellation_lookup_and_client_order_ids.json] description field length > 300 characters
+- [/home/mike/dev/mike/stocks/python/mike_trade/.abracapocus/plans/ACTIVE/MIKE_TRADE_COMPLETE_PRODUCT/e/task_e.3_implement_stock_order_placement_cancellation_lookup_and_client_order_ids.json] acceptance_criteria[9] contains broad word: all
+- [/home/mike/dev/mike/stocks/python/mike_trade/.abracapocus/plans/ACTIVE/MIKE_TRADE_COMPLETE_PRODUCT/e/task_e.3_implement_stock_order_placement_cancellation_lookup_and_client_order_ids.json] Task appears to modify blocking governance; ensure docs/operations.md Governance Blocking Policy requirements are met.
+- [/home/mike/dev/mike/stocks/python/mike_trade/.abracapocus/plans/ACTIVE/MIKE_TRADE_COMPLETE_PRODUCT/e/task_e.4_implement_alpaca_activity_and_trade_update_stream_normalization.json] allowed_write_paths entry 'mike_trade/brokers/alpaca/activities.py' does not exist in working root
+- [/home/mike/dev/mike/stocks/python/mike_trade/.abracapocus/plans/ACTIVE/MIKE_TRADE_COMPLETE_PRODUCT/e/task_e.4_implement_alpaca_activity_and_trade_update_stream_normalization.json] allowed_write_paths entry 'mike_trade/brokers/alpaca/updates.py' does not exist in working root
+- [/home/mike/dev/mike/stocks/python/mike_trade/.abracapocus/plans/ACTIVE/MIKE_TRADE_COMPLETE_PRODUCT/e/task_e.4_implement_alpaca_activity_and_trade_update_stream_normalization.json] allowed_write_paths entry 'tests/contracts/test_alpaca_trade_updates.py' does not exist in working root
+- [/home/mike/dev/mike/stocks/python/mike_trade/.abracapocus/plans/ACTIVE/MIKE_TRADE_COMPLETE_PRODUCT/e/task_e.4_implement_alpaca_activity_and_trade_update_stream_normalization.json] acceptance_criteria list length > 5
+- [/home/mike/dev/mike/stocks/python/mike_trade/.abracapocus/plans/ACTIVE/MIKE_TRADE_COMPLETE_PRODUCT/e/task_e.4_implement_alpaca_activity_and_trade_update_stream_normalization.json] acceptance_criteria item length > 120 characters
+- [/home/mike/dev/mike/stocks/python/mike_trade/.abracapocus/plans/ACTIVE/MIKE_TRADE_COMPLETE_PRODUCT/e/task_e.4_implement_alpaca_activity_and_trade_update_stream_normalization.json] description field length > 300 characters
+- [/home/mike/dev/mike/stocks/python/mike_trade/.abracapocus/plans/ACTIVE/MIKE_TRADE_COMPLETE_PRODUCT/e/task_e.4_implement_alpaca_activity_and_trade_update_stream_normalization.json] description contains broad word: full
+- [/home/mike/dev/mike/stocks/python/mike_trade/.abracapocus/plans/ACTIVE/MIKE_TRADE_COMPLETE_PRODUCT/e/task_e.4_implement_alpaca_activity_and_trade_update_stream_normalization.json] description contains broad word: all
+- [/home/mike/dev/mike/stocks/python/mike_trade/.abracapocus/plans/ACTIVE/MIKE_TRADE_COMPLETE_PRODUCT/e/task_e.5_implement_capabilities_matrix_and_broker_adapter_conformance_tests.json] allowed_write_paths entry 'mike_trade/brokers/alpaca/capabilities.py' does not exist in working root
+- [/home/mike/dev/mike/stocks/python/mike_trade/.abracapocus/plans/ACTIVE/MIKE_TRADE_COMPLETE_PRODUCT/e/task_e.5_implement_capabilities_matrix_and_broker_adapter_conformance_tests.json] allowed_write_paths entry 'tests/contracts/test_broker_capabilities.py' does not exist in working root
+- [/home/mike/dev/mike/stocks/python/mike_trade/.abracapocus/plans/ACTIVE/MIKE_TRADE_COMPLETE_PRODUCT/e/task_e.5_implement_capabilities_matrix_and_broker_adapter_conformance_tests.json] allowed_write_paths entry 'docs/ALPACA.md' does not exist in working root
+- [/home/mike/dev/mike/stocks/python/mike_trade/.abracapocus/plans/ACTIVE/MIKE_TRADE_COMPLETE_PRODUCT/e/task_e.5_implement_capabilities_matrix_and_broker_adapter_conformance_tests.json] acceptance_criteria list length > 5
+- [/home/mike/dev/mike/stocks/python/mike_trade/.abracapocus/plans/ACTIVE/MIKE_TRADE_COMPLETE_PRODUCT/e/task_e.5_implement_capabilities_matrix_and_broker_adapter_conformance_tests.json] acceptance_criteria item length > 120 characters
+- [/home/mike/dev/mike/stocks/python/mike_trade/.abracapocus/plans/ACTIVE/MIKE_TRADE_COMPLETE_PRODUCT/e/task_e.5_implement_capabilities_matrix_and_broker_adapter_conformance_tests.json] description field length > 300 characters
+- [/home/mike/dev/mike/stocks/python/mike_trade/.abracapocus/plans/ACTIVE/MIKE_TRADE_COMPLETE_PRODUCT/e/task_e.5_implement_capabilities_matrix_and_broker_adapter_conformance_tests.json] description contains broad word: complete
+- [/home/mike/dev/mike/stocks/python/mike_trade/.abracapocus/plans/ACTIVE/MIKE_TRADE_COMPLETE_PRODUCT/e/task_e.5_implement_capabilities_matrix_and_broker_adapter_conformance_tests.json] description contains broad word: every
+- Task 'e.1' must contain exactly one 'Before editing, inspect:' block (found 0)
+- Task 'e.1' missing anti-inference instruction: Do not infer APIs, schemas, behavior, or file contents; inspect the referenced files first.
+- Task 'e.1' missing acceptance criterion equivalent to: No file outside allowed_write_paths is modified.
+- Task 'e.2' must contain exactly one 'Before editing, inspect:' block (found 0)
+- Task 'e.2' missing anti-inference instruction: Do not infer APIs, schemas, behavior, or file contents; inspect the referenced files first.
+- Task 'e.2' missing explicit strict file-scope language
+- Task 'e.2' missing acceptance criterion equivalent to: No file outside allowed_write_paths is modified.
+- Task 'e.3' must contain exactly one 'Before editing, inspect:' block (found 0)
+- Task 'e.3' missing anti-inference instruction: Do not infer APIs, schemas, behavior, or file contents; inspect the referenced files first.
+- Task 'e.3' missing explicit strict file-scope language
+- Task 'e.3' missing acceptance criterion equivalent to: No file outside allowed_write_paths is modified.
+- Task 'e.4' must contain exactly one 'Before editing, inspect:' block (found 0)
+- Task 'e.4' missing anti-inference instruction: Do not infer APIs, schemas, behavior, or file contents; inspect the referenced files first.
+- Task 'e.4' missing explicit strict file-scope language
+- Task 'e.4' missing acceptance criterion equivalent to: No file outside allowed_write_paths is modified.
+- Task 'e.5' must contain exactly one 'Before editing, inspect:' block (found 0)
+- Task 'e.5' missing anti-inference instruction: Do not infer APIs, schemas, behavior, or file contents; inspect the referenced files first.
+- Task 'e.5' missing explicit strict file-scope language
+- Task 'e.5' missing acceptance criterion equivalent to: No file outside allowed_write_paths is modified.
+- Task 'e.1' acceptance_criteria[1] may produce unsatisfied reconciliation: 'Constructing a client whose credential environment differs f...' lacks file reference or test command
+- Task 'e.1' acceptance_criteria[2] may produce unsatisfied reconciliation: 'Constructing a LIVE client without explicit live authorizati...' lacks file reference or test command
+- Task 'e.1' acceptance_criteria[3] may produce unsatisfied reconciliation: 'The credential fingerprint is deterministic per environment+...' lacks file reference or test command
+- Task 'e.1' acceptance_criteria[4] may produce unsatisfied reconciliation: 'HTTP status codes 401/403/404/422/429/5xx and timeouts map t...' lacks file reference or test command
+- Task 'e.1' acceptance_criteria[5] may produce unsatisfied reconciliation: 'GET requests retry with bounded exponential backoff on 429/5...' lacks file reference or test command
+- Task 'e.1' acceptance_criteria[6] may produce unsatisfied reconciliation: 'Order-creating POST requests are never retried automatically...' lacks file reference or test command
+- Task 'e.1' acceptance_criteria[7] may produce unsatisfied reconciliation: 'All requests have explicit finite timeouts; monetary and qua...' lacks file reference or test command
+- Task 'e.2' acceptance_criteria[1] may produce unsatisfied reconciliation: 'An unsafe-flags evaluation returns explicit reasons for trad...' lacks file reference or test command
+- Task 'e.2' acceptance_criteria[2] may produce unsatisfied reconciliation: 'Position listing and single lookup return Decimal qty, qty_a...' lacks file reference or test command
+- Task 'e.2' acceptance_criteria[3] may produce unsatisfied reconciliation: 'Clock query returns timezone-aware UTC datetimes for timesta...' lacks file reference or test command
+- Task 'e.2' acceptance_criteria[5] may produce unsatisfied reconciliation: 'Quantity/price precision helpers quantize with Decimal and r...' lacks file reference or test command
+- Task 'e.2' acceptance_criteria[6] may produce unsatisfied reconciliation: 'Every returned account/position/asset/clock object carries i...' lacks file reference or test command
+- Task 'e.3' acceptance_criteria[0] may produce unsatisfied reconciliation: 'client_order_id is deterministic for identical (mode/account...' lacks file reference or test command
+- Task 'e.3' acceptance_criteria[1] may produce unsatisfied reconciliation: 'Submission invokes the persist-before-send hook before any t...' lacks file reference or test command
+- Task 'e.3' acceptance_criteria[2] may produce unsatisfied reconciliation: 'Specifying both qty and notional, or neither, is rejected be...' lacks file reference or test command
+- Task 'e.3' acceptance_criteria[3] may produce unsatisfied reconciliation: 'Fractional/notional orders on a non-fractionable asset are r...' lacks file reference or test command
+- Task 'e.3' acceptance_criteria[4] may produce unsatisfied reconciliation: 'Native trailing stop is submitted as a standalone sell with ...' lacks file reference or test command
+- Task 'e.3' acceptance_criteria[5] may produce unsatisfied reconciliation: 'Protective/linked order methods fail closed with a typed err...' lacks file reference or test command
+- Task 'e.3' acceptance_criteria[6] may produce unsatisfied reconciliation: 'A sell whose quantity exceeds the supplied known position qu...' lacks file reference or test command
+- Task 'e.3' acceptance_criteria[7] may produce unsatisfied reconciliation: 'On submission timeout, the adapter performs GET by client_or...' lacks file reference or test command
+- Task 'e.3' acceptance_criteria[8] may produce unsatisfied reconciliation: 'Open-order listing, lookup by order id and by client_order_i...' lacks file reference or test command
+- Task 'e.3' acceptance_criteria[9] may produce unsatisfied reconciliation: 'Normalized orders use Decimal for all quantity/price/trail/h...' lacks file reference or test command
+- Task 'e.3' acceptance_criteria[10] may produce unsatisfied reconciliation: 'Submit/replace/cancel against a LIVE client without explicit...' lacks file reference or test command
+- Task 'e.4' acceptance_criteria[1] may produce unsatisfied reconciliation: 'FILL, fee, dividend, and corporate-action activities normali...' lacks file reference or test command
+- Task 'e.4' acceptance_criteria[2] may produce unsatisfied reconciliation: 'Each normalized activity has a stable idempotency key includ...' lacks file reference or test command
+- Task 'e.4' acceptance_criteria[4] may produce unsatisfied reconciliation: 'A partial_fill followed by fill fixture yields correct incre...' lacks file reference or test command
+- Task 'e.4' acceptance_criteria[5] may produce unsatisfied reconciliation: 'Stream session authenticates, subscribes to trade_updates, a...' lacks file reference or test command
+- Task 'e.4' acceptance_criteria[6] may produce unsatisfied reconciliation: 'A simulated disconnect emits an explicit reconnect/gap event...' lacks file reference or test command
+- Task 'e.4' acceptance_criteria[7] may produce unsatisfied reconciliation: 'Messages whose environment does not match the session are re...' lacks file reference or test command
+- Task 'e.4' acceptance_criteria[8] may produce unsatisfied reconciliation: 'Neither module calls any order submit/cancel/replace endpoin...' lacks file reference or test command
+- Task 'e.5' acceptance_criteria[1] may produce unsatisfied reconciliation: 'Any descriptor not explicitly listed resolves to UNPROVEN an...' lacks file reference or test command
+- Task 'e.5' acceptance_criteria[2] may produce unsatisfied reconciliation: 'Stop-only OTO, bracket/OCO, fractional stop/linked, fraction...' lacks file reference or test command
+- Task 'e.5' acceptance_criteria[3] may produce unsatisfied reconciliation: 'trailing_stop with any order_class other than simple is neve...' lacks file reference or test command
+- Task 'e.5' acceptance_criteria[4] may produce unsatisfied reconciliation: 'Recording paper verification evidence promotes only the PAPE...' lacks file reference or test command
+- Task 'e.5' acceptance_criteria[5] may produce unsatisfied reconciliation: 'Conformance tests verify the Alpaca adapter modules expose t...' lacks file reference or test command
+- Task 'e.5' acceptance_criteria[6] may produce unsatisfied reconciliation: 'A paper integration test exists that is skipped unless paper...' lacks file reference or test command
+- Phase e phase_verification.json has no checks
+- [/home/mike/dev/mike/stocks/python/mike_trade/.abracapocus/plans/ACTIVE/MIKE_TRADE_COMPLETE_PRODUCT/f/task_f.1_implement_durable_order_intent_and_exact_order_status_state_transitions.json] allowed_write_paths entry 'mike_trade/execution/order_fsm.py' does not exist in working root
+- [/home/mike/dev/mike/stocks/python/mike_trade/.abracapocus/plans/ACTIVE/MIKE_TRADE_COMPLETE_PRODUCT/f/task_f.1_implement_durable_order_intent_and_exact_order_status_state_transitions.json] allowed_write_paths entry 'mike_trade/execution/intents.py' does not exist in working root
+- [/home/mike/dev/mike/stocks/python/mike_trade/.abracapocus/plans/ACTIVE/MIKE_TRADE_COMPLETE_PRODUCT/f/task_f.1_implement_durable_order_intent_and_exact_order_status_state_transitions.json] allowed_write_paths entry 'tests/unit/test_order_fsm.py' does not exist in working root
+- [/home/mike/dev/mike/stocks/python/mike_trade/.abracapocus/plans/ACTIVE/MIKE_TRADE_COMPLETE_PRODUCT/f/task_f.1_implement_durable_order_intent_and_exact_order_status_state_transitions.json] acceptance_criteria list length > 5
+- [/home/mike/dev/mike/stocks/python/mike_trade/.abracapocus/plans/ACTIVE/MIKE_TRADE_COMPLETE_PRODUCT/f/task_f.1_implement_durable_order_intent_and_exact_order_status_state_transitions.json] acceptance_criteria item length > 120 characters
+- [/home/mike/dev/mike/stocks/python/mike_trade/.abracapocus/plans/ACTIVE/MIKE_TRADE_COMPLETE_PRODUCT/f/task_f.1_implement_durable_order_intent_and_exact_order_status_state_transitions.json] description field length > 300 characters
+- [/home/mike/dev/mike/stocks/python/mike_trade/.abracapocus/plans/ACTIVE/MIKE_TRADE_COMPLETE_PRODUCT/f/task_f.1_implement_durable_order_intent_and_exact_order_status_state_transitions.json] description contains broad word: every
+- [/home/mike/dev/mike/stocks/python/mike_trade/.abracapocus/plans/ACTIVE/MIKE_TRADE_COMPLETE_PRODUCT/f/task_f.1_implement_durable_order_intent_and_exact_order_status_state_transitions.json] acceptance_criteria[1] contains broad word: every
+- [/home/mike/dev/mike/stocks/python/mike_trade/.abracapocus/plans/ACTIVE/MIKE_TRADE_COMPLETE_PRODUCT/f/task_f.2_build_account_and_symbol_serialized_order_command_coordinator.json] allowed_write_paths entry 'mike_trade/execution/coordinator.py' does not exist in working root
+- [/home/mike/dev/mike/stocks/python/mike_trade/.abracapocus/plans/ACTIVE/MIKE_TRADE_COMPLETE_PRODUCT/f/task_f.2_build_account_and_symbol_serialized_order_command_coordinator.json] allowed_write_paths entry 'tests/unit/test_order_serialization.py' does not exist in working root
+- [/home/mike/dev/mike/stocks/python/mike_trade/.abracapocus/plans/ACTIVE/MIKE_TRADE_COMPLETE_PRODUCT/f/task_f.2_build_account_and_symbol_serialized_order_command_coordinator.json] acceptance_criteria list length > 5
+- [/home/mike/dev/mike/stocks/python/mike_trade/.abracapocus/plans/ACTIVE/MIKE_TRADE_COMPLETE_PRODUCT/f/task_f.2_build_account_and_symbol_serialized_order_command_coordinator.json] acceptance_criteria item length > 120 characters
+- [/home/mike/dev/mike/stocks/python/mike_trade/.abracapocus/plans/ACTIVE/MIKE_TRADE_COMPLETE_PRODUCT/f/task_f.2_build_account_and_symbol_serialized_order_command_coordinator.json] description field length > 300 characters
+- [/home/mike/dev/mike/stocks/python/mike_trade/.abracapocus/plans/ACTIVE/MIKE_TRADE_COMPLETE_PRODUCT/f/task_f.2_build_account_and_symbol_serialized_order_command_coordinator.json] description contains broad word: all
+- [/home/mike/dev/mike/stocks/python/mike_trade/.abracapocus/plans/ACTIVE/MIKE_TRADE_COMPLETE_PRODUCT/f/task_f.3_implement_submission_idempotency_and_unknown_outcome_broker_recovery.json] allowed_write_paths entry 'mike_trade/execution/submission.py' does not exist in working root
+- [/home/mike/dev/mike/stocks/python/mike_trade/.abracapocus/plans/ACTIVE/MIKE_TRADE_COMPLETE_PRODUCT/f/task_f.3_implement_submission_idempotency_and_unknown_outcome_broker_recovery.json] allowed_write_paths entry 'tests/unit/test_ambiguous_submit.py' does not exist in working root
+- [/home/mike/dev/mike/stocks/python/mike_trade/.abracapocus/plans/ACTIVE/MIKE_TRADE_COMPLETE_PRODUCT/f/task_f.3_implement_submission_idempotency_and_unknown_outcome_broker_recovery.json] acceptance_criteria list length > 5
+- [/home/mike/dev/mike/stocks/python/mike_trade/.abracapocus/plans/ACTIVE/MIKE_TRADE_COMPLETE_PRODUCT/f/task_f.3_implement_submission_idempotency_and_unknown_outcome_broker_recovery.json] acceptance_criteria item length > 120 characters
+- [/home/mike/dev/mike/stocks/python/mike_trade/.abracapocus/plans/ACTIVE/MIKE_TRADE_COMPLETE_PRODUCT/f/task_f.3_implement_submission_idempotency_and_unknown_outcome_broker_recovery.json] description field length > 300 characters
+- [/home/mike/dev/mike/stocks/python/mike_trade/.abracapocus/plans/ACTIVE/MIKE_TRADE_COMPLETE_PRODUCT/f/task_f.3_implement_submission_idempotency_and_unknown_outcome_broker_recovery.json] Task appears to modify blocking governance; ensure docs/operations.md Governance Blocking Policy requirements are met.
+- [/home/mike/dev/mike/stocks/python/mike_trade/.abracapocus/plans/ACTIVE/MIKE_TRADE_COMPLETE_PRODUCT/f/task_f.4_implement_fill_trade_update_and_cancel_event_ingestion_into_ledger.json] allowed_write_paths entry 'mike_trade/execution/fill_processor.py' does not exist in working root
+- [/home/mike/dev/mike/stocks/python/mike_trade/.abracapocus/plans/ACTIVE/MIKE_TRADE_COMPLETE_PRODUCT/f/task_f.4_implement_fill_trade_update_and_cancel_event_ingestion_into_ledger.json] allowed_write_paths entry 'tests/unit/test_fill_processor.py' does not exist in working root
+- [/home/mike/dev/mike/stocks/python/mike_trade/.abracapocus/plans/ACTIVE/MIKE_TRADE_COMPLETE_PRODUCT/f/task_f.4_implement_fill_trade_update_and_cancel_event_ingestion_into_ledger.json] acceptance_criteria list length > 5
+- [/home/mike/dev/mike/stocks/python/mike_trade/.abracapocus/plans/ACTIVE/MIKE_TRADE_COMPLETE_PRODUCT/f/task_f.4_implement_fill_trade_update_and_cancel_event_ingestion_into_ledger.json] acceptance_criteria item length > 120 characters
+- [/home/mike/dev/mike/stocks/python/mike_trade/.abracapocus/plans/ACTIVE/MIKE_TRADE_COMPLETE_PRODUCT/f/task_f.4_implement_fill_trade_update_and_cancel_event_ingestion_into_ledger.json] description field length > 300 characters
+- [/home/mike/dev/mike/stocks/python/mike_trade/.abracapocus/plans/ACTIVE/MIKE_TRADE_COMPLETE_PRODUCT/f/task_f.4_implement_fill_trade_update_and_cancel_event_ingestion_into_ledger.json] description contains broad word: full
+- [/home/mike/dev/mike/stocks/python/mike_trade/.abracapocus/plans/ACTIVE/MIKE_TRADE_COMPLETE_PRODUCT/f/task_f.4_implement_fill_trade_update_and_cancel_event_ingestion_into_ledger.json] description contains broad word: every
+- [/home/mike/dev/mike/stocks/python/mike_trade/.abracapocus/plans/ACTIVE/MIKE_TRADE_COMPLETE_PRODUCT/f/task_f.5_add_deterministic_order_lifecycle_fault_fixtures_and_protocol_checks.json] allowed_write_paths entry 'tests/fixtures/order_events.py' does not exist in working root
+- [/home/mike/dev/mike/stocks/python/mike_trade/.abracapocus/plans/ACTIVE/MIKE_TRADE_COMPLETE_PRODUCT/f/task_f.5_add_deterministic_order_lifecycle_fault_fixtures_and_protocol_checks.json] allowed_write_paths entry 'tests/integration/test_order_lifecycle.py' does not exist in working root
+- [/home/mike/dev/mike/stocks/python/mike_trade/.abracapocus/plans/ACTIVE/MIKE_TRADE_COMPLETE_PRODUCT/f/task_f.5_add_deterministic_order_lifecycle_fault_fixtures_and_protocol_checks.json] acceptance_criteria list length > 5
+- [/home/mike/dev/mike/stocks/python/mike_trade/.abracapocus/plans/ACTIVE/MIKE_TRADE_COMPLETE_PRODUCT/f/task_f.5_add_deterministic_order_lifecycle_fault_fixtures_and_protocol_checks.json] acceptance_criteria item length > 120 characters
+- [/home/mike/dev/mike/stocks/python/mike_trade/.abracapocus/plans/ACTIVE/MIKE_TRADE_COMPLETE_PRODUCT/f/task_f.5_add_deterministic_order_lifecycle_fault_fixtures_and_protocol_checks.json] description field length > 300 characters
+- [/home/mike/dev/mike/stocks/python/mike_trade/.abracapocus/plans/ACTIVE/MIKE_TRADE_COMPLETE_PRODUCT/f/task_f.5_add_deterministic_order_lifecycle_fault_fixtures_and_protocol_checks.json] description contains broad word: full
+- Task 'f.1' must contain exactly one 'Before editing, inspect:' block (found 0)
+- Task 'f.1' missing anti-inference instruction: Do not infer APIs, schemas, behavior, or file contents; inspect the referenced files first.
+- Task 'f.1' missing acceptance criterion equivalent to: No file outside allowed_write_paths is modified.
+- Task 'f.2' must contain exactly one 'Before editing, inspect:' block (found 0)
+- Task 'f.2' missing anti-inference instruction: Do not infer APIs, schemas, behavior, or file contents; inspect the referenced files first.
+- Task 'f.2' missing explicit strict file-scope language
+- Task 'f.2' missing acceptance criterion equivalent to: No file outside allowed_write_paths is modified.
+- Task 'f.3' must contain exactly one 'Before editing, inspect:' block (found 0)
+- Task 'f.3' missing anti-inference instruction: Do not infer APIs, schemas, behavior, or file contents; inspect the referenced files first.
+- Task 'f.3' missing explicit strict file-scope language
+- Task 'f.3' missing acceptance criterion equivalent to: No file outside allowed_write_paths is modified.
+- Task 'f.4' must contain exactly one 'Before editing, inspect:' block (found 0)
+- Task 'f.4' missing anti-inference instruction: Do not infer APIs, schemas, behavior, or file contents; inspect the referenced files first.
+- Task 'f.4' missing explicit strict file-scope language
+- Task 'f.4' missing acceptance criterion equivalent to: No file outside allowed_write_paths is modified.
+- Task 'f.5' must contain exactly one 'Before editing, inspect:' block (found 0)
+- Task 'f.5' missing anti-inference instruction: Do not infer APIs, schemas, behavior, or file contents; inspect the referenced files first.
+- Task 'f.5' missing explicit strict file-scope language
+- Task 'f.5' missing acceptance criterion equivalent to: No file outside allowed_write_paths is modified.
+- Task 'f.1' acceptance_criteria[0] may produce unsatisfied reconciliation: 'OrderStatus enumerates exactly INTENT_PERSISTED, SUBMITTING,...' lacks file reference or test command
+- Task 'f.1' acceptance_criteria[1] may produce unsatisfied reconciliation: 'Transitions are defined by an explicit table; tests assert e...' lacks file reference or test command
+- Task 'f.1' acceptance_criteria[2] may produce unsatisfied reconciliation: 'Terminal states (FILLED, REJECTED, CANCELED, EXPIRED, REPLAC...' lacks file reference or test command
+- Task 'f.1' acceptance_criteria[3] may produce unsatisfied reconciliation: 'A stale or out-of-order lower-rank status after a higher-ran...' lacks file reference or test command
+- Task 'f.1' acceptance_criteria[4] may produce unsatisfied reconciliation: 'ACCEPTED or PENDING status never changes filled quantity; CA...' lacks file reference or test command
+- Task 'f.1' acceptance_criteria[5] may produce unsatisfied reconciliation: 'OrderIntent is persisted with status INTENT_PERSISTED before...' lacks file reference or test command
+- Task 'f.1' acceptance_criteria[6] may produce unsatisfied reconciliation: 'OrderIntent rejects float quantities/prices, non-positive qu...' lacks file reference or test command
+- Task 'f.2' acceptance_criteria[0] may produce unsatisfied reconciliation: 'Concurrent ENTRY_LONG commands for the same (mode, account, ...' lacks file reference or test command
+- Task 'f.2' acceptance_criteria[1] may produce unsatisfied reconciliation: 'Concurrent entries on different symbols of one account whose...' lacks file reference or test command
+- Task 'f.2' acceptance_criteria[2] may produce unsatisfied reconciliation: 'The same symbol on two different accounts/modes is authorize...' lacks file reference or test command
+- Task 'f.2' acceptance_criteria[3] may produce unsatisfied reconciliation: 'Signal expiry and quote staleness are evaluated with the inj...' lacks file reference or test command
+- Task 'f.2' acceptance_criteria[4] may produce unsatisfied reconciliation: 'EXIT_LONG quantity greater than confirmed held quantity minu...' lacks file reference or test command
+- Task 'f.2' acceptance_criteria[5] may produce unsatisfied reconciliation: 'Cash reservations, releases, and consumption hooks use Decim...' lacks file reference or test command
+- Task 'f.2' acceptance_criteria[6] may produce unsatisfied reconciliation: 'The coordinator performs no broker calls or order submission...' lacks file reference or test command
+- Task 'f.3' acceptance_criteria[0] may produce unsatisfied reconciliation: 'The broker submit call happens only after the SUBMITTING tra...' lacks file reference or test command
+- Task 'f.3' acceptance_criteria[1] may produce unsatisfied reconciliation: 'Expired signals or stale quotes detected immediately before ...' lacks file reference or test command
+- Task 'f.3' acceptance_criteria[2] may produce unsatisfied reconciliation: 'On submit timeout or unknown outcome, exactly one lookup by ...' lacks file reference or test command
+- Task 'f.3' acceptance_criteria[3] may produce unsatisfied reconciliation: 'When the lookup fails, the intent remains UNKNOWN, an unreso...' lacks file reference or test command
+- Task 'f.3' acceptance_criteria[4] may produce unsatisfied reconciliation: 'A confirmed not-found result permits retry only with the ide...' lacks file reference or test command
+- Task 'f.3' acceptance_criteria[5] may produce unsatisfied reconciliation: 'recover_inflight resolves SUBMITTING/UNKNOWN intents by clie...' lacks file reference or test command
+- Task 'f.3' acceptance_criteria[6] may produce unsatisfied reconciliation: 'request_cancel yields CANCEL_PENDING only; CANCELED requires...' lacks file reference or test command
+- Task 'f.3' acceptance_criteria[7] may produce unsatisfied reconciliation: 'Submission for a LIVE account key without explicit live auth...' lacks file reference or test command
+- Task 'f.4' acceptance_criteria[0] may produce unsatisfied reconciliation: 'Each provider event/activity id is applied at most once; a d...' lacks file reference or test command
+- Task 'f.4' acceptance_criteria[1] may produce unsatisfied reconciliation: 'Partial fills update filled_qty, average fill price, held qu...' lacks file reference or test command
+- Task 'f.4' acceptance_criteria[2] may produce unsatisfied reconciliation: 'ACCEPTED/PENDING/NEW events never change filled or held quan...' lacks file reference or test command
+- Task 'f.4' acceptance_criteria[3] may produce unsatisfied reconciliation: 'Partial-then-cancel, rejected, canceled zero-fill, and expir...' lacks file reference or test command
+- Task 'f.4' acceptance_criteria[4] may produce unsatisfied reconciliation: 'A fill arriving while an order is CANCEL_PENDING is applied,...' lacks file reference or test command
+- Task 'f.4' acceptance_criteria[5] may produce unsatisfied reconciliation: 'A sell fill that would take held long quantity below zero re...' lacks file reference or test command
+- Task 'f.4' acceptance_criteria[6] may produce unsatisfied reconciliation: 'A fill for an unknown client_order_id is persisted as drift/...' lacks file reference or test command
+- Task 'f.4' acceptance_criteria[7] may produce unsatisfied reconciliation: 'A position cycle closes only when the confirmed remaining qu...' lacks file reference or test command
+- Task 'f.5' acceptance_criteria[2] may produce unsatisfied reconciliation: 'The ambiguous-submit scenarios assert exactly one submit cal...' lacks file reference or test command
+- Task 'f.5' acceptance_criteria[3] may produce unsatisfied reconciliation: 'Duplicate and out-of-order event streams produce a final led...' lacks file reference or test command
+- Task 'f.5' acceptance_criteria[4] may produce unsatisfied reconciliation: 'Protective-stop vs exit race scenarios assert that held long...' lacks file reference or test command
+- Task 'f.5' acceptance_criteria[5] may produce unsatisfied reconciliation: 'Crash recovery scenarios assert that recovery resolves via l...' lacks file reference or test command
+- Task 'f.5' acceptance_criteria[6] may produce unsatisfied reconciliation: 'Replaying the same fixture stream twice produces identical p...' lacks file reference or test command
+- Task 'f.5' acceptance_criteria[7] may produce unsatisfied reconciliation: 'Tests use only temporary/in-memory storage and no network ac...' lacks file reference or test command
+- Phase f phase_verification.json has no checks
+- [/home/mike/dev/mike/stocks/python/mike_trade/.abracapocus/plans/ACTIVE/MIKE_TRADE_COMPLETE_PRODUCT/g/task_g.1_implement_alpaca_iex_stock_websocket_feed_and_reconnect_semantics.json] allowed_write_paths entry 'mike_trade/market_data/alpaca_stream.py' does not exist in working root
+- [/home/mike/dev/mike/stocks/python/mike_trade/.abracapocus/plans/ACTIVE/MIKE_TRADE_COMPLETE_PRODUCT/g/task_g.1_implement_alpaca_iex_stock_websocket_feed_and_reconnect_semantics.json] allowed_write_paths entry 'tests/contracts/test_alpaca_stream.py' does not exist in working root
+- [/home/mike/dev/mike/stocks/python/mike_trade/.abracapocus/plans/ACTIVE/MIKE_TRADE_COMPLETE_PRODUCT/g/task_g.1_implement_alpaca_iex_stock_websocket_feed_and_reconnect_semantics.json] acceptance_criteria list length > 5
+- [/home/mike/dev/mike/stocks/python/mike_trade/.abracapocus/plans/ACTIVE/MIKE_TRADE_COMPLETE_PRODUCT/g/task_g.1_implement_alpaca_iex_stock_websocket_feed_and_reconnect_semantics.json] acceptance_criteria item length > 120 characters
+- [/home/mike/dev/mike/stocks/python/mike_trade/.abracapocus/plans/ACTIVE/MIKE_TRADE_COMPLETE_PRODUCT/g/task_g.1_implement_alpaca_iex_stock_websocket_feed_and_reconnect_semantics.json] description field length > 300 characters
+- [/home/mike/dev/mike/stocks/python/mike_trade/.abracapocus/plans/ACTIVE/MIKE_TRADE_COMPLETE_PRODUCT/g/task_g.1_implement_alpaca_iex_stock_websocket_feed_and_reconnect_semantics.json] description contains broad word: full
+- [/home/mike/dev/mike/stocks/python/mike_trade/.abracapocus/plans/ACTIVE/MIKE_TRADE_COMPLETE_PRODUCT/g/task_g.1_implement_alpaca_iex_stock_websocket_feed_and_reconnect_semantics.json] acceptance_criteria[1] contains broad word: all
+- [/home/mike/dev/mike/stocks/python/mike_trade/.abracapocus/plans/ACTIVE/MIKE_TRADE_COMPLETE_PRODUCT/g/task_g.1_implement_alpaca_iex_stock_websocket_feed_and_reconnect_semantics.json] acceptance_criteria[1] contains broad word: every
+- [/home/mike/dev/mike/stocks/python/mike_trade/.abracapocus/plans/ACTIVE/MIKE_TRADE_COMPLETE_PRODUCT/g/task_g.1_implement_alpaca_iex_stock_websocket_feed_and_reconnect_semantics.json] acceptance_criteria[3] contains broad word: full
+- [/home/mike/dev/mike/stocks/python/mike_trade/.abracapocus/plans/ACTIVE/MIKE_TRADE_COMPLETE_PRODUCT/g/task_g.2_implement_alpaca_historical_bar_acquisition_and_bounded_rest_fallback.json] allowed_write_paths entry 'mike_trade/market_data/alpaca_history.py' does not exist in working root
+- [/home/mike/dev/mike/stocks/python/mike_trade/.abracapocus/plans/ACTIVE/MIKE_TRADE_COMPLETE_PRODUCT/g/task_g.2_implement_alpaca_historical_bar_acquisition_and_bounded_rest_fallback.json] allowed_write_paths entry 'mike_trade/market_data/polling.py' does not exist in working root
+- [/home/mike/dev/mike/stocks/python/mike_trade/.abracapocus/plans/ACTIVE/MIKE_TRADE_COMPLETE_PRODUCT/g/task_g.2_implement_alpaca_historical_bar_acquisition_and_bounded_rest_fallback.json] allowed_write_paths entry 'tests/contracts/test_alpaca_history.py' does not exist in working root
+- [/home/mike/dev/mike/stocks/python/mike_trade/.abracapocus/plans/ACTIVE/MIKE_TRADE_COMPLETE_PRODUCT/g/task_g.2_implement_alpaca_historical_bar_acquisition_and_bounded_rest_fallback.json] acceptance_criteria list length > 5
+- [/home/mike/dev/mike/stocks/python/mike_trade/.abracapocus/plans/ACTIVE/MIKE_TRADE_COMPLETE_PRODUCT/g/task_g.2_implement_alpaca_historical_bar_acquisition_and_bounded_rest_fallback.json] acceptance_criteria item length > 120 characters
+- [/home/mike/dev/mike/stocks/python/mike_trade/.abracapocus/plans/ACTIVE/MIKE_TRADE_COMPLETE_PRODUCT/g/task_g.2_implement_alpaca_historical_bar_acquisition_and_bounded_rest_fallback.json] description field length > 300 characters
+- [/home/mike/dev/mike/stocks/python/mike_trade/.abracapocus/plans/ACTIVE/MIKE_TRADE_COMPLETE_PRODUCT/g/task_g.2_implement_alpaca_historical_bar_acquisition_and_bounded_rest_fallback.json] description contains broad word: all
+- [/home/mike/dev/mike/stocks/python/mike_trade/.abracapocus/plans/ACTIVE/MIKE_TRADE_COMPLETE_PRODUCT/g/task_g.2_implement_alpaca_historical_bar_acquisition_and_bounded_rest_fallback.json] acceptance_criteria[1] contains broad word: every
+- [/home/mike/dev/mike/stocks/python/mike_trade/.abracapocus/plans/ACTIVE/MIKE_TRADE_COMPLETE_PRODUCT/g/task_g.2_implement_alpaca_historical_bar_acquisition_and_bounded_rest_fallback.json] acceptance_criteria[3] contains broad word: all
+- [/home/mike/dev/mike/stocks/python/mike_trade/.abracapocus/plans/ACTIVE/MIKE_TRADE_COMPLETE_PRODUCT/g/task_g.3_implement_shared_subscription_manager_event_fanout_and_immutable_cache.json] allowed_write_paths entry 'mike_trade/market_data/service.py' does not exist in working root
+- [/home/mike/dev/mike/stocks/python/mike_trade/.abracapocus/plans/ACTIVE/MIKE_TRADE_COMPLETE_PRODUCT/g/task_g.3_implement_shared_subscription_manager_event_fanout_and_immutable_cache.json] allowed_write_paths entry 'mike_trade/market_data/cache.py' does not exist in working root
+- [/home/mike/dev/mike/stocks/python/mike_trade/.abracapocus/plans/ACTIVE/MIKE_TRADE_COMPLETE_PRODUCT/g/task_g.3_implement_shared_subscription_manager_event_fanout_and_immutable_cache.json] allowed_write_paths entry 'tests/unit/test_data_fanout.py' does not exist in working root
+- [/home/mike/dev/mike/stocks/python/mike_trade/.abracapocus/plans/ACTIVE/MIKE_TRADE_COMPLETE_PRODUCT/g/task_g.3_implement_shared_subscription_manager_event_fanout_and_immutable_cache.json] acceptance_criteria list length > 5
+- [/home/mike/dev/mike/stocks/python/mike_trade/.abracapocus/plans/ACTIVE/MIKE_TRADE_COMPLETE_PRODUCT/g/task_g.3_implement_shared_subscription_manager_event_fanout_and_immutable_cache.json] acceptance_criteria item length > 120 characters
+- [/home/mike/dev/mike/stocks/python/mike_trade/.abracapocus/plans/ACTIVE/MIKE_TRADE_COMPLETE_PRODUCT/g/task_g.3_implement_shared_subscription_manager_event_fanout_and_immutable_cache.json] description field length > 300 characters
+- [/home/mike/dev/mike/stocks/python/mike_trade/.abracapocus/plans/ACTIVE/MIKE_TRADE_COMPLETE_PRODUCT/g/task_g.3_implement_shared_subscription_manager_event_fanout_and_immutable_cache.json] description contains broad word: all
+- [/home/mike/dev/mike/stocks/python/mike_trade/.abracapocus/plans/ACTIVE/MIKE_TRADE_COMPLETE_PRODUCT/g/task_g.3_implement_shared_subscription_manager_event_fanout_and_immutable_cache.json] description contains broad word: every
+- [/home/mike/dev/mike/stocks/python/mike_trade/.abracapocus/plans/ACTIVE/MIKE_TRADE_COMPLETE_PRODUCT/g/task_g.3_implement_shared_subscription_manager_event_fanout_and_immutable_cache.json] acceptance_criteria[2] contains broad word: every
+- [/home/mike/dev/mike/stocks/python/mike_trade/.abracapocus/plans/ACTIVE/MIKE_TRADE_COMPLETE_PRODUCT/g/task_g.4_add_feed_freshness_provenance_gaps_and_rate_limit_health_tracking.json] allowed_write_paths entry 'mike_trade/market_data/quality.py' does not exist in working root
+- [/home/mike/dev/mike/stocks/python/mike_trade/.abracapocus/plans/ACTIVE/MIKE_TRADE_COMPLETE_PRODUCT/g/task_g.4_add_feed_freshness_provenance_gaps_and_rate_limit_health_tracking.json] allowed_write_paths entry 'tests/unit/test_data_freshness.py' does not exist in working root
+- [/home/mike/dev/mike/stocks/python/mike_trade/.abracapocus/plans/ACTIVE/MIKE_TRADE_COMPLETE_PRODUCT/g/task_g.4_add_feed_freshness_provenance_gaps_and_rate_limit_health_tracking.json] acceptance_criteria list length > 5
+- [/home/mike/dev/mike/stocks/python/mike_trade/.abracapocus/plans/ACTIVE/MIKE_TRADE_COMPLETE_PRODUCT/g/task_g.4_add_feed_freshness_provenance_gaps_and_rate_limit_health_tracking.json] acceptance_criteria item length > 120 characters
+- [/home/mike/dev/mike/stocks/python/mike_trade/.abracapocus/plans/ACTIVE/MIKE_TRADE_COMPLETE_PRODUCT/g/task_g.4_add_feed_freshness_provenance_gaps_and_rate_limit_health_tracking.json] description field length > 300 characters
+- [/home/mike/dev/mike/stocks/python/mike_trade/.abracapocus/plans/ACTIVE/MIKE_TRADE_COMPLETE_PRODUCT/g/task_g.4_add_feed_freshness_provenance_gaps_and_rate_limit_health_tracking.json] description contains broad word: all
+- [/home/mike/dev/mike/stocks/python/mike_trade/.abracapocus/plans/ACTIVE/MIKE_TRADE_COMPLETE_PRODUCT/g/task_g.5_implement_optional_research_adapter_and_reference_symbol_declarations.json] allowed_write_paths entry 'mike_trade/research/ports.py' does not exist in working root
+- [/home/mike/dev/mike/stocks/python/mike_trade/.abracapocus/plans/ACTIVE/MIKE_TRADE_COMPLETE_PRODUCT/g/task_g.5_implement_optional_research_adapter_and_reference_symbol_declarations.json] allowed_write_paths entry 'mike_trade/research/service.py' does not exist in working root
+- [/home/mike/dev/mike/stocks/python/mike_trade/.abracapocus/plans/ACTIVE/MIKE_TRADE_COMPLETE_PRODUCT/g/task_g.5_implement_optional_research_adapter_and_reference_symbol_declarations.json] allowed_write_paths entry 'tests/unit/test_research_context.py' does not exist in working root
+- [/home/mike/dev/mike/stocks/python/mike_trade/.abracapocus/plans/ACTIVE/MIKE_TRADE_COMPLETE_PRODUCT/g/task_g.5_implement_optional_research_adapter_and_reference_symbol_declarations.json] acceptance_criteria list length > 5
+- [/home/mike/dev/mike/stocks/python/mike_trade/.abracapocus/plans/ACTIVE/MIKE_TRADE_COMPLETE_PRODUCT/g/task_g.5_implement_optional_research_adapter_and_reference_symbol_declarations.json] acceptance_criteria item length > 120 characters
+- [/home/mike/dev/mike/stocks/python/mike_trade/.abracapocus/plans/ACTIVE/MIKE_TRADE_COMPLETE_PRODUCT/g/task_g.5_implement_optional_research_adapter_and_reference_symbol_declarations.json] description field length > 300 characters
+- [/home/mike/dev/mike/stocks/python/mike_trade/.abracapocus/plans/ACTIVE/MIKE_TRADE_COMPLETE_PRODUCT/g/task_g.5_implement_optional_research_adapter_and_reference_symbol_declarations.json] description contains broad word: all
+- [/home/mike/dev/mike/stocks/python/mike_trade/.abracapocus/plans/ACTIVE/MIKE_TRADE_COMPLETE_PRODUCT/g/task_g.5_implement_optional_research_adapter_and_reference_symbol_declarations.json] acceptance_criteria[0] contains broad word: every
+- Task 'g.1' missing anti-inference instruction: Do not infer APIs, schemas, behavior, or file contents; inspect the referenced files first.
+- Task 'g.1' missing explicit strict file-scope language
+- Task 'g.1' missing acceptance criterion equivalent to: No file outside allowed_write_paths is modified.
+- Task 'g.2' missing anti-inference instruction: Do not infer APIs, schemas, behavior, or file contents; inspect the referenced files first.
+- Task 'g.2' missing explicit strict file-scope language
+- Task 'g.2' missing acceptance criterion equivalent to: No file outside allowed_write_paths is modified.
+- Task 'g.3' missing anti-inference instruction: Do not infer APIs, schemas, behavior, or file contents; inspect the referenced files first.
+- Task 'g.3' missing explicit strict file-scope language
+- Task 'g.3' missing acceptance criterion equivalent to: No file outside allowed_write_paths is modified.
+- Task 'g.4' missing anti-inference instruction: Do not infer APIs, schemas, behavior, or file contents; inspect the referenced files first.
+- Task 'g.4' missing explicit strict file-scope language
+- Task 'g.4' missing acceptance criterion equivalent to: No file outside allowed_write_paths is modified.
+- Task 'g.5' missing anti-inference instruction: Do not infer APIs, schemas, behavior, or file contents; inspect the referenced files first.
+- Task 'g.5' missing explicit strict file-scope language
+- Task 'g.5' missing acceptance criterion equivalent to: No file outside allowed_write_paths is modified.
+- Task 'g.1' acceptance_criteria[1] may produce unsatisfied reconciliation: 'Every normalized trade/quote/bar event is immutable (frozen)...' lacks file reference or test command
+- Task 'g.1' acceptance_criteria[2] may produce unsatisfied reconciliation: 'Subscribing the same (symbol, channel) twice produces exactl...' lacks file reference or test command
+- Task 'g.1' acceptance_criteria[3] may produce unsatisfied reconciliation: 'After a simulated disconnect, the adapter re-authenticates a...' lacks file reference or test command
+- Task 'g.1' acceptance_criteria[4] may produce unsatisfied reconciliation: 'The observer receives connection state transitions, includin...' lacks file reference or test command
+- Task 'g.1' acceptance_criteria[5] may produce unsatisfied reconciliation: 'Auth failure and insufficient-subscription/entitlement error...' lacks file reference or test command
+- Task 'g.1' acceptance_criteria[6] may produce unsatisfied reconciliation: 'Malformed or unknown message types are rejected or counted w...' lacks file reference or test command
+- Task 'g.1' acceptance_criteria[7] may produce unsatisfied reconciliation: 'Tests use no network access and no real or live credentials,...' lacks file reference or test command
+- Task 'g.2' acceptance_criteria[1] may produce unsatisfied reconciliation: 'Every returned bar carries Decimal OHLC/VWAP, a timezone-awa...' lacks file reference or test command
+- Task 'g.2' acceptance_criteria[2] may produce unsatisfied reconciliation: 'A request or merge that would combine different feed_ids or ...' lacks file reference or test command
+- Task 'g.2' acceptance_criteria[4] may produce unsatisfied reconciliation: 'The token-bucket rate limiter blocks or defers requests that...' lacks file reference or test command
+- Task 'g.2' acceptance_criteria[5] may produce unsatisfied reconciliation: 'Snapshots whose provider timestamp has not advanced, or whos...' lacks file reference or test command
+- Task 'g.2' acceptance_criteria[6] may produce unsatisfied reconciliation: 'Gap recovery requests only the missing window and refuses wi...' lacks file reference or test command
+- Task 'g.2' acceptance_criteria[7] may produce unsatisfied reconciliation: 'Tests use no network access and no real or live credentials....' lacks file reference or test command
+- Task 'g.3' acceptance_criteria[0] may produce unsatisfied reconciliation: 'With N consumers (including at least two shadow scenarios an...' lacks file reference or test command
+- Task 'g.3' acceptance_criteria[1] may produce unsatisfied reconciliation: 'The upstream unsubscribe happens only when the last consumer...' lacks file reference or test command
+- Task 'g.3' acceptance_criteria[2] may produce unsatisfied reconciliation: 'Every registered consumer receives every event for its subsc...' lacks file reference or test command
+- Task 'g.3' acceptance_criteria[3] may produce unsatisfied reconciliation: 'A blocked or slow consumer whose bounded queue fills records...' lacks file reference or test command
+- Task 'g.3' acceptance_criteria[4] may produce unsatisfied reconciliation: 'When the fake stream reports DISCONNECTED, the service activ...' lacks file reference or test command
+- Task 'g.3' acceptance_criteria[5] may produce unsatisfied reconciliation: 'Cache collections enforce the configured maximum sizes (the ...' lacks file reference or test command
+- Task 'g.3' acceptance_criteria[6] may produce unsatisfied reconciliation: 'The cache rejects an event whose feed_id conflicts with the ...' lacks file reference or test command
+- Task 'g.3' acceptance_criteria[7] may produce unsatisfied reconciliation: 'Cache read accessors return immutable snapshots that carry p...' lacks file reference or test command
+- Task 'g.4' acceptance_criteria[0] may produce unsatisfied reconciliation: 'The tracker computes age and latency separately from provide...' lacks file reference or test command
+- Task 'g.4' acceptance_criteria[1] may produce unsatisfied reconciliation: 'During the regular session, a symbol whose last event is old...' lacks file reference or test command
+- Task 'g.4' acceptance_criteria[2] may produce unsatisfied reconciliation: 'A symbol with no observed data (unknown freshness) fails clo...' lacks file reference or test command
+- Task 'g.4' acceptance_criteria[3] may produce unsatisfied reconciliation: 'Duplicate events, by sequence id and by fallback key, are co...' lacks file reference or test command
+- Task 'g.4' acceptance_criteria[4] may produce unsatisfied reconciliation: 'A missing completed 1-minute bar between two observed bars i...' lacks file reference or test command
+- Task 'g.4' acceptance_criteria[5] may produce unsatisfied reconciliation: 'The IEX feed is recorded with consolidated=False provenance,...' lacks file reference or test command
+- Task 'g.4' acceptance_criteria[6] may produce unsatisfied reconciliation: '429 responses and active backoff are reflected in the rate-l...' lacks file reference or test command
+- Task 'g.4' acceptance_criteria[7] may produce unsatisfied reconciliation: 'The module exposes no API that blocks fills, order updates, ...' lacks file reference or test command
+- Task 'g.5' acceptance_criteria[1] may produce unsatisfied reconciliation: 'ResearchService requests only the inputs declared by registe...' lacks file reference or test command
+- Task 'g.5' acceptance_criteria[2] may produce unsatisfied reconciliation: 'When two strategies and two scenarios declare the same (symb...' lacks file reference or test command
+- Task 'g.5' acceptance_criteria[3] may produce unsatisfied reconciliation: 'When a mandatory input is missing or older than its maximum ...' lacks file reference or test command
+- Task 'g.5' acceptance_criteria[4] may produce unsatisfied reconciliation: 'A missing optional input is marked missing but does not bloc...' lacks file reference or test command
+- Task 'g.5' acceptance_criteria[5] may produce unsatisfied reconciliation: 'With no research configured, the default NullResearchProvide...' lacks file reference or test command
+- Task 'g.5' acceptance_criteria[6] may produce unsatisfied reconciliation: 'Strategy-facing ResearchContext objects are immutable and ex...' lacks file reference or test command
+- Task 'g.5' acceptance_criteria[7] may produce unsatisfied reconciliation: 'The reference declaration helper and example declarations ex...' lacks file reference or test command
+- Phase g phase_verification.json has no checks
+- [/home/mike/dev/mike/stocks/python/mike_trade/.abracapocus/plans/ACTIVE/MIKE_TRADE_COMPLETE_PRODUCT/h/task_h.1_implement_multi_timeframe_candle_builders_with_closed_bar_finalization.json] allowed_write_paths entry 'mike_trade/market_data/candles.py' does not exist in working root
+- [/home/mike/dev/mike/stocks/python/mike_trade/.abracapocus/plans/ACTIVE/MIKE_TRADE_COMPLETE_PRODUCT/h/task_h.1_implement_multi_timeframe_candle_builders_with_closed_bar_finalization.json] allowed_write_paths entry 'tests/unit/test_candles.py' does not exist in working root
+- [/home/mike/dev/mike/stocks/python/mike_trade/.abracapocus/plans/ACTIVE/MIKE_TRADE_COMPLETE_PRODUCT/h/task_h.1_implement_multi_timeframe_candle_builders_with_closed_bar_finalization.json] acceptance_criteria list length > 5
+- [/home/mike/dev/mike/stocks/python/mike_trade/.abracapocus/plans/ACTIVE/MIKE_TRADE_COMPLETE_PRODUCT/h/task_h.1_implement_multi_timeframe_candle_builders_with_closed_bar_finalization.json] acceptance_criteria item length > 120 characters
+- [/home/mike/dev/mike/stocks/python/mike_trade/.abracapocus/plans/ACTIVE/MIKE_TRADE_COMPLETE_PRODUCT/h/task_h.1_implement_multi_timeframe_candle_builders_with_closed_bar_finalization.json] description field length > 300 characters
+- [/home/mike/dev/mike/stocks/python/mike_trade/.abracapocus/plans/ACTIVE/MIKE_TRADE_COMPLETE_PRODUCT/h/task_h.1_implement_multi_timeframe_candle_builders_with_closed_bar_finalization.json] description contains broad word: all
+- [/home/mike/dev/mike/stocks/python/mike_trade/.abracapocus/plans/ACTIVE/MIKE_TRADE_COMPLETE_PRODUCT/h/task_h.1_implement_multi_timeframe_candle_builders_with_closed_bar_finalization.json] acceptance_criteria[0] contains broad word: all
+- [/home/mike/dev/mike/stocks/python/mike_trade/.abracapocus/plans/ACTIVE/MIKE_TRADE_COMPLETE_PRODUCT/h/task_h.2_implement_pure_technical_indicators_rsi_ema_atr_vwap_and_volume.json] allowed_write_paths entry 'mike_trade/strategies/indicators/core.py' does not exist in working root
+- [/home/mike/dev/mike/stocks/python/mike_trade/.abracapocus/plans/ACTIVE/MIKE_TRADE_COMPLETE_PRODUCT/h/task_h.2_implement_pure_technical_indicators_rsi_ema_atr_vwap_and_volume.json] allowed_write_paths entry 'tests/unit/test_indicators.py' does not exist in working root
+- [/home/mike/dev/mike/stocks/python/mike_trade/.abracapocus/plans/ACTIVE/MIKE_TRADE_COMPLETE_PRODUCT/h/task_h.2_implement_pure_technical_indicators_rsi_ema_atr_vwap_and_volume.json] acceptance_criteria list length > 5
+- [/home/mike/dev/mike/stocks/python/mike_trade/.abracapocus/plans/ACTIVE/MIKE_TRADE_COMPLETE_PRODUCT/h/task_h.2_implement_pure_technical_indicators_rsi_ema_atr_vwap_and_volume.json] acceptance_criteria item length > 120 characters
+- [/home/mike/dev/mike/stocks/python/mike_trade/.abracapocus/plans/ACTIVE/MIKE_TRADE_COMPLETE_PRODUCT/h/task_h.2_implement_pure_technical_indicators_rsi_ema_atr_vwap_and_volume.json] description field length > 300 characters
+- [/home/mike/dev/mike/stocks/python/mike_trade/.abracapocus/plans/ACTIVE/MIKE_TRADE_COMPLETE_PRODUCT/h/task_h.2_implement_pure_technical_indicators_rsi_ema_atr_vwap_and_volume.json] description contains broad word: all
+- [/home/mike/dev/mike/stocks/python/mike_trade/.abracapocus/plans/ACTIVE/MIKE_TRADE_COMPLETE_PRODUCT/h/task_h.2_implement_pure_technical_indicators_rsi_ema_atr_vwap_and_volume.json] acceptance_criteria[1] contains broad word: all
+- [/home/mike/dev/mike/stocks/python/mike_trade/.abracapocus/plans/ACTIVE/MIKE_TRADE_COMPLETE_PRODUCT/h/task_h.2_implement_pure_technical_indicators_rsi_ema_atr_vwap_and_volume.json] acceptance_criteria[6] contains broad word: every
+- [/home/mike/dev/mike/stocks/python/mike_trade/.abracapocus/plans/ACTIVE/MIKE_TRADE_COMPLETE_PRODUCT/h/task_h.3_implement_exchange_calendar_market_hours_and_early_close_logic.json] allowed_write_paths entry 'mike_trade/scheduling/calendar.py' does not exist in working root
+- [/home/mike/dev/mike/stocks/python/mike_trade/.abracapocus/plans/ACTIVE/MIKE_TRADE_COMPLETE_PRODUCT/h/task_h.3_implement_exchange_calendar_market_hours_and_early_close_logic.json] allowed_write_paths entry 'tests/unit/test_market_calendar.py' does not exist in working root
+- [/home/mike/dev/mike/stocks/python/mike_trade/.abracapocus/plans/ACTIVE/MIKE_TRADE_COMPLETE_PRODUCT/h/task_h.3_implement_exchange_calendar_market_hours_and_early_close_logic.json] acceptance_criteria list length > 5
+- [/home/mike/dev/mike/stocks/python/mike_trade/.abracapocus/plans/ACTIVE/MIKE_TRADE_COMPLETE_PRODUCT/h/task_h.3_implement_exchange_calendar_market_hours_and_early_close_logic.json] acceptance_criteria item length > 120 characters
+- [/home/mike/dev/mike/stocks/python/mike_trade/.abracapocus/plans/ACTIVE/MIKE_TRADE_COMPLETE_PRODUCT/h/task_h.3_implement_exchange_calendar_market_hours_and_early_close_logic.json] description field length > 300 characters
+- [/home/mike/dev/mike/stocks/python/mike_trade/.abracapocus/plans/ACTIVE/MIKE_TRADE_COMPLETE_PRODUCT/h/task_h.3_implement_exchange_calendar_market_hours_and_early_close_logic.json] description contains broad word: full
+- [/home/mike/dev/mike/stocks/python/mike_trade/.abracapocus/plans/ACTIVE/MIKE_TRADE_COMPLETE_PRODUCT/h/task_h.3_implement_exchange_calendar_market_hours_and_early_close_logic.json] description contains broad word: all
+- [/home/mike/dev/mike/stocks/python/mike_trade/.abracapocus/plans/ACTIVE/MIKE_TRADE_COMPLETE_PRODUCT/h/task_h.3_implement_exchange_calendar_market_hours_and_early_close_logic.json] acceptance_criteria[2] contains broad word: full
+- [/home/mike/dev/mike/stocks/python/mike_trade/.abracapocus/plans/ACTIVE/MIKE_TRADE_COMPLETE_PRODUCT/h/task_h.4_build_immutable_strategy_market_context_and_reference_symbol_binder.json] allowed_write_paths entry 'mike_trade/market_data/context.py' does not exist in working root
+- [/home/mike/dev/mike/stocks/python/mike_trade/.abracapocus/plans/ACTIVE/MIKE_TRADE_COMPLETE_PRODUCT/h/task_h.4_build_immutable_strategy_market_context_and_reference_symbol_binder.json] allowed_write_paths entry 'tests/unit/test_market_context.py' does not exist in working root
+- [/home/mike/dev/mike/stocks/python/mike_trade/.abracapocus/plans/ACTIVE/MIKE_TRADE_COMPLETE_PRODUCT/h/task_h.4_build_immutable_strategy_market_context_and_reference_symbol_binder.json] acceptance_criteria list length > 5
+- [/home/mike/dev/mike/stocks/python/mike_trade/.abracapocus/plans/ACTIVE/MIKE_TRADE_COMPLETE_PRODUCT/h/task_h.4_build_immutable_strategy_market_context_and_reference_symbol_binder.json] acceptance_criteria item length > 120 characters
+- [/home/mike/dev/mike/stocks/python/mike_trade/.abracapocus/plans/ACTIVE/MIKE_TRADE_COMPLETE_PRODUCT/h/task_h.4_build_immutable_strategy_market_context_and_reference_symbol_binder.json] description field length > 300 characters
+- [/home/mike/dev/mike/stocks/python/mike_trade/.abracapocus/plans/ACTIVE/MIKE_TRADE_COMPLETE_PRODUCT/h/task_h.5_implement_bounded_candle_and_indicator_warmup_state_diagnostics.json] allowed_write_paths entry 'mike_trade/market_data/warmup.py' does not exist in working root
+- [/home/mike/dev/mike/stocks/python/mike_trade/.abracapocus/plans/ACTIVE/MIKE_TRADE_COMPLETE_PRODUCT/h/task_h.5_implement_bounded_candle_and_indicator_warmup_state_diagnostics.json] allowed_write_paths entry 'tests/unit/test_warmup.py' does not exist in working root
+- [/home/mike/dev/mike/stocks/python/mike_trade/.abracapocus/plans/ACTIVE/MIKE_TRADE_COMPLETE_PRODUCT/h/task_h.5_implement_bounded_candle_and_indicator_warmup_state_diagnostics.json] acceptance_criteria list length > 5
+- [/home/mike/dev/mike/stocks/python/mike_trade/.abracapocus/plans/ACTIVE/MIKE_TRADE_COMPLETE_PRODUCT/h/task_h.5_implement_bounded_candle_and_indicator_warmup_state_diagnostics.json] acceptance_criteria item length > 120 characters
+- [/home/mike/dev/mike/stocks/python/mike_trade/.abracapocus/plans/ACTIVE/MIKE_TRADE_COMPLETE_PRODUCT/h/task_h.5_implement_bounded_candle_and_indicator_warmup_state_diagnostics.json] description field length > 300 characters
+- [/home/mike/dev/mike/stocks/python/mike_trade/.abracapocus/plans/ACTIVE/MIKE_TRADE_COMPLETE_PRODUCT/h/task_h.5_implement_bounded_candle_and_indicator_warmup_state_diagnostics.json] description contains broad word: every
+- [/home/mike/dev/mike/stocks/python/mike_trade/.abracapocus/plans/ACTIVE/MIKE_TRADE_COMPLETE_PRODUCT/h/task_h.5_implement_bounded_candle_and_indicator_warmup_state_diagnostics.json] acceptance_criteria[3] contains broad word: all
+- Task 'h.1' missing anti-inference instruction: Do not infer APIs, schemas, behavior, or file contents; inspect the referenced files first.
+- Task 'h.1' missing explicit strict file-scope language
+- Task 'h.1' missing acceptance criterion equivalent to: No file outside allowed_write_paths is modified.
+- Task 'h.2' missing anti-inference instruction: Do not infer APIs, schemas, behavior, or file contents; inspect the referenced files first.
+- Task 'h.2' missing explicit strict file-scope language
+- Task 'h.2' missing acceptance criterion equivalent to: No file outside allowed_write_paths is modified.
+- Task 'h.3' missing anti-inference instruction: Do not infer APIs, schemas, behavior, or file contents; inspect the referenced files first.
+- Task 'h.3' missing explicit strict file-scope language
+- Task 'h.3' missing acceptance criterion equivalent to: No file outside allowed_write_paths is modified.
+- Task 'h.4' missing anti-inference instruction: Do not infer APIs, schemas, behavior, or file contents; inspect the referenced files first.
+- Task 'h.4' missing explicit strict file-scope language
+- Task 'h.4' missing acceptance criterion equivalent to: No file outside allowed_write_paths is modified.
+- Task 'h.5' missing anti-inference instruction: Do not infer APIs, schemas, behavior, or file contents; inspect the referenced files first.
+- Task 'h.5' missing explicit strict file-scope language
+- Task 'h.5' missing acceptance criterion equivalent to: No file outside allowed_write_paths is modified.
+- Task 'h.1' acceptance_criteria[0] may produce unsatisfied reconciliation: 'Candle is immutable: a test confirms that assigning to a fie...' lacks file reference or test command
+- Task 'h.1' acceptance_criteria[1] may produce unsatisfied reconciliation: 'A test feeds 1-minute bars from 09:30 to 09:40 ET and verifi...' lacks file reference or test command
+- Task 'h.1' acceptance_criteria[2] may produce unsatisfied reconciliation: 'A test confirms that the completed-bars-only accessor never ...' lacks file reference or test command
+- Task 'h.1' acceptance_criteria[3] may produce unsatisfied reconciliation: 'A test confirms that a bucket is finalized either by a later...' lacks file reference or test command
+- Task 'h.1' acceptance_criteria[4] may produce unsatisfied reconciliation: 'A negative test confirms that adding an input with a differe...' lacks file reference or test command
+- Task 'h.1' acceptance_criteria[5] may produce unsatisfied reconciliation: 'Negative tests confirm that high < low, non-positive prices,...' lacks file reference or test command
+- Task 'h.1' acceptance_criteria[6] may produce unsatisfied reconciliation: 'A test confirms that per-series history is bounded by the co...' lacks file reference or test command
+- Task 'h.1' acceptance_criteria[7] may produce unsatisfied reconciliation: 'IEX-sourced candles carry consolidated=False provenance, and...' lacks file reference or test command
+- Task 'h.2' acceptance_criteria[0] may produce unsatisfied reconciliation: 'A test confirms that EMA returns not-ready for the first per...' lacks file reference or test command
+- Task 'h.2' acceptance_criteria[1] may produce unsatisfied reconciliation: 'A test confirms that RSI is not ready with exactly `period` ...' lacks file reference or test command
+- Task 'h.2' acceptance_criteria[2] may produce unsatisfied reconciliation: 'A test confirms that ATR uses the gap-inclusive true range (...' lacks file reference or test command
+- Task 'h.2' acceptance_criteria[3] may produce unsatisfied reconciliation: 'A test confirms that session VWAP resets when the session id...' lacks file reference or test command
+- Task 'h.2' acceptance_criteria[4] may produce unsatisfied reconciliation: 'A test confirms that relative volume is None during warmup a...' lacks file reference or test command
+- Task 'h.2' acceptance_criteria[5] may produce unsatisfied reconciliation: 'A test confirms that batch and incremental outputs are ident...' lacks file reference or test command
+- Task 'h.2' acceptance_criteria[6] may produce unsatisfied reconciliation: 'A test confirms that every returned numeric value is a Decim...' lacks file reference or test command
+- Task 'h.2' acceptance_criteria[7] may produce unsatisfied reconciliation: 'The module imports no network, broker, provider, or market_d...' lacks file reference or test command
+- Task 'h.3' acceptance_criteria[0] may produce unsatisfied reconciliation: 'Tests confirm that 2026-04-03 (Good Friday), 2026-06-19 (Jun...' lacks file reference or test command
+- Task 'h.3' acceptance_criteria[1] may produce unsatisfied reconciliation: 'A test confirms that 2027-12-31 is a trading day, because Ne...' lacks file reference or test command
+- Task 'h.3' acceptance_criteria[2] may produce unsatisfied reconciliation: 'Tests confirm that 2026-11-27 and 2026-12-24 have an effecti...' lacks file reference or test command
+- Task 'h.3' acceptance_criteria[3] may produce unsatisfied reconciliation: 'DST tests confirm that the regular open is 14:30 UTC on 2026...' lacks file reference or test command
+- Task 'h.3' acceptance_criteria[5] may produce unsatisfied reconciliation: 'A test confirms that, with a 15-minute entry cutoff, entries...' lacks file reference or test command
+- Task 'h.3' acceptance_criteria[6] may produce unsatisfied reconciliation: 'A test confirms that the 2025-01-09 override closure is repo...' lacks file reference or test command
+- Task 'h.3' acceptance_criteria[7] may produce unsatisfied reconciliation: 'A negative test confirms that querying a date outside the su...' lacks file reference or test command
+- Task 'h.3' acceptance_criteria[8] may produce unsatisfied reconciliation: 'session_id is deterministic and identical across repeated ca...' lacks file reference or test command
+- Task 'h.4' acceptance_criteria[0] may produce unsatisfied reconciliation: 'A test confirms that MarketContext and its nested collection...' lacks file reference or test command
+- Task 'h.4' acceptance_criteria[1] may produce unsatisfied reconciliation: 'A test confirms that version increases monotonically per sym...' lacks file reference or test command
+- Task 'h.4' acceptance_criteria[2] may produce unsatisfied reconciliation: 'A test confirms that a strategy declaring completed_bars_onl...' lacks file reference or test command
+- Task 'h.4' acceptance_criteria[3] may produce unsatisfied reconciliation: 'A negative test confirms that mixing an IEX series with a di...' lacks file reference or test command
+- Task 'h.4' acceptance_criteria[4] may produce unsatisfied reconciliation: 'A negative test confirms that SPLIT_ADJUSTED history combine...' lacks file reference or test command
+- Task 'h.4' acceptance_criteria[5] may produce unsatisfied reconciliation: 'Tests confirm that select_context returns the newest fresh s...' lacks file reference or test command
+- Task 'h.4' acceptance_criteria[6] may produce unsatisfied reconciliation: 'A test confirms that the binder exposes declared reference s...' lacks file reference or test command
+- Task 'h.4' acceptance_criteria[7] may produce unsatisfied reconciliation: 'A test confirms that context carries feed_id with consolidat...' lacks file reference or test command
+- Task 'h.4' acceptance_criteria[8] may produce unsatisfied reconciliation: 'The module performs no network or broker I/O. Tests run with...' lacks file reference or test command
+- Task 'h.5' acceptance_criteria[0] may produce unsatisfied reconciliation: 'A test confirms that a requirement with N bars needed report...' lacks file reference or test command
+- Task 'h.5' acceptance_criteria[1] may produce unsatisfied reconciliation: 'A test confirms that replaying an identical input sequence t...' lacks file reference or test command
+- Task 'h.5' acceptance_criteria[2] may produce unsatisfied reconciliation: 'Negative tests confirm that each of these causes buy_gate to...' lacks file reference or test command
+- Task 'h.5' acceptance_criteria[3] may produce unsatisfied reconciliation: 'A positive test confirms that buy_gate returns allowed=True ...' lacks file reference or test command
+- Task 'h.5' acceptance_criteria[4] may produce unsatisfied reconciliation: 'A test confirms that VWAP-dependent readiness resets when th...' lacks file reference or test command
+- Task 'h.5' acceptance_criteria[5] may produce unsatisfied reconciliation: 'A test confirms that internal buffers stay at or below the c...' lacks file reference or test command
+- Task 'h.5' acceptance_criteria[6] may produce unsatisfied reconciliation: 'A test or docstring assertion confirms that the module expos...' lacks file reference or test command
+- Task 'h.5' acceptance_criteria[7] may produce unsatisfied reconciliation: 'WarmupDiagnostics is immutable; a test confirms that mutatio...' lacks file reference or test command
+- Phase h phase_verification.json has no checks
+- [/home/mike/dev/mike/stocks/python/mike_trade/.abracapocus/plans/ACTIVE/MIKE_TRADE_COMPLETE_PRODUCT/i/task_i.1_implement_declarative_strategy_triggers_and_deterministic_due_scheduler.json] allowed_write_paths entry 'mike_trade/scheduling/triggers.py' does not exist in working root
+- [/home/mike/dev/mike/stocks/python/mike_trade/.abracapocus/plans/ACTIVE/MIKE_TRADE_COMPLETE_PRODUCT/i/task_i.1_implement_declarative_strategy_triggers_and_deterministic_due_scheduler.json] allowed_write_paths entry 'mike_trade/scheduling/scheduler.py' does not exist in working root
+- [/home/mike/dev/mike/stocks/python/mike_trade/.abracapocus/plans/ACTIVE/MIKE_TRADE_COMPLETE_PRODUCT/i/task_i.1_implement_declarative_strategy_triggers_and_deterministic_due_scheduler.json] allowed_write_paths entry 'tests/unit/test_scheduler_triggers.py' does not exist in working root
+- [/home/mike/dev/mike/stocks/python/mike_trade/.abracapocus/plans/ACTIVE/MIKE_TRADE_COMPLETE_PRODUCT/i/task_i.1_implement_declarative_strategy_triggers_and_deterministic_due_scheduler.json] acceptance_criteria list length > 5
+- [/home/mike/dev/mike/stocks/python/mike_trade/.abracapocus/plans/ACTIVE/MIKE_TRADE_COMPLETE_PRODUCT/i/task_i.1_implement_declarative_strategy_triggers_and_deterministic_due_scheduler.json] acceptance_criteria item length > 120 characters
+- [/home/mike/dev/mike/stocks/python/mike_trade/.abracapocus/plans/ACTIVE/MIKE_TRADE_COMPLETE_PRODUCT/i/task_i.1_implement_declarative_strategy_triggers_and_deterministic_due_scheduler.json] description field length > 300 characters
+- [/home/mike/dev/mike/stocks/python/mike_trade/.abracapocus/plans/ACTIVE/MIKE_TRADE_COMPLETE_PRODUCT/i/task_i.1_implement_declarative_strategy_triggers_and_deterministic_due_scheduler.json] description contains broad word: all
+- [/home/mike/dev/mike/stocks/python/mike_trade/.abracapocus/plans/ACTIVE/MIKE_TRADE_COMPLETE_PRODUCT/i/task_i.1_implement_declarative_strategy_triggers_and_deterministic_due_scheduler.json] description contains broad word: every
+- [/home/mike/dev/mike/stocks/python/mike_trade/.abracapocus/plans/ACTIVE/MIKE_TRADE_COMPLETE_PRODUCT/i/task_i.2_implement_bounded_evaluation_pool_event_backlog_and_snapshot_cancellation.json] allowed_write_paths entry 'mike_trade/scheduling/workers.py' does not exist in working root
+- [/home/mike/dev/mike/stocks/python/mike_trade/.abracapocus/plans/ACTIVE/MIKE_TRADE_COMPLETE_PRODUCT/i/task_i.2_implement_bounded_evaluation_pool_event_backlog_and_snapshot_cancellation.json] allowed_write_paths entry 'mike_trade/scheduling/queueing.py' does not exist in working root
+- [/home/mike/dev/mike/stocks/python/mike_trade/.abracapocus/plans/ACTIVE/MIKE_TRADE_COMPLETE_PRODUCT/i/task_i.2_implement_bounded_evaluation_pool_event_backlog_and_snapshot_cancellation.json] allowed_write_paths entry 'tests/unit/test_event_backpressure.py' does not exist in working root
+- [/home/mike/dev/mike/stocks/python/mike_trade/.abracapocus/plans/ACTIVE/MIKE_TRADE_COMPLETE_PRODUCT/i/task_i.2_implement_bounded_evaluation_pool_event_backlog_and_snapshot_cancellation.json] acceptance_criteria list length > 5
+- [/home/mike/dev/mike/stocks/python/mike_trade/.abracapocus/plans/ACTIVE/MIKE_TRADE_COMPLETE_PRODUCT/i/task_i.2_implement_bounded_evaluation_pool_event_backlog_and_snapshot_cancellation.json] acceptance_criteria item length > 120 characters
+- [/home/mike/dev/mike/stocks/python/mike_trade/.abracapocus/plans/ACTIVE/MIKE_TRADE_COMPLETE_PRODUCT/i/task_i.2_implement_bounded_evaluation_pool_event_backlog_and_snapshot_cancellation.json] description field length > 300 characters
+- [/home/mike/dev/mike/stocks/python/mike_trade/.abracapocus/plans/ACTIVE/MIKE_TRADE_COMPLETE_PRODUCT/i/task_i.2_implement_bounded_evaluation_pool_event_backlog_and_snapshot_cancellation.json] description contains broad word: full
+- [/home/mike/dev/mike/stocks/python/mike_trade/.abracapocus/plans/ACTIVE/MIKE_TRADE_COMPLETE_PRODUCT/i/task_i.2_implement_bounded_evaluation_pool_event_backlog_and_snapshot_cancellation.json] acceptance_criteria[1] contains broad word: every
+- [/home/mike/dev/mike/stocks/python/mike_trade/.abracapocus/plans/ACTIVE/MIKE_TRADE_COMPLETE_PRODUCT/i/task_i.2_implement_bounded_evaluation_pool_event_backlog_and_snapshot_cancellation.json] acceptance_criteria[2] contains broad word: full
+- [/home/mike/dev/mike/stocks/python/mike_trade/.abracapocus/plans/ACTIVE/MIKE_TRADE_COMPLETE_PRODUCT/i/task_i.2_implement_bounded_evaluation_pool_event_backlog_and_snapshot_cancellation.json] acceptance_criteria[3] contains broad word: complete
+- [/home/mike/dev/mike/stocks/python/mike_trade/.abracapocus/plans/ACTIVE/MIKE_TRADE_COMPLETE_PRODUCT/i/task_i.2_implement_bounded_evaluation_pool_event_backlog_and_snapshot_cancellation.json] Task appears to modify blocking governance; ensure docs/operations.md Governance Blocking Policy requirements are met.
+- [/home/mike/dev/mike/stocks/python/mike_trade/.abracapocus/plans/ACTIVE/MIKE_TRADE_COMPLETE_PRODUCT/i/task_i.3_implement_deterministic_priority_and_tie_breaking_in_signal_event_router.json] allowed_write_paths entry 'mike_trade/signals/router.py' does not exist in working root
+- [/home/mike/dev/mike/stocks/python/mike_trade/.abracapocus/plans/ACTIVE/MIKE_TRADE_COMPLETE_PRODUCT/i/task_i.3_implement_deterministic_priority_and_tie_breaking_in_signal_event_router.json] allowed_write_paths entry 'tests/unit/test_router_ordering.py' does not exist in working root
+- [/home/mike/dev/mike/stocks/python/mike_trade/.abracapocus/plans/ACTIVE/MIKE_TRADE_COMPLETE_PRODUCT/i/task_i.3_implement_deterministic_priority_and_tie_breaking_in_signal_event_router.json] acceptance_criteria list length > 5
+- [/home/mike/dev/mike/stocks/python/mike_trade/.abracapocus/plans/ACTIVE/MIKE_TRADE_COMPLETE_PRODUCT/i/task_i.3_implement_deterministic_priority_and_tie_breaking_in_signal_event_router.json] acceptance_criteria item length > 120 characters
+- [/home/mike/dev/mike/stocks/python/mike_trade/.abracapocus/plans/ACTIVE/MIKE_TRADE_COMPLETE_PRODUCT/i/task_i.3_implement_deterministic_priority_and_tie_breaking_in_signal_event_router.json] description field length > 300 characters
+- [/home/mike/dev/mike/stocks/python/mike_trade/.abracapocus/plans/ACTIVE/MIKE_TRADE_COMPLETE_PRODUCT/i/task_i.3_implement_deterministic_priority_and_tie_breaking_in_signal_event_router.json] description contains broad word: all
+- [/home/mike/dev/mike/stocks/python/mike_trade/.abracapocus/plans/ACTIVE/MIKE_TRADE_COMPLETE_PRODUCT/i/task_i.3_implement_deterministic_priority_and_tie_breaking_in_signal_event_router.json] acceptance_criteria[0] contains broad word: every
+- [/home/mike/dev/mike/stocks/python/mike_trade/.abracapocus/plans/ACTIVE/MIKE_TRADE_COMPLETE_PRODUCT/i/task_i.3_implement_deterministic_priority_and_tie_breaking_in_signal_event_router.json] Task appears to modify blocking governance; ensure docs/operations.md Governance Blocking Policy requirements are met.
+- [/home/mike/dev/mike/stocks/python/mike_trade/.abracapocus/plans/ACTIVE/MIKE_TRADE_COMPLETE_PRODUCT/i/task_i.4_implement_engine_runner_heartbeat_graceful_drain_and_health_lifecycle.json] allowed_write_paths entry 'mike_trade/engine.py' does not exist in working root
+- [/home/mike/dev/mike/stocks/python/mike_trade/.abracapocus/plans/ACTIVE/MIKE_TRADE_COMPLETE_PRODUCT/i/task_i.4_implement_engine_runner_heartbeat_graceful_drain_and_health_lifecycle.json] allowed_write_paths entry 'mike_trade/observability/health.py' does not exist in working root
+- [/home/mike/dev/mike/stocks/python/mike_trade/.abracapocus/plans/ACTIVE/MIKE_TRADE_COMPLETE_PRODUCT/i/task_i.4_implement_engine_runner_heartbeat_graceful_drain_and_health_lifecycle.json] allowed_write_paths entry 'tests/unit/test_engine_lifecycle.py' does not exist in working root
+- [/home/mike/dev/mike/stocks/python/mike_trade/.abracapocus/plans/ACTIVE/MIKE_TRADE_COMPLETE_PRODUCT/i/task_i.4_implement_engine_runner_heartbeat_graceful_drain_and_health_lifecycle.json] acceptance_criteria list length > 5
+- [/home/mike/dev/mike/stocks/python/mike_trade/.abracapocus/plans/ACTIVE/MIKE_TRADE_COMPLETE_PRODUCT/i/task_i.4_implement_engine_runner_heartbeat_graceful_drain_and_health_lifecycle.json] acceptance_criteria item length > 120 characters
+- [/home/mike/dev/mike/stocks/python/mike_trade/.abracapocus/plans/ACTIVE/MIKE_TRADE_COMPLETE_PRODUCT/i/task_i.4_implement_engine_runner_heartbeat_graceful_drain_and_health_lifecycle.json] description field length > 300 characters
+- [/home/mike/dev/mike/stocks/python/mike_trade/.abracapocus/plans/ACTIVE/MIKE_TRADE_COMPLETE_PRODUCT/i/task_i.4_implement_engine_runner_heartbeat_graceful_drain_and_health_lifecycle.json] acceptance_criteria[8] contains broad word: all
+- [/home/mike/dev/mike/stocks/python/mike_trade/.abracapocus/plans/ACTIVE/MIKE_TRADE_COMPLETE_PRODUCT/i/task_i.5_add_concurrency_fixture_proving_10_stocks_share_one_broker_data_feed.json] allowed_write_paths entry 'tests/integration/test_scheduler_fanout.py' does not exist in working root
+- [/home/mike/dev/mike/stocks/python/mike_trade/.abracapocus/plans/ACTIVE/MIKE_TRADE_COMPLETE_PRODUCT/i/task_i.5_add_concurrency_fixture_proving_10_stocks_share_one_broker_data_feed.json] allowed_write_paths entry 'docs/verification/phase_i_scheduler.md' does not exist in working root
+- [/home/mike/dev/mike/stocks/python/mike_trade/.abracapocus/plans/ACTIVE/MIKE_TRADE_COMPLETE_PRODUCT/i/task_i.5_add_concurrency_fixture_proving_10_stocks_share_one_broker_data_feed.json] acceptance_criteria list length > 5
+- [/home/mike/dev/mike/stocks/python/mike_trade/.abracapocus/plans/ACTIVE/MIKE_TRADE_COMPLETE_PRODUCT/i/task_i.5_add_concurrency_fixture_proving_10_stocks_share_one_broker_data_feed.json] acceptance_criteria item length > 120 characters
+- [/home/mike/dev/mike/stocks/python/mike_trade/.abracapocus/plans/ACTIVE/MIKE_TRADE_COMPLETE_PRODUCT/i/task_i.5_add_concurrency_fixture_proving_10_stocks_share_one_broker_data_feed.json] description field length > 300 characters
+- [/home/mike/dev/mike/stocks/python/mike_trade/.abracapocus/plans/ACTIVE/MIKE_TRADE_COMPLETE_PRODUCT/i/task_i.5_add_concurrency_fixture_proving_10_stocks_share_one_broker_data_feed.json] description contains broad word: complete
+- [/home/mike/dev/mike/stocks/python/mike_trade/.abracapocus/plans/ACTIVE/MIKE_TRADE_COMPLETE_PRODUCT/i/task_i.5_add_concurrency_fixture_proving_10_stocks_share_one_broker_data_feed.json] description contains broad word: all
+- [/home/mike/dev/mike/stocks/python/mike_trade/.abracapocus/plans/ACTIVE/MIKE_TRADE_COMPLETE_PRODUCT/i/task_i.5_add_concurrency_fixture_proving_10_stocks_share_one_broker_data_feed.json] acceptance_criteria[1] contains broad word: all
+- [/home/mike/dev/mike/stocks/python/mike_trade/.abracapocus/plans/ACTIVE/MIKE_TRADE_COMPLETE_PRODUCT/i/task_i.5_add_concurrency_fixture_proving_10_stocks_share_one_broker_data_feed.json] acceptance_criteria[4] contains broad word: every
+- [/home/mike/dev/mike/stocks/python/mike_trade/.abracapocus/plans/ACTIVE/MIKE_TRADE_COMPLETE_PRODUCT/i/task_i.5_add_concurrency_fixture_proving_10_stocks_share_one_broker_data_feed.json] Task appears to modify blocking governance; ensure docs/operations.md Governance Blocking Policy requirements are met.
+- Task 'i.1' missing anti-inference instruction: Do not infer APIs, schemas, behavior, or file contents; inspect the referenced files first.
+- Task 'i.1' missing explicit strict file-scope language
+- Task 'i.1' missing acceptance criterion equivalent to: No file outside allowed_write_paths is modified.
+- Task 'i.2' missing anti-inference instruction: Do not infer APIs, schemas, behavior, or file contents; inspect the referenced files first.
+- Task 'i.2' missing explicit strict file-scope language
+- Task 'i.2' missing acceptance criterion equivalent to: No file outside allowed_write_paths is modified.
+- Task 'i.3' missing anti-inference instruction: Do not infer APIs, schemas, behavior, or file contents; inspect the referenced files first.
+- Task 'i.3' missing explicit strict file-scope language
+- Task 'i.3' missing acceptance criterion equivalent to: No file outside allowed_write_paths is modified.
+- Task 'i.4' missing anti-inference instruction: Do not infer APIs, schemas, behavior, or file contents; inspect the referenced files first.
+- Task 'i.4' missing explicit strict file-scope language
+- Task 'i.4' missing acceptance criterion equivalent to: No file outside allowed_write_paths is modified.
+- Task 'i.5' missing anti-inference instruction: Do not infer APIs, schemas, behavior, or file contents; inspect the referenced files first.
+- Task 'i.5' missing explicit strict file-scope language
+- Task 'i.5' missing acceptance criterion equivalent to: No file outside allowed_write_paths is modified.
+- Task 'i.1' acceptance_criteria[0] may produce unsatisfied reconciliation: 'A test constructs each supported trigger kind (MARKET_DATA_A...' lacks file reference or test command
+- Task 'i.1' acceptance_criteria[1] may produce unsatisfied reconciliation: 'A test confirms that a CANDLE_CLOSED(1m) strategy yields exa...' lacks file reference or test command
+- Task 'i.1' acceptance_criteria[2] may produce unsatisfied reconciliation: 'A test confirms that an INTERVAL(30s) trigger fires at most ...' lacks file reference or test command
+- Task 'i.1' acceptance_criteria[3] may produce unsatisfied reconciliation: 'A test confirms that QUOTE_CHANGE fires only when bid or ask...' lacks file reference or test command
+- Task 'i.1' acceptance_criteria[4] may produce unsatisfied reconciliation: 'A test confirms that SESSION_OPEN, ENTRY_CUTOFF and SESSION_...' lacks file reference or test command
+- Task 'i.1' acceptance_criteria[5] may produce unsatisfied reconciliation: 'A test feeds the same event sequence twice, including simult...' lacks file reference or test command
+- Task 'i.1' acceptance_criteria[6] may produce unsatisfied reconciliation: 'Tests confirm that disabled or paused strategies and unwatch...' lacks file reference or test command
+- Task 'i.1' acceptance_criteria[7] may produce unsatisfied reconciliation: 'A test or code-level assertion confirms the scheduler does n...' lacks file reference or test command
+- Task 'i.1' acceptance_criteria[8] may produce unsatisfied reconciliation: 'The scheduler modules import no broker or provider adapter, ...' lacks file reference or test command
+- Task 'i.2' acceptance_criteria[0] may produce unsatisfied reconciliation: 'A test floods COALESCIBLE snapshot events for one (symbol, s...' lacks file reference or test command
+- Task 'i.2' acceptance_criteria[1] may produce unsatisfied reconciliation: 'A test interleaves CRITICAL events (fill, broker order updat...' lacks file reference or test command
+- Task 'i.2' acceptance_criteria[2] may produce unsatisfied reconciliation: 'A test confirms a full CRITICAL queue applies backpressure (...' lacks file reference or test command
+- Task 'i.2' acceptance_criteria[3] may produce unsatisfied reconciliation: 'A test confirms that a strategy raising an exception yields ...' lacks file reference or test command
+- Task 'i.2' acceptance_criteria[4] may produce unsatisfied reconciliation: 'A test confirms a hung strategy produces a TIMEOUT outcome w...' lacks file reference or test command
+- Task 'i.2' acceptance_criteria[5] may produce unsatisfied reconciliation: 'A test confirms that a result computed for snapshot_version ...' lacks file reference or test command
+- Task 'i.2' acceptance_criteria[6] may produce unsatisfied reconciliation: 'A test confirms the pool never exceeds its configured max co...' lacks file reference or test command
+- Task 'i.2' acceptance_criteria[7] may produce unsatisfied reconciliation: 'A test confirms that process-pool execution is used only for...' lacks file reference or test command
+- Task 'i.2' acceptance_criteria[8] may produce unsatisfied reconciliation: 'A test confirms graceful shutdown rejects new submissions an...' lacks file reference or test command
+- Task 'i.2' acceptance_criteria[9] may produce unsatisfied reconciliation: 'No queue is created without an explicit maxsize. Workers imp...' lacks file reference or test command
+- Task 'i.3' acceptance_criteria[0] may produce unsatisfied reconciliation: 'A test submits a mixed batch (BUY signal, SELL signal, manua...' lacks file reference or test command
+- Task 'i.3' acceptance_criteria[1] may produce unsatisfied reconciliation: 'A test with equal priority and equal timestamps confirms tie...' lacks file reference or test command
+- Task 'i.3' acceptance_criteria[2] may produce unsatisfied reconciliation: 'A test confirms that a signal past its expiry is rejected wi...' lacks file reference or test command
+- Task 'i.3' acceptance_criteria[3] may produce unsatisfied reconciliation: 'A test confirms ERROR, TIMEOUT, CANCELLED and STALE_DISCARDE...' lacks file reference or test command
+- Task 'i.3' acceptance_criteria[4] may produce unsatisfied reconciliation: 'A test confirms that a fill or stop event older than any fre...' lacks file reference or test command
+- Task 'i.3' acceptance_criteria[5] may produce unsatisfied reconciliation: 'A test confirms a duplicate signal for the same (strategy_id...' lacks file reference or test command
+- Task 'i.3' acceptance_criteria[6] may produce unsatisfied reconciliation: 'A concurrency test submits events from many concurrent produ...' lacks file reference or test command
+- Task 'i.4' acceptance_criteria[0] may produce unsatisfied reconciliation: 'A test confirms startup enters RECONCILING with entries_allo...' lacks file reference or test command
+- Task 'i.4' acceptance_criteria[1] may produce unsatisfied reconciliation: 'A test confirms that when reconciliation reports drift, the ...' lacks file reference or test command
+- Task 'i.4' acceptance_criteria[2] may produce unsatisfied reconciliation: 'A test using a fake clock confirms heartbeats publish at the...' lacks file reference or test command
+- Task 'i.4' acceptance_criteria[3] may produce unsatisfied reconciliation: 'Tests confirm classify_liveness returns ONLINE, STALE and OF...' lacks file reference or test command
+- Task 'i.4' acceptance_criteria[4] may produce unsatisfied reconciliation: 'A test confirms that in PAUSED and in DEGRADED (stale market...' lacks file reference or test command
+- Task 'i.4' acceptance_criteria[5] may produce unsatisfied reconciliation: 'A test confirms stop() transitions through DRAINING to STOPP...' lacks file reference or test command
+- Task 'i.4' acceptance_criteria[6] may produce unsatisfied reconciliation: 'A test with a recording fake broker port confirms that shutd...' lacks file reference or test command
+- Task 'i.4' acceptance_criteria[7] may produce unsatisfied reconciliation: 'A test confirms that a strategy exception during operation s...' lacks file reference or test command
+- Task 'i.5' acceptance_criteria[1] may produce unsatisfied reconciliation: 'The test asserts the fake provider's stream-open/connect cou...' lacks file reference or test command
+- Task 'i.5' acceptance_criteria[2] may produce unsatisfied reconciliation: 'The test asserts the max observed evaluation-pool concurrenc...' lacks file reference or test command
+- Task 'i.5' acceptance_criteria[3] may produce unsatisfied reconciliation: 'The test asserts closed-bar strategies evaluate exactly once...' lacks file reference or test command
+- Task 'i.5' acceptance_criteria[4] may produce unsatisfied reconciliation: 'The test asserts that every scripted fill and stop event inj...' lacks file reference or test command
+- Task 'i.5' acceptance_criteria[5] may produce unsatisfied reconciliation: 'The test asserts the raising strategy yields ERROR, the slow...' lacks file reference or test command
+- Task 'i.5' acceptance_criteria[6] may produce unsatisfied reconciliation: 'The test asserts two runs of the scenario produce an identic...' lacks file reference or test command
+- Task 'i.5' acceptance_criteria[7] may produce unsatisfied reconciliation: 'The test uses no network, no broker credentials and no Alpac...' lacks file reference or test command
+- Phase i phase_verification.json has no checks
+- [/home/mike/dev/mike/stocks/python/mike_trade/.abracapocus/plans/ACTIVE/MIKE_TRADE_COMPLETE_PRODUCT/j/task_j.1_implement_versioned_python_strategy_interfaces_registry_and_validated_parameters.json] allowed_write_paths entry 'mike_trade/strategies/base.py' does not exist in working root
+- [/home/mike/dev/mike/stocks/python/mike_trade/.abracapocus/plans/ACTIVE/MIKE_TRADE_COMPLETE_PRODUCT/j/task_j.1_implement_versioned_python_strategy_interfaces_registry_and_validated_parameters.json] allowed_write_paths entry 'mike_trade/strategies/registry.py' does not exist in working root
+- [/home/mike/dev/mike/stocks/python/mike_trade/.abracapocus/plans/ACTIVE/MIKE_TRADE_COMPLETE_PRODUCT/j/task_j.1_implement_versioned_python_strategy_interfaces_registry_and_validated_parameters.json] allowed_write_paths entry 'tests/contracts/test_strategy_registry.py' does not exist in working root
+- [/home/mike/dev/mike/stocks/python/mike_trade/.abracapocus/plans/ACTIVE/MIKE_TRADE_COMPLETE_PRODUCT/j/task_j.1_implement_versioned_python_strategy_interfaces_registry_and_validated_parameters.json] acceptance_criteria list length > 5
+- [/home/mike/dev/mike/stocks/python/mike_trade/.abracapocus/plans/ACTIVE/MIKE_TRADE_COMPLETE_PRODUCT/j/task_j.1_implement_versioned_python_strategy_interfaces_registry_and_validated_parameters.json] acceptance_criteria item length > 120 characters
+- [/home/mike/dev/mike/stocks/python/mike_trade/.abracapocus/plans/ACTIVE/MIKE_TRADE_COMPLETE_PRODUCT/j/task_j.1_implement_versioned_python_strategy_interfaces_registry_and_validated_parameters.json] description field length > 300 characters
+- [/home/mike/dev/mike/stocks/python/mike_trade/.abracapocus/plans/ACTIVE/MIKE_TRADE_COMPLETE_PRODUCT/j/task_j.1_implement_versioned_python_strategy_interfaces_registry_and_validated_parameters.json] acceptance_criteria[7] contains broad word: all
+- [/home/mike/dev/mike/stocks/python/mike_trade/.abracapocus/plans/ACTIVE/MIKE_TRADE_COMPLETE_PRODUCT/j/task_j.2_implement_opening_range_breakout_buy_algorithm_with_warmup_constraints.json] allowed_write_paths entry 'mike_trade/strategies/buy/opening_range_breakout.py' does not exist in working root
+- [/home/mike/dev/mike/stocks/python/mike_trade/.abracapocus/plans/ACTIVE/MIKE_TRADE_COMPLETE_PRODUCT/j/task_j.2_implement_opening_range_breakout_buy_algorithm_with_warmup_constraints.json] allowed_write_paths entry 'tests/unit/test_buy_opening_range.py' does not exist in working root
+- [/home/mike/dev/mike/stocks/python/mike_trade/.abracapocus/plans/ACTIVE/MIKE_TRADE_COMPLETE_PRODUCT/j/task_j.2_implement_opening_range_breakout_buy_algorithm_with_warmup_constraints.json] acceptance_criteria list length > 5
+- [/home/mike/dev/mike/stocks/python/mike_trade/.abracapocus/plans/ACTIVE/MIKE_TRADE_COMPLETE_PRODUCT/j/task_j.2_implement_opening_range_breakout_buy_algorithm_with_warmup_constraints.json] acceptance_criteria item length > 120 characters
+- [/home/mike/dev/mike/stocks/python/mike_trade/.abracapocus/plans/ACTIVE/MIKE_TRADE_COMPLETE_PRODUCT/j/task_j.2_implement_opening_range_breakout_buy_algorithm_with_warmup_constraints.json] description field length > 300 characters
+- [/home/mike/dev/mike/stocks/python/mike_trade/.abracapocus/plans/ACTIVE/MIKE_TRADE_COMPLETE_PRODUCT/j/task_j.2_implement_opening_range_breakout_buy_algorithm_with_warmup_constraints.json] description contains broad word: complete
+- [/home/mike/dev/mike/stocks/python/mike_trade/.abracapocus/plans/ACTIVE/MIKE_TRADE_COMPLETE_PRODUCT/j/task_j.2_implement_opening_range_breakout_buy_algorithm_with_warmup_constraints.json] acceptance_criteria[0] contains broad word: complete
+- [/home/mike/dev/mike/stocks/python/mike_trade/.abracapocus/plans/ACTIVE/MIKE_TRADE_COMPLETE_PRODUCT/j/task_j.2_implement_opening_range_breakout_buy_algorithm_with_warmup_constraints.json] acceptance_criteria[7] contains broad word: all
+- [/home/mike/dev/mike/stocks/python/mike_trade/.abracapocus/plans/ACTIVE/MIKE_TRADE_COMPLETE_PRODUCT/j/task_j.3_implement_momentum_breakout_buy_algorithm_and_explicit_no_signal_reasons.json] allowed_write_paths entry 'mike_trade/strategies/buy/momentum_breakout.py' does not exist in working root
+- [/home/mike/dev/mike/stocks/python/mike_trade/.abracapocus/plans/ACTIVE/MIKE_TRADE_COMPLETE_PRODUCT/j/task_j.3_implement_momentum_breakout_buy_algorithm_and_explicit_no_signal_reasons.json] allowed_write_paths entry 'tests/unit/test_buy_momentum.py' does not exist in working root
+- [/home/mike/dev/mike/stocks/python/mike_trade/.abracapocus/plans/ACTIVE/MIKE_TRADE_COMPLETE_PRODUCT/j/task_j.3_implement_momentum_breakout_buy_algorithm_and_explicit_no_signal_reasons.json] acceptance_criteria list length > 5
+- [/home/mike/dev/mike/stocks/python/mike_trade/.abracapocus/plans/ACTIVE/MIKE_TRADE_COMPLETE_PRODUCT/j/task_j.3_implement_momentum_breakout_buy_algorithm_and_explicit_no_signal_reasons.json] acceptance_criteria item length > 120 characters
+- [/home/mike/dev/mike/stocks/python/mike_trade/.abracapocus/plans/ACTIVE/MIKE_TRADE_COMPLETE_PRODUCT/j/task_j.3_implement_momentum_breakout_buy_algorithm_and_explicit_no_signal_reasons.json] description field length > 300 characters
+- [/home/mike/dev/mike/stocks/python/mike_trade/.abracapocus/plans/ACTIVE/MIKE_TRADE_COMPLETE_PRODUCT/j/task_j.3_implement_momentum_breakout_buy_algorithm_and_explicit_no_signal_reasons.json] description contains broad word: every
+- [/home/mike/dev/mike/stocks/python/mike_trade/.abracapocus/plans/ACTIVE/MIKE_TRADE_COMPLETE_PRODUCT/j/task_j.3_implement_momentum_breakout_buy_algorithm_and_explicit_no_signal_reasons.json] acceptance_criteria[0] contains broad word: complete
+- [/home/mike/dev/mike/stocks/python/mike_trade/.abracapocus/plans/ACTIVE/MIKE_TRADE_COMPLETE_PRODUCT/j/task_j.3_implement_momentum_breakout_buy_algorithm_and_explicit_no_signal_reasons.json] acceptance_criteria[3] contains broad word: every
+- [/home/mike/dev/mike/stocks/python/mike_trade/.abracapocus/plans/ACTIVE/MIKE_TRADE_COMPLETE_PRODUCT/j/task_j.3_implement_momentum_breakout_buy_algorithm_and_explicit_no_signal_reasons.json] acceptance_criteria[6] contains broad word: all
+- [/home/mike/dev/mike/stocks/python/mike_trade/.abracapocus/plans/ACTIVE/MIKE_TRADE_COMPLETE_PRODUCT/j/task_j.4_implement_documented_vwap_bounce_reference_buy_with_completed_candle_crossing_tests.json] allowed_write_paths entry 'mike_trade/strategies/buy/vwap_bounce.py' does not exist in working root
+- [/home/mike/dev/mike/stocks/python/mike_trade/.abracapocus/plans/ACTIVE/MIKE_TRADE_COMPLETE_PRODUCT/j/task_j.4_implement_documented_vwap_bounce_reference_buy_with_completed_candle_crossing_tests.json] allowed_write_paths entry 'tests/unit/test_buy_vwap.py' does not exist in working root
+- [/home/mike/dev/mike/stocks/python/mike_trade/.abracapocus/plans/ACTIVE/MIKE_TRADE_COMPLETE_PRODUCT/j/task_j.4_implement_documented_vwap_bounce_reference_buy_with_completed_candle_crossing_tests.json] acceptance_criteria list length > 5
+- [/home/mike/dev/mike/stocks/python/mike_trade/.abracapocus/plans/ACTIVE/MIKE_TRADE_COMPLETE_PRODUCT/j/task_j.4_implement_documented_vwap_bounce_reference_buy_with_completed_candle_crossing_tests.json] acceptance_criteria item length > 120 characters
+- [/home/mike/dev/mike/stocks/python/mike_trade/.abracapocus/plans/ACTIVE/MIKE_TRADE_COMPLETE_PRODUCT/j/task_j.4_implement_documented_vwap_bounce_reference_buy_with_completed_candle_crossing_tests.json] description field length > 300 characters
+- [/home/mike/dev/mike/stocks/python/mike_trade/.abracapocus/plans/ACTIVE/MIKE_TRADE_COMPLETE_PRODUCT/j/task_j.5_document_real_buy_strategies_and_executable_vwap_reference_configuration_contract.json] allowed_write_paths entry 'docs/STRATEGIES.md' does not exist in working root
+- [/home/mike/dev/mike/stocks/python/mike_trade/.abracapocus/plans/ACTIVE/MIKE_TRADE_COMPLETE_PRODUCT/j/task_j.5_document_real_buy_strategies_and_executable_vwap_reference_configuration_contract.json] allowed_write_paths entry 'mike_trade/strategies/presets/buy_presets.py' does not exist in working root
+- [/home/mike/dev/mike/stocks/python/mike_trade/.abracapocus/plans/ACTIVE/MIKE_TRADE_COMPLETE_PRODUCT/j/task_j.5_document_real_buy_strategies_and_executable_vwap_reference_configuration_contract.json] acceptance_criteria list length > 5
+- [/home/mike/dev/mike/stocks/python/mike_trade/.abracapocus/plans/ACTIVE/MIKE_TRADE_COMPLETE_PRODUCT/j/task_j.5_document_real_buy_strategies_and_executable_vwap_reference_configuration_contract.json] acceptance_criteria item length > 120 characters
+- [/home/mike/dev/mike/stocks/python/mike_trade/.abracapocus/plans/ACTIVE/MIKE_TRADE_COMPLETE_PRODUCT/j/task_j.5_document_real_buy_strategies_and_executable_vwap_reference_configuration_contract.json] acceptance_criteria references pytest or test without a test allowed_write_path
+- [/home/mike/dev/mike/stocks/python/mike_trade/.abracapocus/plans/ACTIVE/MIKE_TRADE_COMPLETE_PRODUCT/j/task_j.5_document_real_buy_strategies_and_executable_vwap_reference_configuration_contract.json] description field length > 300 characters
+- [/home/mike/dev/mike/stocks/python/mike_trade/.abracapocus/plans/ACTIVE/MIKE_TRADE_COMPLETE_PRODUCT/j/task_j.5_document_real_buy_strategies_and_executable_vwap_reference_configuration_contract.json] description contains broad word: every
+- [/home/mike/dev/mike/stocks/python/mike_trade/.abracapocus/plans/ACTIVE/MIKE_TRADE_COMPLETE_PRODUCT/j/task_j.5_document_real_buy_strategies_and_executable_vwap_reference_configuration_contract.json] acceptance_criteria[0] contains broad word: all
+- [/home/mike/dev/mike/stocks/python/mike_trade/.abracapocus/plans/ACTIVE/MIKE_TRADE_COMPLETE_PRODUCT/j/task_j.5_document_real_buy_strategies_and_executable_vwap_reference_configuration_contract.json] acceptance_criteria[4] contains broad word: every
+- Task 'j.1' missing anti-inference instruction: Do not infer APIs, schemas, behavior, or file contents; inspect the referenced files first.
+- Task 'j.1' missing explicit strict file-scope language
+- Task 'j.1' missing acceptance criterion equivalent to: No file outside allowed_write_paths is modified.
+- Task 'j.2' missing anti-inference instruction: Do not infer APIs, schemas, behavior, or file contents; inspect the referenced files first.
+- Task 'j.2' missing explicit strict file-scope language
+- Task 'j.2' missing acceptance criterion equivalent to: No file outside allowed_write_paths is modified.
+- Task 'j.3' missing anti-inference instruction: Do not infer APIs, schemas, behavior, or file contents; inspect the referenced files first.
+- Task 'j.3' missing explicit strict file-scope language
+- Task 'j.3' missing acceptance criterion equivalent to: No file outside allowed_write_paths is modified.
+- Task 'j.4' missing anti-inference instruction: Do not infer APIs, schemas, behavior, or file contents; inspect the referenced files first.
+- Task 'j.4' missing explicit strict file-scope language
+- Task 'j.4' missing acceptance criterion equivalent to: No file outside allowed_write_paths is modified.
+- Task 'j.5' missing anti-inference instruction: Do not infer APIs, schemas, behavior, or file contents; inspect the referenced files first.
+- Task 'j.5' missing explicit strict file-scope language
+- Task 'j.5' missing acceptance criterion equivalent to: No file outside allowed_write_paths is modified.
+- Task 'j.1' acceptance_criteria[1] may produce unsatisfied reconciliation: 'StrategySpec carries id, semantic version, side, input requi...' lacks file reference or test command
+- Task 'j.1' acceptance_criteria[2] may produce unsatisfied reconciliation: 'Parameter validation rejects unknown, missing-required, out-...' lacks file reference or test command
+- Task 'j.1' acceptance_criteria[3] may produce unsatisfied reconciliation: 'StrategyRegistry registers classes explicitly, rejects dupli...' lacks file reference or test command
+- Task 'j.1' acceptance_criteria[4] may produce unsatisfied reconciliation: 'A BUY strategy can be registered and looked up without any S...' lacks file reference or test command
+- Task 'j.1' acceptance_criteria[5] may produce unsatisfied reconciliation: 'Evaluation results expose reason codes including NO_SIGNAL, ...' lacks file reference or test command
+- Task 'j.1' acceptance_criteria[6] may produce unsatisfied reconciliation: 'Identical inputs produce identical signal IDs, and different...' lacks file reference or test command
+- Task 'j.2' acceptance_criteria[0] may produce unsatisfied reconciliation: 'OpeningRangeBreakoutBuy subclasses BuyStrategy, declares a c...' lacks file reference or test command
+- Task 'j.2' acceptance_criteria[1] may produce unsatisfied reconciliation: 'A BUY signal is emitted only when the range window has fully...' lacks file reference or test command
+- Task 'j.2' acceptance_criteria[2] may produce unsatisfied reconciliation: 'A latest close exactly equal to the range high produces NO_S...' lacks file reference or test command
+- Task 'j.2' acceptance_criteria[3] may produce unsatisfied reconciliation: 'Incomplete range or unmet warmup returns INSUFFICIENT_DATA; ...' lacks file reference or test command
+- Task 'j.2' acceptance_criteria[4] may produce unsatisfied reconciliation: 'Replaying the same completed bar does not emit a second sign...' lacks file reference or test command
+- Task 'j.2' acceptance_criteria[5] may produce unsatisfied reconciliation: 'Signal IDs are deterministic for identical inputs; prices us...' lacks file reference or test command
+- Task 'j.2' acceptance_criteria[6] may produce unsatisfied reconciliation: 'The module imports no broker, network, filesystem, or secret...' lacks file reference or test command
+- Task 'j.3' acceptance_criteria[0] may produce unsatisfied reconciliation: 'MomentumBreakoutBuy subclasses BuyStrategy, declares a compl...' lacks file reference or test command
+- Task 'j.3' acceptance_criteria[1] may produce unsatisfied reconciliation: 'A BUY signal is emitted only when prior close <= its lookbac...' lacks file reference or test command
+- Task 'j.3' acceptance_criteria[2] may produce unsatisfied reconciliation: 'A close exactly equal to the lookback high returns NO_SIGNAL...' lacks file reference or test command
+- Task 'j.3' acceptance_criteria[3] may produce unsatisfied reconciliation: 'Every non-signal path returns an explicit reason code (INSUF...' lacks file reference or test command
+- Task 'j.3' acceptance_criteria[4] may produce unsatisfied reconciliation: 'Replaying the same completed bar does not emit a second sign...' lacks file reference or test command
+- Task 'j.3' acceptance_criteria[5] may produce unsatisfied reconciliation: 'Signal IDs are deterministic; prices use Decimal; there are ...' lacks file reference or test command
+- Task 'j.4' acceptance_criteria[0] may produce unsatisfied reconciliation: 'VwapBounceBuy subclasses BuyStrategy with spec id vwap_bounc...' lacks file reference or test command
+- Task 'j.4' acceptance_criteria[1] may produce unsatisfied reconciliation: 'A signal is emitted if and only if prior completed close <= ...' lacks file reference or test command
+- Task 'j.4' acceptance_criteria[2] may produce unsatisfied reconciliation: 'Boundary tests show prior close == prior VWAP with latest cl...' lacks file reference or test command
+- Task 'j.4' acceptance_criteria[3] may produce unsatisfied reconciliation: 'Incomplete, stale, missing, invalid, zero-volume, not-warmed...' lacks file reference or test command
+- Task 'j.4' acceptance_criteria[4] may produce unsatisfied reconciliation: 'Replaying the same completed bar never emits a duplicate sig...' lacks file reference or test command
+- Task 'j.4' acceptance_criteria[5] may produce unsatisfied reconciliation: 'The module does not import or reference vwap_breakdown or an...' lacks file reference or test command
+- Task 'j.4' acceptance_criteria[6] may produce unsatisfied reconciliation: 'The module has no broker, network, filesystem, or secrets im...' lacks file reference or test command
+- Task 'j.5' acceptance_criteria[5] may produce unsatisfied reconciliation: 'Neither file contains profitability claims, invented 'profit...' lacks file reference or test command
+- Phase j phase_verification.json has no checks
+- [/home/mike/dev/mike/stocks/python/mike_trade/.abracapocus/plans/ACTIVE/MIKE_TRADE_COMPLETE_PRODUCT/k/task_k.1_implement_sell_rule_shared_evaluation_contract_and_full_exit_eligibility.json] allowed_write_paths entry 'mike_trade/strategies/sell/base.py' does not exist in working root
+- [/home/mike/dev/mike/stocks/python/mike_trade/.abracapocus/plans/ACTIVE/MIKE_TRADE_COMPLETE_PRODUCT/k/task_k.1_implement_sell_rule_shared_evaluation_contract_and_full_exit_eligibility.json] allowed_write_paths entry 'tests/contracts/test_sell_strategy.py' does not exist in working root
+- [/home/mike/dev/mike/stocks/python/mike_trade/.abracapocus/plans/ACTIVE/MIKE_TRADE_COMPLETE_PRODUCT/k/task_k.1_implement_sell_rule_shared_evaluation_contract_and_full_exit_eligibility.json] acceptance_criteria list length > 5
+- [/home/mike/dev/mike/stocks/python/mike_trade/.abracapocus/plans/ACTIVE/MIKE_TRADE_COMPLETE_PRODUCT/k/task_k.1_implement_sell_rule_shared_evaluation_contract_and_full_exit_eligibility.json] acceptance_criteria item length > 120 characters
+- [/home/mike/dev/mike/stocks/python/mike_trade/.abracapocus/plans/ACTIVE/MIKE_TRADE_COMPLETE_PRODUCT/k/task_k.1_implement_sell_rule_shared_evaluation_contract_and_full_exit_eligibility.json] description field length > 300 characters
+- [/home/mike/dev/mike/stocks/python/mike_trade/.abracapocus/plans/ACTIVE/MIKE_TRADE_COMPLETE_PRODUCT/k/task_k.1_implement_sell_rule_shared_evaluation_contract_and_full_exit_eligibility.json] description contains broad word: full
+- [/home/mike/dev/mike/stocks/python/mike_trade/.abracapocus/plans/ACTIVE/MIKE_TRADE_COMPLETE_PRODUCT/k/task_k.1_implement_sell_rule_shared_evaluation_contract_and_full_exit_eligibility.json] description contains broad word: all
+- [/home/mike/dev/mike/stocks/python/mike_trade/.abracapocus/plans/ACTIVE/MIKE_TRADE_COMPLETE_PRODUCT/k/task_k.1_implement_sell_rule_shared_evaluation_contract_and_full_exit_eligibility.json] description contains broad word: every
+- [/home/mike/dev/mike/stocks/python/mike_trade/.abracapocus/plans/ACTIVE/MIKE_TRADE_COMPLETE_PRODUCT/k/task_k.1_implement_sell_rule_shared_evaluation_contract_and_full_exit_eligibility.json] acceptance_criteria[4] contains broad word: all
+- [/home/mike/dev/mike/stocks/python/mike_trade/.abracapocus/plans/ACTIVE/MIKE_TRADE_COMPLETE_PRODUCT/k/task_k.2_implement_documented_vwap_breakdown_reference_sell_and_momentum_reversal.json] allowed_write_paths entry 'mike_trade/strategies/sell/vwap_breakdown.py' does not exist in working root
+- [/home/mike/dev/mike/stocks/python/mike_trade/.abracapocus/plans/ACTIVE/MIKE_TRADE_COMPLETE_PRODUCT/k/task_k.2_implement_documented_vwap_breakdown_reference_sell_and_momentum_reversal.json] allowed_write_paths entry 'mike_trade/strategies/sell/momentum_reversal.py' does not exist in working root
+- [/home/mike/dev/mike/stocks/python/mike_trade/.abracapocus/plans/ACTIVE/MIKE_TRADE_COMPLETE_PRODUCT/k/task_k.2_implement_documented_vwap_breakdown_reference_sell_and_momentum_reversal.json] allowed_write_paths entry 'tests/unit/test_sell_trends.py' does not exist in working root
+- [/home/mike/dev/mike/stocks/python/mike_trade/.abracapocus/plans/ACTIVE/MIKE_TRADE_COMPLETE_PRODUCT/k/task_k.2_implement_documented_vwap_breakdown_reference_sell_and_momentum_reversal.json] acceptance_criteria list length > 5
+- [/home/mike/dev/mike/stocks/python/mike_trade/.abracapocus/plans/ACTIVE/MIKE_TRADE_COMPLETE_PRODUCT/k/task_k.2_implement_documented_vwap_breakdown_reference_sell_and_momentum_reversal.json] acceptance_criteria item length > 120 characters
+- [/home/mike/dev/mike/stocks/python/mike_trade/.abracapocus/plans/ACTIVE/MIKE_TRADE_COMPLETE_PRODUCT/k/task_k.2_implement_documented_vwap_breakdown_reference_sell_and_momentum_reversal.json] description field length > 300 characters
+- [/home/mike/dev/mike/stocks/python/mike_trade/.abracapocus/plans/ACTIVE/MIKE_TRADE_COMPLETE_PRODUCT/k/task_k.2_implement_documented_vwap_breakdown_reference_sell_and_momentum_reversal.json] description contains broad word: full
+- [/home/mike/dev/mike/stocks/python/mike_trade/.abracapocus/plans/ACTIVE/MIKE_TRADE_COMPLETE_PRODUCT/k/task_k.2_implement_documented_vwap_breakdown_reference_sell_and_momentum_reversal.json] description contains broad word: every
+- [/home/mike/dev/mike/stocks/python/mike_trade/.abracapocus/plans/ACTIVE/MIKE_TRADE_COMPLETE_PRODUCT/k/task_k.2_implement_documented_vwap_breakdown_reference_sell_and_momentum_reversal.json] acceptance_criteria[1] contains broad word: full
+- [/home/mike/dev/mike/stocks/python/mike_trade/.abracapocus/plans/ACTIVE/MIKE_TRADE_COMPLETE_PRODUCT/k/task_k.2_implement_documented_vwap_breakdown_reference_sell_and_momentum_reversal.json] acceptance_criteria[5] contains broad word: full
+- [/home/mike/dev/mike/stocks/python/mike_trade/.abracapocus/plans/ACTIVE/MIKE_TRADE_COMPLETE_PRODUCT/k/task_k.3_implement_rsi_reversal_sell_signal_with_closed_bar_and_reset_semantics.json] allowed_write_paths entry 'mike_trade/strategies/sell/rsi_reversal.py' does not exist in working root
+- [/home/mike/dev/mike/stocks/python/mike_trade/.abracapocus/plans/ACTIVE/MIKE_TRADE_COMPLETE_PRODUCT/k/task_k.3_implement_rsi_reversal_sell_signal_with_closed_bar_and_reset_semantics.json] allowed_write_paths entry 'tests/unit/test_sell_rsi.py' does not exist in working root
+- [/home/mike/dev/mike/stocks/python/mike_trade/.abracapocus/plans/ACTIVE/MIKE_TRADE_COMPLETE_PRODUCT/k/task_k.3_implement_rsi_reversal_sell_signal_with_closed_bar_and_reset_semantics.json] acceptance_criteria list length > 5
+- [/home/mike/dev/mike/stocks/python/mike_trade/.abracapocus/plans/ACTIVE/MIKE_TRADE_COMPLETE_PRODUCT/k/task_k.3_implement_rsi_reversal_sell_signal_with_closed_bar_and_reset_semantics.json] acceptance_criteria item length > 120 characters
+- [/home/mike/dev/mike/stocks/python/mike_trade/.abracapocus/plans/ACTIVE/MIKE_TRADE_COMPLETE_PRODUCT/k/task_k.3_implement_rsi_reversal_sell_signal_with_closed_bar_and_reset_semantics.json] description field length > 300 characters
+- [/home/mike/dev/mike/stocks/python/mike_trade/.abracapocus/plans/ACTIVE/MIKE_TRADE_COMPLETE_PRODUCT/k/task_k.3_implement_rsi_reversal_sell_signal_with_closed_bar_and_reset_semantics.json] description contains broad word: full
+- [/home/mike/dev/mike/stocks/python/mike_trade/.abracapocus/plans/ACTIVE/MIKE_TRADE_COMPLETE_PRODUCT/k/task_k.3_implement_rsi_reversal_sell_signal_with_closed_bar_and_reset_semantics.json] acceptance_criteria[1] contains broad word: full
+- [/home/mike/dev/mike/stocks/python/mike_trade/.abracapocus/plans/ACTIVE/MIKE_TRADE_COMPLETE_PRODUCT/k/task_k.4_build_signal_arbitration_valid_vs_rejected_decision_and_rearm_policy.json] allowed_write_paths entry 'mike_trade/signals/decisions.py' does not exist in working root
+- [/home/mike/dev/mike/stocks/python/mike_trade/.abracapocus/plans/ACTIVE/MIKE_TRADE_COMPLETE_PRODUCT/k/task_k.4_build_signal_arbitration_valid_vs_rejected_decision_and_rearm_policy.json] allowed_write_paths entry 'mike_trade/signals/rearm.py' does not exist in working root
+- [/home/mike/dev/mike/stocks/python/mike_trade/.abracapocus/plans/ACTIVE/MIKE_TRADE_COMPLETE_PRODUCT/k/task_k.4_build_signal_arbitration_valid_vs_rejected_decision_and_rearm_policy.json] allowed_write_paths entry 'tests/unit/test_signal_arbitration.py' does not exist in working root
+- [/home/mike/dev/mike/stocks/python/mike_trade/.abracapocus/plans/ACTIVE/MIKE_TRADE_COMPLETE_PRODUCT/k/task_k.4_build_signal_arbitration_valid_vs_rejected_decision_and_rearm_policy.json] acceptance_criteria list length > 5
+- [/home/mike/dev/mike/stocks/python/mike_trade/.abracapocus/plans/ACTIVE/MIKE_TRADE_COMPLETE_PRODUCT/k/task_k.4_build_signal_arbitration_valid_vs_rejected_decision_and_rearm_policy.json] acceptance_criteria item length > 120 characters
+- [/home/mike/dev/mike/stocks/python/mike_trade/.abracapocus/plans/ACTIVE/MIKE_TRADE_COMPLETE_PRODUCT/k/task_k.4_build_signal_arbitration_valid_vs_rejected_decision_and_rearm_policy.json] description field length > 300 characters
+- [/home/mike/dev/mike/stocks/python/mike_trade/.abracapocus/plans/ACTIVE/MIKE_TRADE_COMPLETE_PRODUCT/k/task_k.4_build_signal_arbitration_valid_vs_rejected_decision_and_rearm_policy.json] description contains broad word: full
+- [/home/mike/dev/mike/stocks/python/mike_trade/.abracapocus/plans/ACTIVE/MIKE_TRADE_COMPLETE_PRODUCT/k/task_k.4_build_signal_arbitration_valid_vs_rejected_decision_and_rearm_policy.json] description contains broad word: every
+- [/home/mike/dev/mike/stocks/python/mike_trade/.abracapocus/plans/ACTIVE/MIKE_TRADE_COMPLETE_PRODUCT/k/task_k.4_build_signal_arbitration_valid_vs_rejected_decision_and_rearm_policy.json] acceptance_criteria[0] contains broad word: every
+- [/home/mike/dev/mike/stocks/python/mike_trade/.abracapocus/plans/ACTIVE/MIKE_TRADE_COMPLETE_PRODUCT/k/task_k.4_build_signal_arbitration_valid_vs_rejected_decision_and_rearm_policy.json] acceptance_criteria[3] contains broad word: full
+- [/home/mike/dev/mike/stocks/python/mike_trade/.abracapocus/plans/ACTIVE/MIKE_TRADE_COMPLETE_PRODUCT/k/task_k.5_ship_executable_vwap_buy_sell_reference_preset_and_shadow_only_configuration.json] allowed_write_paths entry 'mike_trade/strategies/presets/pairs.py' does not exist in working root
+- [/home/mike/dev/mike/stocks/python/mike_trade/.abracapocus/plans/ACTIVE/MIKE_TRADE_COMPLETE_PRODUCT/k/task_k.5_ship_executable_vwap_buy_sell_reference_preset_and_shadow_only_configuration.json] allowed_write_paths entry 'tests/unit/test_strategy_presets.py' does not exist in working root
+- [/home/mike/dev/mike/stocks/python/mike_trade/.abracapocus/plans/ACTIVE/MIKE_TRADE_COMPLETE_PRODUCT/k/task_k.5_ship_executable_vwap_buy_sell_reference_preset_and_shadow_only_configuration.json] allowed_write_paths entry 'config/reference_vwap_shadow.yaml' does not exist in working root
+- [/home/mike/dev/mike/stocks/python/mike_trade/.abracapocus/plans/ACTIVE/MIKE_TRADE_COMPLETE_PRODUCT/k/task_k.5_ship_executable_vwap_buy_sell_reference_preset_and_shadow_only_configuration.json] acceptance_criteria list length > 5
+- [/home/mike/dev/mike/stocks/python/mike_trade/.abracapocus/plans/ACTIVE/MIKE_TRADE_COMPLETE_PRODUCT/k/task_k.5_ship_executable_vwap_buy_sell_reference_preset_and_shadow_only_configuration.json] acceptance_criteria item length > 120 characters
+- [/home/mike/dev/mike/stocks/python/mike_trade/.abracapocus/plans/ACTIVE/MIKE_TRADE_COMPLETE_PRODUCT/k/task_k.5_ship_executable_vwap_buy_sell_reference_preset_and_shadow_only_configuration.json] description field length > 300 characters
+- Task 'k.1' missing anti-inference instruction: Do not infer APIs, schemas, behavior, or file contents; inspect the referenced files first.
+- Task 'k.1' missing explicit strict file-scope language
+- Task 'k.1' missing acceptance criterion equivalent to: No file outside allowed_write_paths is modified.
+- Task 'k.1' has 3 broad words (limit 2)
+- Task 'k.2' missing anti-inference instruction: Do not infer APIs, schemas, behavior, or file contents; inspect the referenced files first.
+- Task 'k.2' missing explicit strict file-scope language
+- Task 'k.2' missing acceptance criterion equivalent to: No file outside allowed_write_paths is modified.
+- Task 'k.3' missing anti-inference instruction: Do not infer APIs, schemas, behavior, or file contents; inspect the referenced files first.
+- Task 'k.3' missing explicit strict file-scope language
+- Task 'k.3' missing acceptance criterion equivalent to: No file outside allowed_write_paths is modified.
+- Task 'k.4' missing anti-inference instruction: Do not infer APIs, schemas, behavior, or file contents; inspect the referenced files first.
+- Task 'k.4' missing explicit strict file-scope language
+- Task 'k.4' missing acceptance criterion equivalent to: No file outside allowed_write_paths is modified.
+- Task 'k.5' missing anti-inference instruction: Do not infer APIs, schemas, behavior, or file contents; inspect the referenced files first.
+- Task 'k.5' missing acceptance criterion equivalent to: No file outside allowed_write_paths is modified.
+- Task 'k.1' acceptance_criteria[1] may produce unsatisfied reconciliation: 'ExitLongRecommendation quantity always equals the confirmed ...' lacks file reference or test command
+- Task 'k.1' acceptance_criteria[2] may produce unsatisfied reconciliation: 'Flat, UNMANAGED/external, zero/negative-quantity, or non-lon...' lacks file reference or test command
+- Task 'k.1' acceptance_criteria[3] may produce unsatisfied reconciliation: 'Disabled strategies and missing/stale/incomplete/unwarmed da...' lacks file reference or test command
+- Task 'k.1' acceptance_criteria[5] may produce unsatisfied reconciliation: 'Minimum-hold evaluation uses only injected timestamps/clock,...' lacks file reference or test command
+- Task 'k.1' acceptance_criteria[6] may produce unsatisfied reconciliation: 'Identical inputs produce identical signal IDs, and a differe...' lacks file reference or test command
+- Task 'k.2' acceptance_criteria[0] may produce unsatisfied reconciliation: 'VwapBreakdownSell declares spec id vwap_breakdown, semver, S...' lacks file reference or test command
+- Task 'k.2' acceptance_criteria[1] may produce unsatisfied reconciliation: 'vwap_breakdown emits an EXIT_LONG recommendation if and only...' lacks file reference or test command
+- Task 'k.2' acceptance_criteria[2] may produce unsatisfied reconciliation: 'Boundary tests show prior close == prior VWAP with latest cl...' lacks file reference or test command
+- Task 'k.2' acceptance_criteria[3] may produce unsatisfied reconciliation: 'Incomplete, stale, missing, invalid, zero-volume, unwarmed, ...' lacks file reference or test command
+- Task 'k.2' acceptance_criteria[4] may produce unsatisfied reconciliation: 'Replaying the same completed bar yields the same signal ID w...' lacks file reference or test command
+- Task 'k.2' acceptance_criteria[5] may produce unsatisfied reconciliation: 'momentum_reversal implements one precisely documented comple...' lacks file reference or test command
+- Task 'k.2' acceptance_criteria[6] may produce unsatisfied reconciliation: 'Neither module imports a BUY strategy module or any broker/n...' lacks file reference or test command
+- Task 'k.3' acceptance_criteria[0] may produce unsatisfied reconciliation: 'RsiReversalSell declares spec id rsi_reversal, semver, SELL ...' lacks file reference or test command
+- Task 'k.3' acceptance_criteria[1] may produce unsatisfied reconciliation: 'It emits EXIT_LONG for the full confirmed remaining quantity...' lacks file reference or test command
+- Task 'k.3' acceptance_criteria[2] may produce unsatisfied reconciliation: 'After a signal, the rule is disarmed and does not fire again...' lacks file reference or test command
+- Task 'k.3' acceptance_criteria[3] may produce unsatisfied reconciliation: 'Arm/disarm state round-trips through the declared persistent...' lacks file reference or test command
+- Task 'k.3' acceptance_criteria[4] may produce unsatisfied reconciliation: 'Re-evaluating the same completed bar never produces a duplic...' lacks file reference or test command
+- Task 'k.3' acceptance_criteria[5] may produce unsatisfied reconciliation: 'Incomplete, stale, unwarmed, out-of-session, flat/unmanaged,...' lacks file reference or test command
+- Task 'k.3' acceptance_criteria[6] may produce unsatisfied reconciliation: 'Parameter validation rejects reset >= overbought, an out-of-...' lacks file reference or test command
+- Task 'k.4' acceptance_criteria[1] may produce unsatisfied reconciliation: 'Protective stop, manual close, hard risk, and forced liquida...' lacks file reference or test command
+- Task 'k.4' acceptance_criteria[2] may produce unsatisfied reconciliation: 'Simultaneous valid strategy SELLs resolve to the same select...' lacks file reference or test command
+- Task 'k.4' acceptance_criteria[3] may produce unsatisfied reconciliation: 'Flat or unmanaged positions select nothing, a pending exit c...' lacks file reference or test command
+- Task 'k.4' acceptance_criteria[4] may produce unsatisfied reconciliation: 'DecisionRecord entries are deterministic and serializable fo...' lacks file reference or test command
+- Task 'k.4' acceptance_criteria[6] may produce unsatisfied reconciliation: 'Any pre-existing public rearm API used by BUY strategies rem...' lacks file reference or test command
+- Task 'k.5' acceptance_criteria[1] may produce unsatisfied reconciliation: 'Pair validation fails closed on an unknown strategy/version,...' lacks file reference or test command
+- Task 'k.5' acceptance_criteria[4] may produce unsatisfied reconciliation: 'The reference config contains no credentials, secrets, endpo...' lacks file reference or test command
+- Task 'k.5' acceptance_criteria[5] may produce unsatisfied reconciliation: 'Neither file contains profitability claims or confidence val...' lacks file reference or test command
+- Phase k phase_verification.json has no checks
+- [/home/mike/dev/mike/stocks/python/mike_trade/.abracapocus/plans/ACTIVE/MIKE_TRADE_COMPLETE_PRODUCT/l/task_l.1_implement_serialized_total_and_per_symbol_budget_reservations_with_atomicity.json] allowed_write_paths entry 'mike_trade/portfolio/budgets.py' does not exist in working root
+- [/home/mike/dev/mike/stocks/python/mike_trade/.abracapocus/plans/ACTIVE/MIKE_TRADE_COMPLETE_PRODUCT/l/task_l.1_implement_serialized_total_and_per_symbol_budget_reservations_with_atomicity.json] allowed_write_paths entry 'mike_trade/portfolio/reservations.py' does not exist in working root
+- [/home/mike/dev/mike/stocks/python/mike_trade/.abracapocus/plans/ACTIVE/MIKE_TRADE_COMPLETE_PRODUCT/l/task_l.1_implement_serialized_total_and_per_symbol_budget_reservations_with_atomicity.json] allowed_write_paths entry 'tests/unit/test_budget_reservations.py' does not exist in working root
+- [/home/mike/dev/mike/stocks/python/mike_trade/.abracapocus/plans/ACTIVE/MIKE_TRADE_COMPLETE_PRODUCT/l/task_l.1_implement_serialized_total_and_per_symbol_budget_reservations_with_atomicity.json] acceptance_criteria list length > 5
+- [/home/mike/dev/mike/stocks/python/mike_trade/.abracapocus/plans/ACTIVE/MIKE_TRADE_COMPLETE_PRODUCT/l/task_l.1_implement_serialized_total_and_per_symbol_budget_reservations_with_atomicity.json] acceptance_criteria item length > 120 characters
+- [/home/mike/dev/mike/stocks/python/mike_trade/.abracapocus/plans/ACTIVE/MIKE_TRADE_COMPLETE_PRODUCT/l/task_l.1_implement_serialized_total_and_per_symbol_budget_reservations_with_atomicity.json] description field length > 300 characters
+- [/home/mike/dev/mike/stocks/python/mike_trade/.abracapocus/plans/ACTIVE/MIKE_TRADE_COMPLETE_PRODUCT/l/task_l.1_implement_serialized_total_and_per_symbol_budget_reservations_with_atomicity.json] description contains broad word: all
+- [/home/mike/dev/mike/stocks/python/mike_trade/.abracapocus/plans/ACTIVE/MIKE_TRADE_COMPLETE_PRODUCT/l/task_l.1_implement_serialized_total_and_per_symbol_budget_reservations_with_atomicity.json] acceptance_criteria[0] contains broad word: every
+- [/home/mike/dev/mike/stocks/python/mike_trade/.abracapocus/plans/ACTIVE/MIKE_TRADE_COMPLETE_PRODUCT/l/task_l.2_implement_fractional_and_whole_share_order_sizing_under_stop_based_loss_budget.json] allowed_write_paths entry 'mike_trade/portfolio/sizing.py' does not exist in working root
+- [/home/mike/dev/mike/stocks/python/mike_trade/.abracapocus/plans/ACTIVE/MIKE_TRADE_COMPLETE_PRODUCT/l/task_l.2_implement_fractional_and_whole_share_order_sizing_under_stop_based_loss_budget.json] allowed_write_paths entry 'tests/unit/test_position_sizing.py' does not exist in working root
+- [/home/mike/dev/mike/stocks/python/mike_trade/.abracapocus/plans/ACTIVE/MIKE_TRADE_COMPLETE_PRODUCT/l/task_l.2_implement_fractional_and_whole_share_order_sizing_under_stop_based_loss_budget.json] acceptance_criteria list length > 5
+- [/home/mike/dev/mike/stocks/python/mike_trade/.abracapocus/plans/ACTIVE/MIKE_TRADE_COMPLETE_PRODUCT/l/task_l.2_implement_fractional_and_whole_share_order_sizing_under_stop_based_loss_budget.json] acceptance_criteria item length > 120 characters
+- [/home/mike/dev/mike/stocks/python/mike_trade/.abracapocus/plans/ACTIVE/MIKE_TRADE_COMPLETE_PRODUCT/l/task_l.2_implement_fractional_and_whole_share_order_sizing_under_stop_based_loss_budget.json] description field length > 300 characters
+- [/home/mike/dev/mike/stocks/python/mike_trade/.abracapocus/plans/ACTIVE/MIKE_TRADE_COMPLETE_PRODUCT/l/task_l.2_implement_fractional_and_whole_share_order_sizing_under_stop_based_loss_budget.json] description contains broad word: all
+- [/home/mike/dev/mike/stocks/python/mike_trade/.abracapocus/plans/ACTIVE/MIKE_TRADE_COMPLETE_PRODUCT/l/task_l.3_implement_durable_per_stock_entry_limits_losing_streak_lockouts_and_cooldowns.json] allowed_write_paths entry 'mike_trade/risk/entry_eligibility.py' does not exist in working root
+- [/home/mike/dev/mike/stocks/python/mike_trade/.abracapocus/plans/ACTIVE/MIKE_TRADE_COMPLETE_PRODUCT/l/task_l.3_implement_durable_per_stock_entry_limits_losing_streak_lockouts_and_cooldowns.json] allowed_write_paths entry 'tests/unit/test_entry_eligibility.py' does not exist in working root
+- [/home/mike/dev/mike/stocks/python/mike_trade/.abracapocus/plans/ACTIVE/MIKE_TRADE_COMPLETE_PRODUCT/l/task_l.3_implement_durable_per_stock_entry_limits_losing_streak_lockouts_and_cooldowns.json] acceptance_criteria list length > 5
+- [/home/mike/dev/mike/stocks/python/mike_trade/.abracapocus/plans/ACTIVE/MIKE_TRADE_COMPLETE_PRODUCT/l/task_l.3_implement_durable_per_stock_entry_limits_losing_streak_lockouts_and_cooldowns.json] acceptance_criteria item length > 120 characters
+- [/home/mike/dev/mike/stocks/python/mike_trade/.abracapocus/plans/ACTIVE/MIKE_TRADE_COMPLETE_PRODUCT/l/task_l.3_implement_durable_per_stock_entry_limits_losing_streak_lockouts_and_cooldowns.json] description field length > 300 characters
+- [/home/mike/dev/mike/stocks/python/mike_trade/.abracapocus/plans/ACTIVE/MIKE_TRADE_COMPLETE_PRODUCT/l/task_l.3_implement_durable_per_stock_entry_limits_losing_streak_lockouts_and_cooldowns.json] description contains broad word: all
+- [/home/mike/dev/mike/stocks/python/mike_trade/.abracapocus/plans/ACTIVE/MIKE_TRADE_COMPLETE_PRODUCT/l/task_l.4_implement_session_entry_cutoff_spread_liquidity_and_minimum_hold_policies.json] allowed_write_paths entry 'mike_trade/risk/session_policy.py' does not exist in working root
+- [/home/mike/dev/mike/stocks/python/mike_trade/.abracapocus/plans/ACTIVE/MIKE_TRADE_COMPLETE_PRODUCT/l/task_l.4_implement_session_entry_cutoff_spread_liquidity_and_minimum_hold_policies.json] allowed_write_paths entry 'mike_trade/risk/market_filters.py' does not exist in working root
+- [/home/mike/dev/mike/stocks/python/mike_trade/.abracapocus/plans/ACTIVE/MIKE_TRADE_COMPLETE_PRODUCT/l/task_l.4_implement_session_entry_cutoff_spread_liquidity_and_minimum_hold_policies.json] allowed_write_paths entry 'tests/unit/test_session_policy.py' does not exist in working root
+- [/home/mike/dev/mike/stocks/python/mike_trade/.abracapocus/plans/ACTIVE/MIKE_TRADE_COMPLETE_PRODUCT/l/task_l.4_implement_session_entry_cutoff_spread_liquidity_and_minimum_hold_policies.json] acceptance_criteria list length > 5
+- [/home/mike/dev/mike/stocks/python/mike_trade/.abracapocus/plans/ACTIVE/MIKE_TRADE_COMPLETE_PRODUCT/l/task_l.4_implement_session_entry_cutoff_spread_liquidity_and_minimum_hold_policies.json] acceptance_criteria item length > 120 characters
+- [/home/mike/dev/mike/stocks/python/mike_trade/.abracapocus/plans/ACTIVE/MIKE_TRADE_COMPLETE_PRODUCT/l/task_l.4_implement_session_entry_cutoff_spread_liquidity_and_minimum_hold_policies.json] description field length > 300 characters
+- [/home/mike/dev/mike/stocks/python/mike_trade/.abracapocus/plans/ACTIVE/MIKE_TRADE_COMPLETE_PRODUCT/l/task_l.4_implement_session_entry_cutoff_spread_liquidity_and_minimum_hold_policies.json] description contains broad word: all
+- [/home/mike/dev/mike/stocks/python/mike_trade/.abracapocus/plans/ACTIVE/MIKE_TRADE_COMPLETE_PRODUCT/l/task_l.5_add_cross_scenario_trade_cap_loss_streak_and_cooldown_isolation_tests.json] allowed_write_paths entry 'tests/integration/test_entry_policy_restart.py' does not exist in working root
+- [/home/mike/dev/mike/stocks/python/mike_trade/.abracapocus/plans/ACTIVE/MIKE_TRADE_COMPLETE_PRODUCT/l/task_l.5_add_cross_scenario_trade_cap_loss_streak_and_cooldown_isolation_tests.json] allowed_write_paths entry 'docs/verification/phase_l_entry_controls.md' does not exist in working root
+- [/home/mike/dev/mike/stocks/python/mike_trade/.abracapocus/plans/ACTIVE/MIKE_TRADE_COMPLETE_PRODUCT/l/task_l.5_add_cross_scenario_trade_cap_loss_streak_and_cooldown_isolation_tests.json] acceptance_criteria list length > 5
+- [/home/mike/dev/mike/stocks/python/mike_trade/.abracapocus/plans/ACTIVE/MIKE_TRADE_COMPLETE_PRODUCT/l/task_l.5_add_cross_scenario_trade_cap_loss_streak_and_cooldown_isolation_tests.json] acceptance_criteria item length > 120 characters
+- [/home/mike/dev/mike/stocks/python/mike_trade/.abracapocus/plans/ACTIVE/MIKE_TRADE_COMPLETE_PRODUCT/l/task_l.5_add_cross_scenario_trade_cap_loss_streak_and_cooldown_isolation_tests.json] description field length > 300 characters
+- [/home/mike/dev/mike/stocks/python/mike_trade/.abracapocus/plans/ACTIVE/MIKE_TRADE_COMPLETE_PRODUCT/l/task_l.5_add_cross_scenario_trade_cap_loss_streak_and_cooldown_isolation_tests.json] description contains broad word: all
+- [/home/mike/dev/mike/stocks/python/mike_trade/.abracapocus/plans/ACTIVE/MIKE_TRADE_COMPLETE_PRODUCT/l/task_l.5_add_cross_scenario_trade_cap_loss_streak_and_cooldown_isolation_tests.json] acceptance_criteria[7] contains broad word: every
+- Task 'l.1' missing anti-inference instruction: Do not infer APIs, schemas, behavior, or file contents; inspect the referenced files first.
+- Task 'l.1' missing acceptance criterion equivalent to: No file outside allowed_write_paths is modified.
+- Task 'l.2' missing anti-inference instruction: Do not infer APIs, schemas, behavior, or file contents; inspect the referenced files first.
+- Task 'l.2' missing explicit strict file-scope language
+- Task 'l.2' missing acceptance criterion equivalent to: No file outside allowed_write_paths is modified.
+- Task 'l.3' missing anti-inference instruction: Do not infer APIs, schemas, behavior, or file contents; inspect the referenced files first.
+- Task 'l.3' missing explicit strict file-scope language
+- Task 'l.3' missing acceptance criterion equivalent to: No file outside allowed_write_paths is modified.
+- Task 'l.4' missing anti-inference instruction: Do not infer APIs, schemas, behavior, or file contents; inspect the referenced files first.
+- Task 'l.4' missing explicit strict file-scope language
+- Task 'l.4' missing acceptance criterion equivalent to: No file outside allowed_write_paths is modified.
+- Task 'l.5' missing anti-inference instruction: Do not infer APIs, schemas, behavior, or file contents; inspect the referenced files first.
+- Task 'l.5' missing explicit strict file-scope language
+- Task 'l.5' missing acceptance criterion equivalent to: No file outside allowed_write_paths is modified.
+- Task 'l.1' acceptance_criteria[1] may produce unsatisfied reconciliation: 'A test proves two concurrent reservation attempts for differ...' lacks file reference or test command
+- Task 'l.1' acceptance_criteria[2] may produce unsatisfied reconciliation: 'A test proves a second reservation for the same account/scen...' lacks file reference or test command
+- Task 'l.1' acceptance_criteria[3] may produce unsatisfied reconciliation: 'A test proves a partial fill followed by final cancel leaves...' lacks file reference or test command
+- Task 'l.1' acceptance_criteria[4] may produce unsatisfied reconciliation: 'A test proves applying the same fill or cancel event twice c...' lacks file reference or test command
+- Task 'l.1' acceptance_criteria[6] may produce unsatisfied reconciliation: 'A test proves the effective cap is limited by broker buying ...' lacks file reference or test command
+- Task 'l.1' acceptance_criteria[7] may produce unsatisfied reconciliation: 'A test proves multiple simultaneous eligible signals are pro...' lacks file reference or test command
+- Task 'l.1' acceptance_criteria[8] may produce unsatisfied reconciliation: 'A test proves closing a position cycle releases its committe...' lacks file reference or test command
+- Task 'l.2' acceptance_criteria[1] may produce unsatisfied reconciliation: 'A test proves quantity is bounded by the minimum of remainin...' lacks file reference or test command
+- Task 'l.2' acceptance_criteria[2] may produce unsatisfied reconciliation: 'A test proves that with max_planned_loss_usd configured, qua...' lacks file reference or test command
+- Task 'l.2' acceptance_criteria[3] may produce unsatisfied reconciliation: 'A test proves a missing, equal-to-entry, or above-entry stop...' lacks file reference or test command
+- Task 'l.2' acceptance_criteria[5] may produce unsatisfied reconciliation: 'A test proves a quantity whose notional is below minimum ord...' lacks file reference or test command
+- Task 'l.2' acceptance_criteria[6] may produce unsatisfied reconciliation: 'A test proves a fractional quantity is rejected (fail closed...' lacks file reference or test command
+- Task 'l.2' acceptance_criteria[7] may produce unsatisfied reconciliation: 'A test proves insufficient broker buying power and margin-no...' lacks file reference or test command
+- Task 'l.2' acceptance_criteria[8] may produce unsatisfied reconciliation: 'A test proves a short-side sizing request is rejected...' lacks file reference or test command
+- Task 'l.3' acceptance_criteria[0] may produce unsatisfied reconciliation: 'A test proves the first positive partial buy fill consumes e...' lacks file reference or test command
+- Task 'l.3' acceptance_criteria[1] may produce unsatisfied reconciliation: 'A test proves rejected or canceled entries with zero filled ...' lacks file reference or test command
+- Task 'l.3' acceptance_criteria[2] may produce unsatisfied reconciliation: 'A test proves the cycle count persists across a simulated re...' lacks file reference or test command
+- Task 'l.3' acceptance_criteria[3] may produce unsatisfied reconciliation: 'A test proves negative net realized P&L increments the losin...' lacks file reference or test command
+- Task 'l.3' acceptance_criteria[4] may produce unsatisfied reconciliation: 'A test proves a close with unavailable or estimated fees is ...' lacks file reference or test command
+- Task 'l.3' acceptance_criteria[5] may produce unsatisfied reconciliation: 'A test proves lockout scope works per symbol and, when enabl...' lacks file reference or test command
+- Task 'l.3' acceptance_criteria[6] may produce unsatisfied reconciliation: 'A test proves manual reset mode clears a lockout only via th...' lacks file reference or test command
+- Task 'l.3' acceptance_criteria[7] may produce unsatisfied reconciliation: 'A test proves post_sale_cooldown_seconds starts from the fin...' lacks file reference or test command
+- Task 'l.3' acceptance_criteria[8] may produce unsatisfied reconciliation: 'A test proves daily loss guard and max open positions block ...' lacks file reference or test command
+- Task 'l.3' acceptance_criteria[9] may produce unsatisfied reconciliation: 'A test proves that while entries are blocked, exit, protecti...' lacks file reference or test command
+- Task 'l.3' acceptance_criteria[10] may produce unsatisfied reconciliation: 'A test proves repeated application of the same fill/close ev...' lacks file reference or test command
+- Task 'l.4' acceptance_criteria[0] may produce unsatisfied reconciliation: 'A test proves entries are blocked before regular-session ope...' lacks file reference or test command
+- Task 'l.4' acceptance_criteria[1] may produce unsatisfied reconciliation: 'A test proves the entry cutoff is computed from the actual s...' lacks file reference or test command
+- Task 'l.4' acceptance_criteria[2] may produce unsatisfied reconciliation: 'A test proves a spread wider than the configured absolute or...' lacks file reference or test command
+- Task 'l.4' acceptance_criteria[3] may produce unsatisfied reconciliation: 'A test proves insufficient liquidity blocks entry with a dis...' lacks file reference or test command
+- Task 'l.4' acceptance_criteria[4] may produce unsatisfied reconciliation: 'A test proves stale, missing, crossed, or locked quotes fail...' lacks file reference or test command
+- Task 'l.4' acceptance_criteria[6] may produce unsatisfied reconciliation: 'A test proves minimum hold blocks an ordinary strategy SELL ...' lacks file reference or test command
+- Task 'l.4' acceptance_criteria[7] may produce unsatisfied reconciliation: 'A test proves minimum hold does not block protective stop, t...' lacks file reference or test command
+- Task 'l.4' acceptance_criteria[8] may produce unsatisfied reconciliation: 'A test proves end-of-day close is disabled by default...' lacks file reference or test command
+- Task 'l.4' acceptance_criteria[9] may produce unsatisfied reconciliation: 'Neither module performs network, broker, or database I/O...' lacks file reference or test command
+- Task 'l.5' acceptance_criteria[1] may produce unsatisfied reconciliation: 'A test proves two SHADOW scenarios and a PAPER account have ...' lacks file reference or test command
+- Task 'l.5' acceptance_criteria[2] may produce unsatisfied reconciliation: 'A test proves cycle counts, losing streaks, cooldowns, and r...' lacks file reference or test command
+- Task 'l.5' acceptance_criteria[3] may produce unsatisfied reconciliation: 'A test proves cycle counts and next_session lockouts reset a...' lacks file reference or test command
+- Task 'l.5' acceptance_criteria[4] may produce unsatisfied reconciliation: 'A test proves first positive partial fill consumes one cycle...' lacks file reference or test command
+- Task 'l.5' acceptance_criteria[5] may produce unsatisfied reconciliation: 'A test proves concurrent eligible signals are accepted in de...' lacks file reference or test command
+- Task 'l.5' acceptance_criteria[6] may produce unsatisfied reconciliation: 'A test proves protective-stop, fill-ingestion, manual-close,...' lacks file reference or test command
+- Task 'l.5' acceptance_criteria[8] may produce unsatisfied reconciliation: 'No production files are modified by this task...' lacks file reference or test command
+- Phase l phase_verification.json has no checks
+- [/home/mike/dev/mike/stocks/python/mike_trade/.abracapocus/plans/ACTIVE/MIKE_TRADE_COMPLETE_PRODUCT/m/task_m.1_implement_durable_per_symbol_position_cycle_finite_state_machine.json] allowed_write_paths entry 'mike_trade/portfolio/cycles.py' does not exist in working root
+- [/home/mike/dev/mike/stocks/python/mike_trade/.abracapocus/plans/ACTIVE/MIKE_TRADE_COMPLETE_PRODUCT/m/task_m.1_implement_durable_per_symbol_position_cycle_finite_state_machine.json] allowed_write_paths entry 'tests/unit/test_position_cycle.py' does not exist in working root
+- [/home/mike/dev/mike/stocks/python/mike_trade/.abracapocus/plans/ACTIVE/MIKE_TRADE_COMPLETE_PRODUCT/m/task_m.1_implement_durable_per_symbol_position_cycle_finite_state_machine.json] acceptance_criteria list length > 5
+- [/home/mike/dev/mike/stocks/python/mike_trade/.abracapocus/plans/ACTIVE/MIKE_TRADE_COMPLETE_PRODUCT/m/task_m.1_implement_durable_per_symbol_position_cycle_finite_state_machine.json] acceptance_criteria item length > 120 characters
+- [/home/mike/dev/mike/stocks/python/mike_trade/.abracapocus/plans/ACTIVE/MIKE_TRADE_COMPLETE_PRODUCT/m/task_m.1_implement_durable_per_symbol_position_cycle_finite_state_machine.json] description field length > 300 characters
+- [/home/mike/dev/mike/stocks/python/mike_trade/.abracapocus/plans/ACTIVE/MIKE_TRADE_COMPLETE_PRODUCT/m/task_m.1_implement_durable_per_symbol_position_cycle_finite_state_machine.json] description contains broad word: full
+- [/home/mike/dev/mike/stocks/python/mike_trade/.abracapocus/plans/ACTIVE/MIKE_TRADE_COMPLETE_PRODUCT/m/task_m.1_implement_durable_per_symbol_position_cycle_finite_state_machine.json] description contains broad word: all
+- [/home/mike/dev/mike/stocks/python/mike_trade/.abracapocus/plans/ACTIVE/MIKE_TRADE_COMPLETE_PRODUCT/m/task_m.1_implement_durable_per_symbol_position_cycle_finite_state_machine.json] acceptance_criteria[2] contains broad word: all
+- [/home/mike/dev/mike/stocks/python/mike_trade/.abracapocus/plans/ACTIVE/MIKE_TRADE_COMPLETE_PRODUCT/m/task_m.2_implement_portfolio_coordinator_one_buy_full_sell_and_priority_rules.json] allowed_write_paths entry 'mike_trade/portfolio/manager.py' does not exist in working root
+- [/home/mike/dev/mike/stocks/python/mike_trade/.abracapocus/plans/ACTIVE/MIKE_TRADE_COMPLETE_PRODUCT/m/task_m.2_implement_portfolio_coordinator_one_buy_full_sell_and_priority_rules.json] allowed_write_paths entry 'tests/unit/test_portfolio_manager.py' does not exist in working root
+- [/home/mike/dev/mike/stocks/python/mike_trade/.abracapocus/plans/ACTIVE/MIKE_TRADE_COMPLETE_PRODUCT/m/task_m.2_implement_portfolio_coordinator_one_buy_full_sell_and_priority_rules.json] acceptance_criteria list length > 5
+- [/home/mike/dev/mike/stocks/python/mike_trade/.abracapocus/plans/ACTIVE/MIKE_TRADE_COMPLETE_PRODUCT/m/task_m.2_implement_portfolio_coordinator_one_buy_full_sell_and_priority_rules.json] acceptance_criteria item length > 120 characters
+- [/home/mike/dev/mike/stocks/python/mike_trade/.abracapocus/plans/ACTIVE/MIKE_TRADE_COMPLETE_PRODUCT/m/task_m.2_implement_portfolio_coordinator_one_buy_full_sell_and_priority_rules.json] description field length > 300 characters
+- [/home/mike/dev/mike/stocks/python/mike_trade/.abracapocus/plans/ACTIVE/MIKE_TRADE_COMPLETE_PRODUCT/m/task_m.2_implement_portfolio_coordinator_one_buy_full_sell_and_priority_rules.json] description contains broad word: full
+- [/home/mike/dev/mike/stocks/python/mike_trade/.abracapocus/plans/ACTIVE/MIKE_TRADE_COMPLETE_PRODUCT/m/task_m.2_implement_portfolio_coordinator_one_buy_full_sell_and_priority_rules.json] description contains broad word: all
+- [/home/mike/dev/mike/stocks/python/mike_trade/.abracapocus/plans/ACTIVE/MIKE_TRADE_COMPLETE_PRODUCT/m/task_m.2_implement_portfolio_coordinator_one_buy_full_sell_and_priority_rules.json] acceptance_criteria[4] contains broad word: full
+- [/home/mike/dev/mike/stocks/python/mike_trade/.abracapocus/plans/ACTIVE/MIKE_TRADE_COMPLETE_PRODUCT/m/task_m.2_implement_portfolio_coordinator_one_buy_full_sell_and_priority_rules.json] acceptance_criteria[8] contains broad word: full
+- [/home/mike/dev/mike/stocks/python/mike_trade/.abracapocus/plans/ACTIVE/MIKE_TRADE_COMPLETE_PRODUCT/m/task_m.3_implement_startup_broker_reconciliation_external_holdings_and_unknown_orders.json] allowed_write_paths entry 'mike_trade/execution/reconcile.py' does not exist in working root
+- [/home/mike/dev/mike/stocks/python/mike_trade/.abracapocus/plans/ACTIVE/MIKE_TRADE_COMPLETE_PRODUCT/m/task_m.3_implement_startup_broker_reconciliation_external_holdings_and_unknown_orders.json] allowed_write_paths entry 'tests/integration/test_reconciliation.py' does not exist in working root
+- [/home/mike/dev/mike/stocks/python/mike_trade/.abracapocus/plans/ACTIVE/MIKE_TRADE_COMPLETE_PRODUCT/m/task_m.3_implement_startup_broker_reconciliation_external_holdings_and_unknown_orders.json] acceptance_criteria list length > 5
+- [/home/mike/dev/mike/stocks/python/mike_trade/.abracapocus/plans/ACTIVE/MIKE_TRADE_COMPLETE_PRODUCT/m/task_m.3_implement_startup_broker_reconciliation_external_holdings_and_unknown_orders.json] acceptance_criteria item length > 120 characters
+- [/home/mike/dev/mike/stocks/python/mike_trade/.abracapocus/plans/ACTIVE/MIKE_TRADE_COMPLETE_PRODUCT/m/task_m.3_implement_startup_broker_reconciliation_external_holdings_and_unknown_orders.json] description field length > 300 characters
+- [/home/mike/dev/mike/stocks/python/mike_trade/.abracapocus/plans/ACTIVE/MIKE_TRADE_COMPLETE_PRODUCT/m/task_m.4_implement_per_account_per_symbol_trading_phase_projections.json] allowed_write_paths entry 'mike_trade/portfolio/status.py' does not exist in working root
+- [/home/mike/dev/mike/stocks/python/mike_trade/.abracapocus/plans/ACTIVE/MIKE_TRADE_COMPLETE_PRODUCT/m/task_m.4_implement_per_account_per_symbol_trading_phase_projections.json] allowed_write_paths entry 'tests/unit/test_position_status.py' does not exist in working root
+- [/home/mike/dev/mike/stocks/python/mike_trade/.abracapocus/plans/ACTIVE/MIKE_TRADE_COMPLETE_PRODUCT/m/task_m.4_implement_per_account_per_symbol_trading_phase_projections.json] acceptance_criteria list length > 5
+- [/home/mike/dev/mike/stocks/python/mike_trade/.abracapocus/plans/ACTIVE/MIKE_TRADE_COMPLETE_PRODUCT/m/task_m.4_implement_per_account_per_symbol_trading_phase_projections.json] acceptance_criteria item length > 120 characters
+- [/home/mike/dev/mike/stocks/python/mike_trade/.abracapocus/plans/ACTIVE/MIKE_TRADE_COMPLETE_PRODUCT/m/task_m.4_implement_per_account_per_symbol_trading_phase_projections.json] description field length > 300 characters
+- [/home/mike/dev/mike/stocks/python/mike_trade/.abracapocus/plans/ACTIVE/MIKE_TRADE_COMPLETE_PRODUCT/m/task_m.4_implement_per_account_per_symbol_trading_phase_projections.json] acceptance_criteria[2] contains broad word: every
+- [/home/mike/dev/mike/stocks/python/mike_trade/.abracapocus/plans/ACTIVE/MIKE_TRADE_COMPLETE_PRODUCT/m/task_m.4_implement_per_account_per_symbol_trading_phase_projections.json] acceptance_criteria[3] contains broad word: all
+- [/home/mike/dev/mike/stocks/python/mike_trade/.abracapocus/plans/ACTIVE/MIKE_TRADE_COMPLETE_PRODUCT/m/task_m.5_add_partial_fill_manual_external_close_and_crash_restart_lifecycle_tests.json] allowed_write_paths entry 'tests/integration/test_position_cycle_restart.py' does not exist in working root
+- [/home/mike/dev/mike/stocks/python/mike_trade/.abracapocus/plans/ACTIVE/MIKE_TRADE_COMPLETE_PRODUCT/m/task_m.5_add_partial_fill_manual_external_close_and_crash_restart_lifecycle_tests.json] allowed_write_paths entry 'docs/verification/phase_m_lifecycle.md' does not exist in working root
+- [/home/mike/dev/mike/stocks/python/mike_trade/.abracapocus/plans/ACTIVE/MIKE_TRADE_COMPLETE_PRODUCT/m/task_m.5_add_partial_fill_manual_external_close_and_crash_restart_lifecycle_tests.json] acceptance_criteria list length > 5
+- [/home/mike/dev/mike/stocks/python/mike_trade/.abracapocus/plans/ACTIVE/MIKE_TRADE_COMPLETE_PRODUCT/m/task_m.5_add_partial_fill_manual_external_close_and_crash_restart_lifecycle_tests.json] acceptance_criteria item length > 120 characters
+- [/home/mike/dev/mike/stocks/python/mike_trade/.abracapocus/plans/ACTIVE/MIKE_TRADE_COMPLETE_PRODUCT/m/task_m.5_add_partial_fill_manual_external_close_and_crash_restart_lifecycle_tests.json] description field length > 300 characters
+- [/home/mike/dev/mike/stocks/python/mike_trade/.abracapocus/plans/ACTIVE/MIKE_TRADE_COMPLETE_PRODUCT/m/task_m.5_add_partial_fill_manual_external_close_and_crash_restart_lifecycle_tests.json] description contains broad word: full
+- [/home/mike/dev/mike/stocks/python/mike_trade/.abracapocus/plans/ACTIVE/MIKE_TRADE_COMPLETE_PRODUCT/m/task_m.5_add_partial_fill_manual_external_close_and_crash_restart_lifecycle_tests.json] acceptance_criteria[5] contains broad word: every
+- Task 'm.1' must contain exactly one 'Before editing, inspect:' block (found 0)
+- Task 'm.1' missing anti-inference instruction: Do not infer APIs, schemas, behavior, or file contents; inspect the referenced files first.
+- Task 'm.1' missing explicit strict file-scope language
+- Task 'm.1' missing acceptance criterion equivalent to: No file outside allowed_write_paths is modified.
+- Task 'm.2' must contain exactly one 'Before editing, inspect:' block (found 0)
+- Task 'm.2' missing anti-inference instruction: Do not infer APIs, schemas, behavior, or file contents; inspect the referenced files first.
+- Task 'm.2' missing explicit strict file-scope language
+- Task 'm.2' missing acceptance criterion equivalent to: No file outside allowed_write_paths is modified.
+- Task 'm.3' must contain exactly one 'Before editing, inspect:' block (found 0)
+- Task 'm.3' missing anti-inference instruction: Do not infer APIs, schemas, behavior, or file contents; inspect the referenced files first.
+- Task 'm.3' missing explicit strict file-scope language
+- Task 'm.3' missing acceptance criterion equivalent to: No file outside allowed_write_paths is modified.
+- Task 'm.4' must contain exactly one 'Before editing, inspect:' block (found 0)
+- Task 'm.4' missing anti-inference instruction: Do not infer APIs, schemas, behavior, or file contents; inspect the referenced files first.
+- Task 'm.4' missing explicit strict file-scope language
+- Task 'm.4' missing acceptance criterion equivalent to: No file outside allowed_write_paths is modified.
+- Task 'm.5' must contain exactly one 'Before editing, inspect:' block (found 0)
+- Task 'm.5' missing anti-inference instruction: Do not infer APIs, schemas, behavior, or file contents; inspect the referenced files first.
+- Task 'm.5' missing explicit strict file-scope language
+- Task 'm.5' missing acceptance criterion equivalent to: No file outside allowed_write_paths is modified.
+- Task 'm.1' acceptance_criteria[1] may produce unsatisfied reconciliation: 'Order status and protection status are represented as fields...' lacks file reference or test command
+- Task 'm.1' acceptance_criteria[2] may produce unsatisfied reconciliation: 'All quantity and price fields in PositionCycle are Decimal a...' lacks file reference or test command
+- Task 'm.1' acceptance_criteria[3] may produce unsatisfied reconciliation: 'A unit test shows that a buy signal delivered in BUY_PENDING...' lacks file reference or test command
+- Task 'm.1' acceptance_criteria[4] may produce unsatisfied reconciliation: 'A unit test shows the first positive partial buy fill sets e...' lacks file reference or test command
+- Task 'm.1' acceptance_criteria[5] may produce unsatisfied reconciliation: 'A unit test shows a partially filled then canceled entry kee...' lacks file reference or test command
+- Task 'm.1' acceptance_criteria[6] may produce unsatisfied reconciliation: 'A unit test shows applying the same fill id twice leaves rem...' lacks file reference or test command
+- Task 'm.1' acceptance_criteria[7] may produce unsatisfied reconciliation: 'A unit test shows a sell fill greater than remaining_qty is ...' lacks file reference or test command
+- Task 'm.1' acceptance_criteria[8] may produce unsatisfied reconciliation: 'A unit test shows that CLOSED is refused while remaining_qty...' lacks file reference or test command
+- Task 'm.1' acceptance_criteria[9] may produce unsatisfied reconciliation: 'A unit test shows PAUSED rejects entry events but accepts fi...' lacks file reference or test command
+- Task 'm.1' acceptance_criteria[10] may produce unsatisfied reconciliation: 'A unit test shows serialize -> deserialize round-trips a Pos...' lacks file reference or test command
+- Task 'm.2' acceptance_criteria[1] may produce unsatisfied reconciliation: 'A unit test fires two concurrent BUY signals for the same ac...' lacks file reference or test command
+- Task 'm.2' acceptance_criteria[2] may produce unsatisfied reconciliation: 'A unit test shows BUY signals are ignored while the cycle is...' lacks file reference or test command
+- Task 'm.2' acceptance_criteria[3] may produce unsatisfied reconciliation: 'A unit test shows a strategy SELL before the minimum hold is...' lacks file reference or test command
+- Task 'm.2' acceptance_criteria[4] may produce unsatisfied reconciliation: 'A unit test shows a discretionary SELL submits an exit for t...' lacks file reference or test command
+- Task 'm.2' acceptance_criteria[5] may produce unsatisfied reconciliation: 'A unit test shows that while a protective stop is active, th...' lacks file reference or test command
+- Task 'm.2' acceptance_criteria[6] may produce unsatisfied reconciliation: 'A unit test shows that with pause or the entry kill switch a...' lacks file reference or test command
+- Task 'm.2' acceptance_criteria[7] may produce unsatisfied reconciliation: 'A unit test shows the budget is released and the cooldown st...' lacks file reference or test command
+- Task 'm.2' acceptance_criteria[8] may produce unsatisfied reconciliation: 'A unit test shows auto end-of-day liquidation does nothing w...' lacks file reference or test command
+- Task 'm.2' acceptance_criteria[9] may produce unsatisfied reconciliation: 'A unit test shows entries are blocked when the cycle is RECO...' lacks file reference or test command
+- Task 'm.2' acceptance_criteria[10] may produce unsatisfied reconciliation: 'Tests use only in-memory fakes and make no network or broker...' lacks file reference or test command
+- Task 'm.3' acceptance_criteria[1] may produce unsatisfied reconciliation: 'An integration test shows missing fills found in broker acti...' lacks file reference or test command
+- Task 'm.3' acceptance_criteria[2] may produce unsatisfied reconciliation: 'An integration test shows a broker position with no managed ...' lacks file reference or test command
+- Task 'm.3' acceptance_criteria[3] may produce unsatisfied reconciliation: 'An integration test shows an unknown open broker order sets ...' lacks file reference or test command
+- Task 'm.3' acceptance_criteria[4] may produce unsatisfied reconciliation: 'An integration test shows a held managed position with no co...' lacks file reference or test command
+- Task 'm.3' acceptance_criteria[5] may produce unsatisfied reconciliation: 'An integration test shows a mismatch between the broker quan...' lacks file reference or test command
+- Task 'm.3' acceptance_criteria[6] may produce unsatisfied reconciliation: 'An integration test shows that a managed position closed out...' lacks file reference or test command
+- Task 'm.3' acceptance_criteria[7] may produce unsatisfied reconciliation: 'An integration test shows unsafe account flags or insufficie...' lacks file reference or test command
+- Task 'm.3' acceptance_criteria[8] may produce unsatisfied reconciliation: 'An integration test shows that a clean broker snapshot match...' lacks file reference or test command
+- Task 'm.3' acceptance_criteria[9] may produce unsatisfied reconciliation: 'Tests use a temporary SQLite database and a fake broker port...' lacks file reference or test command
+- Task 'm.4' acceptance_criteria[1] may produce unsatisfied reconciliation: 'A unit test shows that an aggregator built from mixed SHADOW...' lacks file reference or test command
+- Task 'm.4' acceptance_criteria[2] may produce unsatisfied reconciliation: 'A unit test shows that every CycleState value maps to a non-...' lacks file reference or test command
+- Task 'm.4' acceptance_criteria[3] may produce unsatisfied reconciliation: 'A unit test shows entries_blocked=True with the correct reas...' lacks file reference or test command
+- Task 'm.4' acceptance_criteria[4] may produce unsatisfied reconciliation: 'A unit test shows UNMANAGED holdings are flagged unmanaged a...' lacks file reference or test command
+- Task 'm.4' acceptance_criteria[5] may produce unsatisfied reconciliation: 'A unit test shows that heartbeat age above the threshold set...' lacks file reference or test command
+- Task 'm.4' acceptance_criteria[6] may produce unsatisfied reconciliation: 'A unit test shows JSON serialization renders Decimals as exa...' lacks file reference or test command
+- Task 'm.4' acceptance_criteria[7] may produce unsatisfied reconciliation: 'The status module imports no broker adapter and performs no ...' lacks file reference or test command
+- Task 'm.5' acceptance_criteria[1] may produce unsatisfied reconciliation: 'The crash-restart test rebuilds state from a temporary SQLit...' lacks file reference or test command
+- Task 'm.5' acceptance_criteria[2] may produce unsatisfied reconciliation: 'The tests assert that no second entry is created after resta...' lacks file reference or test command
+- Task 'm.5' acceptance_criteria[3] may produce unsatisfied reconciliation: 'The tests assert that the external/manual close is audited a...' lacks file reference or test command
+- Task 'm.5' acceptance_criteria[4] may produce unsatisfied reconciliation: 'The tests use only fake broker ports, a fake clock and a tem...' lacks file reference or test command
+- Task 'm.5' acceptance_criteria[6] may produce unsatisfied reconciliation: 'Any test marked xfail has an explicit reason that is also li...' lacks file reference or test command
+- Phase m phase_verification.json has no checks
+- [/home/mike/dev/mike/stocks/python/mike_trade/.abracapocus/plans/ACTIVE/MIKE_TRADE_COMPLETE_PRODUCT/n/task_n.1_implement_protective_stop_coordinator_and_broker_capability_based_policy.json] allowed_write_paths entry 'mike_trade/risk/protection.py' does not exist in working root
+- [/home/mike/dev/mike/stocks/python/mike_trade/.abracapocus/plans/ACTIVE/MIKE_TRADE_COMPLETE_PRODUCT/n/task_n.1_implement_protective_stop_coordinator_and_broker_capability_based_policy.json] allowed_write_paths entry 'mike_trade/risk/stop_policy.py' does not exist in working root
+- [/home/mike/dev/mike/stocks/python/mike_trade/.abracapocus/plans/ACTIVE/MIKE_TRADE_COMPLETE_PRODUCT/n/task_n.1_implement_protective_stop_coordinator_and_broker_capability_based_policy.json] allowed_write_paths entry 'tests/unit/test_protection_policy.py' does not exist in working root
+- [/home/mike/dev/mike/stocks/python/mike_trade/.abracapocus/plans/ACTIVE/MIKE_TRADE_COMPLETE_PRODUCT/n/task_n.1_implement_protective_stop_coordinator_and_broker_capability_based_policy.json] acceptance_criteria list length > 5
+- [/home/mike/dev/mike/stocks/python/mike_trade/.abracapocus/plans/ACTIVE/MIKE_TRADE_COMPLETE_PRODUCT/n/task_n.1_implement_protective_stop_coordinator_and_broker_capability_based_policy.json] acceptance_criteria item length > 120 characters
+- [/home/mike/dev/mike/stocks/python/mike_trade/.abracapocus/plans/ACTIVE/MIKE_TRADE_COMPLETE_PRODUCT/n/task_n.1_implement_protective_stop_coordinator_and_broker_capability_based_policy.json] description field length > 300 characters
+- [/home/mike/dev/mike/stocks/python/mike_trade/.abracapocus/plans/ACTIVE/MIKE_TRADE_COMPLETE_PRODUCT/n/task_n.1_implement_protective_stop_coordinator_and_broker_capability_based_policy.json] description contains broad word: complete
+- [/home/mike/dev/mike/stocks/python/mike_trade/.abracapocus/plans/ACTIVE/MIKE_TRADE_COMPLETE_PRODUCT/n/task_n.1_implement_protective_stop_coordinator_and_broker_capability_based_policy.json] description contains broad word: full
+- [/home/mike/dev/mike/stocks/python/mike_trade/.abracapocus/plans/ACTIVE/MIKE_TRADE_COMPLETE_PRODUCT/n/task_n.1_implement_protective_stop_coordinator_and_broker_capability_based_policy.json] description contains broad word: all
+- [/home/mike/dev/mike/stocks/python/mike_trade/.abracapocus/plans/ACTIVE/MIKE_TRADE_COMPLETE_PRODUCT/n/task_n.1_implement_protective_stop_coordinator_and_broker_capability_based_policy.json] description contains broad word: every
+- [/home/mike/dev/mike/stocks/python/mike_trade/.abracapocus/plans/ACTIVE/MIKE_TRADE_COMPLETE_PRODUCT/n/task_n.1_implement_protective_stop_coordinator_and_broker_capability_based_policy.json] acceptance_criteria[9] contains broad word: all
+- [/home/mike/dev/mike/stocks/python/mike_trade/.abracapocus/plans/ACTIVE/MIKE_TRADE_COMPLETE_PRODUCT/n/task_n.2_implement_alpaca_native_continuous_trailing_orders_and_confirmed_broker_hwm.json] allowed_write_paths entry 'mike_trade/brokers/alpaca/trailing.py' does not exist in working root
+- [/home/mike/dev/mike/stocks/python/mike_trade/.abracapocus/plans/ACTIVE/MIKE_TRADE_COMPLETE_PRODUCT/n/task_n.2_implement_alpaca_native_continuous_trailing_orders_and_confirmed_broker_hwm.json] allowed_write_paths entry 'tests/contracts/test_alpaca_native_trailing.py' does not exist in working root
+- [/home/mike/dev/mike/stocks/python/mike_trade/.abracapocus/plans/ACTIVE/MIKE_TRADE_COMPLETE_PRODUCT/n/task_n.2_implement_alpaca_native_continuous_trailing_orders_and_confirmed_broker_hwm.json] acceptance_criteria list length > 5
+- [/home/mike/dev/mike/stocks/python/mike_trade/.abracapocus/plans/ACTIVE/MIKE_TRADE_COMPLETE_PRODUCT/n/task_n.2_implement_alpaca_native_continuous_trailing_orders_and_confirmed_broker_hwm.json] acceptance_criteria item length > 120 characters
+- [/home/mike/dev/mike/stocks/python/mike_trade/.abracapocus/plans/ACTIVE/MIKE_TRADE_COMPLETE_PRODUCT/n/task_n.2_implement_alpaca_native_continuous_trailing_orders_and_confirmed_broker_hwm.json] description field length > 300 characters
+- [/home/mike/dev/mike/stocks/python/mike_trade/.abracapocus/plans/ACTIVE/MIKE_TRADE_COMPLETE_PRODUCT/n/task_n.2_implement_alpaca_native_continuous_trailing_orders_and_confirmed_broker_hwm.json] description contains broad word: all
+- [/home/mike/dev/mike/stocks/python/mike_trade/.abracapocus/plans/ACTIVE/MIKE_TRADE_COMPLETE_PRODUCT/n/task_n.3_implement_fixed_stop_attachment_and_stop_coverage_checking_for_fill_quantities.json] allowed_write_paths entry 'mike_trade/risk/fixed_stop.py' does not exist in working root
+- [/home/mike/dev/mike/stocks/python/mike_trade/.abracapocus/plans/ACTIVE/MIKE_TRADE_COMPLETE_PRODUCT/n/task_n.3_implement_fixed_stop_attachment_and_stop_coverage_checking_for_fill_quantities.json] allowed_write_paths entry 'tests/unit/test_fixed_stop_coverage.py' does not exist in working root
+- [/home/mike/dev/mike/stocks/python/mike_trade/.abracapocus/plans/ACTIVE/MIKE_TRADE_COMPLETE_PRODUCT/n/task_n.3_implement_fixed_stop_attachment_and_stop_coverage_checking_for_fill_quantities.json] acceptance_criteria list length > 5
+- [/home/mike/dev/mike/stocks/python/mike_trade/.abracapocus/plans/ACTIVE/MIKE_TRADE_COMPLETE_PRODUCT/n/task_n.3_implement_fixed_stop_attachment_and_stop_coverage_checking_for_fill_quantities.json] acceptance_criteria item length > 120 characters
+- [/home/mike/dev/mike/stocks/python/mike_trade/.abracapocus/plans/ACTIVE/MIKE_TRADE_COMPLETE_PRODUCT/n/task_n.3_implement_fixed_stop_attachment_and_stop_coverage_checking_for_fill_quantities.json] description field length > 300 characters
+- [/home/mike/dev/mike/stocks/python/mike_trade/.abracapocus/plans/ACTIVE/MIKE_TRADE_COMPLETE_PRODUCT/n/task_n.3_implement_fixed_stop_attachment_and_stop_coverage_checking_for_fill_quantities.json] description contains broad word: full
+- [/home/mike/dev/mike/stocks/python/mike_trade/.abracapocus/plans/ACTIVE/MIKE_TRADE_COMPLETE_PRODUCT/n/task_n.4_persist_broker_stop_lifecycle_and_surface_protection_pending_or_uncovered_states.json] allowed_write_paths entry 'mike_trade/risk/stop_state.py' does not exist in working root
+- [/home/mike/dev/mike/stocks/python/mike_trade/.abracapocus/plans/ACTIVE/MIKE_TRADE_COMPLETE_PRODUCT/n/task_n.4_persist_broker_stop_lifecycle_and_surface_protection_pending_or_uncovered_states.json] allowed_write_paths entry 'tests/unit/test_stop_state.py' does not exist in working root
+- [/home/mike/dev/mike/stocks/python/mike_trade/.abracapocus/plans/ACTIVE/MIKE_TRADE_COMPLETE_PRODUCT/n/task_n.4_persist_broker_stop_lifecycle_and_surface_protection_pending_or_uncovered_states.json] acceptance_criteria list length > 5
+- [/home/mike/dev/mike/stocks/python/mike_trade/.abracapocus/plans/ACTIVE/MIKE_TRADE_COMPLETE_PRODUCT/n/task_n.4_persist_broker_stop_lifecycle_and_surface_protection_pending_or_uncovered_states.json] acceptance_criteria item length > 120 characters
+- [/home/mike/dev/mike/stocks/python/mike_trade/.abracapocus/plans/ACTIVE/MIKE_TRADE_COMPLETE_PRODUCT/n/task_n.4_persist_broker_stop_lifecycle_and_surface_protection_pending_or_uncovered_states.json] description field length > 300 characters
+- [/home/mike/dev/mike/stocks/python/mike_trade/.abracapocus/plans/ACTIVE/MIKE_TRADE_COMPLETE_PRODUCT/n/task_n.4_persist_broker_stop_lifecycle_and_surface_protection_pending_or_uncovered_states.json] description contains broad word: every
+- [/home/mike/dev/mike/stocks/python/mike_trade/.abracapocus/plans/ACTIVE/MIKE_TRADE_COMPLETE_PRODUCT/n/task_n.5_add_native_stop_expiry_fractional_eligibility_and_offline_safety_tests.json] allowed_write_paths entry 'tests/integration/test_native_stop_protection.py' does not exist in working root
+- [/home/mike/dev/mike/stocks/python/mike_trade/.abracapocus/plans/ACTIVE/MIKE_TRADE_COMPLETE_PRODUCT/n/task_n.5_add_native_stop_expiry_fractional_eligibility_and_offline_safety_tests.json] allowed_write_paths entry 'docs/verification/phase_n_native_stops.md' does not exist in working root
+- [/home/mike/dev/mike/stocks/python/mike_trade/.abracapocus/plans/ACTIVE/MIKE_TRADE_COMPLETE_PRODUCT/n/task_n.5_add_native_stop_expiry_fractional_eligibility_and_offline_safety_tests.json] acceptance_criteria list length > 5
+- [/home/mike/dev/mike/stocks/python/mike_trade/.abracapocus/plans/ACTIVE/MIKE_TRADE_COMPLETE_PRODUCT/n/task_n.5_add_native_stop_expiry_fractional_eligibility_and_offline_safety_tests.json] acceptance_criteria item length > 120 characters
+- [/home/mike/dev/mike/stocks/python/mike_trade/.abracapocus/plans/ACTIVE/MIKE_TRADE_COMPLETE_PRODUCT/n/task_n.5_add_native_stop_expiry_fractional_eligibility_and_offline_safety_tests.json] description field length > 300 characters
+- [/home/mike/dev/mike/stocks/python/mike_trade/.abracapocus/plans/ACTIVE/MIKE_TRADE_COMPLETE_PRODUCT/n/task_n.5_add_native_stop_expiry_fractional_eligibility_and_offline_safety_tests.json] acceptance_criteria[1] contains broad word: every
+- [/home/mike/dev/mike/stocks/python/mike_trade/.abracapocus/plans/ACTIVE/MIKE_TRADE_COMPLETE_PRODUCT/n/task_n.5_add_native_stop_expiry_fractional_eligibility_and_offline_safety_tests.json] acceptance_criteria[8] contains broad word: every
+- Task 'n.1' missing anti-inference instruction: Do not infer APIs, schemas, behavior, or file contents; inspect the referenced files first.
+- Task 'n.1' missing acceptance criterion equivalent to: No file outside allowed_write_paths is modified.
+- Task 'n.1' has 4 broad words (limit 2)
+- Task 'n.2' missing anti-inference instruction: Do not infer APIs, schemas, behavior, or file contents; inspect the referenced files first.
+- Task 'n.2' missing explicit strict file-scope language
+- Task 'n.2' missing acceptance criterion equivalent to: No file outside allowed_write_paths is modified.
+- Task 'n.3' missing anti-inference instruction: Do not infer APIs, schemas, behavior, or file contents; inspect the referenced files first.
+- Task 'n.3' missing explicit strict file-scope language
+- Task 'n.3' missing acceptance criterion equivalent to: No file outside allowed_write_paths is modified.
+- Task 'n.4' missing anti-inference instruction: Do not infer APIs, schemas, behavior, or file contents; inspect the referenced files first.
+- Task 'n.4' missing acceptance criterion equivalent to: No file outside allowed_write_paths is modified.
+- Task 'n.5' missing anti-inference instruction: Do not infer APIs, schemas, behavior, or file contents; inspect the referenced files first.
+- Task 'n.5' missing explicit strict file-scope language
+- Task 'n.5' missing acceptance criterion equivalent to: No file outside allowed_write_paths is modified.
+- Task 'n.1' acceptance_criteria[1] may produce unsatisfied reconciliation: 'ProtectionPolicy validation rejects a FIXED policy with zero...' lacks file reference or test command
+- Task 'n.1' acceptance_criteria[2] may produce unsatisfied reconciliation: 'evaluate_policy returns REJECTED with a specific reason code...' lacks file reference or test command
+- Task 'n.1' acceptance_criteria[3] may produce unsatisfied reconciliation: 'Eligibility results expose risk notes stating that a stop tr...' lacks file reference or test command
+- Task 'n.1' acceptance_criteria[4] may produce unsatisfied reconciliation: 'ProtectionCoordinator never has more than one effective prot...' lacks file reference or test command
+- Task 'n.1' acceptance_criteria[5] may produce unsatisfied reconciliation: 'on_exit_requested never allows working sell quantity (protec...' lacks file reference or test command
+- Task 'n.1' acceptance_criteria[6] may produce unsatisfied reconciliation: 'Protection is triggered only by a confirmed positive fill. A...' lacks file reference or test command
+- Task 'n.1' acceptance_criteria[7] may produce unsatisfied reconciliation: 'Protection behaviour does not depend on strategy pause state...' lacks file reference or test command
+- Task 'n.1' acceptance_criteria[8] may produce unsatisfied reconciliation: 'A placement failure after a fill yields UNPROTECTED_POSITION...' lacks file reference or test command
+- Task 'n.1' acceptance_criteria[9] may produce unsatisfied reconciliation: 'All money and quantity values are Decimal and all timestamps...' lacks file reference or test command
+- Task 'n.2' acceptance_criteria[0] may produce unsatisfied reconciliation: 'build_trailing_stop_request produces a SELL, type=trailing_s...' lacks file reference or test command
+- Task 'n.2' acceptance_criteria[1] may produce unsatisfied reconciliation: 'Requesting a bracket, OTO or OCO order class with a trailing...' lacks file reference or test command
+- Task 'n.2' acceptance_criteria[2] may produce unsatisfied reconciliation: 'parse_trailing_order_state returns Decimal hwm and stop_pric...' lacks file reference or test command
+- Task 'n.2' acceptance_criteria[3] may produce unsatisfied reconciliation: 'An active order with a missing or invalid hwm or stop_price ...' lacks file reference or test command
+- Task 'n.2' acceptance_criteria[4] may produce unsatisfied reconciliation: 'The Alpaca status mapping covers PENDING, ACTIVE, UPDATING, ...' lacks file reference or test command
+- Task 'n.2' acceptance_criteria[5] may produce unsatisfied reconciliation: 'NativeTrailingState is labelled continuous broker-managed. N...' lacks file reference or test command
+- Task 'n.2' acceptance_criteria[6] may produce unsatisfied reconciliation: 'A fractional quantity is rejected unless the injected capabi...' lacks file reference or test command
+- Task 'n.3' acceptance_criteria[1] may produce unsatisfied reconciliation: 'Stop prices that are less than or equal to zero, or greater ...' lacks file reference or test command
+- Task 'n.3' acceptance_criteria[2] may produce unsatisfied reconciliation: 'For STOP_LIMIT, the sell limit is less than or equal to the ...' lacks file reference or test command
+- Task 'n.3' acceptance_criteria[3] may produce unsatisfied reconciliation: 'check_coverage returns COVERED, UNDER_COVERED, OVER_COVERED,...' lacks file reference or test command
+- Task 'n.3' acceptance_criteria[5] may produce unsatisfied reconciliation: 'Across replacements the stop price never decreases for a lon...' lacks file reference or test command
+- Task 'n.3' acceptance_criteria[6] may produce unsatisfied reconciliation: 'When the remaining quantity reaches zero, the recommended ac...' lacks file reference or test command
+- Task 'n.4' acceptance_criteria[0] may produce unsatisfied reconciliation: 'ProtectionCondition defines exactly PENDING, ACTIVE, UPDATIN...' lacks file reference or test command
+- Task 'n.4' acceptance_criteria[2] may produce unsatisfied reconciliation: 'A DAY expiry or done_for_day event yields EXPIRED with a PRO...' lacks file reference or test command
+- Task 'n.4' acceptance_criteria[3] may produce unsatisfied reconciliation: 'A placement or coverage failure yields UNPROTECTED with an U...' lacks file reference or test command
+- Task 'n.4' acceptance_criteria[4] may produce unsatisfied reconciliation: 'entry_block_reasons blocks fresh entries for UNPROTECTED, UN...' lacks file reference or test command
+- Task 'n.4' acceptance_criteria[5] may produce unsatisfied reconciliation: 'Applying the same broker order update twice produces no dupl...' lacks file reference or test command
+- Task 'n.4' acceptance_criteria[6] may produce unsatisfied reconciliation: 'Records are keyed by mode/account/scenario. A test shows tha...' lacks file reference or test command
+- Task 'n.4' acceptance_criteria[7] may produce unsatisfied reconciliation: 'to_dashboard_view marks OFFLINE and stale last-known values ...' lacks file reference or test command
+- Task 'n.5' acceptance_criteria[1] may produce unsatisfied reconciliation: 'The partial-fill trailing test asserts that exactly one work...' lacks file reference or test command
+- Task 'n.5' acceptance_criteria[2] may produce unsatisfied reconciliation: 'The expiry test asserts an EXPIRED condition with a PROTECTI...' lacks file reference or test command
+- Task 'n.5' acceptance_criteria[3] may produce unsatisfied reconciliation: 'The fractional test asserts LIVE rejection when the combinat...' lacks file reference or test command
+- Task 'n.5' acceptance_criteria[4] may produce unsatisfied reconciliation: 'The placement-failure test asserts an UNPROTECTED_POSITION c...' lacks file reference or test command
+- Task 'n.5' acceptance_criteria[5] may produce unsatisfied reconciliation: 'The offline test asserts the OFFLINE projection with stale m...' lacks file reference or test command
+- Task 'n.5' acceptance_criteria[6] may produce unsatisfied reconciliation: 'The manual-close test asserts that working sell quantity nev...' lacks file reference or test command
+- Task 'n.5' acceptance_criteria[7] may produce unsatisfied reconciliation: 'The tests make no network calls and read no broker credentia...' lacks file reference or test command
+- Task 'n.5' acceptance_criteria[9] may produce unsatisfied reconciliation: 'No production files are modified by this task....' lacks file reference or test command
+- Phase n phase_verification.json has no checks
+- [/home/mike/dev/mike/stocks/python/mike_trade/.abracapocus/plans/ACTIVE/MIKE_TRADE_COMPLETE_PRODUCT/o/task_o.1_implement_pure_broker_independent_monotonic_stepped_trailing_ratchet.json] allowed_write_paths entry 'mike_trade/risk/trailing.py' does not exist in working root
+- [/home/mike/dev/mike/stocks/python/mike_trade/.abracapocus/plans/ACTIVE/MIKE_TRADE_COMPLETE_PRODUCT/o/task_o.1_implement_pure_broker_independent_monotonic_stepped_trailing_ratchet.json] allowed_write_paths entry 'tests/unit/test_stepped_trailing.py' does not exist in working root
+- [/home/mike/dev/mike/stocks/python/mike_trade/.abracapocus/plans/ACTIVE/MIKE_TRADE_COMPLETE_PRODUCT/o/task_o.1_implement_pure_broker_independent_monotonic_stepped_trailing_ratchet.json] acceptance_criteria list length > 5
+- [/home/mike/dev/mike/stocks/python/mike_trade/.abracapocus/plans/ACTIVE/MIKE_TRADE_COMPLETE_PRODUCT/o/task_o.1_implement_pure_broker_independent_monotonic_stepped_trailing_ratchet.json] acceptance_criteria item length > 120 characters
+- [/home/mike/dev/mike/stocks/python/mike_trade/.abracapocus/plans/ACTIVE/MIKE_TRADE_COMPLETE_PRODUCT/o/task_o.1_implement_pure_broker_independent_monotonic_stepped_trailing_ratchet.json] description field length > 300 characters
+- [/home/mike/dev/mike/stocks/python/mike_trade/.abracapocus/plans/ACTIVE/MIKE_TRADE_COMPLETE_PRODUCT/o/task_o.1_implement_pure_broker_independent_monotonic_stepped_trailing_ratchet.json] description contains broad word: complete
+- [/home/mike/dev/mike/stocks/python/mike_trade/.abracapocus/plans/ACTIVE/MIKE_TRADE_COMPLETE_PRODUCT/o/task_o.1_implement_pure_broker_independent_monotonic_stepped_trailing_ratchet.json] description contains broad word: all
+- [/home/mike/dev/mike/stocks/python/mike_trade/.abracapocus/plans/ACTIVE/MIKE_TRADE_COMPLETE_PRODUCT/o/task_o.1_implement_pure_broker_independent_monotonic_stepped_trailing_ratchet.json] acceptance_criteria[2] contains broad word: complete
+- [/home/mike/dev/mike/stocks/python/mike_trade/.abracapocus/plans/ACTIVE/MIKE_TRADE_COMPLETE_PRODUCT/o/task_o.1_implement_pure_broker_independent_monotonic_stepped_trailing_ratchet.json] acceptance_criteria[2] contains broad word: all
+- [/home/mike/dev/mike/stocks/python/mike_trade/.abracapocus/plans/ACTIVE/MIKE_TRADE_COMPLETE_PRODUCT/o/task_o.2_implement_stop_replace_and_cancel_broker_adapter_semantics_with_confirmation.json] allowed_write_paths entry 'mike_trade/execution/replace.py' does not exist in working root
+- [/home/mike/dev/mike/stocks/python/mike_trade/.abracapocus/plans/ACTIVE/MIKE_TRADE_COMPLETE_PRODUCT/o/task_o.2_implement_stop_replace_and_cancel_broker_adapter_semantics_with_confirmation.json] allowed_write_paths entry 'mike_trade/brokers/alpaca/replacement.py' does not exist in working root
+- [/home/mike/dev/mike/stocks/python/mike_trade/.abracapocus/plans/ACTIVE/MIKE_TRADE_COMPLETE_PRODUCT/o/task_o.2_implement_stop_replace_and_cancel_broker_adapter_semantics_with_confirmation.json] allowed_write_paths entry 'tests/contracts/test_stop_replacement.py' does not exist in working root
+- [/home/mike/dev/mike/stocks/python/mike_trade/.abracapocus/plans/ACTIVE/MIKE_TRADE_COMPLETE_PRODUCT/o/task_o.2_implement_stop_replace_and_cancel_broker_adapter_semantics_with_confirmation.json] acceptance_criteria list length > 5
+- [/home/mike/dev/mike/stocks/python/mike_trade/.abracapocus/plans/ACTIVE/MIKE_TRADE_COMPLETE_PRODUCT/o/task_o.2_implement_stop_replace_and_cancel_broker_adapter_semantics_with_confirmation.json] acceptance_criteria item length > 120 characters
+- [/home/mike/dev/mike/stocks/python/mike_trade/.abracapocus/plans/ACTIVE/MIKE_TRADE_COMPLETE_PRODUCT/o/task_o.2_implement_stop_replace_and_cancel_broker_adapter_semantics_with_confirmation.json] description field length > 300 characters
+- [/home/mike/dev/mike/stocks/python/mike_trade/.abracapocus/plans/ACTIVE/MIKE_TRADE_COMPLETE_PRODUCT/o/task_o.2_implement_stop_replace_and_cancel_broker_adapter_semantics_with_confirmation.json] description contains broad word: all
+- [/home/mike/dev/mike/stocks/python/mike_trade/.abracapocus/plans/ACTIVE/MIKE_TRADE_COMPLETE_PRODUCT/o/task_o.2_implement_stop_replace_and_cancel_broker_adapter_semantics_with_confirmation.json] Task appears to modify blocking governance; ensure docs/operations.md Governance Blocking Policy requirements are met.
+- [/home/mike/dev/mike/stocks/python/mike_trade/.abracapocus/plans/ACTIVE/MIKE_TRADE_COMPLETE_PRODUCT/o/task_o.3_implement_stop_exit_race_safe_close_coordination_and_orphan_order_detection.json] allowed_write_paths entry 'mike_trade/execution/close_coordinator.py' does not exist in working root
+- [/home/mike/dev/mike/stocks/python/mike_trade/.abracapocus/plans/ACTIVE/MIKE_TRADE_COMPLETE_PRODUCT/o/task_o.3_implement_stop_exit_race_safe_close_coordination_and_orphan_order_detection.json] allowed_write_paths entry 'tests/integration/test_stop_close_races.py' does not exist in working root
+- [/home/mike/dev/mike/stocks/python/mike_trade/.abracapocus/plans/ACTIVE/MIKE_TRADE_COMPLETE_PRODUCT/o/task_o.3_implement_stop_exit_race_safe_close_coordination_and_orphan_order_detection.json] acceptance_criteria list length > 5
+- [/home/mike/dev/mike/stocks/python/mike_trade/.abracapocus/plans/ACTIVE/MIKE_TRADE_COMPLETE_PRODUCT/o/task_o.3_implement_stop_exit_race_safe_close_coordination_and_orphan_order_detection.json] acceptance_criteria item length > 120 characters
+- [/home/mike/dev/mike/stocks/python/mike_trade/.abracapocus/plans/ACTIVE/MIKE_TRADE_COMPLETE_PRODUCT/o/task_o.3_implement_stop_exit_race_safe_close_coordination_and_orphan_order_detection.json] description field length > 300 characters
+- [/home/mike/dev/mike/stocks/python/mike_trade/.abracapocus/plans/ACTIVE/MIKE_TRADE_COMPLETE_PRODUCT/o/task_o.3_implement_stop_exit_race_safe_close_coordination_and_orphan_order_detection.json] description contains broad word: all
+- [/home/mike/dev/mike/stocks/python/mike_trade/.abracapocus/plans/ACTIVE/MIKE_TRADE_COMPLETE_PRODUCT/o/task_o.3_implement_stop_exit_race_safe_close_coordination_and_orphan_order_detection.json] acceptance_criteria[0] contains broad word: all
+- [/home/mike/dev/mike/stocks/python/mike_trade/.abracapocus/plans/ACTIVE/MIKE_TRADE_COMPLETE_PRODUCT/o/task_o.4_implement_persistent_ratchet_watermark_broker_confirmation_and_audit_history.json] allowed_write_paths entry 'mike_trade/risk/trailing_state.py' does not exist in working root
+- [/home/mike/dev/mike/stocks/python/mike_trade/.abracapocus/plans/ACTIVE/MIKE_TRADE_COMPLETE_PRODUCT/o/task_o.4_implement_persistent_ratchet_watermark_broker_confirmation_and_audit_history.json] allowed_write_paths entry 'tests/unit/test_trailing_state_restart.py' does not exist in working root
+- [/home/mike/dev/mike/stocks/python/mike_trade/.abracapocus/plans/ACTIVE/MIKE_TRADE_COMPLETE_PRODUCT/o/task_o.4_implement_persistent_ratchet_watermark_broker_confirmation_and_audit_history.json] acceptance_criteria list length > 5
+- [/home/mike/dev/mike/stocks/python/mike_trade/.abracapocus/plans/ACTIVE/MIKE_TRADE_COMPLETE_PRODUCT/o/task_o.4_implement_persistent_ratchet_watermark_broker_confirmation_and_audit_history.json] acceptance_criteria item length > 120 characters
+- [/home/mike/dev/mike/stocks/python/mike_trade/.abracapocus/plans/ACTIVE/MIKE_TRADE_COMPLETE_PRODUCT/o/task_o.4_implement_persistent_ratchet_watermark_broker_confirmation_and_audit_history.json] description field length > 300 characters
+- [/home/mike/dev/mike/stocks/python/mike_trade/.abracapocus/plans/ACTIVE/MIKE_TRADE_COMPLETE_PRODUCT/o/task_o.4_implement_persistent_ratchet_watermark_broker_confirmation_and_audit_history.json] acceptance_criteria[0] contains broad word: all
+- [/home/mike/dev/mike/stocks/python/mike_trade/.abracapocus/plans/ACTIVE/MIKE_TRADE_COMPLETE_PRODUCT/o/task_o.4_implement_persistent_ratchet_watermark_broker_confirmation_and_audit_history.json] acceptance_criteria[5] contains broad word: all
+- [/home/mike/dev/mike/stocks/python/mike_trade/.abracapocus/plans/ACTIVE/MIKE_TRADE_COMPLETE_PRODUCT/o/task_o.5_add_stepped_trail_parity_faults_and_stop_never_moves_down_regression_tests.json] allowed_write_paths entry 'tests/integration/test_stepped_trailing_lifecycle.py' does not exist in working root
+- [/home/mike/dev/mike/stocks/python/mike_trade/.abracapocus/plans/ACTIVE/MIKE_TRADE_COMPLETE_PRODUCT/o/task_o.5_add_stepped_trail_parity_faults_and_stop_never_moves_down_regression_tests.json] allowed_write_paths entry 'docs/verification/phase_o_stepped_stops.md' does not exist in working root
+- [/home/mike/dev/mike/stocks/python/mike_trade/.abracapocus/plans/ACTIVE/MIKE_TRADE_COMPLETE_PRODUCT/o/task_o.5_add_stepped_trail_parity_faults_and_stop_never_moves_down_regression_tests.json] acceptance_criteria list length > 5
+- [/home/mike/dev/mike/stocks/python/mike_trade/.abracapocus/plans/ACTIVE/MIKE_TRADE_COMPLETE_PRODUCT/o/task_o.5_add_stepped_trail_parity_faults_and_stop_never_moves_down_regression_tests.json] acceptance_criteria item length > 120 characters
+- [/home/mike/dev/mike/stocks/python/mike_trade/.abracapocus/plans/ACTIVE/MIKE_TRADE_COMPLETE_PRODUCT/o/task_o.5_add_stepped_trail_parity_faults_and_stop_never_moves_down_regression_tests.json] description field length > 300 characters
+- [/home/mike/dev/mike/stocks/python/mike_trade/.abracapocus/plans/ACTIVE/MIKE_TRADE_COMPLETE_PRODUCT/o/task_o.5_add_stepped_trail_parity_faults_and_stop_never_moves_down_regression_tests.json] description contains broad word: all
+- [/home/mike/dev/mike/stocks/python/mike_trade/.abracapocus/plans/ACTIVE/MIKE_TRADE_COMPLETE_PRODUCT/o/task_o.5_add_stepped_trail_parity_faults_and_stop_never_moves_down_regression_tests.json] acceptance_criteria[3] contains broad word: full
+- Task 'o.1' must contain exactly one 'Before editing, inspect:' block (found 0)
+- Task 'o.1' missing anti-inference instruction: Do not infer APIs, schemas, behavior, or file contents; inspect the referenced files first.
+- Task 'o.1' missing explicit strict file-scope language
+- Task 'o.1' missing acceptance criterion equivalent to: No file outside allowed_write_paths is modified.
+- Task 'o.2' must contain exactly one 'Before editing, inspect:' block (found 0)
+- Task 'o.2' missing anti-inference instruction: Do not infer APIs, schemas, behavior, or file contents; inspect the referenced files first.
+- Task 'o.2' missing explicit strict file-scope language
+- Task 'o.2' missing acceptance criterion equivalent to: No file outside allowed_write_paths is modified.
+- Task 'o.3' must contain exactly one 'Before editing, inspect:' block (found 0)
+- Task 'o.3' missing anti-inference instruction: Do not infer APIs, schemas, behavior, or file contents; inspect the referenced files first.
+- Task 'o.3' missing explicit strict file-scope language
+- Task 'o.3' missing acceptance criterion equivalent to: No file outside allowed_write_paths is modified.
+- Task 'o.4' must contain exactly one 'Before editing, inspect:' block (found 0)
+- Task 'o.4' missing anti-inference instruction: Do not infer APIs, schemas, behavior, or file contents; inspect the referenced files first.
+- Task 'o.4' missing acceptance criterion equivalent to: No file outside allowed_write_paths is modified.
+- Task 'o.5' must contain exactly one 'Before editing, inspect:' block (found 0)
+- Task 'o.5' missing anti-inference instruction: Do not infer APIs, schemas, behavior, or file contents; inspect the referenced files first.
+- Task 'o.5' missing explicit strict file-scope language
+- Task 'o.5' missing acceptance criterion equivalent to: No file outside allowed_write_paths is modified.
+- Task 'o.1' acceptance_criteria[2] may produce unsatisfied reconciliation: 'A test proves that a single price jump crossing multiple who...' lacks file reference or test command
+- Task 'o.1' acceptance_criteria[3] may produce unsatisfied reconciliation: 'A test proves that sub-step highs never change the candidate...' lacks file reference or test command
+- Task 'o.1' acceptance_criteria[4] may produce unsatisfied reconciliation: 'A test (property-style or parameterized over a sequence that...' lacks file reference or test command
+- Task 'o.1' acceptance_criteria[5] may produce unsatisfied reconciliation: 'Percent-distance and percent-step policies are covered by at...' lacks file reference or test command
+- Task 'o.1' acceptance_criteria[6] may produce unsatisfied reconciliation: 'should_replace applies the injected broker rounding before c...' lacks file reference or test command
+- Task 'o.1' acceptance_criteria[7] may produce unsatisfied reconciliation: 'Float inputs, zero/negative distance or step, and short-side...' lacks file reference or test command
+- Task 'o.2' acceptance_criteria[1] may produce unsatisfied reconciliation: 'A test proves that a replacement is never reported effective...' lacks file reference or test command
+- Task 'o.2' acceptance_criteria[2] may produce unsatisfied reconciliation: 'A test proves that the replacement intent recorder is invoke...' lacks file reference or test command
+- Task 'o.2' acceptance_criteria[3] may produce unsatisfied reconciliation: 'A test proves that only one pending replacement exists per p...' lacks file reference or test command
+- Task 'o.2' acceptance_criteria[4] may produce unsatisfied reconciliation: 'A test proves that on REJECTED/UNKNOWN the last verified sto...' lacks file reference or test command
+- Task 'o.2' acceptance_criteria[5] may produce unsatisfied reconciliation: 'A test proves that a fill or partial fill of the old stop du...' lacks file reference or test command
+- Task 'o.2' acceptance_criteria[6] may produce unsatisfied reconciliation: 'A test proves that candidates at or below the last confirmed...' lacks file reference or test command
+- Task 'o.2' acceptance_criteria[7] may produce unsatisfied reconciliation: 'A test proves that a provider lacking standalone-stop/replac...' lacks file reference or test command
+- Task 'o.2' acceptance_criteria[8] may produce unsatisfied reconciliation: 'The Alpaca adapter is exercised through the same contract su...' lacks file reference or test command
+- Task 'o.3' acceptance_criteria[1] may produce unsatisfied reconciliation: 'A test proves that a discretionary exit is not submitted unt...' lacks file reference or test command
+- Task 'o.3' acceptance_criteria[2] may produce unsatisfied reconciliation: 'A test proves that when the stop fully fills during cancel, ...' lacks file reference or test command
+- Task 'o.3' acceptance_criteria[3] may produce unsatisfied reconciliation: 'A test proves that when the stop partially fills during canc...' lacks file reference or test command
+- Task 'o.3' acceptance_criteria[4] may produce unsatisfied reconciliation: 'A test proves that an UNKNOWN cancel freezes conflicting act...' lacks file reference or test command
+- Task 'o.3' acceptance_criteria[5] may produce unsatisfied reconciliation: 'A test proves that any sell intent exceeding confirmed posit...' lacks file reference or test command
+- Task 'o.3' acceptance_criteria[6] may produce unsatisfied reconciliation: 'A test proves that after a partial or rejected exit, remaini...' lacks file reference or test command
+- Task 'o.3' acceptance_criteria[7] may produce unsatisfied reconciliation: 'Tests prove that orphan stop/sell orders (no local intent, o...' lacks file reference or test command
+- Task 'o.3' acceptance_criteria[8] may produce unsatisfied reconciliation: 'A test proves that shutdown does not cancel a valid broker-h...' lacks file reference or test command
+- Task 'o.3' acceptance_criteria[9] may produce unsatisfied reconciliation: 'A test proves that manual close and safety exit bypass minim...' lacks file reference or test command
+- Task 'o.4' acceptance_criteria[1] may produce unsatisfied reconciliation: 'A test proves that recording a candidate or replacement inte...' lacks file reference or test command
+- Task 'o.4' acceptance_criteria[2] may produce unsatisfied reconciliation: 'A test proves that a confirmation lower than the current las...' lacks file reference or test command
+- Task 'o.4' acceptance_criteria[3] may produce unsatisfied reconciliation: 'A test proves that recording a second replacement intent whi...' lacks file reference or test command
+- Task 'o.4' acceptance_criteria[4] may produce unsatisfied reconciliation: 'A test proves that replaying the same broker update (same id...' lacks file reference or test command
+- Task 'o.4' acceptance_criteria[5] may produce unsatisfied reconciliation: 'A restart test closes and reopens the SQLite database and as...' lacks file reference or test command
+- Task 'o.4' acceptance_criteria[6] may produce unsatisfied reconciliation: 'A restart test proves that an outstanding intent after reloa...' lacks file reference or test command
+- Task 'o.4' acceptance_criteria[7] may produce unsatisfied reconciliation: 'A test proves that mark_stale sets TRAIL_STALE, suspends adv...' lacks file reference or test command
+- Task 'o.4' acceptance_criteria[8] may produce unsatisfied reconciliation: 'The history table is append-only: tests assert that no updat...' lacks file reference or test command
+- Task 'o.5' acceptance_criteria[2] may produce unsatisfied reconciliation: 'A seeded deterministic regression test asserts a non-decreas...' lacks file reference or test command
+- Task 'o.5' acceptance_criteria[3] may produce unsatisfied reconciliation: 'Fault tests cover rejected replace, unknown replace with rec...' lacks file reference or test command
+- Task 'o.5' acceptance_criteria[4] may produce unsatisfied reconciliation: 'A restart test proves that advancement is blocked with an ou...' lacks file reference or test command
+- Task 'o.5' acceptance_criteria[5] may produce unsatisfied reconciliation: 'An offline/stale test proves that TRAIL_STALE is reported, t...' lacks file reference or test command
+- Task 'o.5' acceptance_criteria[7] may produce unsatisfied reconciliation: 'No production files under mike_trade/ are modified by this t...' lacks file reference or test command
+- Phase o phase_verification.json has no checks
+- [/home/mike/dev/mike/stocks/python/mike_trade/.abracapocus/plans/ACTIVE/MIKE_TRADE_COMPLETE_PRODUCT/p/task_p.1_implement_durable_shadow_accounts_cash_holdings_and_exact_cycle_accounting.json] allowed_write_paths entry 'mike_trade/brokers/shadow/account.py' does not exist in working root
+- [/home/mike/dev/mike/stocks/python/mike_trade/.abracapocus/plans/ACTIVE/MIKE_TRADE_COMPLETE_PRODUCT/p/task_p.1_implement_durable_shadow_accounts_cash_holdings_and_exact_cycle_accounting.json] allowed_write_paths entry 'mike_trade/brokers/shadow/ledger.py' does not exist in working root
+- [/home/mike/dev/mike/stocks/python/mike_trade/.abracapocus/plans/ACTIVE/MIKE_TRADE_COMPLETE_PRODUCT/p/task_p.1_implement_durable_shadow_accounts_cash_holdings_and_exact_cycle_accounting.json] allowed_write_paths entry 'tests/unit/test_shadow_account.py' does not exist in working root
+- [/home/mike/dev/mike/stocks/python/mike_trade/.abracapocus/plans/ACTIVE/MIKE_TRADE_COMPLETE_PRODUCT/p/task_p.1_implement_durable_shadow_accounts_cash_holdings_and_exact_cycle_accounting.json] acceptance_criteria list length > 5
+- [/home/mike/dev/mike/stocks/python/mike_trade/.abracapocus/plans/ACTIVE/MIKE_TRADE_COMPLETE_PRODUCT/p/task_p.1_implement_durable_shadow_accounts_cash_holdings_and_exact_cycle_accounting.json] acceptance_criteria item length > 120 characters
+- [/home/mike/dev/mike/stocks/python/mike_trade/.abracapocus/plans/ACTIVE/MIKE_TRADE_COMPLETE_PRODUCT/p/task_p.1_implement_durable_shadow_accounts_cash_holdings_and_exact_cycle_accounting.json] description field length > 300 characters
+- [/home/mike/dev/mike/stocks/python/mike_trade/.abracapocus/plans/ACTIVE/MIKE_TRADE_COMPLETE_PRODUCT/p/task_p.1_implement_durable_shadow_accounts_cash_holdings_and_exact_cycle_accounting.json] description contains broad word: complete
+- [/home/mike/dev/mike/stocks/python/mike_trade/.abracapocus/plans/ACTIVE/MIKE_TRADE_COMPLETE_PRODUCT/p/task_p.1_implement_durable_shadow_accounts_cash_holdings_and_exact_cycle_accounting.json] description contains broad word: all
+- [/home/mike/dev/mike/stocks/python/mike_trade/.abracapocus/plans/ACTIVE/MIKE_TRADE_COMPLETE_PRODUCT/p/task_p.1_implement_durable_shadow_accounts_cash_holdings_and_exact_cycle_accounting.json] description contains broad word: every
+- [/home/mike/dev/mike/stocks/python/mike_trade/.abracapocus/plans/ACTIVE/MIKE_TRADE_COMPLETE_PRODUCT/p/task_p.1_implement_durable_shadow_accounts_cash_holdings_and_exact_cycle_accounting.json] acceptance_criteria[10] contains broad word: all
+- [/home/mike/dev/mike/stocks/python/mike_trade/.abracapocus/plans/ACTIVE/MIKE_TRADE_COMPLETE_PRODUCT/p/task_p.2_implement_shadow_simulated_order_matching_quote_slippage_and_costs.json] allowed_write_paths entry 'mike_trade/brokers/shadow/fills.py' does not exist in working root
+- [/home/mike/dev/mike/stocks/python/mike_trade/.abracapocus/plans/ACTIVE/MIKE_TRADE_COMPLETE_PRODUCT/p/task_p.2_implement_shadow_simulated_order_matching_quote_slippage_and_costs.json] allowed_write_paths entry 'tests/unit/test_shadow_fills.py' does not exist in working root
+- [/home/mike/dev/mike/stocks/python/mike_trade/.abracapocus/plans/ACTIVE/MIKE_TRADE_COMPLETE_PRODUCT/p/task_p.2_implement_shadow_simulated_order_matching_quote_slippage_and_costs.json] acceptance_criteria list length > 5
+- [/home/mike/dev/mike/stocks/python/mike_trade/.abracapocus/plans/ACTIVE/MIKE_TRADE_COMPLETE_PRODUCT/p/task_p.2_implement_shadow_simulated_order_matching_quote_slippage_and_costs.json] acceptance_criteria item length > 120 characters
+- [/home/mike/dev/mike/stocks/python/mike_trade/.abracapocus/plans/ACTIVE/MIKE_TRADE_COMPLETE_PRODUCT/p/task_p.2_implement_shadow_simulated_order_matching_quote_slippage_and_costs.json] description field length > 300 characters
+- [/home/mike/dev/mike/stocks/python/mike_trade/.abracapocus/plans/ACTIVE/MIKE_TRADE_COMPLETE_PRODUCT/p/task_p.2_implement_shadow_simulated_order_matching_quote_slippage_and_costs.json] description contains broad word: all
+- [/home/mike/dev/mike/stocks/python/mike_trade/.abracapocus/plans/ACTIVE/MIKE_TRADE_COMPLETE_PRODUCT/p/task_p.2_implement_shadow_simulated_order_matching_quote_slippage_and_costs.json] description contains broad word: every
+- [/home/mike/dev/mike/stocks/python/mike_trade/.abracapocus/plans/ACTIVE/MIKE_TRADE_COMPLETE_PRODUCT/p/task_p.3_simulate_fixed_native_continuous_and_stepped_trailing_stop_execution.json] allowed_write_paths entry 'mike_trade/brokers/shadow/stops.py' does not exist in working root
+- [/home/mike/dev/mike/stocks/python/mike_trade/.abracapocus/plans/ACTIVE/MIKE_TRADE_COMPLETE_PRODUCT/p/task_p.3_simulate_fixed_native_continuous_and_stepped_trailing_stop_execution.json] allowed_write_paths entry 'tests/unit/test_shadow_stops.py' does not exist in working root
+- [/home/mike/dev/mike/stocks/python/mike_trade/.abracapocus/plans/ACTIVE/MIKE_TRADE_COMPLETE_PRODUCT/p/task_p.3_simulate_fixed_native_continuous_and_stepped_trailing_stop_execution.json] acceptance_criteria list length > 5
+- [/home/mike/dev/mike/stocks/python/mike_trade/.abracapocus/plans/ACTIVE/MIKE_TRADE_COMPLETE_PRODUCT/p/task_p.3_simulate_fixed_native_continuous_and_stepped_trailing_stop_execution.json] acceptance_criteria item length > 120 characters
+- [/home/mike/dev/mike/stocks/python/mike_trade/.abracapocus/plans/ACTIVE/MIKE_TRADE_COMPLETE_PRODUCT/p/task_p.3_simulate_fixed_native_continuous_and_stepped_trailing_stop_execution.json] description field length > 300 characters
+- [/home/mike/dev/mike/stocks/python/mike_trade/.abracapocus/plans/ACTIVE/MIKE_TRADE_COMPLETE_PRODUCT/p/task_p.3_simulate_fixed_native_continuous_and_stepped_trailing_stop_execution.json] description contains broad word: all
+- [/home/mike/dev/mike/stocks/python/mike_trade/.abracapocus/plans/ACTIVE/MIKE_TRADE_COMPLETE_PRODUCT/p/task_p.3_simulate_fixed_native_continuous_and_stepped_trailing_stop_execution.json] description contains broad word: every
+- [/home/mike/dev/mike/stocks/python/mike_trade/.abracapocus/plans/ACTIVE/MIKE_TRADE_COMPLETE_PRODUCT/p/task_p.3_simulate_fixed_native_continuous_and_stepped_trailing_stop_execution.json] acceptance_criteria[0] contains broad word: full
+- [/home/mike/dev/mike/stocks/python/mike_trade/.abracapocus/plans/ACTIVE/MIKE_TRADE_COMPLETE_PRODUCT/p/task_p.4_run_independent_concurrent_named_shadow_scenarios_on_common_event_feed.json] allowed_write_paths entry 'mike_trade/shadow/scenarios.py' does not exist in working root
+- [/home/mike/dev/mike/stocks/python/mike_trade/.abracapocus/plans/ACTIVE/MIKE_TRADE_COMPLETE_PRODUCT/p/task_p.4_run_independent_concurrent_named_shadow_scenarios_on_common_event_feed.json] allowed_write_paths entry 'tests/integration/test_shadow_isolation.py' does not exist in working root
+- [/home/mike/dev/mike/stocks/python/mike_trade/.abracapocus/plans/ACTIVE/MIKE_TRADE_COMPLETE_PRODUCT/p/task_p.4_run_independent_concurrent_named_shadow_scenarios_on_common_event_feed.json] acceptance_criteria list length > 5
+- [/home/mike/dev/mike/stocks/python/mike_trade/.abracapocus/plans/ACTIVE/MIKE_TRADE_COMPLETE_PRODUCT/p/task_p.4_run_independent_concurrent_named_shadow_scenarios_on_common_event_feed.json] acceptance_criteria item length > 120 characters
+- [/home/mike/dev/mike/stocks/python/mike_trade/.abracapocus/plans/ACTIVE/MIKE_TRADE_COMPLETE_PRODUCT/p/task_p.4_run_independent_concurrent_named_shadow_scenarios_on_common_event_feed.json] description field length > 300 characters
+- [/home/mike/dev/mike/stocks/python/mike_trade/.abracapocus/plans/ACTIVE/MIKE_TRADE_COMPLETE_PRODUCT/p/task_p.4_run_independent_concurrent_named_shadow_scenarios_on_common_event_feed.json] description contains broad word: all
+- [/home/mike/dev/mike/stocks/python/mike_trade/.abracapocus/plans/ACTIVE/MIKE_TRADE_COMPLETE_PRODUCT/p/task_p.4_run_independent_concurrent_named_shadow_scenarios_on_common_event_feed.json] description contains broad word: every
+- [/home/mike/dev/mike/stocks/python/mike_trade/.abracapocus/plans/ACTIVE/MIKE_TRADE_COMPLETE_PRODUCT/p/task_p.5_add_shadow_restart_ledger_balance_and_live_nonexecution_acceptance_tests.json] allowed_write_paths entry 'tests/integration/test_shadow_restart.py' does not exist in working root
+- [/home/mike/dev/mike/stocks/python/mike_trade/.abracapocus/plans/ACTIVE/MIKE_TRADE_COMPLETE_PRODUCT/p/task_p.5_add_shadow_restart_ledger_balance_and_live_nonexecution_acceptance_tests.json] allowed_write_paths entry 'docs/verification/phase_p_shadow.md' does not exist in working root
+- [/home/mike/dev/mike/stocks/python/mike_trade/.abracapocus/plans/ACTIVE/MIKE_TRADE_COMPLETE_PRODUCT/p/task_p.5_add_shadow_restart_ledger_balance_and_live_nonexecution_acceptance_tests.json] acceptance_criteria list length > 5
+- [/home/mike/dev/mike/stocks/python/mike_trade/.abracapocus/plans/ACTIVE/MIKE_TRADE_COMPLETE_PRODUCT/p/task_p.5_add_shadow_restart_ledger_balance_and_live_nonexecution_acceptance_tests.json] acceptance_criteria item length > 120 characters
+- [/home/mike/dev/mike/stocks/python/mike_trade/.abracapocus/plans/ACTIVE/MIKE_TRADE_COMPLETE_PRODUCT/p/task_p.5_add_shadow_restart_ledger_balance_and_live_nonexecution_acceptance_tests.json] description field length > 300 characters
+- [/home/mike/dev/mike/stocks/python/mike_trade/.abracapocus/plans/ACTIVE/MIKE_TRADE_COMPLETE_PRODUCT/p/task_p.5_add_shadow_restart_ledger_balance_and_live_nonexecution_acceptance_tests.json] description contains the word "also" more than once
+- [/home/mike/dev/mike/stocks/python/mike_trade/.abracapocus/plans/ACTIVE/MIKE_TRADE_COMPLETE_PRODUCT/p/task_p.5_add_shadow_restart_ledger_balance_and_live_nonexecution_acceptance_tests.json] description contains broad word: full
+- [/home/mike/dev/mike/stocks/python/mike_trade/.abracapocus/plans/ACTIVE/MIKE_TRADE_COMPLETE_PRODUCT/p/task_p.5_add_shadow_restart_ledger_balance_and_live_nonexecution_acceptance_tests.json] description contains broad word: all
+- [/home/mike/dev/mike/stocks/python/mike_trade/.abracapocus/plans/ACTIVE/MIKE_TRADE_COMPLETE_PRODUCT/p/task_p.5_add_shadow_restart_ledger_balance_and_live_nonexecution_acceptance_tests.json] acceptance_criteria[3] contains broad word: full
+- [/home/mike/dev/mike/stocks/python/mike_trade/.abracapocus/plans/ACTIVE/MIKE_TRADE_COMPLETE_PRODUCT/p/task_p.5_add_shadow_restart_ledger_balance_and_live_nonexecution_acceptance_tests.json] acceptance_criteria[5] contains broad word: every
+- Task 'p.1' missing anti-inference instruction: Do not infer APIs, schemas, behavior, or file contents; inspect the referenced files first.
+- Task 'p.1' missing explicit strict file-scope language
+- Task 'p.1' missing acceptance criterion equivalent to: No file outside allowed_write_paths is modified.
+- Task 'p.1' has 3 broad words (limit 2)
+- Task 'p.2' missing anti-inference instruction: Do not infer APIs, schemas, behavior, or file contents; inspect the referenced files first.
+- Task 'p.2' missing explicit strict file-scope language
+- Task 'p.2' missing acceptance criterion equivalent to: No file outside allowed_write_paths is modified.
+- Task 'p.3' missing anti-inference instruction: Do not infer APIs, schemas, behavior, or file contents; inspect the referenced files first.
+- Task 'p.3' missing explicit strict file-scope language
+- Task 'p.3' missing acceptance criterion equivalent to: No file outside allowed_write_paths is modified.
+- Task 'p.4' missing anti-inference instruction: Do not infer APIs, schemas, behavior, or file contents; inspect the referenced files first.
+- Task 'p.4' missing explicit strict file-scope language
+- Task 'p.4' missing acceptance criterion equivalent to: No file outside allowed_write_paths is modified.
+- Task 'p.5' missing anti-inference instruction: Do not infer APIs, schemas, behavior, or file contents; inspect the referenced files first.
+- Task 'p.5' missing explicit strict file-scope language
+- Task 'p.5' missing acceptance criterion equivalent to: No file outside allowed_write_paths is modified.
+- Task 'p.1' acceptance_criteria[0] may produce unsatisfied reconciliation: 'ShadowAccount sets starting cash exactly once; a second init...' lacks file reference or test command
+- Task 'p.1' acceptance_criteria[1] may produce unsatisfied reconciliation: 'Explicit cash adjustments are persisted as distinct audited ...' lacks file reference or test command
+- Task 'p.1' acceptance_criteria[2] may produce unsatisfied reconciliation: 'Buy fill then sell fill of the same quantity yields exact De...' lacks file reference or test command
+- Task 'p.1' acceptance_criteria[3] may produce unsatisfied reconciliation: 'Multiple partial buy fills accumulate into one position with...' lacks file reference or test command
+- Task 'p.1' acceptance_criteria[4] may produce unsatisfied reconciliation: 'A second entry on an already-open symbol (averaging down/pyr...' lacks file reference or test command
+- Task 'p.1' acceptance_criteria[5] may produce unsatisfied reconciliation: 'A buy that would make cash negative is rejected when margin ...' lacks file reference or test command
+- Task 'p.1' acceptance_criteria[6] may produce unsatisfied reconciliation: 'Per-symbol and total budget checks, filled-entry-cycles-per-...' lacks file reference or test command
+- Task 'p.1' acceptance_criteria[7] may produce unsatisfied reconciliation: 'Ledger appends are idempotent by event id; re-applying the s...' lacks file reference or test command
+- Task 'p.1' acceptance_criteria[8] may produce unsatisfied reconciliation: 'Replaying the ledger from a fresh process/connection on the ...' lacks file reference or test command
+- Task 'p.1' acceptance_criteria[9] may produce unsatisfied reconciliation: 'Ledger refuses to read or write events tagged with a differe...' lacks file reference or test command
+- Task 'p.1' acceptance_criteria[10] may produce unsatisfied reconciliation: 'All fill-derived records are labeled estimated and not broke...' lacks file reference or test command
+- Task 'p.1' acceptance_criteria[11] may produce unsatisfied reconciliation: 'Float inputs for money/quantity are rejected, and naive date...' lacks file reference or test command
+- Task 'p.2' acceptance_criteria[0] may produce unsatisfied reconciliation: 'Market buy fills at ask plus slippage and market sell fills ...' lacks file reference or test command
+- Task 'p.2' acceptance_criteria[1] may produce unsatisfied reconciliation: 'Quotes timestamped before order time plus configured latency...' lacks file reference or test command
+- Task 'p.2' acceptance_criteria[2] may produce unsatisfied reconciliation: 'A limit buy does not fill while ask > limit and fills when a...' lacks file reference or test command
+- Task 'p.2' acceptance_criteria[3] may produce unsatisfied reconciliation: 'With participation cap p and displayed size s, the filled qu...' lacks file reference or test command
+- Task 'p.2' acceptance_criteria[4] may produce unsatisfied reconciliation: 'Missing, stale, crossed/locked or zero-size quotes produce n...' lacks file reference or test command
+- Task 'p.2' acceptance_criteria[5] may produce unsatisfied reconciliation: 'A completed bar crossing a limit price without supporting qu...' lacks file reference or test command
+- Task 'p.2' acceptance_criteria[6] may produce unsatisfied reconciliation: 'Orders outside regular session hours are not filled when the...' lacks file reference or test command
+- Task 'p.2' acceptance_criteria[7] may produce unsatisfied reconciliation: 'An unsupported fractional/order-type combination is rejected...' lacks file reference or test command
+- Task 'p.2' acceptance_criteria[8] may produce unsatisfied reconciliation: 'Each fill record includes simulator version, assumptions, qu...' lacks file reference or test command
+- Task 'p.2' acceptance_criteria[9] may produce unsatisfied reconciliation: 'Fees are deducted exactly, and a fill that would make cash n...' lacks file reference or test command
+- Task 'p.2' acceptance_criteria[10] may produce unsatisfied reconciliation: 'The module imports no Alpaca trading client or broker creden...' lacks file reference or test command
+- Task 'p.3' acceptance_criteria[0] may produce unsatisfied reconciliation: 'A fixed stop triggers when the configured trigger condition ...' lacks file reference or test command
+- Task 'p.3' acceptance_criteria[1] may produce unsatisfied reconciliation: 'The continuous trailing stop tracks the high-water mark and ...' lacks file reference or test command
+- Task 'p.3' acceptance_criteria[2] may produce unsatisfied reconciliation: 'The stepped trailing stop ratchets only at configured step t...' lacks file reference or test command
+- Task 'p.3' acceptance_criteria[3] may produce unsatisfied reconciliation: 'No stop is armed before a confirmed positive fill; after a p...' lacks file reference or test command
+- Task 'p.3' acceptance_criteria[4] may produce unsatisfied reconciliation: 'A gap below the stop fills at the available bid, not at the ...' lacks file reference or test command
+- Task 'p.3' acceptance_criteria[5] may produce unsatisfied reconciliation: 'When a discretionary exit fills first, the protective stop i...' lacks file reference or test command
+- Task 'p.3' acceptance_criteria[6] may produce unsatisfied reconciliation: 'Missing or stale quotes leave the stop evaluation UNKNOWN wi...' lacks file reference or test command
+- Task 'p.3' acceptance_criteria[7] may produce unsatisfied reconciliation: 'The policy computation calls the shared production provider-...' lacks file reference or test command
+- Task 'p.3' acceptance_criteria[8] may produce unsatisfied reconciliation: 'Stop state/trigger records include simulator version, assump...' lacks file reference or test command
+- Task 'p.3' acceptance_criteria[9] may produce unsatisfied reconciliation: 'The module imports no Alpaca trading client or broker creden...' lacks file reference or test command
+- Task 'p.4' acceptance_criteria[0] may produce unsatisfied reconciliation: 'Two or more named scenarios with different starting cash, bu...' lacks file reference or test command
+- Task 'p.4' acceptance_criteria[1] may produce unsatisfied reconciliation: 'A fill, loss streak, entry-limit exhaustion or cooldown in s...' lacks file reference or test command
+- Task 'p.4' acceptance_criteria[2] may produce unsatisfied reconciliation: 'The shared market data source is invoked once per symbol/eve...' lacks file reference or test command
+- Task 'p.4' acceptance_criteria[3] may produce unsatisfied reconciliation: 'A scenario attempting to mutate shared market data does not ...' lacks file reference or test command
+- Task 'p.4' acceptance_criteria[4] may produce unsatisfied reconciliation: 'Reloading a scenario by ID from its ledger does not re-apply...' lacks file reference or test command
+- Task 'p.4' acceptance_criteria[5] may produce unsatisfied reconciliation: 'Duplicate scenario IDs and IDs colliding with PAPER/LIVE acc...' lacks file reference or test command
+- Task 'p.4' acceptance_criteria[6] may produce unsatisfied reconciliation: 'Per-scenario projections are keyed by scenario ID, labeled S...' lacks file reference or test command
+- Task 'p.4' acceptance_criteria[7] may produce unsatisfied reconciliation: 'The runner constructs no Alpaca trading client and reads no ...' lacks file reference or test command
+- Task 'p.5' acceptance_criteria[1] may produce unsatisfied reconciliation: 'After the restart, cash, positions, open orders, stop state,...' lacks file reference or test command
+- Task 'p.5' acceptance_criteria[2] may produce unsatisfied reconciliation: 'The restart test proves starting cash is not re-applied and ...' lacks file reference or test command
+- Task 'p.5' acceptance_criteria[3] may produce unsatisfied reconciliation: 'The live-nonexecution test fails if any Alpaca trading clien...' lacks file reference or test command
+- Task 'p.5' acceptance_criteria[4] may produce unsatisfied reconciliation: 'The test asserts that SHADOW ledgers reject PAPER/LIVE accou...' lacks file reference or test command
+- Task 'p.5' acceptance_criteria[5] may produce unsatisfied reconciliation: 'The test asserts that every shadow fill/stop record is estim...' lacks file reference or test command
+- Task 'p.5' acceptance_criteria[7] may produce unsatisfied reconciliation: 'No production source files are modified by this task...' lacks file reference or test command
+- Phase p phase_verification.json has no checks
+- [/home/mike/dev/mike/stocks/python/mike_trade/.abracapocus/plans/ACTIVE/MIKE_TRADE_COMPLETE_PRODUCT/q/task_q.1_implement_historical_replay_clock_and_as_of_deterministic_event_provider.json] allowed_write_paths entry 'mike_trade/backtest/clock.py' does not exist in working root
+- [/home/mike/dev/mike/stocks/python/mike_trade/.abracapocus/plans/ACTIVE/MIKE_TRADE_COMPLETE_PRODUCT/q/task_q.1_implement_historical_replay_clock_and_as_of_deterministic_event_provider.json] allowed_write_paths entry 'mike_trade/backtest/feed.py' does not exist in working root
+- [/home/mike/dev/mike/stocks/python/mike_trade/.abracapocus/plans/ACTIVE/MIKE_TRADE_COMPLETE_PRODUCT/q/task_q.1_implement_historical_replay_clock_and_as_of_deterministic_event_provider.json] allowed_write_paths entry 'tests/unit/test_replay_clock.py' does not exist in working root
+- [/home/mike/dev/mike/stocks/python/mike_trade/.abracapocus/plans/ACTIVE/MIKE_TRADE_COMPLETE_PRODUCT/q/task_q.1_implement_historical_replay_clock_and_as_of_deterministic_event_provider.json] acceptance_criteria list length > 5
+- [/home/mike/dev/mike/stocks/python/mike_trade/.abracapocus/plans/ACTIVE/MIKE_TRADE_COMPLETE_PRODUCT/q/task_q.1_implement_historical_replay_clock_and_as_of_deterministic_event_provider.json] acceptance_criteria item length > 120 characters
+- [/home/mike/dev/mike/stocks/python/mike_trade/.abracapocus/plans/ACTIVE/MIKE_TRADE_COMPLETE_PRODUCT/q/task_q.1_implement_historical_replay_clock_and_as_of_deterministic_event_provider.json] description field length > 300 characters
+- [/home/mike/dev/mike/stocks/python/mike_trade/.abracapocus/plans/ACTIVE/MIKE_TRADE_COMPLETE_PRODUCT/q/task_q.1_implement_historical_replay_clock_and_as_of_deterministic_event_provider.json] description contains broad word: all
+- [/home/mike/dev/mike/stocks/python/mike_trade/.abracapocus/plans/ACTIVE/MIKE_TRADE_COMPLETE_PRODUCT/q/task_q.1_implement_historical_replay_clock_and_as_of_deterministic_event_provider.json] acceptance_criteria[5] contains broad word: every
+- [/home/mike/dev/mike/stocks/python/mike_trade/.abracapocus/plans/ACTIVE/MIKE_TRADE_COMPLETE_PRODUCT/q/task_q.1_implement_historical_replay_clock_and_as_of_deterministic_event_provider.json] acceptance_criteria[11] contains broad word: all
+- [/home/mike/dev/mike/stocks/python/mike_trade/.abracapocus/plans/ACTIVE/MIKE_TRADE_COMPLETE_PRODUCT/q/task_q.2_implement_historical_execution_simulator_with_costs_and_partial_fill_policies.json] allowed_write_paths entry 'mike_trade/backtest/execution.py' does not exist in working root
+- [/home/mike/dev/mike/stocks/python/mike_trade/.abracapocus/plans/ACTIVE/MIKE_TRADE_COMPLETE_PRODUCT/q/task_q.2_implement_historical_execution_simulator_with_costs_and_partial_fill_policies.json] allowed_write_paths entry 'tests/unit/test_backtest_execution.py' does not exist in working root
+- [/home/mike/dev/mike/stocks/python/mike_trade/.abracapocus/plans/ACTIVE/MIKE_TRADE_COMPLETE_PRODUCT/q/task_q.2_implement_historical_execution_simulator_with_costs_and_partial_fill_policies.json] acceptance_criteria list length > 5
+- [/home/mike/dev/mike/stocks/python/mike_trade/.abracapocus/plans/ACTIVE/MIKE_TRADE_COMPLETE_PRODUCT/q/task_q.2_implement_historical_execution_simulator_with_costs_and_partial_fill_policies.json] acceptance_criteria item length > 120 characters
+- [/home/mike/dev/mike/stocks/python/mike_trade/.abracapocus/plans/ACTIVE/MIKE_TRADE_COMPLETE_PRODUCT/q/task_q.2_implement_historical_execution_simulator_with_costs_and_partial_fill_policies.json] description field length > 300 characters
+- [/home/mike/dev/mike/stocks/python/mike_trade/.abracapocus/plans/ACTIVE/MIKE_TRADE_COMPLETE_PRODUCT/q/task_q.2_implement_historical_execution_simulator_with_costs_and_partial_fill_policies.json] description contains broad word: every
+- [/home/mike/dev/mike/stocks/python/mike_trade/.abracapocus/plans/ACTIVE/MIKE_TRADE_COMPLETE_PRODUCT/q/task_q.3_implement_deterministic_backtest_run_manifests_and_strategy_research_metrics.json] allowed_write_paths entry 'mike_trade/backtest/runner.py' does not exist in working root
+- [/home/mike/dev/mike/stocks/python/mike_trade/.abracapocus/plans/ACTIVE/MIKE_TRADE_COMPLETE_PRODUCT/q/task_q.3_implement_deterministic_backtest_run_manifests_and_strategy_research_metrics.json] allowed_write_paths entry 'mike_trade/backtest/manifest.py' does not exist in working root
+- [/home/mike/dev/mike/stocks/python/mike_trade/.abracapocus/plans/ACTIVE/MIKE_TRADE_COMPLETE_PRODUCT/q/task_q.3_implement_deterministic_backtest_run_manifests_and_strategy_research_metrics.json] allowed_write_paths entry 'tests/unit/test_backtest_repro.py' does not exist in working root
+- [/home/mike/dev/mike/stocks/python/mike_trade/.abracapocus/plans/ACTIVE/MIKE_TRADE_COMPLETE_PRODUCT/q/task_q.3_implement_deterministic_backtest_run_manifests_and_strategy_research_metrics.json] acceptance_criteria list length > 5
+- [/home/mike/dev/mike/stocks/python/mike_trade/.abracapocus/plans/ACTIVE/MIKE_TRADE_COMPLETE_PRODUCT/q/task_q.3_implement_deterministic_backtest_run_manifests_and_strategy_research_metrics.json] acceptance_criteria item length > 120 characters
+- [/home/mike/dev/mike/stocks/python/mike_trade/.abracapocus/plans/ACTIVE/MIKE_TRADE_COMPLETE_PRODUCT/q/task_q.3_implement_deterministic_backtest_run_manifests_and_strategy_research_metrics.json] description field length > 300 characters
+- [/home/mike/dev/mike/stocks/python/mike_trade/.abracapocus/plans/ACTIVE/MIKE_TRADE_COMPLETE_PRODUCT/q/task_q.4_expose_explicit_bounded_backtest_cli_and_saved_results_index.json] allowed_write_paths entry 'mike_trade/backtest/commands.py' does not exist in working root
+- [/home/mike/dev/mike/stocks/python/mike_trade/.abracapocus/plans/ACTIVE/MIKE_TRADE_COMPLETE_PRODUCT/q/task_q.4_expose_explicit_bounded_backtest_cli_and_saved_results_index.json] allowed_write_paths entry 'tests/unit/test_backtest_cli.py' does not exist in working root
+- [/home/mike/dev/mike/stocks/python/mike_trade/.abracapocus/plans/ACTIVE/MIKE_TRADE_COMPLETE_PRODUCT/q/task_q.4_expose_explicit_bounded_backtest_cli_and_saved_results_index.json] acceptance_criteria list length > 5
+- [/home/mike/dev/mike/stocks/python/mike_trade/.abracapocus/plans/ACTIVE/MIKE_TRADE_COMPLETE_PRODUCT/q/task_q.4_expose_explicit_bounded_backtest_cli_and_saved_results_index.json] acceptance_criteria item length > 120 characters
+- [/home/mike/dev/mike/stocks/python/mike_trade/.abracapocus/plans/ACTIVE/MIKE_TRADE_COMPLETE_PRODUCT/q/task_q.4_expose_explicit_bounded_backtest_cli_and_saved_results_index.json] description field length > 300 characters
+- [/home/mike/dev/mike/stocks/python/mike_trade/.abracapocus/plans/ACTIVE/MIKE_TRADE_COMPLETE_PRODUCT/q/task_q.5_verify_reference_vwap_pair_offline_historical_replay_and_stop_parity.json] allowed_write_paths entry 'tests/integration/test_backtest_integrity.py' does not exist in working root
+- [/home/mike/dev/mike/stocks/python/mike_trade/.abracapocus/plans/ACTIVE/MIKE_TRADE_COMPLETE_PRODUCT/q/task_q.5_verify_reference_vwap_pair_offline_historical_replay_and_stop_parity.json] allowed_write_paths entry 'docs/verification/phase_q_backtest.md' does not exist in working root
+- [/home/mike/dev/mike/stocks/python/mike_trade/.abracapocus/plans/ACTIVE/MIKE_TRADE_COMPLETE_PRODUCT/q/task_q.5_verify_reference_vwap_pair_offline_historical_replay_and_stop_parity.json] acceptance_criteria list length > 5
+- [/home/mike/dev/mike/stocks/python/mike_trade/.abracapocus/plans/ACTIVE/MIKE_TRADE_COMPLETE_PRODUCT/q/task_q.5_verify_reference_vwap_pair_offline_historical_replay_and_stop_parity.json] acceptance_criteria item length > 120 characters
+- [/home/mike/dev/mike/stocks/python/mike_trade/.abracapocus/plans/ACTIVE/MIKE_TRADE_COMPLETE_PRODUCT/q/task_q.5_verify_reference_vwap_pair_offline_historical_replay_and_stop_parity.json] description field length > 300 characters
+- [/home/mike/dev/mike/stocks/python/mike_trade/.abracapocus/plans/ACTIVE/MIKE_TRADE_COMPLETE_PRODUCT/q/task_q.5_verify_reference_vwap_pair_offline_historical_replay_and_stop_parity.json] description contains broad word: complete
+- [/home/mike/dev/mike/stocks/python/mike_trade/.abracapocus/plans/ACTIVE/MIKE_TRADE_COMPLETE_PRODUCT/q/task_q.5_verify_reference_vwap_pair_offline_historical_replay_and_stop_parity.json] description contains broad word: every
+- [/home/mike/dev/mike/stocks/python/mike_trade/.abracapocus/plans/ACTIVE/MIKE_TRADE_COMPLETE_PRODUCT/q/task_q.5_verify_reference_vwap_pair_offline_historical_replay_and_stop_parity.json] acceptance_criteria[2] contains broad word: full
+- [/home/mike/dev/mike/stocks/python/mike_trade/.abracapocus/plans/ACTIVE/MIKE_TRADE_COMPLETE_PRODUCT/q/task_q.5_verify_reference_vwap_pair_offline_historical_replay_and_stop_parity.json] acceptance_criteria[5] contains broad word: every
+- Task 'q.1' missing anti-inference instruction: Do not infer APIs, schemas, behavior, or file contents; inspect the referenced files first.
+- Task 'q.1' missing explicit strict file-scope language
+- Task 'q.1' missing acceptance criterion equivalent to: No file outside allowed_write_paths is modified.
+- Task 'q.2' missing anti-inference instruction: Do not infer APIs, schemas, behavior, or file contents; inspect the referenced files first.
+- Task 'q.2' missing explicit strict file-scope language
+- Task 'q.2' missing acceptance criterion equivalent to: No file outside allowed_write_paths is modified.
+- Task 'q.3' missing anti-inference instruction: Do not infer APIs, schemas, behavior, or file contents; inspect the referenced files first.
+- Task 'q.3' missing explicit strict file-scope language
+- Task 'q.3' missing acceptance criterion equivalent to: No file outside allowed_write_paths is modified.
+- Task 'q.4' missing anti-inference instruction: Do not infer APIs, schemas, behavior, or file contents; inspect the referenced files first.
+- Task 'q.4' missing explicit strict file-scope language
+- Task 'q.4' missing acceptance criterion equivalent to: No file outside allowed_write_paths is modified.
+- Task 'q.5' missing anti-inference instruction: Do not infer APIs, schemas, behavior, or file contents; inspect the referenced files first.
+- Task 'q.5' missing explicit strict file-scope language
+- Task 'q.5' missing acceptance criterion equivalent to: No file outside allowed_write_paths is modified.
+- Task 'q.1' acceptance_criteria[2] may produce unsatisfied reconciliation: 'ReplayClock reports session state (pre-open, regular, closed...' lacks file reference or test command
+- Task 'q.1' acceptance_criteria[4] may produce unsatisfied reconciliation: 'A 1-minute bar for [09:30, 09:31) ET is not returned by as_o...' lacks file reference or test command
+- Task 'q.1' acceptance_criteria[5] may produce unsatisfied reconciliation: 'as_of(t) never returns any record whose availability time is...' lacks file reference or test command
+- Task 'q.1' acceptance_criteria[6] may produce unsatisfied reconciliation: 'Events with identical timestamps are ordered by the document...' lacks file reference or test command
+- Task 'q.1' acceptance_criteria[7] may produce unsatisfied reconciliation: 'A dataset marked future-adjusted, or containing a revision v...' lacks file reference or test command
+- Task 'q.1' acceptance_criteria[8] may produce unsatisfied reconciliation: 'A split event affects prices/quantities only from its effect...' lacks file reference or test command
+- Task 'q.1' acceptance_criteria[9] may produce unsatisfied reconciliation: 'Missing bars, gaps and halts produce explicit quality marker...' lacks file reference or test command
+- Task 'q.1' acceptance_criteria[10] may produce unsatisfied reconciliation: 'Quote fidelity is reported as UNAVAILABLE for a bars-only da...' lacks file reference or test command
+- Task 'q.1' acceptance_criteria[11] may produce unsatisfied reconciliation: 'All price/volume values in emitted records are Decimal...' lacks file reference or test command
+- Task 'q.1' acceptance_criteria[12] may produce unsatisfied reconciliation: 'Neither module imports an Alpaca client, an HTTP library or ...' lacks file reference or test command
+- Task 'q.2' acceptance_criteria[1] may produce unsatisfied reconciliation: 'With bars only, a market BUY triggered on bar N fills at bar...' lacks file reference or test command
+- Task 'q.2' acceptance_criteria[2] may produce unsatisfied reconciliation: 'With quotes available, a buy fills at ask plus slippage and ...' lacks file reference or test command
+- Task 'q.2' acceptance_criteria[3] may produce unsatisfied reconciliation: 'Configured fees are deducted exactly and recorded on each fi...' lacks file reference or test command
+- Task 'q.2' acceptance_criteria[4] may produce unsatisfied reconciliation: 'With a participation cap, the filled quantity per bar is <= ...' lacks file reference or test command
+- Task 'q.2' acceptance_criteria[5] may produce unsatisfied reconciliation: 'No protective stop exists before the first confirmed positiv...' lacks file reference or test command
+- Task 'q.2' acceptance_criteria[6] may produce unsatisfied reconciliation: 'A bar whose high would ratchet a trailing stop and whose low...' lacks file reference or test command
+- Task 'q.2' acceptance_criteria[7] may produce unsatisfied reconciliation: 'A gap-down open below the stop fills at the open price, not ...' lacks file reference or test command
+- Task 'q.2' acceptance_criteria[8] may produce unsatisfied reconciliation: 'A trailing stop for a long position never decreases across a...' lacks file reference or test command
+- Task 'q.2' acceptance_criteria[9] may produce unsatisfied reconciliation: 'A stop replacement is not effective until the replacement la...' lacks file reference or test command
+- Task 'q.2' acceptance_criteria[10] may produce unsatisfied reconciliation: 'Concurrent strategy SELL and stop trigger on the same bar ne...' lacks file reference or test command
+- Task 'q.2' acceptance_criteria[11] may produce unsatisfied reconciliation: 'No fills occur outside regular hours, during a halt, or on a...' lacks file reference or test command
+- Task 'q.2' acceptance_criteria[12] may produce unsatisfied reconciliation: 'An unsupported fractional/order-type combination is rejected...' lacks file reference or test command
+- Task 'q.2' acceptance_criteria[13] may produce unsatisfied reconciliation: 'Two runs with identical inputs and seed produce identical fi...' lacks file reference or test command
+- Task 'q.2' acceptance_criteria[14] may produce unsatisfied reconciliation: 'The module imports no Alpaca trading client, HTTP library or...' lacks file reference or test command
+- Task 'q.3' acceptance_criteria[1] may produce unsatisfied reconciliation: 'Writing a manifest for an existing run_id or modifying a per...' lacks file reference or test command
+- Task 'q.3' acceptance_criteria[2] may produce unsatisfied reconciliation: 'A HOLDOUT run without an explicit lock flag is rejected; a H...' lacks file reference or test command
+- Task 'q.3' acceptance_criteria[4] may produce unsatisfied reconciliation: 'BacktestRunner raises before replay if any injected or confi...' lacks file reference or test command
+- Task 'q.3' acceptance_criteria[5] may produce unsatisfied reconciliation: 'Requests for more than 10 symbols or an unbounded/missing wi...' lacks file reference or test command
+- Task 'q.3' acceptance_criteria[6] may produce unsatisfied reconciliation: 'Two runs with identical dataset, config and seed produce byt...' lacks file reference or test command
+- Task 'q.3' acceptance_criteria[7] may produce unsatisfied reconciliation: 'compute_metrics returns total/net return, equity curve, per-...' lacks file reference or test command
+- Task 'q.3' acceptance_criteria[8] may produce unsatisfied reconciliation: 'Metric values on a hand-constructed trade list match hand-co...' lacks file reference or test command
+- Task 'q.3' acceptance_criteria[9] may produce unsatisfied reconciliation: 'A small-sample warning is emitted when the trade count is be...' lacks file reference or test command
+- Task 'q.3' acceptance_criteria[10] may produce unsatisfied reconciliation: 'The modules import no Alpaca trading client, HTTP library or...' lacks file reference or test command
+- Task 'q.4' acceptance_criteria[1] may produce unsatisfied reconciliation: 'backtest run with 0 or more than 10 symbols, a missing start...' lacks file reference or test command
+- Task 'q.4' acceptance_criteria[2] may produce unsatisfied reconciliation: 'backtest run never downloads data; a dataset argument that i...' lacks file reference or test command
+- Task 'q.4' acceptance_criteria[3] may produce unsatisfied reconciliation: '--role holdout without --holdout-lock is refused before the ...' lacks file reference or test command
+- Task 'q.4' acceptance_criteria[4] may produce unsatisfied reconciliation: 'A valid run delegates a BacktestRequest with exactly the par...' lacks file reference or test command
+- Task 'q.4' acceptance_criteria[5] may produce unsatisfied reconciliation: 'backtest list returns runs in deterministic order (created_a...' lacks file reference or test command
+- Task 'q.4' acceptance_criteria[6] may produce unsatisfied reconciliation: 'backtest list/show --json output contains run_id, symbols, w...' lacks file reference or test command
+- Task 'q.4' acceptance_criteria[7] may produce unsatisfied reconciliation: 'backtest export writes CSV/JSON files whose trade rows and m...' lacks file reference or test command
+- Task 'q.4' acceptance_criteria[8] may produce unsatisfied reconciliation: 'Command handlers do not mutate manifests or results and do n...' lacks file reference or test command
+- Task 'q.5' acceptance_criteria[1] may produce unsatisfied reconciliation: 'The SELL-path test asserts exactly one entry, protection pla...' lacks file reference or test command
+- Task 'q.5' acceptance_criteria[2] may produce unsatisfied reconciliation: 'The stop-first test asserts the stop closes the full positio...' lacks file reference or test command
+- Task 'q.5' acceptance_criteria[3] may produce unsatisfied reconciliation: 'The ambiguous intrabar test asserts pessimistic stop-first r...' lacks file reference or test command
+- Task 'q.5' acceptance_criteria[4] may produce unsatisfied reconciliation: 'The duplicate-suppression test asserts that re-evaluating th...' lacks file reference or test command
+- Task 'q.5' acceptance_criteria[5] may produce unsatisfied reconciliation: 'The no-lookahead test asserts every bar visible at evaluatio...' lacks file reference or test command
+- Task 'q.5' acceptance_criteria[6] may produce unsatisfied reconciliation: 'The rerun-identity test asserts equal config hash and equal ...' lacks file reference or test command
+- Task 'q.5' acceptance_criteria[7] may produce unsatisfied reconciliation: 'The stop-parity test asserts replay stop prices equal the sh...' lacks file reference or test command
+- Task 'q.5' acceptance_criteria[8] may produce unsatisfied reconciliation: 'Tests block socket creation and confirm no ALPACA_* credenti...' lacks file reference or test command
+- Task 'q.5' acceptance_criteria[10] may produce unsatisfied reconciliation: 'The test file passes when run alone (any strict xfail is doc...' lacks file reference or test command
+- Phase q phase_verification.json has no checks
+- [/home/mike/dev/mike/stocks/python/mike_trade/.abracapocus/plans/ACTIVE/MIKE_TRADE_COMPLETE_PRODUCT/r/task_r.1_implement_read_only_fastapi_server_and_typed_api_endpoints.json] allowed_write_paths entry 'mike_trade/dashboard/server.py' does not exist in working root
+- [/home/mike/dev/mike/stocks/python/mike_trade/.abracapocus/plans/ACTIVE/MIKE_TRADE_COMPLETE_PRODUCT/r/task_r.1_implement_read_only_fastapi_server_and_typed_api_endpoints.json] allowed_write_paths entry 'mike_trade/dashboard/api.py' does not exist in working root
+- [/home/mike/dev/mike/stocks/python/mike_trade/.abracapocus/plans/ACTIVE/MIKE_TRADE_COMPLETE_PRODUCT/r/task_r.1_implement_read_only_fastapi_server_and_typed_api_endpoints.json] allowed_write_paths entry 'tests/integration/test_dashboard_api.py' does not exist in working root
+- [/home/mike/dev/mike/stocks/python/mike_trade/.abracapocus/plans/ACTIVE/MIKE_TRADE_COMPLETE_PRODUCT/r/task_r.1_implement_read_only_fastapi_server_and_typed_api_endpoints.json] acceptance_criteria list length > 5
+- [/home/mike/dev/mike/stocks/python/mike_trade/.abracapocus/plans/ACTIVE/MIKE_TRADE_COMPLETE_PRODUCT/r/task_r.1_implement_read_only_fastapi_server_and_typed_api_endpoints.json] acceptance_criteria item length > 120 characters
+- [/home/mike/dev/mike/stocks/python/mike_trade/.abracapocus/plans/ACTIVE/MIKE_TRADE_COMPLETE_PRODUCT/r/task_r.1_implement_read_only_fastapi_server_and_typed_api_endpoints.json] description field length > 300 characters
+- [/home/mike/dev/mike/stocks/python/mike_trade/.abracapocus/plans/ACTIVE/MIKE_TRADE_COMPLETE_PRODUCT/r/task_r.1_implement_read_only_fastapi_server_and_typed_api_endpoints.json] description contains broad word: all
+- [/home/mike/dev/mike/stocks/python/mike_trade/.abracapocus/plans/ACTIVE/MIKE_TRADE_COMPLETE_PRODUCT/r/task_r.1_implement_read_only_fastapi_server_and_typed_api_endpoints.json] description contains broad word: every
+- [/home/mike/dev/mike/stocks/python/mike_trade/.abracapocus/plans/ACTIVE/MIKE_TRADE_COMPLETE_PRODUCT/r/task_r.1_implement_read_only_fastapi_server_and_typed_api_endpoints.json] acceptance_criteria[1] contains broad word: all
+- [/home/mike/dev/mike/stocks/python/mike_trade/.abracapocus/plans/ACTIVE/MIKE_TRADE_COMPLETE_PRODUCT/r/task_r.1_implement_read_only_fastapi_server_and_typed_api_endpoints.json] acceptance_criteria[6] contains broad word: every
+- [/home/mike/dev/mike/stocks/python/mike_trade/.abracapocus/plans/ACTIVE/MIKE_TRADE_COMPLETE_PRODUCT/r/task_r.2_build_production_react_typescript_vite_dashboard_application_and_asset_pipeline.json] allowed_write_paths list length > 4
+- [/home/mike/dev/mike/stocks/python/mike_trade/.abracapocus/plans/ACTIVE/MIKE_TRADE_COMPLETE_PRODUCT/r/task_r.2_build_production_react_typescript_vite_dashboard_application_and_asset_pipeline.json] allowed_write_paths entry 'dashboard/frontend/package.json' does not exist in working root
+- [/home/mike/dev/mike/stocks/python/mike_trade/.abracapocus/plans/ACTIVE/MIKE_TRADE_COMPLETE_PRODUCT/r/task_r.2_build_production_react_typescript_vite_dashboard_application_and_asset_pipeline.json] allowed_write_paths entry 'dashboard/frontend/package-lock.json' does not exist in working root
+- [/home/mike/dev/mike/stocks/python/mike_trade/.abracapocus/plans/ACTIVE/MIKE_TRADE_COMPLETE_PRODUCT/r/task_r.2_build_production_react_typescript_vite_dashboard_application_and_asset_pipeline.json] allowed_write_paths entry 'dashboard/frontend/tsconfig.json' does not exist in working root
+- [/home/mike/dev/mike/stocks/python/mike_trade/.abracapocus/plans/ACTIVE/MIKE_TRADE_COMPLETE_PRODUCT/r/task_r.2_build_production_react_typescript_vite_dashboard_application_and_asset_pipeline.json] allowed_write_paths entry 'dashboard/frontend/vite.config.ts' does not exist in working root
+- [/home/mike/dev/mike/stocks/python/mike_trade/.abracapocus/plans/ACTIVE/MIKE_TRADE_COMPLETE_PRODUCT/r/task_r.2_build_production_react_typescript_vite_dashboard_application_and_asset_pipeline.json] allowed_write_paths entry 'dashboard/frontend/index.html' does not exist in working root
+- [/home/mike/dev/mike/stocks/python/mike_trade/.abracapocus/plans/ACTIVE/MIKE_TRADE_COMPLETE_PRODUCT/r/task_r.2_build_production_react_typescript_vite_dashboard_application_and_asset_pipeline.json] allowed_write_paths entry 'dashboard/frontend/src/main.tsx' does not exist in working root
+- [/home/mike/dev/mike/stocks/python/mike_trade/.abracapocus/plans/ACTIVE/MIKE_TRADE_COMPLETE_PRODUCT/r/task_r.2_build_production_react_typescript_vite_dashboard_application_and_asset_pipeline.json] acceptance_criteria list length > 5
+- [/home/mike/dev/mike/stocks/python/mike_trade/.abracapocus/plans/ACTIVE/MIKE_TRADE_COMPLETE_PRODUCT/r/task_r.2_build_production_react_typescript_vite_dashboard_application_and_asset_pipeline.json] acceptance_criteria item length > 120 characters
+- [/home/mike/dev/mike/stocks/python/mike_trade/.abracapocus/plans/ACTIVE/MIKE_TRADE_COMPLETE_PRODUCT/r/task_r.2_build_production_react_typescript_vite_dashboard_application_and_asset_pipeline.json] description field length > 300 characters
+- [/home/mike/dev/mike/stocks/python/mike_trade/.abracapocus/plans/ACTIVE/MIKE_TRADE_COMPLETE_PRODUCT/r/task_r.2_build_production_react_typescript_vite_dashboard_application_and_asset_pipeline.json] description contains broad word: full
+- [/home/mike/dev/mike/stocks/python/mike_trade/.abracapocus/plans/ACTIVE/MIKE_TRADE_COMPLETE_PRODUCT/r/task_r.3_build_react_account_status_offline_health_and_stock_watchlist_views.json] allowed_write_paths entry 'dashboard/frontend/src/App.tsx' does not exist in working root
+- [/home/mike/dev/mike/stocks/python/mike_trade/.abracapocus/plans/ACTIVE/MIKE_TRADE_COMPLETE_PRODUCT/r/task_r.3_build_react_account_status_offline_health_and_stock_watchlist_views.json] allowed_write_paths entry 'dashboard/frontend/src/components/Watchlist.tsx' does not exist in working root
+- [/home/mike/dev/mike/stocks/python/mike_trade/.abracapocus/plans/ACTIVE/MIKE_TRADE_COMPLETE_PRODUCT/r/task_r.3_build_react_account_status_offline_health_and_stock_watchlist_views.json] allowed_write_paths entry 'dashboard/frontend/src/styles.css' does not exist in working root
+- [/home/mike/dev/mike/stocks/python/mike_trade/.abracapocus/plans/ACTIVE/MIKE_TRADE_COMPLETE_PRODUCT/r/task_r.3_build_react_account_status_offline_health_and_stock_watchlist_views.json] acceptance_criteria list length > 5
+- [/home/mike/dev/mike/stocks/python/mike_trade/.abracapocus/plans/ACTIVE/MIKE_TRADE_COMPLETE_PRODUCT/r/task_r.3_build_react_account_status_offline_health_and_stock_watchlist_views.json] acceptance_criteria item length > 120 characters
+- [/home/mike/dev/mike/stocks/python/mike_trade/.abracapocus/plans/ACTIVE/MIKE_TRADE_COMPLETE_PRODUCT/r/task_r.3_build_react_account_status_offline_health_and_stock_watchlist_views.json] description field length > 300 characters
+- [/home/mike/dev/mike/stocks/python/mike_trade/.abracapocus/plans/ACTIVE/MIKE_TRADE_COMPLETE_PRODUCT/r/task_r.3_build_react_account_status_offline_health_and_stock_watchlist_views.json] description contains broad word: all
+- [/home/mike/dev/mike/stocks/python/mike_trade/.abracapocus/plans/ACTIVE/MIKE_TRADE_COMPLETE_PRODUCT/r/task_r.3_build_react_account_status_offline_health_and_stock_watchlist_views.json] description contains broad word: every
+- [/home/mike/dev/mike/stocks/python/mike_trade/.abracapocus/plans/ACTIVE/MIKE_TRADE_COMPLETE_PRODUCT/r/task_r.3_build_react_account_status_offline_health_and_stock_watchlist_views.json] acceptance_criteria[3] contains broad word: all
+- [/home/mike/dev/mike/stocks/python/mike_trade/.abracapocus/plans/ACTIVE/MIKE_TRADE_COMPLETE_PRODUCT/r/task_r.3_build_react_account_status_offline_health_and_stock_watchlist_views.json] acceptance_criteria[4] contains broad word: every
+- [/home/mike/dev/mike/stocks/python/mike_trade/.abracapocus/plans/ACTIVE/MIKE_TRADE_COMPLETE_PRODUCT/r/task_r.4_build_react_symbol_detail_account_scenario_order_and_protection_views.json] allowed_write_paths entry 'dashboard/frontend/src/components/SymbolDetails.tsx' does not exist in working root
+- [/home/mike/dev/mike/stocks/python/mike_trade/.abracapocus/plans/ACTIVE/MIKE_TRADE_COMPLETE_PRODUCT/r/task_r.4_build_react_symbol_detail_account_scenario_order_and_protection_views.json] allowed_write_paths entry 'dashboard/frontend/src/components/AccountDetail.tsx' does not exist in working root
+- [/home/mike/dev/mike/stocks/python/mike_trade/.abracapocus/plans/ACTIVE/MIKE_TRADE_COMPLETE_PRODUCT/r/task_r.4_build_react_symbol_detail_account_scenario_order_and_protection_views.json] allowed_write_paths entry 'dashboard/frontend/src/api/client.ts' does not exist in working root
+- [/home/mike/dev/mike/stocks/python/mike_trade/.abracapocus/plans/ACTIVE/MIKE_TRADE_COMPLETE_PRODUCT/r/task_r.4_build_react_symbol_detail_account_scenario_order_and_protection_views.json] acceptance_criteria list length > 5
+- [/home/mike/dev/mike/stocks/python/mike_trade/.abracapocus/plans/ACTIVE/MIKE_TRADE_COMPLETE_PRODUCT/r/task_r.4_build_react_symbol_detail_account_scenario_order_and_protection_views.json] acceptance_criteria item length > 120 characters
+- [/home/mike/dev/mike/stocks/python/mike_trade/.abracapocus/plans/ACTIVE/MIKE_TRADE_COMPLETE_PRODUCT/r/task_r.4_build_react_symbol_detail_account_scenario_order_and_protection_views.json] description field length > 300 characters
+- [/home/mike/dev/mike/stocks/python/mike_trade/.abracapocus/plans/ACTIVE/MIKE_TRADE_COMPLETE_PRODUCT/r/task_r.4_build_react_symbol_detail_account_scenario_order_and_protection_views.json] description contains broad word: every
+- [/home/mike/dev/mike/stocks/python/mike_trade/.abracapocus/plans/ACTIVE/MIKE_TRADE_COMPLETE_PRODUCT/r/task_r.5_verify_production_dashboard_offline_stale_isolation_and_read_only_behavior.json] allowed_write_paths entry 'tests/integration/test_dashboard_offline.py' does not exist in working root
+- [/home/mike/dev/mike/stocks/python/mike_trade/.abracapocus/plans/ACTIVE/MIKE_TRADE_COMPLETE_PRODUCT/r/task_r.5_verify_production_dashboard_offline_stale_isolation_and_read_only_behavior.json] allowed_write_paths entry 'tests/integration/test_dashboard_readonly.py' does not exist in working root
+- [/home/mike/dev/mike/stocks/python/mike_trade/.abracapocus/plans/ACTIVE/MIKE_TRADE_COMPLETE_PRODUCT/r/task_r.5_verify_production_dashboard_offline_stale_isolation_and_read_only_behavior.json] allowed_write_paths entry 'docs/verification/phase_r_dashboard.md' does not exist in working root
+- [/home/mike/dev/mike/stocks/python/mike_trade/.abracapocus/plans/ACTIVE/MIKE_TRADE_COMPLETE_PRODUCT/r/task_r.5_verify_production_dashboard_offline_stale_isolation_and_read_only_behavior.json] acceptance_criteria list length > 5
+- [/home/mike/dev/mike/stocks/python/mike_trade/.abracapocus/plans/ACTIVE/MIKE_TRADE_COMPLETE_PRODUCT/r/task_r.5_verify_production_dashboard_offline_stale_isolation_and_read_only_behavior.json] acceptance_criteria item length > 120 characters
+- [/home/mike/dev/mike/stocks/python/mike_trade/.abracapocus/plans/ACTIVE/MIKE_TRADE_COMPLETE_PRODUCT/r/task_r.5_verify_production_dashboard_offline_stale_isolation_and_read_only_behavior.json] description field length > 300 characters
+- [/home/mike/dev/mike/stocks/python/mike_trade/.abracapocus/plans/ACTIVE/MIKE_TRADE_COMPLETE_PRODUCT/r/task_r.5_verify_production_dashboard_offline_stale_isolation_and_read_only_behavior.json] description contains broad word: full
+- [/home/mike/dev/mike/stocks/python/mike_trade/.abracapocus/plans/ACTIVE/MIKE_TRADE_COMPLETE_PRODUCT/r/task_r.5_verify_production_dashboard_offline_stale_isolation_and_read_only_behavior.json] description contains broad word: every
+- [/home/mike/dev/mike/stocks/python/mike_trade/.abracapocus/plans/ACTIVE/MIKE_TRADE_COMPLETE_PRODUCT/r/task_r.5_verify_production_dashboard_offline_stale_isolation_and_read_only_behavior.json] acceptance_criteria[0] contains broad word: full
+- [/home/mike/dev/mike/stocks/python/mike_trade/.abracapocus/plans/ACTIVE/MIKE_TRADE_COMPLETE_PRODUCT/r/task_r.5_verify_production_dashboard_offline_stale_isolation_and_read_only_behavior.json] acceptance_criteria[1] contains broad word: all
+- [/home/mike/dev/mike/stocks/python/mike_trade/.abracapocus/plans/ACTIVE/MIKE_TRADE_COMPLETE_PRODUCT/r/task_r.5_verify_production_dashboard_offline_stale_isolation_and_read_only_behavior.json] acceptance_criteria[1] contains broad word: every
+- Task 'r.1' must contain exactly one 'Before editing, inspect:' block (found 0)
+- Task 'r.1' missing anti-inference instruction: Do not infer APIs, schemas, behavior, or file contents; inspect the referenced files first.
+- Task 'r.1' missing explicit strict file-scope language
+- Task 'r.1' missing acceptance criterion equivalent to: No file outside allowed_write_paths is modified.
+- Task 'r.2' must contain exactly one 'Before editing, inspect:' block (found 0)
+- Task 'r.2' missing anti-inference instruction: Do not infer APIs, schemas, behavior, or file contents; inspect the referenced files first.
+- Task 'r.2' missing explicit strict file-scope language
+- Task 'r.2' missing acceptance criterion equivalent to: No file outside allowed_write_paths is modified.
+- Task 'r.3' must contain exactly one 'Before editing, inspect:' block (found 0)
+- Task 'r.3' missing anti-inference instruction: Do not infer APIs, schemas, behavior, or file contents; inspect the referenced files first.
+- Task 'r.3' missing explicit strict file-scope language
+- Task 'r.3' missing acceptance criterion equivalent to: No file outside allowed_write_paths is modified.
+- Task 'r.4' must contain exactly one 'Before editing, inspect:' block (found 0)
+- Task 'r.4' missing anti-inference instruction: Do not infer APIs, schemas, behavior, or file contents; inspect the referenced files first.
+- Task 'r.4' missing explicit strict file-scope language
+- Task 'r.4' missing acceptance criterion equivalent to: No file outside allowed_write_paths is modified.
+- Task 'r.4' acceptance criterion names 'client.ts' for modification but it is not in allowed_write_paths
+- Task 'r.5' must contain exactly one 'Before editing, inspect:' block (found 0)
+- Task 'r.5' missing anti-inference instruction: Do not infer APIs, schemas, behavior, or file contents; inspect the referenced files first.
+- Task 'r.5' missing explicit strict file-scope language
+- Task 'r.5' missing acceptance criterion equivalent to: No file outside allowed_write_paths is modified.
+- Task 'r.1' acceptance_criteria[1] may produce unsatisfied reconciliation: 'All money, quantity, price, budget and P&L fields serialize ...' lacks file reference or test command
+- Task 'r.1' acceptance_criteria[2] may produce unsatisfied reconciliation: 'The SQLite connection is opened read-only (mode=ro URI and q...' lacks file reference or test command
+- Task 'r.1' acceptance_criteria[3] may produce unsatisfied reconciliation: 'engine_state is OFFLINE when heartbeat_age_seconds exceeds t...' lacks file reference or test command
+- Task 'r.1' acceptance_criteria[4] may produce unsatisfied reconciliation: 'When feed freshness is stale and the heartbeat is fresh, sta...' lacks file reference or test command
+- Task 'r.1' acceptance_criteria[5] may produce unsatisfied reconciliation: 'When the broker connection is disconnected or stale, positio...' lacks file reference or test command
+- Task 'r.1' acceptance_criteria[6] may produce unsatisfied reconciliation: 'Every per-account endpoint returns only rows for the request...' lacks file reference or test command
+- Task 'r.1' acceptance_criteria[7] may produce unsatisfied reconciliation: 'Any POST/PUT/PATCH/DELETE request to any route returns HTTP ...' lacks file reference or test command
+- Task 'r.3' acceptance_criteria[1] may produce unsatisfied reconciliation: 'The client-side heartbeat age turns the header OFFLINE once ...' lacks file reference or test command
+- Task 'r.3' acceptance_criteria[2] may produce unsatisfied reconciliation: 'Account switching clears previously loaded account-scoped KP...' lacks file reference or test command
+- Task 'r.3' acceptance_criteria[3] may produce unsatisfied reconciliation: 'The KPI ribbon displays all listed account KPIs with provena...' lacks file reference or test command
+- Task 'r.3' acceptance_criteria[5] may produce unsatisfied reconciliation: 'Budget, entry cutoff, lockout, cooldown and minimum-hold rea...' lacks file reference or test command
+- Task 'r.3' acceptance_criteria[6] may produce unsatisfied reconciliation: 'No button, form or fetch call in these files uses a non-GET ...' lacks file reference or test command
+- Task 'r.4' acceptance_criteria[2] may produce unsatisfied reconciliation: 'AccountSelector displays each account with mode and scenario...' lacks file reference or test command
+- Task 'r.4' acceptance_criteria[3] may produce unsatisfied reconciliation: 'AccountDetail shows broker positions/balances, UNMANAGED ext...' lacks file reference or test command
+- Task 'r.4' acceptance_criteria[4] may produce unsatisfied reconciliation: 'SymbolDetails shows the signal timeline including NO_SIGNAL,...' lacks file reference or test command
+- Task 'r.4' acceptance_criteria[5] may produce unsatisfied reconciliation: 'SymbolDetails trailing history separately labels broker-nati...' lacks file reference or test command
+- Task 'r.4' acceptance_criteria[6] may produce unsatisfied reconciliation: 'SymbolDetails lists up to the last 20 managed cycles with re...' lacks file reference or test command
+- Task 'r.5' acceptance_criteria[2] may produce unsatisfied reconciliation: 'Tests use an injected clock and a temporary seeded SQLite DB...' lacks file reference or test command
+- Task 'r.5' acceptance_criteria[5] may produce unsatisfied reconciliation: 'No production source files are modified by this task...' lacks file reference or test command
+- Phase r phase_verification.json has no checks
+- [/home/mike/dev/mike/stocks/python/mike_trade/.abracapocus/plans/ACTIVE/MIKE_TRADE_COMPLETE_PRODUCT/s/task_s.1_implement_broker_fee_activity_ingestion_and_account_equity_reconciliation_reports.json] allowed_write_paths entry 'mike_trade/reporting/accounting.py' does not exist in working root
+- [/home/mike/dev/mike/stocks/python/mike_trade/.abracapocus/plans/ACTIVE/MIKE_TRADE_COMPLETE_PRODUCT/s/task_s.1_implement_broker_fee_activity_ingestion_and_account_equity_reconciliation_reports.json] allowed_write_paths entry 'mike_trade/reporting/fees.py' does not exist in working root
+- [/home/mike/dev/mike/stocks/python/mike_trade/.abracapocus/plans/ACTIVE/MIKE_TRADE_COMPLETE_PRODUCT/s/task_s.1_implement_broker_fee_activity_ingestion_and_account_equity_reconciliation_reports.json] allowed_write_paths entry 'tests/unit/test_reporting_reconciliation.py' does not exist in working root
+- [/home/mike/dev/mike/stocks/python/mike_trade/.abracapocus/plans/ACTIVE/MIKE_TRADE_COMPLETE_PRODUCT/s/task_s.1_implement_broker_fee_activity_ingestion_and_account_equity_reconciliation_reports.json] acceptance_criteria list length > 5
+- [/home/mike/dev/mike/stocks/python/mike_trade/.abracapocus/plans/ACTIVE/MIKE_TRADE_COMPLETE_PRODUCT/s/task_s.1_implement_broker_fee_activity_ingestion_and_account_equity_reconciliation_reports.json] acceptance_criteria item length > 120 characters
+- [/home/mike/dev/mike/stocks/python/mike_trade/.abracapocus/plans/ACTIVE/MIKE_TRADE_COMPLETE_PRODUCT/s/task_s.1_implement_broker_fee_activity_ingestion_and_account_equity_reconciliation_reports.json] description field length > 300 characters
+- [/home/mike/dev/mike/stocks/python/mike_trade/.abracapocus/plans/ACTIVE/MIKE_TRADE_COMPLETE_PRODUCT/s/task_s.1_implement_broker_fee_activity_ingestion_and_account_equity_reconciliation_reports.json] description contains broad word: full
+- [/home/mike/dev/mike/stocks/python/mike_trade/.abracapocus/plans/ACTIVE/MIKE_TRADE_COMPLETE_PRODUCT/s/task_s.1_implement_broker_fee_activity_ingestion_and_account_equity_reconciliation_reports.json] description contains broad word: every
+- [/home/mike/dev/mike/stocks/python/mike_trade/.abracapocus/plans/ACTIVE/MIKE_TRADE_COMPLETE_PRODUCT/s/task_s.1_implement_broker_fee_activity_ingestion_and_account_equity_reconciliation_reports.json] acceptance_criteria[3] contains broad word: full
+- [/home/mike/dev/mike/stocks/python/mike_trade/.abracapocus/plans/ACTIVE/MIKE_TRADE_COMPLETE_PRODUCT/s/task_s.2_implement_strategy_trade_performance_attribution_and_csv_json_export.json] allowed_write_paths entry 'mike_trade/reporting/metrics.py' does not exist in working root
+- [/home/mike/dev/mike/stocks/python/mike_trade/.abracapocus/plans/ACTIVE/MIKE_TRADE_COMPLETE_PRODUCT/s/task_s.2_implement_strategy_trade_performance_attribution_and_csv_json_export.json] allowed_write_paths entry 'mike_trade/reporting/export.py' does not exist in working root
+- [/home/mike/dev/mike/stocks/python/mike_trade/.abracapocus/plans/ACTIVE/MIKE_TRADE_COMPLETE_PRODUCT/s/task_s.2_implement_strategy_trade_performance_attribution_and_csv_json_export.json] allowed_write_paths entry 'tests/unit/test_strategy_reports.py' does not exist in working root
+- [/home/mike/dev/mike/stocks/python/mike_trade/.abracapocus/plans/ACTIVE/MIKE_TRADE_COMPLETE_PRODUCT/s/task_s.2_implement_strategy_trade_performance_attribution_and_csv_json_export.json] acceptance_criteria list length > 5
+- [/home/mike/dev/mike/stocks/python/mike_trade/.abracapocus/plans/ACTIVE/MIKE_TRADE_COMPLETE_PRODUCT/s/task_s.2_implement_strategy_trade_performance_attribution_and_csv_json_export.json] acceptance_criteria item length > 120 characters
+- [/home/mike/dev/mike/stocks/python/mike_trade/.abracapocus/plans/ACTIVE/MIKE_TRADE_COMPLETE_PRODUCT/s/task_s.2_implement_strategy_trade_performance_attribution_and_csv_json_export.json] description field length > 300 characters
+- [/home/mike/dev/mike/stocks/python/mike_trade/.abracapocus/plans/ACTIVE/MIKE_TRADE_COMPLETE_PRODUCT/s/task_s.2_implement_strategy_trade_performance_attribution_and_csv_json_export.json] description contains broad word: all
+- [/home/mike/dev/mike/stocks/python/mike_trade/.abracapocus/plans/ACTIVE/MIKE_TRADE_COMPLETE_PRODUCT/s/task_s.2_implement_strategy_trade_performance_attribution_and_csv_json_export.json] description contains broad word: every
+- [/home/mike/dev/mike/stocks/python/mike_trade/.abracapocus/plans/ACTIVE/MIKE_TRADE_COMPLETE_PRODUCT/s/task_s.2_implement_strategy_trade_performance_attribution_and_csv_json_export.json] acceptance_criteria[2] contains broad word: every
+- [/home/mike/dev/mike/stocks/python/mike_trade/.abracapocus/plans/ACTIVE/MIKE_TRADE_COMPLETE_PRODUCT/s/task_s.2_implement_strategy_trade_performance_attribution_and_csv_json_export.json] acceptance_criteria[6] contains broad word: every
+- [/home/mike/dev/mike/stocks/python/mike_trade/.abracapocus/plans/ACTIVE/MIKE_TRADE_COMPLETE_PRODUCT/s/task_s.3_implement_complete_operator_cli_commands_for_lifecycle_budget_stop_and_limits.json] allowed_write_paths entry 'mike_trade/controls/cli_commands.py' does not exist in working root
+- [/home/mike/dev/mike/stocks/python/mike_trade/.abracapocus/plans/ACTIVE/MIKE_TRADE_COMPLETE_PRODUCT/s/task_s.3_implement_complete_operator_cli_commands_for_lifecycle_budget_stop_and_limits.json] allowed_write_paths entry 'mike_trade/controls/position_commands.py' does not exist in working root
+- [/home/mike/dev/mike/stocks/python/mike_trade/.abracapocus/plans/ACTIVE/MIKE_TRADE_COMPLETE_PRODUCT/s/task_s.3_implement_complete_operator_cli_commands_for_lifecycle_budget_stop_and_limits.json] allowed_write_paths entry 'tests/unit/test_operator_commands.py' does not exist in working root
+- [/home/mike/dev/mike/stocks/python/mike_trade/.abracapocus/plans/ACTIVE/MIKE_TRADE_COMPLETE_PRODUCT/s/task_s.3_implement_complete_operator_cli_commands_for_lifecycle_budget_stop_and_limits.json] acceptance_criteria list length > 5
+- [/home/mike/dev/mike/stocks/python/mike_trade/.abracapocus/plans/ACTIVE/MIKE_TRADE_COMPLETE_PRODUCT/s/task_s.3_implement_complete_operator_cli_commands_for_lifecycle_budget_stop_and_limits.json] acceptance_criteria item length > 120 characters
+- [/home/mike/dev/mike/stocks/python/mike_trade/.abracapocus/plans/ACTIVE/MIKE_TRADE_COMPLETE_PRODUCT/s/task_s.3_implement_complete_operator_cli_commands_for_lifecycle_budget_stop_and_limits.json] description field length > 300 characters
+- [/home/mike/dev/mike/stocks/python/mike_trade/.abracapocus/plans/ACTIVE/MIKE_TRADE_COMPLETE_PRODUCT/s/task_s.3_implement_complete_operator_cli_commands_for_lifecycle_budget_stop_and_limits.json] description contains broad word: complete
+- [/home/mike/dev/mike/stocks/python/mike_trade/.abracapocus/plans/ACTIVE/MIKE_TRADE_COMPLETE_PRODUCT/s/task_s.3_implement_complete_operator_cli_commands_for_lifecycle_budget_stop_and_limits.json] description contains broad word: full
+- [/home/mike/dev/mike/stocks/python/mike_trade/.abracapocus/plans/ACTIVE/MIKE_TRADE_COMPLETE_PRODUCT/s/task_s.3_implement_complete_operator_cli_commands_for_lifecycle_budget_stop_and_limits.json] description contains broad word: all
+- [/home/mike/dev/mike/stocks/python/mike_trade/.abracapocus/plans/ACTIVE/MIKE_TRADE_COMPLETE_PRODUCT/s/task_s.3_implement_complete_operator_cli_commands_for_lifecycle_budget_stop_and_limits.json] description contains broad word: every
+- [/home/mike/dev/mike/stocks/python/mike_trade/.abracapocus/plans/ACTIVE/MIKE_TRADE_COMPLETE_PRODUCT/s/task_s.3_implement_complete_operator_cli_commands_for_lifecycle_budget_stop_and_limits.json] acceptance_criteria[0] contains broad word: every
+- [/home/mike/dev/mike/stocks/python/mike_trade/.abracapocus/plans/ACTIVE/MIKE_TRADE_COMPLETE_PRODUCT/s/task_s.3_implement_complete_operator_cli_commands_for_lifecycle_budget_stop_and_limits.json] acceptance_criteria[4] contains broad word: all
+- [/home/mike/dev/mike/stocks/python/mike_trade/.abracapocus/plans/ACTIVE/MIKE_TRADE_COMPLETE_PRODUCT/s/task_s.3_implement_complete_operator_cli_commands_for_lifecycle_budget_stop_and_limits.json] acceptance_criteria[6] contains broad word: all
+- [/home/mike/dev/mike/stocks/python/mike_trade/.abracapocus/plans/ACTIVE/MIKE_TRADE_COMPLETE_PRODUCT/s/task_s.4_expose_all_documented_service_and_trading_operations_through_make_targets.json] allowed_write_paths entry 'docs/OPERATIONS.md' does not exist in working root
+- [/home/mike/dev/mike/stocks/python/mike_trade/.abracapocus/plans/ACTIVE/MIKE_TRADE_COMPLETE_PRODUCT/s/task_s.4_expose_all_documented_service_and_trading_operations_through_make_targets.json] allowed_write_paths entry 'tests/unit/test_make_targets.py' does not exist in working root
+- [/home/mike/dev/mike/stocks/python/mike_trade/.abracapocus/plans/ACTIVE/MIKE_TRADE_COMPLETE_PRODUCT/s/task_s.4_expose_all_documented_service_and_trading_operations_through_make_targets.json] acceptance_criteria list length > 5
+- [/home/mike/dev/mike/stocks/python/mike_trade/.abracapocus/plans/ACTIVE/MIKE_TRADE_COMPLETE_PRODUCT/s/task_s.4_expose_all_documented_service_and_trading_operations_through_make_targets.json] acceptance_criteria item length > 120 characters
+- [/home/mike/dev/mike/stocks/python/mike_trade/.abracapocus/plans/ACTIVE/MIKE_TRADE_COMPLETE_PRODUCT/s/task_s.4_expose_all_documented_service_and_trading_operations_through_make_targets.json] description field length > 300 characters
+- [/home/mike/dev/mike/stocks/python/mike_trade/.abracapocus/plans/ACTIVE/MIKE_TRADE_COMPLETE_PRODUCT/s/task_s.4_expose_all_documented_service_and_trading_operations_through_make_targets.json] description contains broad word: all
+- [/home/mike/dev/mike/stocks/python/mike_trade/.abracapocus/plans/ACTIVE/MIKE_TRADE_COMPLETE_PRODUCT/s/task_s.4_expose_all_documented_service_and_trading_operations_through_make_targets.json] description contains broad word: every
+- [/home/mike/dev/mike/stocks/python/mike_trade/.abracapocus/plans/ACTIVE/MIKE_TRADE_COMPLETE_PRODUCT/s/task_s.4_expose_all_documented_service_and_trading_operations_through_make_targets.json] acceptance_criteria[0] contains broad word: all
+- [/home/mike/dev/mike/stocks/python/mike_trade/.abracapocus/plans/ACTIVE/MIKE_TRADE_COMPLETE_PRODUCT/s/task_s.4_expose_all_documented_service_and_trading_operations_through_make_targets.json] acceptance_criteria[0] contains broad word: every
+- [/home/mike/dev/mike/stocks/python/mike_trade/.abracapocus/plans/ACTIVE/MIKE_TRADE_COMPLETE_PRODUCT/s/task_s.4_expose_all_documented_service_and_trading_operations_through_make_targets.json] acceptance_criteria[1] contains broad word: every
+- [/home/mike/dev/mike/stocks/python/mike_trade/.abracapocus/plans/ACTIVE/MIKE_TRADE_COMPLETE_PRODUCT/s/task_s.4_expose_all_documented_service_and_trading_operations_through_make_targets.json] acceptance_criteria[6] contains broad word: all
+- [/home/mike/dev/mike/stocks/python/mike_trade/.abracapocus/plans/ACTIVE/MIKE_TRADE_COMPLETE_PRODUCT/s/task_s.4_expose_all_documented_service_and_trading_operations_through_make_targets.json] acceptance_criteria[6] contains broad word: every
+- [/home/mike/dev/mike/stocks/python/mike_trade/.abracapocus/plans/ACTIVE/MIKE_TRADE_COMPLETE_PRODUCT/s/task_s.5_implement_bounded_filterable_events_signals_logs_and_health_read_commands.json] allowed_write_paths entry 'mike_trade/controls/history_commands.py' does not exist in working root
+- [/home/mike/dev/mike/stocks/python/mike_trade/.abracapocus/plans/ACTIVE/MIKE_TRADE_COMPLETE_PRODUCT/s/task_s.5_implement_bounded_filterable_events_signals_logs_and_health_read_commands.json] allowed_write_paths entry 'mike_trade/observability/metrics.py' does not exist in working root
+- [/home/mike/dev/mike/stocks/python/mike_trade/.abracapocus/plans/ACTIVE/MIKE_TRADE_COMPLETE_PRODUCT/s/task_s.5_implement_bounded_filterable_events_signals_logs_and_health_read_commands.json] allowed_write_paths entry 'tests/unit/test_history_commands.py' does not exist in working root
+- [/home/mike/dev/mike/stocks/python/mike_trade/.abracapocus/plans/ACTIVE/MIKE_TRADE_COMPLETE_PRODUCT/s/task_s.5_implement_bounded_filterable_events_signals_logs_and_health_read_commands.json] acceptance_criteria list length > 5
+- [/home/mike/dev/mike/stocks/python/mike_trade/.abracapocus/plans/ACTIVE/MIKE_TRADE_COMPLETE_PRODUCT/s/task_s.5_implement_bounded_filterable_events_signals_logs_and_health_read_commands.json] acceptance_criteria item length > 120 characters
+- [/home/mike/dev/mike/stocks/python/mike_trade/.abracapocus/plans/ACTIVE/MIKE_TRADE_COMPLETE_PRODUCT/s/task_s.5_implement_bounded_filterable_events_signals_logs_and_health_read_commands.json] description field length > 300 characters
+- [/home/mike/dev/mike/stocks/python/mike_trade/.abracapocus/plans/ACTIVE/MIKE_TRADE_COMPLETE_PRODUCT/s/task_s.5_implement_bounded_filterable_events_signals_logs_and_health_read_commands.json] description contains broad word: full
+- [/home/mike/dev/mike/stocks/python/mike_trade/.abracapocus/plans/ACTIVE/MIKE_TRADE_COMPLETE_PRODUCT/s/task_s.5_implement_bounded_filterable_events_signals_logs_and_health_read_commands.json] acceptance_criteria[4] contains broad word: all
+- [/home/mike/dev/mike/stocks/python/mike_trade/.abracapocus/plans/ACTIVE/MIKE_TRADE_COMPLETE_PRODUCT/s/task_s.5_implement_bounded_filterable_events_signals_logs_and_health_read_commands.json] acceptance_criteria[5] contains broad word: every
+- Task 's.1' must contain exactly one 'Before editing, inspect:' block (found 0)
+- Task 's.1' missing anti-inference instruction: Do not infer APIs, schemas, behavior, or file contents; inspect the referenced files first.
+- Task 's.1' missing explicit strict file-scope language
+- Task 's.1' missing acceptance criterion equivalent to: No file outside allowed_write_paths is modified.
+- Task 's.2' must contain exactly one 'Before editing, inspect:' block (found 0)
+- Task 's.2' missing anti-inference instruction: Do not infer APIs, schemas, behavior, or file contents; inspect the referenced files first.
+- Task 's.2' missing explicit strict file-scope language
+- Task 's.2' missing acceptance criterion equivalent to: No file outside allowed_write_paths is modified.
+- Task 's.3' must contain exactly one 'Before editing, inspect:' block (found 0)
+- Task 's.3' missing anti-inference instruction: Do not infer APIs, schemas, behavior, or file contents; inspect the referenced files first.
+- Task 's.3' missing explicit strict file-scope language
+- Task 's.3' missing acceptance criterion equivalent to: No file outside allowed_write_paths is modified.
+- Task 's.3' has 4 broad words (limit 2)
+- Task 's.4' must contain exactly one 'Before editing, inspect:' block (found 0)
+- Task 's.4' missing anti-inference instruction: Do not infer APIs, schemas, behavior, or file contents; inspect the referenced files first.
+- Task 's.4' missing explicit strict file-scope language
+- Task 's.4' missing acceptance criterion equivalent to: No file outside allowed_write_paths is modified.
+- Task 's.5' must contain exactly one 'Before editing, inspect:' block (found 0)
+- Task 's.5' missing anti-inference instruction: Do not infer APIs, schemas, behavior, or file contents; inspect the referenced files first.
+- Task 's.5' missing explicit strict file-scope language
+- Task 's.5' missing acceptance criterion equivalent to: No file outside allowed_write_paths is modified.
+- Task 's.1' acceptance_criteria[1] may produce unsatisfied reconciliation: 'Re-ingesting an identical broker activity id produces no add...' lacks file reference or test command
+- Task 's.1' acceptance_criteria[2] may produce unsatisfied reconciliation: 'A fee is reported CONFIRMED only when a broker activity link...' lacks file reference or test command
+- Task 's.1' acceptance_criteria[3] may produce unsatisfied reconciliation: 'Normalized activity records keep only allowlisted fields; te...' lacks file reference or test command
+- Task 's.1' acceptance_criteria[5] may produce unsatisfied reconciliation: 'The reconciliation identity yields residual 0 and reconciled...' lacks file reference or test command
+- Task 's.1' acceptance_criteria[6] may produce unsatisfied reconciliation: 'Deposits and withdrawals change equity and external_flows bu...' lacks file reference or test command
+- Task 's.1' acceptance_criteria[7] may produce unsatisfied reconciliation: 'Day and week periods use America/New_York session boundaries...' lacks file reference or test command
+- Task 's.1' acceptance_criteria[8] may produce unsatisfied reconciliation: 'Requests spanning multiple accounts or modes are rejected, a...' lacks file reference or test command
+- Task 's.2' acceptance_criteria[1] may produce unsatisfied reconciliation: 'Exits by protective stop, trailing stop, manual close, flatt...' lacks file reference or test command
+- Task 's.2' acceptance_criteria[2] may produce unsatisfied reconciliation: 'Aggregations filter by account/scenario, period, symbol, BUY...' lacks file reference or test command
+- Task 's.2' acceptance_criteria[3] may produce unsatisfied reconciliation: 'Slippage is reported in Decimal dollars and basis points, an...' lacks file reference or test command
+- Task 's.2' acceptance_criteria[4] may produce unsatisfied reconciliation: 'A cycle whose fee status is missing or UNAVAILABLE reports f...' lacks file reference or test command
+- Task 's.2' acceptance_criteria[5] may produce unsatisfied reconciliation: 'The live-vs-shadow comparison reports matched, missed and ex...' lacks file reference or test command
+- Task 's.2' acceptance_criteria[6] may produce unsatisfied reconciliation: 'Every report payload includes sample size and a performance_...' lacks file reference or test command
+- Task 's.2' acceptance_criteria[8] may produce unsatisfied reconciliation: 'Exporting the same input twice yields byte-identical output,...' lacks file reference or test command
+- Task 's.3' acceptance_criteria[2] may produce unsatisfied reconciliation: 'stop invokes no order cancellation, protective-stop cancella...' lacks file reference or test command
+- Task 's.3' acceptance_criteria[3] may produce unsatisfied reconciliation: 'pause and pause-symbol leave fill handling, protective/trail...' lacks file reference or test command
+- Task 's.3' acceptance_criteria[4] may produce unsatisfied reconciliation: 'For a LIVE account, close, close-all, flatten, live-enable, ...' lacks file reference or test command
+- Task 's.3' acceptance_criteria[5] may produce unsatisfied reconciliation: 'live-disable, pause, pause-symbol and entries-disable succee...' lacks file reference or test command
+- Task 's.3' acceptance_criteria[6] may produce unsatisfied reconciliation: 'close, close-all and flatten exit 4 when the engine heartbea...' lacks file reference or test command
+- Task 's.3' acceptance_criteria[7] may produce unsatisfied reconciliation: 'live-enable and live-start refuse to proceed when live-prefl...' lacks file reference or test command
+- Task 's.3' acceptance_criteria[9] may produce unsatisfied reconciliation: 'report commands delegate to the reporting modules, and JSON ...' lacks file reference or test command
+- Task 's.4' acceptance_criteria[2] may produce unsatisfied reconciliation: 'No recipe contains python -c, sqlite3, curl, provider SDK ca...' lacks file reference or test command
+- Task 's.4' acceptance_criteria[4] may produce unsatisfied reconciliation: 'stop and flatten invoke different CLI subcommands, and the s...' lacks file reference or test command
+- Task 's.4' acceptance_criteria[5] may produce unsatisfied reconciliation: 'test-paper is credential-gated and never references live cre...' lacks file reference or test command
+- Task 's.5' acceptance_criteria[1] may produce unsatisfied reconciliation: 'Results default to 50 rows, never exceed 1000, and are filte...' lacks file reference or test command
+- Task 's.5' acceptance_criteria[2] may produce unsatisfied reconciliation: 'History commands open SQLite read-only; a test asserts that ...' lacks file reference or test command
+- Task 's.5' acceptance_criteria[3] may produce unsatisfied reconciliation: 'logs output is capped by both line and byte limits and filte...' lacks file reference or test command
+- Task 's.5' acceptance_criteria[4] may produce unsatisfied reconciliation: 'health reports OFFLINE with exit code 5 when the heartbeat a...' lacks file reference or test command
+- Task 's.5' acceptance_criteria[6] may produce unsatisfied reconciliation: 'The redaction filter masks API keys, secrets and tokens and ...' lacks file reference or test command
+- Task 's.5' acceptance_criteria[7] may produce unsatisfied reconciliation: 'Structured log records include bound run_id, cycle_id, signa...' lacks file reference or test command
+- Phase s phase_verification.json has no checks
+- [/home/mike/dev/mike/stocks/python/mike_trade/.abracapocus/plans/ACTIVE/MIKE_TRADE_COMPLETE_PRODUCT/t/task_t.1_harden_protected_runtime_secrets_and_systemd_engine_dashboard_deployment.json] allowed_write_paths entry 'deploy/systemd/mike-trade-engine.service' does not exist in working root
+- [/home/mike/dev/mike/stocks/python/mike_trade/.abracapocus/plans/ACTIVE/MIKE_TRADE_COMPLETE_PRODUCT/t/task_t.1_harden_protected_runtime_secrets_and_systemd_engine_dashboard_deployment.json] allowed_write_paths entry 'deploy/systemd/mike-trade-dashboard.service' does not exist in working root
+- [/home/mike/dev/mike/stocks/python/mike_trade/.abracapocus/plans/ACTIVE/MIKE_TRADE_COMPLETE_PRODUCT/t/task_t.1_harden_protected_runtime_secrets_and_systemd_engine_dashboard_deployment.json] allowed_write_paths entry 'mike_trade/controls/service_manager.py' does not exist in working root
+- [/home/mike/dev/mike/stocks/python/mike_trade/.abracapocus/plans/ACTIVE/MIKE_TRADE_COMPLETE_PRODUCT/t/task_t.1_harden_protected_runtime_secrets_and_systemd_engine_dashboard_deployment.json] acceptance_criteria list length > 5
+- [/home/mike/dev/mike/stocks/python/mike_trade/.abracapocus/plans/ACTIVE/MIKE_TRADE_COMPLETE_PRODUCT/t/task_t.1_harden_protected_runtime_secrets_and_systemd_engine_dashboard_deployment.json] acceptance_criteria item length > 120 characters
+- [/home/mike/dev/mike/stocks/python/mike_trade/.abracapocus/plans/ACTIVE/MIKE_TRADE_COMPLETE_PRODUCT/t/task_t.1_harden_protected_runtime_secrets_and_systemd_engine_dashboard_deployment.json] description field length > 300 characters
+- [/home/mike/dev/mike/stocks/python/mike_trade/.abracapocus/plans/ACTIVE/MIKE_TRADE_COMPLETE_PRODUCT/t/task_t.1_harden_protected_runtime_secrets_and_systemd_engine_dashboard_deployment.json] Task appears to modify blocking governance; ensure docs/operations.md Governance Blocking Policy requirements are met.
+- [/home/mike/dev/mike/stocks/python/mike_trade/.abracapocus/plans/ACTIVE/MIKE_TRADE_COMPLETE_PRODUCT/t/task_t.2_implement_credential_gated_end_to_end_alpaca_paper_integration_suite.json] allowed_write_paths entry 'tests/paper_broker/test_alpaca_paper_cycle.py' does not exist in working root
+- [/home/mike/dev/mike/stocks/python/mike_trade/.abracapocus/plans/ACTIVE/MIKE_TRADE_COMPLETE_PRODUCT/t/task_t.2_implement_credential_gated_end_to_end_alpaca_paper_integration_suite.json] allowed_write_paths entry 'tests/end_to_end/test_protective_live_guards.py' does not exist in working root
+- [/home/mike/dev/mike/stocks/python/mike_trade/.abracapocus/plans/ACTIVE/MIKE_TRADE_COMPLETE_PRODUCT/t/task_t.2_implement_credential_gated_end_to_end_alpaca_paper_integration_suite.json] acceptance_criteria list length > 5
+- [/home/mike/dev/mike/stocks/python/mike_trade/.abracapocus/plans/ACTIVE/MIKE_TRADE_COMPLETE_PRODUCT/t/task_t.2_implement_credential_gated_end_to_end_alpaca_paper_integration_suite.json] acceptance_criteria item length > 120 characters
+- [/home/mike/dev/mike/stocks/python/mike_trade/.abracapocus/plans/ACTIVE/MIKE_TRADE_COMPLETE_PRODUCT/t/task_t.2_implement_credential_gated_end_to_end_alpaca_paper_integration_suite.json] description field length > 300 characters
+- [/home/mike/dev/mike/stocks/python/mike_trade/.abracapocus/plans/ACTIVE/MIKE_TRADE_COMPLETE_PRODUCT/t/task_t.2_implement_credential_gated_end_to_end_alpaca_paper_integration_suite.json] description contains broad word: all
+- [/home/mike/dev/mike/stocks/python/mike_trade/.abracapocus/plans/ACTIVE/MIKE_TRADE_COMPLETE_PRODUCT/t/task_t.2_implement_credential_gated_end_to_end_alpaca_paper_integration_suite.json] description contains broad phrase: clean up
+- [/home/mike/dev/mike/stocks/python/mike_trade/.abracapocus/plans/ACTIVE/MIKE_TRADE_COMPLETE_PRODUCT/t/task_t.3_wire_complete_mike_trade_app_and_reference_vwap_shadow_end_to_end_lifecycle.json] allowed_write_paths entry 'tests/end_to_end/test_full_product_cycle.py' does not exist in working root
+- [/home/mike/dev/mike/stocks/python/mike_trade/.abracapocus/plans/ACTIVE/MIKE_TRADE_COMPLETE_PRODUCT/t/task_t.3_wire_complete_mike_trade_app_and_reference_vwap_shadow_end_to_end_lifecycle.json] allowed_write_paths entry 'tests/end_to_end/test_recovery_offline.py' does not exist in working root
+- [/home/mike/dev/mike/stocks/python/mike_trade/.abracapocus/plans/ACTIVE/MIKE_TRADE_COMPLETE_PRODUCT/t/task_t.3_wire_complete_mike_trade_app_and_reference_vwap_shadow_end_to_end_lifecycle.json] acceptance_criteria list length > 5
+- [/home/mike/dev/mike/stocks/python/mike_trade/.abracapocus/plans/ACTIVE/MIKE_TRADE_COMPLETE_PRODUCT/t/task_t.3_wire_complete_mike_trade_app_and_reference_vwap_shadow_end_to_end_lifecycle.json] acceptance_criteria item length > 120 characters
+- [/home/mike/dev/mike/stocks/python/mike_trade/.abracapocus/plans/ACTIVE/MIKE_TRADE_COMPLETE_PRODUCT/t/task_t.3_wire_complete_mike_trade_app_and_reference_vwap_shadow_end_to_end_lifecycle.json] description field length > 300 characters
+- [/home/mike/dev/mike/stocks/python/mike_trade/.abracapocus/plans/ACTIVE/MIKE_TRADE_COMPLETE_PRODUCT/t/task_t.3_wire_complete_mike_trade_app_and_reference_vwap_shadow_end_to_end_lifecycle.json] description contains broad word: full
+- [/home/mike/dev/mike/stocks/python/mike_trade/.abracapocus/plans/ACTIVE/MIKE_TRADE_COMPLETE_PRODUCT/t/task_t.3_wire_complete_mike_trade_app_and_reference_vwap_shadow_end_to_end_lifecycle.json] acceptance_criteria[0] contains broad word: full
+- [/home/mike/dev/mike/stocks/python/mike_trade/.abracapocus/plans/ACTIVE/MIKE_TRADE_COMPLETE_PRODUCT/t/task_t.4_finalize_install_broker_setup_safe_operations_and_risk_documentation.json] allowed_write_paths list length > 4
+- [/home/mike/dev/mike/stocks/python/mike_trade/.abracapocus/plans/ACTIVE/MIKE_TRADE_COMPLETE_PRODUCT/t/task_t.4_finalize_install_broker_setup_safe_operations_and_risk_documentation.json] allowed_write_paths entry 'docs/REQUIREMENTS.md' does not exist in working root
+- [/home/mike/dev/mike/stocks/python/mike_trade/.abracapocus/plans/ACTIVE/MIKE_TRADE_COMPLETE_PRODUCT/t/task_t.4_finalize_install_broker_setup_safe_operations_and_risk_documentation.json] allowed_write_paths entry 'docs/SAFETY_AND_RISK.md' does not exist in working root
+- [/home/mike/dev/mike/stocks/python/mike_trade/.abracapocus/plans/ACTIVE/MIKE_TRADE_COMPLETE_PRODUCT/t/task_t.4_finalize_install_broker_setup_safe_operations_and_risk_documentation.json] allowed_write_paths entry 'docs/TEST_PLAN.md' does not exist in working root
+- [/home/mike/dev/mike/stocks/python/mike_trade/.abracapocus/plans/ACTIVE/MIKE_TRADE_COMPLETE_PRODUCT/t/task_t.4_finalize_install_broker_setup_safe_operations_and_risk_documentation.json] allowed_write_paths entry 'docs/DASHBOARD.md' does not exist in working root
+- [/home/mike/dev/mike/stocks/python/mike_trade/.abracapocus/plans/ACTIVE/MIKE_TRADE_COMPLETE_PRODUCT/t/task_t.4_finalize_install_broker_setup_safe_operations_and_risk_documentation.json] allowed_write_paths entry 'docs/ALPACA.md' does not exist in working root
+- [/home/mike/dev/mike/stocks/python/mike_trade/.abracapocus/plans/ACTIVE/MIKE_TRADE_COMPLETE_PRODUCT/t/task_t.4_finalize_install_broker_setup_safe_operations_and_risk_documentation.json] acceptance_criteria list length > 5
+- [/home/mike/dev/mike/stocks/python/mike_trade/.abracapocus/plans/ACTIVE/MIKE_TRADE_COMPLETE_PRODUCT/t/task_t.4_finalize_install_broker_setup_safe_operations_and_risk_documentation.json] acceptance_criteria item length > 120 characters
+- [/home/mike/dev/mike/stocks/python/mike_trade/.abracapocus/plans/ACTIVE/MIKE_TRADE_COMPLETE_PRODUCT/t/task_t.4_finalize_install_broker_setup_safe_operations_and_risk_documentation.json] acceptance_criteria references pytest or test without a test allowed_write_path
+- [/home/mike/dev/mike/stocks/python/mike_trade/.abracapocus/plans/ACTIVE/MIKE_TRADE_COMPLETE_PRODUCT/t/task_t.4_finalize_install_broker_setup_safe_operations_and_risk_documentation.json] description field length > 300 characters
+- [/home/mike/dev/mike/stocks/python/mike_trade/.abracapocus/plans/ACTIVE/MIKE_TRADE_COMPLETE_PRODUCT/t/task_t.4_finalize_install_broker_setup_safe_operations_and_risk_documentation.json] description contains broad word: complete
+- [/home/mike/dev/mike/stocks/python/mike_trade/.abracapocus/plans/ACTIVE/MIKE_TRADE_COMPLETE_PRODUCT/t/task_t.4_finalize_install_broker_setup_safe_operations_and_risk_documentation.json] description contains broad word: full
+- [/home/mike/dev/mike/stocks/python/mike_trade/.abracapocus/plans/ACTIVE/MIKE_TRADE_COMPLETE_PRODUCT/t/task_t.4_finalize_install_broker_setup_safe_operations_and_risk_documentation.json] description contains broad word: all
+- [/home/mike/dev/mike/stocks/python/mike_trade/.abracapocus/plans/ACTIVE/MIKE_TRADE_COMPLETE_PRODUCT/t/task_t.4_finalize_install_broker_setup_safe_operations_and_risk_documentation.json] description contains broad word: every
+- [/home/mike/dev/mike/stocks/python/mike_trade/.abracapocus/plans/ACTIVE/MIKE_TRADE_COMPLETE_PRODUCT/t/task_t.4_finalize_install_broker_setup_safe_operations_and_risk_documentation.json] description contains broad word: comprehensive
+- [/home/mike/dev/mike/stocks/python/mike_trade/.abracapocus/plans/ACTIVE/MIKE_TRADE_COMPLETE_PRODUCT/t/task_t.4_finalize_install_broker_setup_safe_operations_and_risk_documentation.json] acceptance_criteria[0] contains broad word: all
+- [/home/mike/dev/mike/stocks/python/mike_trade/.abracapocus/plans/ACTIVE/MIKE_TRADE_COMPLETE_PRODUCT/t/task_t.4_finalize_install_broker_setup_safe_operations_and_risk_documentation.json] acceptance_criteria[1] contains broad word: all
+- [/home/mike/dev/mike/stocks/python/mike_trade/.abracapocus/plans/ACTIVE/MIKE_TRADE_COMPLETE_PRODUCT/t/task_t.4_finalize_install_broker_setup_safe_operations_and_risk_documentation.json] acceptance_criteria[6] contains broad word: every
+- [/home/mike/dev/mike/stocks/python/mike_trade/.abracapocus/plans/ACTIVE/MIKE_TRADE_COMPLETE_PRODUCT/t/task_t.5_record_final_acceptance_coverage_and_operator_go_no_go_checklist.json] allowed_write_paths entry 'docs/verification/phase_t_complete_product.md' does not exist in working root
+- [/home/mike/dev/mike/stocks/python/mike_trade/.abracapocus/plans/ACTIVE/MIKE_TRADE_COMPLETE_PRODUCT/t/task_t.5_record_final_acceptance_coverage_and_operator_go_no_go_checklist.json] allowed_write_paths entry 'docs/RELEASE_CHECKLIST.md' does not exist in working root
+- [/home/mike/dev/mike/stocks/python/mike_trade/.abracapocus/plans/ACTIVE/MIKE_TRADE_COMPLETE_PRODUCT/t/task_t.5_record_final_acceptance_coverage_and_operator_go_no_go_checklist.json] acceptance_criteria list length > 5
+- [/home/mike/dev/mike/stocks/python/mike_trade/.abracapocus/plans/ACTIVE/MIKE_TRADE_COMPLETE_PRODUCT/t/task_t.5_record_final_acceptance_coverage_and_operator_go_no_go_checklist.json] acceptance_criteria item length > 120 characters
+- [/home/mike/dev/mike/stocks/python/mike_trade/.abracapocus/plans/ACTIVE/MIKE_TRADE_COMPLETE_PRODUCT/t/task_t.5_record_final_acceptance_coverage_and_operator_go_no_go_checklist.json] acceptance_criteria references pytest or test without a test allowed_write_path
+- [/home/mike/dev/mike/stocks/python/mike_trade/.abracapocus/plans/ACTIVE/MIKE_TRADE_COMPLETE_PRODUCT/t/task_t.5_record_final_acceptance_coverage_and_operator_go_no_go_checklist.json] description field length > 300 characters
+- [/home/mike/dev/mike/stocks/python/mike_trade/.abracapocus/plans/ACTIVE/MIKE_TRADE_COMPLETE_PRODUCT/t/task_t.5_record_final_acceptance_coverage_and_operator_go_no_go_checklist.json] description contains broad word: complete
+- [/home/mike/dev/mike/stocks/python/mike_trade/.abracapocus/plans/ACTIVE/MIKE_TRADE_COMPLETE_PRODUCT/t/task_t.5_record_final_acceptance_coverage_and_operator_go_no_go_checklist.json] description contains broad word: full
+- Task 't.1' missing anti-inference instruction: Do not infer APIs, schemas, behavior, or file contents; inspect the referenced files first.
+- Task 't.1' missing explicit strict file-scope language
+- Task 't.1' missing acceptance criterion equivalent to: No file outside allowed_write_paths is modified.
+- Task 't.2' missing anti-inference instruction: Do not infer APIs, schemas, behavior, or file contents; inspect the referenced files first.
+- Task 't.2' missing explicit strict file-scope language
+- Task 't.2' missing acceptance criterion equivalent to: No file outside allowed_write_paths is modified.
+- Task 't.3' missing anti-inference instruction: Do not infer APIs, schemas, behavior, or file contents; inspect the referenced files first.
+- Task 't.3' missing explicit strict file-scope language
+- Task 't.3' missing acceptance criterion equivalent to: No file outside allowed_write_paths is modified.
+- Task 't.4' missing anti-inference instruction: Do not infer APIs, schemas, behavior, or file contents; inspect the referenced files first.
+- Task 't.4' missing explicit strict file-scope language
+- Task 't.4' missing acceptance criterion equivalent to: No file outside allowed_write_paths is modified.
+- Task 't.4' has 5 broad words (limit 2)
+- Task 't.5' missing anti-inference instruction: Do not infer APIs, schemas, behavior, or file contents; inspect the referenced files first.
+- Task 't.5' missing explicit strict file-scope language
+- Task 't.5' missing acceptance criterion equivalent to: No file outside allowed_write_paths is modified.
+- Task 't.1' acceptance_criteria[1] may produce unsatisfied reconciliation: 'The engine unit loads credentials only through EnvironmentFi...' lacks file reference or test command
+- Task 't.1' acceptance_criteria[3] may produce unsatisfied reconciliation: 'Neither unit contains an ExecStop/ExecStopPost command that ...' lacks file reference or test command
+- Task 't.1' acceptance_criteria[4] may produce unsatisfied reconciliation: 'The engine unit sets TimeoutStopSec, Restart=on-failure, and...' lacks file reference or test command
+- Task 't.2' acceptance_criteria[1] may produce unsatisfied reconciliation: 'The paper suite asserts that the resolved trading endpoint i...' lacks file reference or test command
+- Task 't.2' acceptance_criteria[2] may produce unsatisfied reconciliation: 'With credentials and approval present, the paper suite exerc...' lacks file reference or test command
+- Task 't.2' acceptance_criteria[3] may produce unsatisfied reconciliation: 'The paper suite parameterizes fixed, native trailing, and st...' lacks file reference or test command
+- Task 't.2' acceptance_criteria[4] may produce unsatisfied reconciliation: 'The paper suite teardown cancels and closes only test-create...' lacks file reference or test command
+- Task 't.2' acceptance_criteria[6] may produce unsatisfied reconciliation: 'Neither test file contains hardcoded credentials or a live A...' lacks file reference or test command
+- Task 't.3' acceptance_criteria[2] may produce unsatisfied reconciliation: 'Runtime graceful shutdown blocks entries, drains, flushes, u...' lacks file reference or test command
+- Task 't.3' acceptance_criteria[6] may produce unsatisfied reconciliation: 'Both end-to-end test modules run without network access or b...' lacks file reference or test command
+- Task 't.4' acceptance_criteria[6] may produce unsatisfied reconciliation: 'Every Make target or CLI command named in these documents ex...' lacks file reference or test command
+- Task 't.4' acceptance_criteria[7] may produce unsatisfied reconciliation: 'No document contains real credentials or claims that paper o...' lacks file reference or test command
+- Task 't.5' acceptance_criteria[2] may produce unsatisfied reconciliation: 'Alpaca paper acceptance is marked PENDING-EXTERNAL unless op...' lacks file reference or test command
+- Task 't.5' acceptance_criteria[3] may produce unsatisfied reconciliation: 'The verification document states that no live orders were pa...' lacks file reference or test command
+- Phase t phase_verification.json has no checks
+
+## Lint Results
+- /home/mike/dev/mike/stocks/python/mike_trade/.abracapocus/plans/ACTIVE/MIKE_TRADE_COMPLETE_PRODUCT/a/task_a.1_establish_python_packaging_and_reproducible_dependency_lock.json: 0 errors, 5 warnings
+- /home/mike/dev/mike/stocks/python/mike_trade/.abracapocus/plans/ACTIVE/MIKE_TRADE_COMPLETE_PRODUCT/a/task_a.2_add_structured_logging_conventions_and_typed_application_exceptions.json: 0 errors, 4 warnings
+- /home/mike/dev/mike/stocks/python/mike_trade/.abracapocus/plans/ACTIVE/MIKE_TRADE_COMPLETE_PRODUCT/a/task_a.3_document_application_module_boundaries_and_dependency_rules.json: 0 errors, 5 warnings
+- /home/mike/dev/mike/stocks/python/mike_trade/.abracapocus/plans/ACTIVE/MIKE_TRADE_COMPLETE_PRODUCT/a/task_a.4_create_dependency_injected_composition_root_and_runtime_object_graph.json: 0 errors, 4 warnings
+- /home/mike/dev/mike/stocks/python/mike_trade/.abracapocus/plans/ACTIVE/MIKE_TRADE_COMPLETE_PRODUCT/a/task_a.5_create_baseline_make_help_and_install_doctor_shell_entrypoints.json: 0 errors, 7 warnings
+- /home/mike/dev/mike/stocks/python/mike_trade/.abracapocus/plans/ACTIVE/MIKE_TRADE_COMPLETE_PRODUCT/b/task_b.1_define_assets_sessions_money_and_immutable_market_event_value_objects.json: 0 errors, 8 warnings
+- /home/mike/dev/mike/stocks/python/mike_trade/.abracapocus/plans/ACTIVE/MIKE_TRADE_COMPLETE_PRODUCT/b/task_b.2_define_strategy_specifications_evaluations_signals_and_provenance_contracts.json: 0 errors, 7 warnings
+- /home/mike/dev/mike/stocks/python/mike_trade/.abracapocus/plans/ACTIVE/MIKE_TRADE_COMPLETE_PRODUCT/b/task_b.3_define_order_position_fill_budget_and_protective_stop_contracts.json: 0 errors, 12 warnings
+- /home/mike/dev/mike/stocks/python/mike_trade/.abracapocus/plans/ACTIVE/MIKE_TRADE_COMPLETE_PRODUCT/b/task_b.4_define_typed_provider_capability_and_account_snapshot_interfaces.json: 0 errors, 7 warnings
+- /home/mike/dev/mike/stocks/python/mike_trade/.abracapocus/plans/ACTIVE/MIKE_TRADE_COMPLETE_PRODUCT/b/task_b.5_implement_deterministic_domain_serialization_and_roundtrip_fixtures.json: 0 errors, 8 warnings
+- /home/mike/dev/mike/stocks/python/mike_trade/.abracapocus/plans/ACTIVE/MIKE_TRADE_COMPLETE_PRODUCT/c/task_c.1_design_versioned_sqlite_schema_and_forward_only_migrations.json: 0 errors, 12 warnings
+- /home/mike/dev/mike/stocks/python/mike_trade/.abracapocus/plans/ACTIVE/MIKE_TRADE_COMPLETE_PRODUCT/c/task_c.2_implement_atomic_append_only_domain_event_journal_and_id_uniqueness.json: 0 errors, 8 warnings
+- /home/mike/dev/mike/stocks/python/mike_trade/.abracapocus/plans/ACTIVE/MIKE_TRADE_COMPLETE_PRODUCT/c/task_c.3_implement_account_cycle_order_fill_and_control_repositories.json: 0 errors, 10 warnings
+- /home/mike/dev/mike/stocks/python/mike_trade/.abracapocus/plans/ACTIVE/MIKE_TRADE_COMPLETE_PRODUCT/c/task_c.4_build_query_projections_for_latest_status_and_account_snapshots.json: 0 errors, 11 warnings
+- /home/mike/dev/mike/stocks/python/mike_trade/.abracapocus/plans/ACTIVE/MIKE_TRADE_COMPLETE_PRODUCT/c/task_c.5_add_sqlite_integrity_migration_backup_restore_and_maintenance_utilities.json: 0 errors, 7 warnings
+- /home/mike/dev/mike/stocks/python/mike_trade/.abracapocus/plans/ACTIVE/MIKE_TRADE_COMPLETE_PRODUCT/d/task_d.1_implement_versioned_yaml_settings_schema_with_strict_defaults_and_validation.json: 0 errors, 12 warnings
+- /home/mike/dev/mike/stocks/python/mike_trade/.abracapocus/plans/ACTIVE/MIKE_TRADE_COMPLETE_PRODUCT/d/task_d.2_create_full_reference_config_for_live_paper_shadow_stock_and_stop_policies.json: 0 errors, 10 warnings
+- /home/mike/dev/mike/stocks/python/mike_trade/.abracapocus/plans/ACTIVE/MIKE_TRADE_COMPLETE_PRODUCT/d/task_d.3_implement_safe_atomic_operator_configuration_mutation_rules.json: 0 errors, 8 warnings
+- /home/mike/dev/mike/stocks/python/mike_trade/.abracapocus/plans/ACTIVE/MIKE_TRADE_COMPLETE_PRODUCT/d/task_d.4_implement_durable_idempotent_control_command_inbox_and_control_state.json: 0 errors, 7 warnings
+- /home/mike/dev/mike/stocks/python/mike_trade/.abracapocus/plans/ACTIVE/MIKE_TRADE_COMPLETE_PRODUCT/d/task_d.5_expose_redacted_effective_config_and_non_mutating_configuration_cli.json: 0 errors, 8 warnings
+- /home/mike/dev/mike/stocks/python/mike_trade/.abracapocus/plans/ACTIVE/MIKE_TRADE_COMPLETE_PRODUCT/e/task_e.1_implement_alpaca_environment_auth_endpoints_and_api_exception_mapping.json: 0 errors, 9 warnings
+- /home/mike/dev/mike/stocks/python/mike_trade/.abracapocus/plans/ACTIVE/MIKE_TRADE_COMPLETE_PRODUCT/e/task_e.2_implement_alpaca_account_asset_position_and_buying_power_queries.json: 0 errors, 9 warnings
+- /home/mike/dev/mike/stocks/python/mike_trade/.abracapocus/plans/ACTIVE/MIKE_TRADE_COMPLETE_PRODUCT/e/task_e.3_implement_stock_order_placement_cancellation_lookup_and_client_order_ids.json: 0 errors, 7 warnings
+- /home/mike/dev/mike/stocks/python/mike_trade/.abracapocus/plans/ACTIVE/MIKE_TRADE_COMPLETE_PRODUCT/e/task_e.4_implement_alpaca_activity_and_trade_update_stream_normalization.json: 0 errors, 8 warnings
+- /home/mike/dev/mike/stocks/python/mike_trade/.abracapocus/plans/ACTIVE/MIKE_TRADE_COMPLETE_PRODUCT/e/task_e.5_implement_capabilities_matrix_and_broker_adapter_conformance_tests.json: 0 errors, 8 warnings
+- /home/mike/dev/mike/stocks/python/mike_trade/.abracapocus/plans/ACTIVE/MIKE_TRADE_COMPLETE_PRODUCT/f/task_f.1_implement_durable_order_intent_and_exact_order_status_state_transitions.json: 0 errors, 8 warnings
+- /home/mike/dev/mike/stocks/python/mike_trade/.abracapocus/plans/ACTIVE/MIKE_TRADE_COMPLETE_PRODUCT/f/task_f.2_build_account_and_symbol_serialized_order_command_coordinator.json: 0 errors, 6 warnings
+- /home/mike/dev/mike/stocks/python/mike_trade/.abracapocus/plans/ACTIVE/MIKE_TRADE_COMPLETE_PRODUCT/f/task_f.3_implement_submission_idempotency_and_unknown_outcome_broker_recovery.json: 0 errors, 6 warnings
+- /home/mike/dev/mike/stocks/python/mike_trade/.abracapocus/plans/ACTIVE/MIKE_TRADE_COMPLETE_PRODUCT/f/task_f.4_implement_fill_trade_update_and_cancel_event_ingestion_into_ledger.json: 0 errors, 7 warnings
+- /home/mike/dev/mike/stocks/python/mike_trade/.abracapocus/plans/ACTIVE/MIKE_TRADE_COMPLETE_PRODUCT/f/task_f.5_add_deterministic_order_lifecycle_fault_fixtures_and_protocol_checks.json: 0 errors, 6 warnings
+- /home/mike/dev/mike/stocks/python/mike_trade/.abracapocus/plans/ACTIVE/MIKE_TRADE_COMPLETE_PRODUCT/g/task_g.1_implement_alpaca_iex_stock_websocket_feed_and_reconnect_semantics.json: 0 errors, 9 warnings
+- /home/mike/dev/mike/stocks/python/mike_trade/.abracapocus/plans/ACTIVE/MIKE_TRADE_COMPLETE_PRODUCT/g/task_g.2_implement_alpaca_historical_bar_acquisition_and_bounded_rest_fallback.json: 0 errors, 9 warnings
+- /home/mike/dev/mike/stocks/python/mike_trade/.abracapocus/plans/ACTIVE/MIKE_TRADE_COMPLETE_PRODUCT/g/task_g.3_implement_shared_subscription_manager_event_fanout_and_immutable_cache.json: 0 errors, 9 warnings
+- /home/mike/dev/mike/stocks/python/mike_trade/.abracapocus/plans/ACTIVE/MIKE_TRADE_COMPLETE_PRODUCT/g/task_g.4_add_feed_freshness_provenance_gaps_and_rate_limit_health_tracking.json: 0 errors, 6 warnings
+- /home/mike/dev/mike/stocks/python/mike_trade/.abracapocus/plans/ACTIVE/MIKE_TRADE_COMPLETE_PRODUCT/g/task_g.5_implement_optional_research_adapter_and_reference_symbol_declarations.json: 0 errors, 8 warnings
+- /home/mike/dev/mike/stocks/python/mike_trade/.abracapocus/plans/ACTIVE/MIKE_TRADE_COMPLETE_PRODUCT/h/task_h.1_implement_multi_timeframe_candle_builders_with_closed_bar_finalization.json: 0 errors, 7 warnings
+- /home/mike/dev/mike/stocks/python/mike_trade/.abracapocus/plans/ACTIVE/MIKE_TRADE_COMPLETE_PRODUCT/h/task_h.2_implement_pure_technical_indicators_rsi_ema_atr_vwap_and_volume.json: 0 errors, 8 warnings
+- /home/mike/dev/mike/stocks/python/mike_trade/.abracapocus/plans/ACTIVE/MIKE_TRADE_COMPLETE_PRODUCT/h/task_h.3_implement_exchange_calendar_market_hours_and_early_close_logic.json: 0 errors, 8 warnings
+- /home/mike/dev/mike/stocks/python/mike_trade/.abracapocus/plans/ACTIVE/MIKE_TRADE_COMPLETE_PRODUCT/h/task_h.4_build_immutable_strategy_market_context_and_reference_symbol_binder.json: 0 errors, 5 warnings
+- /home/mike/dev/mike/stocks/python/mike_trade/.abracapocus/plans/ACTIVE/MIKE_TRADE_COMPLETE_PRODUCT/h/task_h.5_implement_bounded_candle_and_indicator_warmup_state_diagnostics.json: 0 errors, 7 warnings
+- /home/mike/dev/mike/stocks/python/mike_trade/.abracapocus/plans/ACTIVE/MIKE_TRADE_COMPLETE_PRODUCT/i/task_i.1_implement_declarative_strategy_triggers_and_deterministic_due_scheduler.json: 0 errors, 8 warnings
+- /home/mike/dev/mike/stocks/python/mike_trade/.abracapocus/plans/ACTIVE/MIKE_TRADE_COMPLETE_PRODUCT/i/task_i.2_implement_bounded_evaluation_pool_event_backlog_and_snapshot_cancellation.json: 0 errors, 11 warnings
+- /home/mike/dev/mike/stocks/python/mike_trade/.abracapocus/plans/ACTIVE/MIKE_TRADE_COMPLETE_PRODUCT/i/task_i.3_implement_deterministic_priority_and_tie_breaking_in_signal_event_router.json: 0 errors, 8 warnings
+- /home/mike/dev/mike/stocks/python/mike_trade/.abracapocus/plans/ACTIVE/MIKE_TRADE_COMPLETE_PRODUCT/i/task_i.4_implement_engine_runner_heartbeat_graceful_drain_and_health_lifecycle.json: 0 errors, 7 warnings
+- /home/mike/dev/mike/stocks/python/mike_trade/.abracapocus/plans/ACTIVE/MIKE_TRADE_COMPLETE_PRODUCT/i/task_i.5_add_concurrency_fixture_proving_10_stocks_share_one_broker_data_feed.json: 0 errors, 10 warnings
+- /home/mike/dev/mike/stocks/python/mike_trade/.abracapocus/plans/ACTIVE/MIKE_TRADE_COMPLETE_PRODUCT/j/task_j.1_implement_versioned_python_strategy_interfaces_registry_and_validated_parameters.json: 0 errors, 7 warnings
+- /home/mike/dev/mike/stocks/python/mike_trade/.abracapocus/plans/ACTIVE/MIKE_TRADE_COMPLETE_PRODUCT/j/task_j.2_implement_opening_range_breakout_buy_algorithm_with_warmup_constraints.json: 0 errors, 8 warnings
+- /home/mike/dev/mike/stocks/python/mike_trade/.abracapocus/plans/ACTIVE/MIKE_TRADE_COMPLETE_PRODUCT/j/task_j.3_implement_momentum_breakout_buy_algorithm_and_explicit_no_signal_reasons.json: 0 errors, 9 warnings
+- /home/mike/dev/mike/stocks/python/mike_trade/.abracapocus/plans/ACTIVE/MIKE_TRADE_COMPLETE_PRODUCT/j/task_j.4_implement_documented_vwap_bounce_reference_buy_with_completed_candle_crossing_tests.json: 0 errors, 5 warnings
+- /home/mike/dev/mike/stocks/python/mike_trade/.abracapocus/plans/ACTIVE/MIKE_TRADE_COMPLETE_PRODUCT/j/task_j.5_document_real_buy_strategies_and_executable_vwap_reference_configuration_contract.json: 0 errors, 9 warnings
+- /home/mike/dev/mike/stocks/python/mike_trade/.abracapocus/plans/ACTIVE/MIKE_TRADE_COMPLETE_PRODUCT/k/task_k.1_implement_sell_rule_shared_evaluation_contract_and_full_exit_eligibility.json: 0 errors, 9 warnings
+- /home/mike/dev/mike/stocks/python/mike_trade/.abracapocus/plans/ACTIVE/MIKE_TRADE_COMPLETE_PRODUCT/k/task_k.2_implement_documented_vwap_breakdown_reference_sell_and_momentum_reversal.json: 0 errors, 10 warnings
+- /home/mike/dev/mike/stocks/python/mike_trade/.abracapocus/plans/ACTIVE/MIKE_TRADE_COMPLETE_PRODUCT/k/task_k.3_implement_rsi_reversal_sell_signal_with_closed_bar_and_reset_semantics.json: 0 errors, 7 warnings
+- /home/mike/dev/mike/stocks/python/mike_trade/.abracapocus/plans/ACTIVE/MIKE_TRADE_COMPLETE_PRODUCT/k/task_k.4_build_signal_arbitration_valid_vs_rejected_decision_and_rearm_policy.json: 0 errors, 10 warnings
+- /home/mike/dev/mike/stocks/python/mike_trade/.abracapocus/plans/ACTIVE/MIKE_TRADE_COMPLETE_PRODUCT/k/task_k.5_ship_executable_vwap_buy_sell_reference_preset_and_shadow_only_configuration.json: 0 errors, 6 warnings
+- /home/mike/dev/mike/stocks/python/mike_trade/.abracapocus/plans/ACTIVE/MIKE_TRADE_COMPLETE_PRODUCT/l/task_l.1_implement_serialized_total_and_per_symbol_budget_reservations_with_atomicity.json: 0 errors, 8 warnings
+- /home/mike/dev/mike/stocks/python/mike_trade/.abracapocus/plans/ACTIVE/MIKE_TRADE_COMPLETE_PRODUCT/l/task_l.2_implement_fractional_and_whole_share_order_sizing_under_stop_based_loss_budget.json: 0 errors, 6 warnings
+- /home/mike/dev/mike/stocks/python/mike_trade/.abracapocus/plans/ACTIVE/MIKE_TRADE_COMPLETE_PRODUCT/l/task_l.3_implement_durable_per_stock_entry_limits_losing_streak_lockouts_and_cooldowns.json: 0 errors, 6 warnings
+- /home/mike/dev/mike/stocks/python/mike_trade/.abracapocus/plans/ACTIVE/MIKE_TRADE_COMPLETE_PRODUCT/l/task_l.4_implement_session_entry_cutoff_spread_liquidity_and_minimum_hold_policies.json: 0 errors, 7 warnings
+- /home/mike/dev/mike/stocks/python/mike_trade/.abracapocus/plans/ACTIVE/MIKE_TRADE_COMPLETE_PRODUCT/l/task_l.5_add_cross_scenario_trade_cap_loss_streak_and_cooldown_isolation_tests.json: 0 errors, 7 warnings
+- /home/mike/dev/mike/stocks/python/mike_trade/.abracapocus/plans/ACTIVE/MIKE_TRADE_COMPLETE_PRODUCT/m/task_m.1_implement_durable_per_symbol_position_cycle_finite_state_machine.json: 0 errors, 8 warnings
+- /home/mike/dev/mike/stocks/python/mike_trade/.abracapocus/plans/ACTIVE/MIKE_TRADE_COMPLETE_PRODUCT/m/task_m.2_implement_portfolio_coordinator_one_buy_full_sell_and_priority_rules.json: 0 errors, 9 warnings
+- /home/mike/dev/mike/stocks/python/mike_trade/.abracapocus/plans/ACTIVE/MIKE_TRADE_COMPLETE_PRODUCT/m/task_m.3_implement_startup_broker_reconciliation_external_holdings_and_unknown_orders.json: 0 errors, 5 warnings
+- /home/mike/dev/mike/stocks/python/mike_trade/.abracapocus/plans/ACTIVE/MIKE_TRADE_COMPLETE_PRODUCT/m/task_m.4_implement_per_account_per_symbol_trading_phase_projections.json: 0 errors, 7 warnings
+- /home/mike/dev/mike/stocks/python/mike_trade/.abracapocus/plans/ACTIVE/MIKE_TRADE_COMPLETE_PRODUCT/m/task_m.5_add_partial_fill_manual_external_close_and_crash_restart_lifecycle_tests.json: 0 errors, 7 warnings
+- /home/mike/dev/mike/stocks/python/mike_trade/.abracapocus/plans/ACTIVE/MIKE_TRADE_COMPLETE_PRODUCT/n/task_n.1_implement_protective_stop_coordinator_and_broker_capability_based_policy.json: 0 errors, 11 warnings
+- /home/mike/dev/mike/stocks/python/mike_trade/.abracapocus/plans/ACTIVE/MIKE_TRADE_COMPLETE_PRODUCT/n/task_n.2_implement_alpaca_native_continuous_trailing_orders_and_confirmed_broker_hwm.json: 0 errors, 6 warnings
+- /home/mike/dev/mike/stocks/python/mike_trade/.abracapocus/plans/ACTIVE/MIKE_TRADE_COMPLETE_PRODUCT/n/task_n.3_implement_fixed_stop_attachment_and_stop_coverage_checking_for_fill_quantities.json: 0 errors, 6 warnings
+- /home/mike/dev/mike/stocks/python/mike_trade/.abracapocus/plans/ACTIVE/MIKE_TRADE_COMPLETE_PRODUCT/n/task_n.4_persist_broker_stop_lifecycle_and_surface_protection_pending_or_uncovered_states.json: 0 errors, 6 warnings
+- /home/mike/dev/mike/stocks/python/mike_trade/.abracapocus/plans/ACTIVE/MIKE_TRADE_COMPLETE_PRODUCT/n/task_n.5_add_native_stop_expiry_fractional_eligibility_and_offline_safety_tests.json: 0 errors, 7 warnings
+- /home/mike/dev/mike/stocks/python/mike_trade/.abracapocus/plans/ACTIVE/MIKE_TRADE_COMPLETE_PRODUCT/o/task_o.1_implement_pure_broker_independent_monotonic_stepped_trailing_ratchet.json: 0 errors, 9 warnings
+- /home/mike/dev/mike/stocks/python/mike_trade/.abracapocus/plans/ACTIVE/MIKE_TRADE_COMPLETE_PRODUCT/o/task_o.2_implement_stop_replace_and_cancel_broker_adapter_semantics_with_confirmation.json: 0 errors, 8 warnings
+- /home/mike/dev/mike/stocks/python/mike_trade/.abracapocus/plans/ACTIVE/MIKE_TRADE_COMPLETE_PRODUCT/o/task_o.3_implement_stop_exit_race_safe_close_coordination_and_orphan_order_detection.json: 0 errors, 7 warnings
+- /home/mike/dev/mike/stocks/python/mike_trade/.abracapocus/plans/ACTIVE/MIKE_TRADE_COMPLETE_PRODUCT/o/task_o.4_implement_persistent_ratchet_watermark_broker_confirmation_and_audit_history.json: 0 errors, 7 warnings
+- /home/mike/dev/mike/stocks/python/mike_trade/.abracapocus/plans/ACTIVE/MIKE_TRADE_COMPLETE_PRODUCT/o/task_o.5_add_stepped_trail_parity_faults_and_stop_never_moves_down_regression_tests.json: 0 errors, 7 warnings
+- /home/mike/dev/mike/stocks/python/mike_trade/.abracapocus/plans/ACTIVE/MIKE_TRADE_COMPLETE_PRODUCT/p/task_p.1_implement_durable_shadow_accounts_cash_holdings_and_exact_cycle_accounting.json: 0 errors, 10 warnings
+- /home/mike/dev/mike/stocks/python/mike_trade/.abracapocus/plans/ACTIVE/MIKE_TRADE_COMPLETE_PRODUCT/p/task_p.2_implement_shadow_simulated_order_matching_quote_slippage_and_costs.json: 0 errors, 7 warnings
+- /home/mike/dev/mike/stocks/python/mike_trade/.abracapocus/plans/ACTIVE/MIKE_TRADE_COMPLETE_PRODUCT/p/task_p.3_simulate_fixed_native_continuous_and_stepped_trailing_stop_execution.json: 0 errors, 8 warnings
+- /home/mike/dev/mike/stocks/python/mike_trade/.abracapocus/plans/ACTIVE/MIKE_TRADE_COMPLETE_PRODUCT/p/task_p.4_run_independent_concurrent_named_shadow_scenarios_on_common_event_feed.json: 0 errors, 7 warnings
+- /home/mike/dev/mike/stocks/python/mike_trade/.abracapocus/plans/ACTIVE/MIKE_TRADE_COMPLETE_PRODUCT/p/task_p.5_add_shadow_restart_ledger_balance_and_live_nonexecution_acceptance_tests.json: 0 errors, 10 warnings
+- /home/mike/dev/mike/stocks/python/mike_trade/.abracapocus/plans/ACTIVE/MIKE_TRADE_COMPLETE_PRODUCT/q/task_q.1_implement_historical_replay_clock_and_as_of_deterministic_event_provider.json: 0 errors, 9 warnings
+- /home/mike/dev/mike/stocks/python/mike_trade/.abracapocus/plans/ACTIVE/MIKE_TRADE_COMPLETE_PRODUCT/q/task_q.2_implement_historical_execution_simulator_with_costs_and_partial_fill_policies.json: 0 errors, 6 warnings
+- /home/mike/dev/mike/stocks/python/mike_trade/.abracapocus/plans/ACTIVE/MIKE_TRADE_COMPLETE_PRODUCT/q/task_q.3_implement_deterministic_backtest_run_manifests_and_strategy_research_metrics.json: 0 errors, 6 warnings
+- /home/mike/dev/mike/stocks/python/mike_trade/.abracapocus/plans/ACTIVE/MIKE_TRADE_COMPLETE_PRODUCT/q/task_q.4_expose_explicit_bounded_backtest_cli_and_saved_results_index.json: 0 errors, 5 warnings
+- /home/mike/dev/mike/stocks/python/mike_trade/.abracapocus/plans/ACTIVE/MIKE_TRADE_COMPLETE_PRODUCT/q/task_q.5_verify_reference_vwap_pair_offline_historical_replay_and_stop_parity.json: 0 errors, 9 warnings
+- /home/mike/dev/mike/stocks/python/mike_trade/.abracapocus/plans/ACTIVE/MIKE_TRADE_COMPLETE_PRODUCT/r/task_r.1_implement_read_only_fastapi_server_and_typed_api_endpoints.json: 0 errors, 10 warnings
+- /home/mike/dev/mike/stocks/python/mike_trade/.abracapocus/plans/ACTIVE/MIKE_TRADE_COMPLETE_PRODUCT/r/task_r.2_build_production_react_typescript_vite_dashboard_application_and_asset_pipeline.json: 0 errors, 11 warnings
+- /home/mike/dev/mike/stocks/python/mike_trade/.abracapocus/plans/ACTIVE/MIKE_TRADE_COMPLETE_PRODUCT/r/task_r.3_build_react_account_status_offline_health_and_stock_watchlist_views.json: 0 errors, 10 warnings
+- /home/mike/dev/mike/stocks/python/mike_trade/.abracapocus/plans/ACTIVE/MIKE_TRADE_COMPLETE_PRODUCT/r/task_r.4_build_react_symbol_detail_account_scenario_order_and_protection_views.json: 0 errors, 7 warnings
+- /home/mike/dev/mike/stocks/python/mike_trade/.abracapocus/plans/ACTIVE/MIKE_TRADE_COMPLETE_PRODUCT/r/task_r.5_verify_production_dashboard_offline_stale_isolation_and_read_only_behavior.json: 0 errors, 11 warnings
+- /home/mike/dev/mike/stocks/python/mike_trade/.abracapocus/plans/ACTIVE/MIKE_TRADE_COMPLETE_PRODUCT/s/task_s.1_implement_broker_fee_activity_ingestion_and_account_equity_reconciliation_reports.json: 0 errors, 9 warnings
+- /home/mike/dev/mike/stocks/python/mike_trade/.abracapocus/plans/ACTIVE/MIKE_TRADE_COMPLETE_PRODUCT/s/task_s.2_implement_strategy_trade_performance_attribution_and_csv_json_export.json: 0 errors, 10 warnings
+- /home/mike/dev/mike/stocks/python/mike_trade/.abracapocus/plans/ACTIVE/MIKE_TRADE_COMPLETE_PRODUCT/s/task_s.3_implement_complete_operator_cli_commands_for_lifecycle_budget_stop_and_limits.json: 0 errors, 13 warnings
+- /home/mike/dev/mike/stocks/python/mike_trade/.abracapocus/plans/ACTIVE/MIKE_TRADE_COMPLETE_PRODUCT/s/task_s.4_expose_all_documented_service_and_trading_operations_through_make_targets.json: 0 errors, 12 warnings
+- /home/mike/dev/mike/stocks/python/mike_trade/.abracapocus/plans/ACTIVE/MIKE_TRADE_COMPLETE_PRODUCT/s/task_s.5_implement_bounded_filterable_events_signals_logs_and_health_read_commands.json: 0 errors, 9 warnings
+- /home/mike/dev/mike/stocks/python/mike_trade/.abracapocus/plans/ACTIVE/MIKE_TRADE_COMPLETE_PRODUCT/t/task_t.1_harden_protected_runtime_secrets_and_systemd_engine_dashboard_deployment.json: 0 errors, 7 warnings
+- /home/mike/dev/mike/stocks/python/mike_trade/.abracapocus/plans/ACTIVE/MIKE_TRADE_COMPLETE_PRODUCT/t/task_t.2_implement_credential_gated_end_to_end_alpaca_paper_integration_suite.json: 0 errors, 7 warnings
+- /home/mike/dev/mike/stocks/python/mike_trade/.abracapocus/plans/ACTIVE/MIKE_TRADE_COMPLETE_PRODUCT/t/task_t.3_wire_complete_mike_trade_app_and_reference_vwap_shadow_end_to_end_lifecycle.json: 0 errors, 7 warnings
+- /home/mike/dev/mike/stocks/python/mike_trade/.abracapocus/plans/ACTIVE/MIKE_TRADE_COMPLETE_PRODUCT/t/task_t.4_finalize_install_broker_setup_safe_operations_and_risk_documentation.json: 0 errors, 18 warnings
+- /home/mike/dev/mike/stocks/python/mike_trade/.abracapocus/plans/ACTIVE/MIKE_TRADE_COMPLETE_PRODUCT/t/task_t.5_record_final_acceptance_coverage_and_operator_go_no_go_checklist.json: 0 errors, 8 warnings
+
+## Summary
+- Total errors: 0
+- Total warnings: 1812
+- Linted files: 100

@@ -1,0 +1,57 @@
+{
+  "schema_version": 1,
+  "task_id": "c.4",
+  "phase": "C",
+  "phase_id": "c",
+  "title": "Build query projections for latest status and account snapshots",
+  "description": "Build read-only query projections over the c.1 schema for the dashboard and reports. They must work while the engine owns all writes, and keep working after the engine has died. This task runs at the same time as c.3, so do not import mike_trade.persistence.repositories or transaction. Read tables directly via SQL against 0001_initial.sql.\n\nmike_trade/persistence/readstore.py:\n- `ReadStore.open(db_path)`:\n  - Uses schema.open_connection(read_only=True): a `file:...?mode=ro` URI with PRAGMA query_only=ON.\n  - Never takes the writer lock and never creates the database. A missing file raises ReadStoreUnavailableError.\n- Methods:\n  - `database_identity()`.\n  - `list_account_scopes()`: returns scope id, environment, scenario_name, and run_id; used for account/scenario switching.\n  - `snapshot(account_scope_id)`: a context manager running one read transaction (BEGIN DEFERRED ... COMMIT), so every projection in one dashboard refresh sees a consistent WAL snapshot.\n- Any attempted write raises ReadOnlyViolationError.\n\nmike_trade/persistence/projections.py: frozen dataclass views with Decimal money and aware-UTC datetimes, plus pure query functions taking (read_store or conn, account_scope_id, *, now). Every function requires an account_scope_id and filters by it; no query may sum or mix balances across scopes. Views:\n- `EngineStatusView`:\n  - From service_health: last_heartbeat_at, heartbeat_age, and state ONLINE/STALE/OFFLINE, computed independently from the age against configurable stale_after and offline_after thresholds using the injected now.\n  - Also: paused, entry_kill_switch, and has_unresolved_drift.\n- `AccountSnapshotView`:\n  - Latest equity_snapshot (cash, equity, buying power), its as_of, and is_stale.\n  - Realized P&L for today and in total, from closed position_cycles.\n  - Open position count and active budget reservations total.\n- `SymbolWatchRow`: for each instrument in scope, last completed bar time, feed provenance (e.g. 'iex'), data_stale flag, last signal, and open cycle state.\n- Position, order, and protection views:\n  - `PositionView`: management MANAGED/UNMANAGED/ADOPTED.\n  - `OrderView`: open and recent broker orders with status.\n  - `ProtectionView`: protection order, trailing kind/status, stop_price, high_water_mark, covered_quantity vs remaining_quantity, and a coverage_gap flag.\n- `EligibilityView`: per symbol, filled entry cycles today vs max, consecutive losses, lockout until, cooldown until, and block reasons.\n- `SignalView` and `RecentTradeView`: bounded by a limit parameter with a default of 50 and a maximum of 500.\n- `ReconciliationStatusView`: last run, its result, and unresolved drift items.\n- `LatestStatus`: an aggregate of the above built by `load_latest_status(read_store, account_scope_id, *, now, stale_after, offline_after)` in a single snapshot. Every value carries as_of, so callers can mark stale last-known values.\n\nOther requirements:\n- Use indexed (account_scope_id, time) predicates and ORDER BY ... LIMIT for bounded queries.\n- Parse values via schema.decimal_from_db and schema.from_db_timestamp.\n- Missing data yields None or empty, not an exception, so the dashboard can render OFFLINE/unknown.\n- Projections never place orders or mutate configuration.\n\nDecision budget: make at most four design choices not covered here, and record them in the projections.py module docstring.\n\nBefore editing, inspect:\n- mike_trade/persistence/schema.py and mike_trade/persistence/migrations/0001_initial.sql (read-only)\n- mike_trade/persistence/journal.py (read-only)\n- mike_trade/domain/trading.py, mike_trade/domain/protection.py, mike_trade/domain/accounts.py (read-only)",
+  "acceptance_criteria": [
+    "mike_trade/persistence/readstore.py defines ReadStore, ReadStoreUnavailableError, and ReadOnlyViolationError; ReadStore opens connections only in read-only/query_only mode and never acquires the writer lock or creates a database file",
+    "ReadStore.snapshot runs every projection of one refresh inside a single read transaction",
+    "mike_trade/persistence/projections.py defines EngineStatusView, AccountSnapshotView, SymbolWatchRow, PositionView, OrderView, ProtectionView, EligibilityView, SignalView, RecentTradeView, ReconciliationStatusView, LatestStatus, and load_latest_status",
+    "EngineStatusView state is computed from heartbeat age against the injected now and thresholds, yielding ONLINE, STALE, or OFFLINE without engine participation",
+    "Every projection query filters by a required account_scope_id, and no function aggregates balances across account scopes",
+    "List queries are bounded by a limit (default 50, max 500) and ordered by indexed UTC time columns",
+    "All money values are Decimal and all timestamps aware UTC; each view exposes as_of for stale marking",
+    "Neither module imports repositories.py, transaction.py, broker adapters, or Alpaca SDK modules, and neither executes INSERT/UPDATE/DELETE"
+  ],
+  "selected_backend": "codex_cli",
+  "model": "gpt-6-luna",
+  "verification_profile": "focused",
+  "allowed_write_paths": [
+    "mike_trade/persistence/projections.py",
+    "mike_trade/persistence/readstore.py"
+  ],
+  "allowed_symbols": [
+    "ReadStore",
+    "ReadStoreUnavailableError",
+    "ReadOnlyViolationError",
+    "EngineStatusView",
+    "AccountSnapshotView",
+    "SymbolWatchRow",
+    "PositionView",
+    "OrderView",
+    "ProtectionView",
+    "EligibilityView",
+    "SignalView",
+    "RecentTradeView",
+    "ReconciliationStatusView",
+    "LatestStatus",
+    "load_latest_status"
+  ],
+  "forbidden_changes": [
+    "modify files outside allowed_write_paths",
+    "change PLAN_SKELETON.json or other planning artifacts",
+    "edit schema.py, 0001_initial.sql, or journal.py",
+    "import mike_trade.persistence.repositories or transaction",
+    "write to the database or acquire the writer lock",
+    "mix balances or positions across account scopes",
+    "use float for money or quantities",
+    "run broad test suites, backtests, or create broker orders"
+  ],
+  "dependencies": [
+    "c.1",
+    "c.2"
+  ],
+  "task_timeout_seconds": 1500
+}

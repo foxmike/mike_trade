@@ -1,0 +1,45 @@
+{
+  "schema_version": 1,
+  "task_id": "n.2",
+  "phase": "N",
+  "phase_id": "n",
+  "title": "Implement Alpaca native continuous trailing orders and confirmed broker HWM",
+  "description": "Implement the Alpaca trailing_native protection adapter in mike_trade/brokers/alpaca/trailing.py.\n\nSubmitting orders:\n- Provide build_trailing_stop_request(symbol, qty, policy, client_order_id). It produces a standalone SELL order with type=trailing_stop and exactly one of trail_price or trail_percent, both Decimal and serialized as strings. TIF comes from the policy.\n- Always set order_class to simple. A bracket, OTO or OCO order class must never be used with a trailing stop: raise or return a rejection reason if one is requested.\n- Validate inputs before building the request: quantity must be positive, the side must be SELL (long-only), and a fractional quantity must be explicitly allowed by the capability set produced via n.1's BrokerProtectionCapabilities.\n- Provide submit_trailing_stop(...), replace_trailing_stop(...) and cancel_trailing_stop(...). They take the existing Alpaca HTTP client/port by injection; they must not construct credentials themselves.\n\nReading broker state:\n- Provide parse_trailing_order_state(raw_order) -> NativeTrailingState. It reads the authoritative broker values for: order id, client_order_id, status, hwm, stop_price, trail_price/trail_percent, time_in_force, qty, filled_qty, protected quantity (qty - filled_qty), and the updated_at timestamp. All are parsed to Decimal and timezone-aware UTC.\n- Treat missing or unparseable hwm or stop_price on an active order as UNCONFIRMED, not as a value.\n- The application must never compute or ratchet the HWM itself. The broker value is the only truth, and NativeTrailingState must be labelled continuous/broker-managed (e.g. behavior='continuous_broker_managed'). It must never be represented as stepped.\n\nStatus mapping:\n- Map Alpaca statuses to the protection condition vocabulary:\n  - new/accepted/pending_new \u2192 PENDING\n  - accepted with hwm present \u2192 ACTIVE\n  - replaced/pending_replace \u2192 UPDATING\n  - filled/partially_filled \u2192 TRIGGERED\n  - expired/done_for_day \u2192 EXPIRED\n  - canceled/rejected \u2192 UNPROTECTED (unless an intentional coordinated exit is recorded)\n- Document that native trailing continues only while the broker order remains active, including while the engine is offline.\n\nContract tests:\n- Write tests/contracts/test_alpaca_native_trailing.py as contract tests against recorded or handcrafted Alpaca JSON payload fixtures embedded in the test.\n- Cover: request shape; exactly-one-of trail_price/trail_percent; rejection of a linked trailing leg; HWM/stop_price parsing; status mapping; UNCONFIRMED when hwm is missing; protected-quantity calculation after a partial fill.\n- The tests must not hit the network or read credentials.\n- Optionally add a test marked skip-unless ALPACA_PAPER credentials are present and an explicit opt-in env var is set. Credential-gated paper verification belongs to the operator, not to this task's verification.\n\nBefore editing, inspect:\n- mike_trade/brokers/alpaca/ (existing client, order adapter, models and endpoint/paper-live isolation)\n- mike_trade/risk/stop_policy.py and mike_trade/risk/protection.py from n.1 (ProtectionPolicy, BrokerProtectionCapabilities, protocol expected by ProtectionCoordinator)\n- existing contract test conventions under tests/contracts/\nDecision budget: conform to the existing Alpaca client interfaces; do not modify them. If an adapter hook is missing, accept a callable/protocol parameter instead.",
+  "acceptance_criteria": [
+    "build_trailing_stop_request produces a SELL, type=trailing_stop, order_class simple request with exactly one of trail_price or trail_percent. Supplying both or neither raises a validation error (tested).",
+    "Requesting a bracket, OTO or OCO order class with a trailing stop is rejected with an explicit reason. No such request is ever produced (tested).",
+    "parse_trailing_order_state returns Decimal hwm and stop_price, timezone-aware UTC timestamps, TIF, status and protected quantity equal to qty minus filled_qty (tested with a partial-fill fixture).",
+    "An active order with a missing or invalid hwm or stop_price maps to UNCONFIRMED rather than to a fabricated value (tested).",
+    "The Alpaca status mapping covers PENDING, ACTIVE, UPDATING, TRIGGERED, EXPIRED and UNPROTECTED as specified (table-driven test).",
+    "NativeTrailingState is labelled continuous broker-managed. No code path computes an app-side HWM or labels native trailing as stepped.",
+    "A fractional quantity is rejected unless the injected capabilities mark the fractional trailing/TIF combination as supported and paper_proven for LIVE (tested).",
+    "tests/contracts/test_alpaca_native_trailing.py passes in isolation with no network access and no credential reads. Any paper test is skipped by default."
+  ],
+  "selected_backend": "codex_cli",
+  "model": "gpt-5.6-sol",
+  "verification_profile": "focused",
+  "allowed_write_paths": [
+    "mike_trade/brokers/alpaca/trailing.py",
+    "tests/contracts/test_alpaca_native_trailing.py"
+  ],
+  "allowed_symbols": [
+    "build_trailing_stop_request",
+    "submit_trailing_stop",
+    "replace_trailing_stop",
+    "cancel_trailing_stop",
+    "parse_trailing_order_state",
+    "NativeTrailingState"
+  ],
+  "forbidden_changes": [
+    "modify files outside allowed_write_paths",
+    "change PLAN_SKELETON.json or other planning artifacts",
+    "attach trailing stops as OTO/bracket/OCO legs",
+    "compute or ratchet HWM in application code for native trailing",
+    "create live or paper broker orders or read broker credentials during tests",
+    "run broad test suites or backtests"
+  ],
+  "dependencies": [
+    "n.1"
+  ],
+  "task_timeout_seconds": 1500
+}

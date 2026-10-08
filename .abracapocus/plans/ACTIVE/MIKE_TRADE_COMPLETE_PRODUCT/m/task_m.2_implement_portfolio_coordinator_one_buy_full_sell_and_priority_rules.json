@@ -1,0 +1,43 @@
+{
+  "schema_version": 1,
+  "task_id": "m.2",
+  "phase": "M",
+  "phase_id": "m",
+  "title": "Implement portfolio coordinator one buy full sell and priority rules",
+  "description": "Implement the portfolio coordinator in mike_trade/portfolio/manager.py, with unit tests in tests/unit/test_portfolio_manager.py. The coordinator owns the PositionCycle objects from mike_trade/portfolio/cycles.py for each account/scenario + symbol. It routes strategy signals, fills, protection updates, operator commands and risk/safety exits through a single serialized mutation path.\n\nBefore editing, inspect: mike_trade/portfolio/cycles.py (CycleState, PositionCycle, the transition API), the existing risk/eligibility and budget modules (per-symbol/total budgets, daily entry slots, cooldown, min hold, lockouts, entry cutoff), the order execution/broker port interfaces, the protective/trailing stop coordinator, and the clock/scheduler abstractions. Do not modify any of them.\n\nRequirements:\n1. Coordinate mutations per account/scenario through one serialized path (for example one asyncio.Lock or queue per account), so that two concurrent signals for the same symbol cannot both reserve an entry.\n2. One buy: accept a BUY signal only when the cycle is WATCHING_BUY and the injected eligibility/risk gate permits it. Recurring BUY signals are ignored (and audited as ignored) until the cycle is confirmed flat and rearmed.\n3. Full sell: a valid discretionary SELL strategy exit after the minimum hold submits an exit for the full remaining managed quantity. There are no planned partial exits. Partial exit fills update remaining quantity and request protection resize, and no buy is possible until the position is confirmed flat.\n4. Priority rules: manual/operator close and safety/risk exits bypass the minimum hold, which applies to ordinary strategy exits only, and take priority over strategy sells. Coordinate with protective stops so that the protective order is canceled or replaced and confirmed before an overlapping sell is submitted, or the sell quantity is otherwise capped, so that overlapping sells can never create a short position.\n5. Once any real quantity is held, only SELL strategies plus independent risk/protection handlers are evaluated for that symbol. BUY strategies are not consulted.\n6. Operator pause and the entry kill switch block new entries only. Fills, stops, sells, reconciliation and manual close continue.\n7. Final close: release the budget reservation and start the cooldown/rearm only after the cycle reaches CLOSED, meaning zero position is verified and no stale sell/protective order remains.\n8. The optional auto end-of-day liquidation policy is disabled by default. When enabled through config, it issues a full close through the same priority path.\n9. Entries are blocked when the cycle is RECONCILING, ERROR or UNMANAGED, when protection status is unknown, or when the injected gate reports stale data or unresolved orders.\n10. Strategies never call brokers. All broker and simulation access goes through injected ports. Unit tests use in-memory fakes only and no network.\n\nDecision budget: keep the coordinator API small (handle_signal, handle_fill, handle_protection_update, handle_operator_command, handle_risk_exit, plus a snapshot accessor). Do not implement broker reconciliation; that is task m.3.",
+  "acceptance_criteria": [
+    "mike_trade/portfolio/manager.py exposes a coordinator class that mutates PositionCycle state only through the cycles.py transition API",
+    "A unit test fires two concurrent BUY signals for the same account and symbol and shows exactly one entry reservation and one submitted buy",
+    "A unit test shows BUY signals are ignored while the cycle is BUY_PENDING, owned, or CLOSED but not yet rearmed",
+    "A unit test shows a strategy SELL before the minimum hold is rejected, while a manual close and a safety exit at the same moment are accepted",
+    "A unit test shows a discretionary SELL submits an exit for the full remaining quantity (including after a partial entry fill) and that a partial exit fill reduces remaining quantity and triggers a protection resize request",
+    "A unit test shows that while a protective stop is active, the manual/strategy exit path cancels or reconciles the stop before or alongside the sell, so that total sell quantity never exceeds the held quantity",
+    "A unit test shows that with pause or the entry kill switch active, new entries are blocked while fill application, protection updates and manual close still succeed",
+    "A unit test shows the budget is released and the cooldown started only after confirmed flat with no open linked orders",
+    "A unit test shows auto end-of-day liquidation does nothing with default config and closes the full quantity when explicitly enabled",
+    "A unit test shows entries are blocked when the cycle is RECONCILING, ERROR or UNMANAGED or protection status is unknown",
+    "Tests use only in-memory fakes and make no network or broker calls",
+    "No files outside mike_trade/portfolio/manager.py and tests/unit/test_portfolio_manager.py are modified"
+  ],
+  "selected_backend": "claude_code_cli",
+  "model": "claude-sonnet-5-5",
+  "verification_profile": "focused",
+  "allowed_write_paths": [
+    "mike_trade/portfolio/manager.py",
+    "tests/unit/test_portfolio_manager.py"
+  ],
+  "forbidden_changes": [
+    "modify files outside allowed_write_paths",
+    "modify mike_trade/portfolio/cycles.py",
+    "change PLAN_SKELETON.json or other planning artifacts",
+    "create live broker orders or access live broker credentials",
+    "allow strategies to call brokers or open data connections",
+    "enable automatic end-of-day liquidation by default",
+    "implement averaging down, pyramiding or planned partial exits",
+    "run broad full-suite tests or backtests"
+  ],
+  "dependencies": [
+    "m.1"
+  ],
+  "task_timeout_seconds": 1800
+}

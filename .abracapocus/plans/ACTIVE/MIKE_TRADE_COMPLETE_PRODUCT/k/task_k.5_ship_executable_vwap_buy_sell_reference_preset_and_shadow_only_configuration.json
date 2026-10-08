@@ -1,0 +1,49 @@
+{
+  "schema_version": 1,
+  "task_id": "k.5",
+  "phase": "K",
+  "phase_id": "k",
+  "title": "Ship executable VWAP BUY/SELL reference preset and shadow-only configuration",
+  "description": "Ship the executable vwap_reference pairing and a genuine runnable SHADOW-only reference configuration.\n\n1. In mike_trade/strategies/presets/pairs.py, define validated BUY/SELL pair presets.\n   - vwap_reference pairs the independently registered vwap_bounce BUY and vwap_breakdown SELL by (strategy_id, version) through configuration only. vwap_bounce and vwap_breakdown must not import each other.\n   - pairs.py resolves both through StrategyRegistry and may reuse the BUY preset from mike_trade/strategies/presets/buy_presets.py.\n   - The preset carries:\n     - parameter dicts\n     - the 1m completed-candle trigger timeframe\n     - an allowed-modes set containing only SHADOW (plus BACKTEST/replay only if the existing mode model treats it as non-broker)\n     - a mandatory trailing-protection requirement flag\n     - default policy first_valid_exit\n   - Provide validate_pair_preset / resolve_pair_preset functions. They fail closed on:\n     - an unknown strategy/version\n     - a side mismatch (BUY slot must be BUY, SELL slot must be SELL)\n     - invalid parameters\n     - any request to use the preset in PAPER or LIVE\n   - No profitability claims and no confidence values.\n\n2. Ship config/reference_vwap_shadow.yaml as a real configuration that the normal application configuration loader accepts without test-specific shortcuts. It contains:\n   - mode SHADOW with a named shadow scenario\n   - the shared Alpaca Basic IEX live feed with IEX provenance noted\n   - one editable symbol with a clear operator comment\n   - initial shadow funds and per-symbol and total budgets as Decimal-compatible strings\n   - the vwap_reference preset (vwap_bounce BUY + vwap_breakdown SELL)\n   - 1m completed-candle triggers\n   - mandatory trailing protection enabled\n   - minimum hold, max entry cycles, cooldown, and entry cutoff using existing config keys\n   - end-of-day close disabled by default\n   It must be structurally incapable of authorizing live orders:\n   - no live or paper credentials, endpoints, or authorization fields\n   - the mode is fixed to SHADOW\n   - the existing config schema/loader must reject it if anyone changes it to LIVE without the separate explicit live authorization mechanism, and pairs.py independently rejects the vwap_reference preset outside SHADOW\n   - no secrets of any kind\n\n3. In tests/unit/test_strategy_presets.py, cover:\n   - vwap_reference resolving to registered vwap_bounce BUY and vwap_breakdown SELL\n   - a static check that neither strategy module imports the other\n   - fail-closed rejection of an unknown id/version, a side swap, invalid params, and PAPER/LIVE use\n   - loading config/reference_vwap_shadow.yaml through the normal config loader, with assertions that mode == SHADOW, trailing protection is required, the timeframe is 1m completed bars, the feed is IEX, budgets are Decimal, and EOD close is disabled\n   - a mutated copy written to a pytest tmp_path with mode set to LIVE (or with live credentials injected) being rejected by the loader and/or the preset validation\n   - the config containing no credential/secret fields\n   Tests must not read real credentials or contact any broker.\n\nBefore editing, inspect:\n- mike_trade/strategies/presets/buy_presets.py\n- mike_trade/strategies/registry.py\n- mike_trade/strategies/base.py\n- mike_trade/strategies/buy/vwap_bounce.py\n- mike_trade/strategies/sell/vwap_breakdown.py\n- mike_trade/strategies/sell/base.py\n- mike_trade/signals/decisions.py\n- docs/STRATEGIES.md\n- the existing application configuration loader/schema and execution-mode/live-authorization modules (under mike_trade/config/ and mike_trade/domain/)\n- any existing files under config/, for key naming and style\n\nDecision budget: use only configuration keys the existing loader/schema already defines. If a required concept (for example the mandatory trailing flag) has no key, express it through the preset in pairs.py rather than inventing loader changes outside allowed_write_paths.",
+  "acceptance_criteria": [
+    "mike_trade/strategies/presets/pairs.py defines a vwap_reference pair preset that references vwap_bounce (BUY) and vwap_breakdown (SELL) by (id, version) through configuration only, with 1m completed-candle triggers, the first_valid_exit policy, and a mandatory trailing-protection flag.",
+    "Pair validation fails closed on an unknown strategy/version, a BUY/SELL slot side mismatch, invalid parameters, and any PAPER or LIVE mode request for vwap_reference (each tested).",
+    "A static test confirms vwap_bounce.py does not import vwap_breakdown and vwap_breakdown.py does not import vwap_bounce.",
+    "config/reference_vwap_shadow.yaml loads through the normal application config loader with mode SHADOW, a named shadow scenario, the shared IEX feed, an editable symbol, initial shadow funds, per-symbol/total budgets as Decimal, mandatory trailing protection, 1m completed-candle triggers, and EOD close disabled.",
+    "The reference config contains no credentials, secrets, endpoints, or live-authorization fields, and a tmp_path copy mutated to LIVE or given live credentials is rejected by the loader and/or the preset validation.",
+    "Neither file contains profitability claims or confidence values, and tests never read real credentials or contact a broker.",
+    "tests/unit/test_strategy_presets.py passes when run in isolation."
+  ],
+  "selected_backend": "pi_cli",
+  "model": "openrouter/meta/muse-spark-1.3-contributor",
+  "verification_profile": "focused",
+  "allowed_write_paths": [
+    "mike_trade/strategies/presets/pairs.py",
+    "tests/unit/test_strategy_presets.py",
+    "config/reference_vwap_shadow.yaml"
+  ],
+  "allowed_symbols": [
+    "PairPreset",
+    "VWAP_REFERENCE",
+    "validate_pair_preset",
+    "resolve_pair_preset",
+    "PairPresetError"
+  ],
+  "forbidden_changes": [
+    "modify files outside allowed_write_paths",
+    "modify strategy modules, buy_presets.py, registry.py, or the config loader/schema",
+    "change PLAN_SKELETON.json or other planning artifacts",
+    "add a hard code dependency between vwap_bounce and vwap_breakdown",
+    "allow the vwap_reference preset or reference config to authorize PAPER or LIVE orders",
+    "include credentials, secrets, endpoints, or live-authorization fields in the config",
+    "add profitability claims, profitable defaults, or confidence scores",
+    "create live broker orders, contact brokers, or run broad test suites/backtests"
+  ],
+  "dependencies": [
+    "k.1",
+    "k.2",
+    "k.3",
+    "k.4"
+  ],
+  "task_timeout_seconds": 1200
+}

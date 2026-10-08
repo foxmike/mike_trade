@@ -1,0 +1,42 @@
+{
+  "schema_version": 1,
+  "task_id": "l.5",
+  "phase": "L",
+  "phase_id": "l",
+  "title": "Add cross-scenario trade cap loss streak and cooldown isolation tests",
+  "description": "Write an integration test module tests/integration/test_entry_policy_restart.py and a verification document docs/verification/phase_l_entry_controls.md. The integration tests must exercise the real modules from l.1-l.4 (budgets/reservations, sizing, entry_eligibility, session_policy, market_filters) against a temporary SQLite WAL database (tmp_path) using the existing persistence layer and a deterministic fake clock; no broker, network, or credentials. Required scenarios: (a) cross-scenario isolation \u2014 two named SHADOW scenarios plus a PAPER key share no budgets, reservations, daily cycle counts, losing streaks, lockouts, or cooldowns; exhausting one does not affect the others; (b) restart durability \u2014 after consuming daily cycles, incrementing a losing streak, starting a cooldown, and holding reservations, construct fresh service instances over the same database and assert all state is preserved; then advance the fake clock to the next New York trading session and assert cycle counts and next_session lockouts reset while manual-mode lockouts persist until an audited reset; (c) partial-fill semantics end to end \u2014 first positive partial fill consumes one cycle and converts reservation, final cancel releases unused budget, zero-fill cancel consumes nothing; (d) simultaneous signals under shared budget lock \u2014 concurrent eligible signals for multiple symbols produce deterministic priority-ordered acceptance without overcommit; (e) entry blocks never block exits \u2014 with entries blocked by cycles, lockout, cooldown, daily loss, cutoff, and stale data, protective-stop/fill-ingestion/manual-close/risk-exit paths still proceed. The verification doc must list each phase-l control, the test(s) that cover it with file::test_name references, the exact targeted pytest commands used, observed results (pass/fail counts copied from the actual run), and any known gaps (e.g. provisional fee handling, capabilities not yet demonstrated in Alpaca paper). Do not modify production code; if a defect is found, document it in the verification doc as a failing/xfail-with-reason finding rather than editing other files.\n\nBefore editing, inspect:\n- mike_trade/portfolio/budgets.py, mike_trade/portfolio/reservations.py (l.1)\n- mike_trade/portfolio/sizing.py (l.2)\n- mike_trade/risk/entry_eligibility.py (l.3)\n- mike_trade/risk/session_policy.py and mike_trade/risk/market_filters.py (l.4)\n- tests/unit/test_budget_reservations.py, tests/unit/test_position_sizing.py, tests/unit/test_entry_eligibility.py, tests/unit/test_session_policy.py for fixtures and conventions\n- Existing persistence/migration setup, fake clock, and tests/conftest fixtures from earlier phases\n\nDecision budget: only add the two allowed files; do not add fixtures elsewhere or change production modules.",
+  "acceptance_criteria": [
+    "tests/integration/test_entry_policy_restart.py exists and uses a temporary SQLite database and a deterministic fake clock with no network, broker, or credential access",
+    "A test proves two SHADOW scenarios and a PAPER account have fully isolated budgets, reservations, daily cycle counts, losing streaks, lockouts, and cooldowns",
+    "A test proves cycle counts, losing streaks, cooldowns, and reservations survive constructing fresh service instances over the same database",
+    "A test proves cycle counts and next_session lockouts reset at the next New York trading session while manual lockouts persist until an audited reset",
+    "A test proves first positive partial fill consumes one cycle, final cancel releases unused reservation, and zero-fill cancel consumes no cycle",
+    "A test proves concurrent eligible signals are accepted in deterministic priority order without exceeding total_budget_usd",
+    "A test proves protective-stop, fill-ingestion, manual-close, and risk-exit paths proceed while new entries are blocked",
+    "docs/verification/phase_l_entry_controls.md maps every phase-l control to specific test references, records the exact targeted pytest commands run with their actual pass/fail counts, and lists known gaps",
+    "No production files are modified by this task",
+    "tests/integration/test_entry_policy_restart.py passes when run on its own with pytest, or any failure is documented with reason in the verification doc"
+  ],
+  "selected_backend": "pi_cli",
+  "model": "openrouter/meta/muse-spark-1.3-contributor",
+  "verification_profile": "focused",
+  "allowed_write_paths": [
+    "tests/integration/test_entry_policy_restart.py",
+    "docs/verification/phase_l_entry_controls.md"
+  ],
+  "forbidden_changes": [
+    "modify files outside allowed_write_paths",
+    "modify production code under mike_trade/",
+    "change PLAN_SKELETON.json or other planning artifacts",
+    "access broker credentials, network, or create broker orders",
+    "run broad test suites or backtests",
+    "fabricate test results in the verification document"
+  ],
+  "dependencies": [
+    "l.1",
+    "l.2",
+    "l.3",
+    "l.4"
+  ],
+  "task_timeout_seconds": 1800
+}

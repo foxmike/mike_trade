@@ -1,0 +1,46 @@
+{
+  "schema_version": 1,
+  "task_id": "f.2",
+  "phase": "F",
+  "phase_id": "f",
+  "title": "Build account and symbol serialized order command coordinator",
+  "description": "Implement mike_trade/execution/coordinator.py, an OrderCommandCoordinator that serializes all order-affecting authorization so concurrent strategy evaluations cannot double-enter, double-exit, or double-spend.\n\n(1) Per-(execution account key, symbol) serialization: at most one in-flight entry or exit authorization decision per account+symbol at a time. Implement this with asyncio locks, or a single-writer command queue, keyed by (mode, account/scenario id, symbol). Different symbols on the same account may proceed concurrently. The same symbol on different accounts or modes (for example SHADOW scenario A vs PAPER) must be fully isolated and never share locks or state.\n(2) Account-wide cash reservation serialization: buying-power and budget reservation decisions use one account-scoped critical section. Two concurrent ENTRY_LONG commands on different symbols cannot both reserve the same remaining cash. Reservations are Decimal values held against the account and are released or adjusted only through explicit release/consume calls. Fill-driven consumption is wired by f.4, so expose the hooks only.\n(3) Before authorizing a command, re-check immediately inside the lock using injected clock and checkers: signal expiry (signal_expires_at vs now), quote freshness (quote age vs a configured max), an existing open or unresolved order for the same account+symbol+purpose, and, for EXIT_LONG, confirmed remaining long quantity minus quantity already committed to other open sell orders. Stale or expired signals or quotes are rejected with typed reasons.\n(4) Oversell guard: an EXIT_LONG or manual close request may never authorize more than (confirmed held qty - qty already committed to working sell orders, including protective stops) unless the caller explicitly declares that the protective stop will be canceled first. In that case, return an authorization requiring cancel-confirmation before submit. Never authorize a sell that could create a short.\n(5) Return a typed CommandDecision (AUTHORIZED, REJECTED_STALE_SIGNAL, REJECTED_STALE_QUOTE, REJECTED_INSUFFICIENT_CASH, REJECTED_OPEN_ORDER, REJECTED_OVERSELL, REQUIRES_PROTECTIVE_CANCEL, etc.). Do not call the broker or submit orders; submission is f.3.\n(6) All dependencies are injected: clock, quote-age provider, position/committed-quantity provider, buying-power/budget provider.\n\nCreate tests/unit/test_order_serialization.py with deterministic asyncio tests (no sleeps longer than a few milliseconds; use events or barriers). The tests must show:\n- two concurrent entries on the same account+symbol yield exactly one AUTHORIZED;\n- concurrent entries on different symbols sharing insufficient cash yield exactly one cash reservation;\n- same symbol on different accounts is independent;\n- an expired signal and a stale quote are rejected after waiting for the lock (the re-check happens inside the lock);\n- an exit exceeding remaining uncommitted quantity is rejected;\n- an exit with an active protective stop requires protective cancel;\n- reservation release restores available cash exactly in Decimal.\n\nBefore editing, inspect: mike_trade/domain/trading.py, mike_trade/domain/accounts.py, mike_trade/domain/signals.py, mike_trade/domain/protection.py, mike_trade/domain/errors.py, mike_trade/runtime.py, mike_trade/brokers/ports.py, and mike_trade/config/models.py (for budget, freshness, and limit settings). Bounded decision budget: depend only on interfaces, not on f.1 module internals. f.1 runs concurrently, so accept intent-like objects through a small Protocol defined in coordinator.py.",
+  "acceptance_criteria": [
+    "Concurrent ENTRY_LONG commands for the same (mode, account, symbol) produce exactly one AUTHORIZED decision in a deterministic asyncio test",
+    "Concurrent entries on different symbols of one account whose combined cost exceeds available cash reserve cash for exactly one; the other is REJECTED_INSUFFICIENT_CASH",
+    "The same symbol on two different accounts/modes is authorized independently and shares no lock or reservation state",
+    "Signal expiry and quote staleness are evaluated with the injected clock inside the critical section; a signal that expires while waiting for the lock is rejected",
+    "EXIT_LONG quantity greater than confirmed held quantity minus committed working-sell quantity is REJECTED_OVERSELL; a conflict with an active protective stop yields REQUIRES_PROTECTIVE_CANCEL",
+    "Cash reservations, releases, and consumption hooks use Decimal exclusively, and release restores the exact prior available amount",
+    "The coordinator performs no broker calls or order submission",
+    "tests/unit/test_order_serialization.py passes without network access or broker credentials"
+  ],
+  "selected_backend": "codex_cli",
+  "model": "gpt-5.6-sol",
+  "verification_profile": "focused",
+  "allowed_write_paths": [
+    "mike_trade/execution/coordinator.py",
+    "tests/unit/test_order_serialization.py"
+  ],
+  "allowed_symbols": [
+    "OrderCommandCoordinator",
+    "OrderCommand",
+    "CommandDecision",
+    "DecisionReason",
+    "CashReservation",
+    "ReservationLedger",
+    "ExecutionKey"
+  ],
+  "forbidden_changes": [
+    "modify files outside allowed_write_paths",
+    "edit order_fsm.py or intents.py (owned by concurrent task f.1)",
+    "change PLAN_SKELETON.json or any planning artifacts",
+    "call broker APIs or submit orders from the coordinator",
+    "share locks, reservations, or state across modes/accounts",
+    "authorize any sell that could exceed confirmed remaining long quantity",
+    "use float for money or quantities",
+    "run broad test suites or backtests"
+  ],
+  "dependencies": [],
+  "task_timeout_seconds": 1800
+}
