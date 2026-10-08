@@ -1,0 +1,143 @@
+{
+  "plan_summary": "Task run: Implement fixed stop attachment and stop coverage checking for fill quantities",
+  "backend_executions": [
+    {
+      "backend": "claude_code_cli",
+      "command": [
+        "claude",
+        "-p",
+        "Task: Implement fixed stop attachment and stop coverage checking for fill quantities\nPhase: N\nDescription: Implement fixed protective stops and coverage reconciliation in mike_trade/risk/fixed_stop.py.\n\nComputing the stop price:\n- Provide compute_fixed_stop_price(policy, reference_price, atr=None, support=None, tick_rules) -> Decimal.\n- The reference defaults to the confirmed average fill price.\n- Supported distances: percent below the reference, a USD amount below the reference, an ATR multiple below the reference, or a support level (optionally with a buffer).\n- Rounding to broker tick rules must never move the stop above the computed level for a long position. Use the Alpaca equity convention: $0.01 increments at or above $1.00 and $0.0001 below $1.00, injected as tick_rules.\n- Reject a stop price that is less than or equal to zero, or greater than or equal to the reference price.\n- For STOP_LIMIT, compute the limit price from the configured offset (limit <= stop for a sell) and attach a risk note that it may not fill.\n\nBuilding the order:\n- Provide build_fixed_stop_order(cycle_id, symbol, covered_qty, stop_price, semantics, tif). It returns a provider-neutral protective order intent: a SELL stop or stop_limit with a deterministic client_order_id derived from cycle_id and a revision counter.\n\nCoverage checking:\n- Provide check_coverage(confirmed_remaining_qty, protective_orders) -> CoverageResult with one of these states:\n  - COVERED: exactly one effective protective order whose open quantity equals the remaining quantity\n  - UNDER_COVERED\n  - OVER_COVERED: open sell quantity exceeds the position, which is an oversell risk\n  - MULTIPLE_EFFECTIVE\n  - NONE\n- Each state has a recommended action: NO_OP, REPLACE_TO_QTY, CANCEL_EXCESS or PLACE.\n- Provide reconcile_after_fill(cycle_state, fill_event) for partial and full entry fills:\n  - after the first positive fill, place protection for the filled quantity\n  - after subsequent partial fills, replace (cancel-confirm then place, or atomic replace) so a single order covers the new cumulative quantity\n  - never place an additional overlapping order\n- The stop price must never move downward for a long position across replacements. Keep max(previous_stop, new_computed_stop) unless a lower value is an explicit operator policy change; even then, reject it in this module.\n- When exit fills reduce the position, coverage shrinks to the remaining quantity. When the remaining quantity is zero, the recommended action is to cancel protection.\n\nTests: write tests/unit/test_fixed_stop_coverage.py with positive and negative tests for:\n- each distance type\n- tick rounding at $0.9999 and $1.00 boundaries\n- invalid stops\n- coverage states\n- the partial-fill sequence (e.g. 3 then 7 of 10 shares) producing a single covering order\n- the no-downward-move rule\n- the zero-remaining case\nUse Decimal throughout.\n\nBefore editing, inspect:\n- mike_trade/risk/stop_policy.py and mike_trade/risk/protection.py from n.1 (ProtectionPolicy, coordinator protocol, reason codes)\n- existing domain Order/Fill/PositionCycle models\n- any tick-size or rounding helpers from earlier phases\n- ATR indicator output types from the indicator service\nDecision budget: reuse existing rounding/indicator helpers if present; otherwise implement local pure functions in fixed_stop.py.\nContext: AGENTS.md guidance:\n# AGENTS.md\n## Purpose\nThis repository is operated by an autonomous multi-agent system (abracapocus_2).\nAll agents must follow these rules when modifying the codebase.\n---\n## Core Principles\n- Minimal blast radius: only modify what is required for the task\n- Deterministic verification: all changes must be verifiable via code (tests, compile, scripts)\n- No architecture drift: do not introduce new frameworks or major design changes unless explicitly required\n- No unrelated refactors\n- All changes must be reproducible from a clean clone\n---\n## Project Structure\n- docs/ → design, plans, architecture constraints\n- plans/ → master plans\n- phases/ → phase definitions\n- tasks/ → executable task documents\n- backends/ → CLI backend adapters\n- agents/ → specialist agents\n- runtime/ → orchestration, routing, state\n...(truncated)\n\n## Task Contract Constraints\n\n{\n  \"allowed_symbols\": [\n    \"compute_fixed_stop_price\",\n    \"build_fixed_stop_order\",\n    \"check_coverage\",\n    \"CoverageResult\",\n    \"reconcile_after_fill\"\n  ],\n  \"allowed_write_paths\": [\n    \"mike_trade/risk/fixed_stop.py\",\n    \"tests/unit/test_fixed_stop_coverage.py\"\n  ],\n  \"forbidden_changes\": [\n    \"modify files outside allowed_write_paths\",\n    \"change PLAN_SKELETON.json or other planning artifacts\",\n    \"move a long stop downward\",\n    \"produce overlapping protective sell orders\",\n    \"create live or paper broker orders or read broker credentials\",\n    \"run broad test suites or backtests\",\n    \"use float for prices or quantities\"\n  ]\n}\n\nAGENTS.md guidance:\n# AGENTS.md\n\n## Purpose\n\nThis repository is operated by an autonomous multi-agent system (abracapocus_2).\nAll agents must follow these rules when modifying the codebase.\n\n---\n\n## Core Principles\n\n- Minimal blast radius: only modify what is required for the task\n- Deterministic verification: all changes must be verifiable via code (tests, compile, scripts)\n- No architecture drift: do not introduce new frameworks or major design changes unless explicitly required\n- No unrelated refactors\n- All changes must be reproducible from a clean clone\n\n---\n\n## Project Structure\n\n- docs/ → design, plans, architecture constraints\n- plans/ → master plans\n- phases/ → phase definitions\n- tasks/ → executable task documents\n- backends/ → CLI backend adapters\n- agents/ → specialist agents\n- runtime/ → orchestration, routing, state\n- reports/ → execution reports (DO NOT MODIFY MANUALLY)\n- state/runtime_state.json → runtime state (DO NOT COMMIT)\n\n---\n\n## Task Execution Rules\n\n- Always operate from a task document when available\n- Respect:\n  - selected_backend\n  - verification_profile\n  - acceptance_criteria\n- If a task conflicts with architecture constraints or phase scope:\n  - STOP and report conflict\n\n---\n\n## Backend Rules\n\n- Backends must:\n  - execute commands deterministically\n  - capture stdout, stderr, exit_code\n  - not silently fail\n- Do not invent backend interfaces; use existing adapters\n- Codex CLI, Aider, Gemini, Claude Code should be invoked through backends only\n\n---\n\n## Verification Rules\n\n- Verification must be deterministic\n- Preferred checks:\n  - pytest\n  - python -m py_compile\n- Do not rely on model self-evaluation\n\n---\n\n## Execution Control Flow (PERMANENT ARCHITECTURAL RULE)\n\n**HEURISTIC INFERENCE MUST NEVER PARTICIPATE IN ABRACAPOCUS EXECUTION CONTROL FLOW.**\n\nAbracapocus must not determine execution success, failure, acceptance,\nrejection, blocking, retry eligibility, phase progression, or completion from\nheuristic inference. A heuristic is any conclusion that is *inferred* rather\nthan *directly established by an explicit executable contract or a concrete\nruntime fact*.\n\nRuntime status is derived ONLY from concrete, mechanically observable facts:\n\n1. The backend process exit code. A backend that exits `0` (with no hard\n   write-policy violation) is a successful execution.\n2. Objectively observed hard write-policy violations (changed paths outside the\n   declared allowed write paths).\n3. Explicit operator-authored commands (task/phase verification the plan\n   explicitly contains). Their raw results are reported, kept DISTINCT from\n   backend execution status.\n4. Objective orchestrator failures with direct evidence (backend could not\n   launch, required document could not be parsed, subprocess infrastructure\n   failed).\n\n**Verification results are observational and must not rewrite backend execution\nstatus.** A verifier returning non-zero must NEVER, by itself, turn a\nsuccessful backend execution into unverified, stop a phase, or trigger an\nautomatic rerun. Verification is the result of a command, not authority to\nrewrite history.\n\n**Execution control:** Task-local problems (non-zero exit, timeout,\nwrite-policy violation, frame failure, backend launch failure) produce\nacceptance status ``\"unverified\"`` with truthful evidence preserved. They\nMUST NOT stop sibling tasks, later phases, or the plan. Only operator\ncancellation (SIGINT/SIGTERM/dashboard cancel) may terminate a run\n(acceptance status ``\"interrupted\"``). Dependencies are ordering constraints,\nnot acceptance gates — any terminal attempt outcome satisfies a dependency\nedge. The status ``\"failed\"`` is banned from acceptance output.\n\nDo NOT reintroduce -- under any name, feature flag, \"advisory\" wrapper, or\ncompatibility mode -- context completeness/sufficiency scoring, change or\narchitecture assessment used as a gate, intent/scope matching, reconciliation\ngates, no-progress judgments, confidence/risk scores, model/LLM/reviewer\njudgments over status, shadow/adaptive/secondary-verification gates, or\nheuristic retry/failure-classification control flow. Failure classification may\nonly *summarize* an already-established concrete failure; it must never create\none. Retries are permitted only for explicitly defined mechanical backend\nfailures. Future agents must not add these systems back.\n\n---\n\n## Git Rules\n\n- Do not commit:\n  - runtime_state.json\n  - reports/\n  - logs/\n  - virtual environments\n- Do not modify .gitignore unless required by task\n- Do not create excessive commits; prefer grouped logical commits\n\n---\n\n## Allowed Changes\n\n- Implement task requirements\n- Fix failing verification\n- Update relevant tests\n- Improve documentation tied to the task\n\n---\n\n## Forbidden Changes\n\n- Changing architecture without explicit instruction\n- Adding dependencies without justification\n- Modifying unrelated files\n- Deleting important files\n- Bypassing verification\n\n---\n\n## Planning Rules\n\n- Plans are multi-phase\n- Completed sections are immutable\n- Remaining sections may be updated\n- Tasks must align with:\n  - project brief\n  - architecture constraints\n  - active phase\n\n---\n\n## Reporting\n\n- All executions must produce structured reports\n- Reports must include:\n  - changed files\n  - verification results\n  - assessment\n\n---\n\n## Behavior\n\n- Do not ask unnecessary questions\n- Do not stall execution\n- Do not perform broad scans unless required\n- Prefer direct action over analysis\n\n---\n\n## Priority Order\n\nThis ordering guides *implementation decisions* only. It does NOT make\nverification an acceptance authority: verification results are observational\n(see \"Execution Control Flow\"), and never override a concrete backend\nexecution result.\n\n1. Architecture constraints\n2. Task definition\n3. Verification results (observational signal, not acceptance authority)\n4. Plan guidance\n\nIf conflicts occur, follow this order.\n",
+        "--dangerously-skip-permissions",
+        "--output-format",
+        "text",
+        "--model",
+        "claude-sonnet-5-5"
+      ],
+      "stdout": "I added `mike_trade/risk/fixed_stop.py` and `tests/unit/test_fixed_stop_coverage.py`. The 58 new tests pass, and ruff and `py_compile` are clean. Nothing was committed.\n\nSix async tests in `tests/unit/test_protection_policy.py` fail. They fail the same way without my files, because pytest-asyncio isn't installed in this venv. I didn't touch them.\n\n**What the module does**\n- **Stop price:** `compute_fixed_stop_price` handles percent, USD, ATR multiple, and support level with an optional buffer. The result is floored to the tick grid, using $0.01 at or above $1.00 and $0.0001 below. A stop that is zero, negative, or at or above the reference raises `InvalidStopPrice` with a `reason_code`. `ALPACA_EQUITY_TICK_RULES` is the default grid, injected as `tick_rules`.\n- **Order building:** `build_fixed_stop_order` returns a SELL stop or stop_limit intent. The client order id is a hash of `cycle_id` and a revision counter, 48 characters or fewer. For STOP_LIMIT the limit is the stop minus the offset, floored, so it never exceeds the stop, and the intent carries a \"may not fill\" risk note. A stop below `previous_stop_price` is rejected.\n- **Coverage:** `check_coverage` returns one of the five states with the action you listed, plus the order ids to cancel and the target quantity. Terminal orders are ignored. Anything not known to be terminal, including PENDING_CANCEL and UNKNOWN, counts as live, so oversell is never undercounted.\n- **After a fill:** `reconcile_after_fill` applies a BUY or SELL `Fill` and returns a plan: orders to cancel, an intent to place, or \"waiting for cancel\". It doesn't call a broker. When the old order must be replaced, it plans only the cancel. You call it again once the cancel shows up in the order snapshot, and only then does it plan the new order. In the 3-then-7 test the cancel, the wait, and the placement of one 10-share order happen in that order, so two orders are never live together.\n- **Zero remaining:** every live protective order gets a cancel recommendation and nothing is placed. With no orders left, the action is NO_OP.\n\n**Choices to check**\n- **Signature:** `tick_rules` is keyword-only, because Python doesn't allow a required parameter after defaulted ones.\n- **Extra keyword arguments:** `support_buffer` and `revision` are added on top of your spec.\n- **Public names:** the allowed-symbols list omits the types the API needs, so I exported these too: `CoverageState`, `RecommendedAction`, `TickRules`, `InvalidStopPrice`, `ProtectiveOrderIntent`, `ProtectiveOrderView`, `FixedStopCycleState`, and `ReconcileResult`. Say so if you'd rather prefix them with an underscore.\n- **Support level:** a runtime `support` value overrides `policy.support_level`. The policy has no buffer field and I couldn't edit it, hence `support_buffer`.\n- **Overcovered single order:** an OVER_COVERED single order can't be trimmed, so it gets CANCEL_EXCESS (cancel it, then re-place the right size on the next call).\n- **Ratchet conflict:** if the kept `max(previous, new)` stop would sit at or above a lower post-fill reference, `reconcile_after_fill` places nothing and returns `reason_code=\"STOP_NOT_BELOW_REFERENCE\"`. It leaves the existing order in place, so a smaller protection stays live. The caller has to decide whether to escalate.\n- **Client order id:** the id doesn't use the Alpaca `make_client_order_id`, because that needs a mode and account fingerprint this provider-neutral module doesn't have.\n",
+      "stderr": "",
+      "exit_code": 0,
+      "duration_seconds": 215.54411244392395,
+      "model": "claude-sonnet-5-5",
+      "model_tags": [],
+      "working_directory": "/home/mike/dev/mike/stocks/python/mike_trade",
+      "changed_files": [
+        {
+          "path": "mike_trade/risk/fixed_stop.py",
+          "status": "untracked",
+          "code": "??"
+        },
+        {
+          "path": "tests/unit/test_fixed_stop_coverage.py",
+          "status": "untracked",
+          "code": "??"
+        }
+      ],
+      "diff_summary": "git diff reported no changes",
+      "model_attempts": [
+        {
+          "backend": "claude_code_cli",
+          "model": "claude-sonnet-5-5",
+          "exit_code": 0,
+          "stdout": "I added `mike_trade/risk/fixed_stop.py` and `tests/unit/test_fixed_stop_coverage.py`. The 58 new tests pass, and ruff and `py_compile` are clean. Nothing was committed.\n\nSix async tests in `tests/unit/test_protection_policy.py` fail. They fail the same way without my files, because pytest-asyncio isn't installed in this venv. I didn't touch them.\n\n**What the module does**\n- **Stop price:** `compute_fixed_stop_price` handles percent, USD, ATR multiple, and support level with an optional buffer. The result is floored to the tick grid, using $0.01 at or above $1.00 and $0.0001 below. A stop that is zero, negative, or at or above the reference raises `InvalidStopPrice` with a `reason_code`. `ALPACA_EQUITY_TICK_RULES` is the default grid, injected as `tick_rules`.\n- **Order building:** `build_fixed_stop_order` returns a SELL stop or stop_limit intent. The client order id is a hash of `cycle_id` and a revision counter, 48 characters or fewer. For STOP_LIMIT the limit is the stop minus the offset, floored, so it never exceeds the stop, and the intent carries a \"may not fill\" risk note. A stop below `previous_stop_price` is rejected.\n- **Coverage:** `check_coverage` returns one of the five states with the action you listed, plus the order ids to cancel and the target quantity. Terminal orders are ignored. Anything not known to be terminal, including PENDING_CANCEL and UNKNOWN, counts as live, so oversell is never undercounted.\n- **After a fill:** `reconcile_after_fill` applies a BUY or SELL `Fill` and returns a plan: orders to cancel, an intent to place, or \"waiting for cancel\". It doesn't call a broker. When the old order must be replaced, it plans only the cancel. You call it again once the cancel shows up in the order snapshot, and only then does it plan the new order. In the 3-then-7 test the cancel, the wait, and the placement of one 10-share order happen in that order, so two orders are never live together.\n- **Zero remaining:** every live protective order gets a cancel recommendation and nothing is placed. With no orders left, the action is NO_OP.\n\n**Choices to check**\n- **Signature:** `tick_rules` is keyword-only, because Python doesn't allow a required parameter after defaulted ones.\n- **Extra keyword arguments:** `support_buffer` and `revision` are added on top of your spec.\n- **Public names:** the allowed-symbols list omits the types the API needs, so I exported these too: `CoverageState`, `RecommendedAction`, `TickRules`, `InvalidStopPrice`, `ProtectiveOrderIntent`, `ProtectiveOrderView`, `FixedStopCycleState`, and `ReconcileResult`. Say so if you'd rather prefix them with an underscore.\n- **Support level:** a runtime `support` value overrides `policy.support_level`. The policy has no buffer field and I couldn't edit it, hence `support_buffer`.\n- **Overcovered single order:** an OVER_COVERED single order can't be trimmed, so it gets CANCEL_EXCESS (cancel it, then re-place the right size on the next call).\n- **Ratchet conflict:** if the kept `max(previous, new)` stop would sit at or above a lower post-fill reference, `reconcile_after_fill` places nothing and returns `reason_code=\"STOP_NOT_BELOW_REFERENCE\"`. It leaves the existing order in place, so a smaller protection stays live. The caller has to decide whether to escalate.\n- **Client order id:** the id doesn't use the Alpaca `make_client_order_id`, because that needs a mode and account fingerprint this provider-neutral module doesn't have.\n",
+          "stderr": "",
+          "duration_seconds": 215.54411244392395,
+          "changed_files": [
+            {
+              "path": "mike_trade/risk/fixed_stop.py",
+              "status": "untracked",
+              "code": "??"
+            },
+            {
+              "path": "tests/unit/test_fixed_stop_coverage.py",
+              "status": "untracked",
+              "code": "??"
+            }
+          ],
+          "diff_summary": "git diff reported no changes",
+          "outcome_classification": "backend_completed_with_changes",
+          "backend_timeout": false,
+          "backend_verification_timeout": false,
+          "timeout_seconds": null
+        }
+      ],
+      "write_policy_violations": [],
+      "outcome_classification": "backend_completed_with_changes",
+      "backend_timeout": false,
+      "backend_verification_timeout": false,
+      "changed_files_at_timeout_exit": [],
+      "abracapocus_verification_ran_after_backend_timeout": false,
+      "verification_owner": "abracapocus",
+      "verification_result": "skipped"
+    }
+  ],
+  "review": {
+    "status": "approved",
+    "findings": [],
+    "summary": "n.3:Review complete",
+    "created_at": "2026-10-08T19:57:44.079478"
+  },
+  "verification": {
+    "status": "skipped",
+    "checks": [],
+    "created_at": "2026-10-08T19:57:44.079486",
+    "notes": "N:skipped",
+    "profile": "focused"
+  },
+  "metadata": {
+    "run_id": "2d948e14-9065-4c39-bcf4-552128f8201f",
+    "project_name": "mike_trade",
+    "plan_version": "task-n.3",
+    "task_id": "n.3",
+    "task_title": "Implement fixed stop attachment and stop coverage checking for fill quantities",
+    "task_status": "completed",
+    "selected_backend": "claude_code_cli",
+    "verification_profile": "focused",
+    "backend_reason": "phase_based",
+    "frame_failures": [],
+    "agents_md": {
+      "loaded": true,
+      "path": "/home/mike/dev/mike/abracapocus/python/abracapocus_2/AGENTS.md",
+      "rule_count": 77,
+      "sha256_12": "3f9b549ba1ce"
+    },
+    "phase_results": [
+      {
+        "phase_name": "N",
+        "status": "passed",
+        "verification": "skipped",
+        "task_results": [
+          {
+            "task_id": "n.3",
+            "status": "passed",
+            "acceptance_status": "accepted",
+            "backend": "claude_code_cli",
+            "backend_outcome_classification": "backend_completed_with_changes",
+            "changed_files": [
+              {
+                "path": "mike_trade/risk/fixed_stop.py",
+                "status": "untracked",
+                "code": "??"
+              },
+              {
+                "path": "tests/unit/test_fixed_stop_coverage.py",
+                "status": "untracked",
+                "code": "??"
+              }
+            ],
+            "backend_timeout": false,
+            "backend_elapsed_seconds": 215.54411244392395,
+            "backend_timeout_seconds": null,
+            "changed_files_at_timeout_exit": [],
+            "abracapocus_verification_ran_after_backend_timeout": false,
+            "verification_owner": "abracapocus",
+            "verification_result": "skipped",
+            "verification_status": "skipped",
+            "verification_checks": [],
+            "frame_failure": false,
+            "retry_attempts": []
+          }
+        ]
+      }
+    ]
+  }
+}
