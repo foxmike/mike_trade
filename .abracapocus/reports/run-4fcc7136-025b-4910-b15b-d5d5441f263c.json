@@ -1,0 +1,157 @@
+{
+  "plan_summary": "Task run: Define assets, sessions, money and immutable market event value objects",
+  "backend_executions": [
+    {
+      "backend": "pi_cli",
+      "command": [
+        "pi",
+        "-p",
+        "--provider",
+        "openrouter",
+        "--model",
+        "meta/muse-spark-1.3-contributor",
+        "Task: Define assets, sessions, money and immutable market event value objects\nDescription: Create the immutable value objects for instruments, exchange sessions, numeric values, and market data. Use only the standard library: frozen dataclasses with slots=True, Enum, decimal, datetime, zoneinfo, and types.MappingProxyType. Do not import any broker SDK, adapter, or strategy code. This task runs at the same time as b.2, b.3, and b.4, so these modules must not import mike_trade.domain.signals, strategy_types, trading, protection, or accounts at runtime.\n\nmike_trade/domain/instruments.py:\n- Numeric validation helpers `to_decimal(value, *, field)`, `require_non_negative(value, *, field)`, and `require_positive(value, *, field)`. They accept Decimal, int, or str and return a Decimal. They reject float inputs, NaN, sNaN, ±Infinity, bool, and unparsable strings by raising ValueError, or an existing ValueError-compatible error from mike_trade/domain/errors.py if one fits. Do not edit errors.py.\n- Do not quantize to a global tick or share precision. Precision is provider-specific, so keep the caller's exact Decimal value.\n- `Money` holds amount (Decimal) and currency (default 'USD', 3-letter uppercase). It supports add and subtract only with the same currency and rejects NaN or Infinity.\n- `AssetClass` enum: US_EQUITY is the only active member. `Instrument` holds: symbol (normalized uppercase, non-empty, validated against a conservative pattern such as ^[A-Z][A-Z0-9.\\-]{0,9}$), asset_class, primary_exchange (optional str), currency 'USD', and optional provider-reported flags (tradable, fractionable, shortable), each Optional[bool] and defaulting to None, meaning unknown.\n- `SessionKind` enum: PRE_MARKET, REGULAR, AFTER_HOURS, CLOSED. `MarketSession` holds exchange (default 'XNYS'), timezone name (default 'America/New_York'), session_date (date in New York), and opens_at/closes_at as timezone-aware UTC datetimes with opens_at < closes_at. Add helpers `kind_at(ts_utc)` and `local(ts_utc)` that return the New York time.\n- `TradingSessionPolicy` holds: regular_hours_only (default True), entry_cutoff (a time in America/New_York, or a minutes-before-close offset), eod_close_enabled (default False), and eod_close_minutes_before_close. Validate that the cutoff falls inside the regular session.\n- A shared helper `require_utc(ts, *, field)` rejects naive datetimes and normalizes aware datetimes to UTC.\n\nmike_trade/domain/market.py:\n- `Timeframe` enum or value object with at least 1m, 5m, 15m, 1h, and 1d, plus a `duration` timedelta.\n- `FeedProvenance` holds provider (e.g. 'alpaca'), feed (e.g. 'iex'), source (str), and is_consolidated (bool). Alpaca Basic IEX must be representable as is_consolidated=False so IEX provenance is never mistaken for SIP.\n- `MarketEventKind` enum: TRADE, QUOTE, BAR. `MarketEvent` holds symbol, kind, event_time (UTC), received_at (UTC), provenance, and optional price/size/bid/ask/bid_size/ask_size Decimals, validated by kind (TRADE needs price>0 and size>=0; QUOTE needs bid and ask >=0 with bid<=ask when both are positive).\n- `Candle` holds: symbol, timeframe, start (UTC), end (UTC, equal to start + duration), OHLC Decimal >0, volume Decimal >=0, optional vwap and trade_count, closed (bool), and provenance. Enforce low <= min(open, close) and max(open, close) <= high.\n- `DataFreshness` enum: FRESH, STALE, UNKNOWN.\n- `MarketContext` (immutable) holds: symbol, as_of (UTC), session (MarketSession or SessionKind), freshness, last_event_at (optional UTC), and candles (a read-only mapping from Timeframe to a tuple of Candles in ascending, non-overlapping start order). It also holds indicators (a read-only mapping from str to Decimal | None), provenance, and optional research (a read-only mapping plus a research provenance string, defaulting to None). Add `latest_closed(timeframe)`, which ignores candles with closed=False. The context must not expose mutable lists or dicts.\n\ntests/unit/test_market_values.py should hold positive and negative pytest tests for every invariant above, including NaN/Infinity/float/negative rejection, naive datetime rejection, Candle OHLC violations, MarketContext immutability (FrozenInstanceError or TypeError on mutation), IEX provenance with is_consolidated False, and New York session conversion across a DST boundary.\n\nDecision budget: make at most three design choices not covered here, and record them in the module docstrings.\n\nBefore editing, inspect:\n- mike_trade/domain/errors.py (read-only) for existing typed errors\n- mike_trade/__init__.py and pyproject.toml (read-only) for package layout and tool settings\n- docs/ARCHITECTURE.md (read-only, if present) for domain dependency rules\nPhase: B\nAcceptance criteria:\n  - mike_trade/domain/instruments.py defines to_decimal, require_non_negative, require_positive, require_utc, Money, AssetClass, Instrument, SessionKind, MarketSession, and TradingSessionPolicy\n  - mike_trade/domain/market.py defines Timeframe, FeedProvenance, MarketEventKind, MarketEvent, Candle, DataFreshness, and MarketContext\n  - All value objects are frozen; assigning to an attribute raises an exception\n  - Constructing any value with float, NaN, Infinity, or a negative price/quantity/volume raises an error; Decimal('0.0001') prices and Decimal('0.5') quantities are preserved exactly without forced rounding\n  - Naive datetimes are rejected for event_time, received_at, candle start/end, and MarketContext.as_of; aware non-UTC inputs are normalized to UTC\n  - Candle rejects high < max(open, close), low > min(open, close), and end != start + timeframe duration\n  - FeedProvenance for Alpaca IEX can be constructed with is_consolidated=False, and MarketEvent/Candle carry provenance\n  - MarketContext.candles and indicators are read-only mappings with tuple values, and latest_closed ignores unclosed candles\n  - TradingSessionPolicy defaults to regular_hours_only=True and eod_close_enabled=False\n  - Neither module imports alpaca, any mike_trade.brokers module, mike_trade.strategies, or any third-party package\n  - tests/unit/test_market_values.py contains both positive and negative tests and passes with targeted pytest\nContext: AGENTS.md guidance:\n# AGENTS.md\n## Purpose\nThis repository is operated by an autonomous multi-agent system (abracapocus_2).\nAll agents must follow these rules when modifying the codebase.\n---\n## Core Principles\n- Minimal blast radius: only modify what is required for the task\n- Deterministic verification: all changes must be verifiable via code (tests, compile, scripts)\n- No architecture drift: do not introduce new frameworks or major design changes unless explicitly required\n- No unrelated refactors\n- All changes must be reproducible from a clean clone\n---\n## Project Structure\n- docs/ → design, plans, architecture constraints\n- plans/ → master plans\n- phases/ → phase definitions\n- tasks/ → executable task documents\n- backends/ → CLI backend adapters\n- agents/ → specialist agents\n- runtime/ → orchestration, routing, state\n...(truncated)\n\n## Task Contract Constraints\n\n{\n  \"allowed_symbols\": [\n    \"to_decimal\",\n    \"require_non_negative\",\n    \"require_positive\",\n    \"require_utc\",\n    \"Money\",\n    \"AssetClass\",\n    \"Instrument\",\n    \"SessionKind\",\n    \"MarketSession\",\n    \"TradingSessionPolicy\",\n    \"Timeframe\",\n    \"FeedProvenance\",\n    \"MarketEventKind\",\n    \"MarketEvent\",\n    \"Candle\",\n    \"DataFreshness\",\n    \"MarketContext\"\n  ],\n  \"allowed_write_paths\": [\n    \"mike_trade/domain/instruments.py\",\n    \"mike_trade/domain/market.py\",\n    \"tests/unit/test_market_values.py\"\n  ],\n  \"forbidden_changes\": [\n    \"modify files outside allowed_write_paths\",\n    \"change PLAN_SKELETON.json or other planning artifacts\",\n    \"import Alpaca SDK types, broker adapters, or strategy code in domain modules\",\n    \"use float for money, prices, quantities, or volume\",\n    \"hardcode a global tick size or share-precision rounding\",\n    \"import mike_trade.domain.signals, strategy_types, trading, protection, or accounts at runtime\",\n    \"edit mike_trade/domain/errors.py\",\n    \"run broad test suites, backtests, or create broker orders\"\n  ]\n}\nAGENTS.md:\n# AGENTS.md\n\n## Purpose\n\nThis repository is operated by an autonomous multi-agent system (abracapocus_2).\nAll agents must follow these rules when modifying the codebase.\n\n---\n\n## Core Principles\n\n- Minimal blast radius: only modify what is required for the task\n- Deterministic verification: all changes must be verifiable via code (tests, compile, scripts)\n- No architecture drift: do not introduce new frameworks or major design changes unless explicitly required\n- No unrelated refactors\n- All changes must be reproducible from a clean clone\n\n---\n\n## Project Structure\n\n- docs/ → design, plans, architecture constraints\n- plans/ → master plans\n- phases/ → phase definitions\n- tasks/ → executable task documents\n- backends/ → CLI backend adapters\n- agents/ → specialist agents\n- runtime/ → orchestration, routing, state\n- reports/ → execution reports (DO NOT MODIFY MANUALLY)\n- state/runtime_state.json → runtime state (DO NOT COMMIT)\n\n---\n\n## Task Execution Rules\n\n- Always operate from a task document when available\n- Respect:\n  - selected_backend\n  - verification_profile\n  - acceptance_criteria\n- If a task conflicts with architecture constraints or phase scope:\n  - STOP and report conflict\n\n---\n\n## Backend Rules\n\n- Backends must:\n  - execute commands deterministically\n  - capture stdout, stderr, exit_code\n  - not silently fail\n- Do not invent backend interfaces; use existing adapters\n- Codex CLI, Aider, Gemini, Claude Code should be invoked through backends only\n\n---\n\n## Verification Rules\n\n- Verification must be deterministic\n- Preferred checks:\n  - pytest\n  - python -m py_compile\n- Do not rely on model self-evaluation\n\n---\n\n## Execution Control Flow (PERMANENT ARCHITECTURAL RULE)\n\n**HEURISTIC INFERENCE MUST NEVER PARTICIPATE IN ABRACAPOCUS EXECUTION CONTROL FLOW.**\n\nAbracapocus must not determine execution success, failure, acceptance,\nrejection, blocking, retry eligibility, phase progression, or completion from\nheuristic inference. A heuristic is any conclusion that is *inferred* rather\nthan *directly established by an explicit executable contract or a concrete\nruntime fact*.\n\nRuntime status is derived ONLY from concrete, mechanically observable facts:\n\n1. The backend process exit code. A backend that exits `0` (with no hard\n   write-policy violation) is a successful execution.\n2. Objectively observed hard write-policy violations (changed paths outside the\n   declared allowed write paths).\n3. Explicit operator-authored commands (task/phase verification the plan\n   explicitly contains). Their raw results are reported, kept DISTINCT from\n   backend execution status.\n4. Objective orchestrator failures with direct evidence (backend could not\n   launch, required document could not be parsed, subprocess infrastructure\n   failed).\n\n**Verification results are observational and must not rewrite backend execution\nstatus.** A verifier returning non-zero must NEVER, by itself, turn a\nsuccessful backend execution into unverified, stop a phase, or trigger an\nautomatic rerun. Verification is the result of a command, not authority to\nrewrite history.\n\n**Execution control:** Task-local problems (non-zero exit, timeout,\nwrite-policy violation, frame failure, backend launch failure) produce\nacceptance status ``\"unverified\"`` with truthful evidence preserved. They\nMUST NOT stop sibling tasks, later phases, or the plan. Only operator\ncancellation (SIGINT/SIGTERM/dashboard cancel) may terminate a run\n(acceptance status ``\"interrupted\"``). Dependencies are ordering constraints,\nnot acceptance gates — any terminal attempt outcome satisfies a dependency\nedge. The status ``\"failed\"`` is banned from acceptance output.\n\nDo NOT reintroduce -- under any name, feature flag, \"advisory\" wrapper, or\ncompatibility mode -- context completeness/sufficiency scoring, change or\narchitecture assessment used as a gate, intent/scope matching, reconciliation\ngates, no-progress judgments, confidence/risk scores, model/LLM/reviewer\njudgments over status, shadow/adaptive/secondary-verification gates, or\nheuristic retry/failure-classification control flow. Failure classification may\nonly *summarize* an already-established concrete failure; it must never create\none. Retries are permitted only for explicitly defined mechanical backend\nfailures. Future agents must not add these systems back.\n\n---\n\n## Git Rules\n\n- Do not commit:\n  - runtime_state.json\n  - reports/\n  - logs/\n  - virtual environments\n- Do not modify .gitignore unless required by task\n- Do not create excessive commits; prefer grouped logical commits\n\n---\n\n## Allowed Changes\n\n- Implement task requirements\n- Fix failing verification\n- Update relevant tests\n- Improve documentation tied to the task\n\n---\n\n## Forbidden Changes\n\n- Changing architecture without explicit instruction\n- Adding dependencies without justification\n- Modifying unrelated files\n- Deleting important files\n- Bypassing verification\n\n---\n\n## Planning Rules\n\n- Plans are multi-phase\n- Completed sections are immutable\n- Remaining sections may be updated\n- Tasks must align with:\n  - project brief\n  - architecture constraints\n  - active phase\n\n---\n\n## Reporting\n\n- All executions must produce structured reports\n- Reports must include:\n  - changed files\n  - verification results\n  - assessment\n\n---\n\n## Behavior\n\n- Do not ask unnecessary questions\n- Do not stall execution\n- Do not perform broad scans unless required\n- Prefer direct action over analysis\n\n---\n\n## Priority Order\n\nThis ordering guides *implementation decisions* only. It does NOT make\nverification an acceptance authority: verification results are observational\n(see \"Execution Control Flow\"), and never override a concrete backend\nexecution result.\n\n1. Architecture constraints\n2. Task definition\n3. Verification results (observational signal, not acceptance authority)\n4. Plan guidance\n\nIf conflicts occur, follow this order.\n\nAGENTS metadata:\n{\"loaded\": true, \"path\": \"/home/mike/dev/mike/abracapocus/python/abracapocus_2/AGENTS.md\", \"rule_count\": 77, \"sha256_12\": \"3f9b549ba1ce\"}\n"
+      ],
+      "stdout": "Done. All checks pass: **83 tests**, ruff clean, compile OK.\n\n**Changed files** (only the three allowed paths):\n- `mike_trade/domain/instruments.py` — `to_decimal` / `require_non_negative` / `require_positive` (exact `Decimal`, no quantization; reject float, bool, NaN/sNaN, ±Infinity, bad strings with `ValueError`), `require_utc` (reject naive, normalize aware → UTC), `Money` (same-currency add/subtract), `AssetClass` (`US_EQUITY`), `Instrument` (uppercase-normalized symbol vs `^[A-Z][A-Z0-9.\\-]{0,9}$`, optional tradable/fractionable/shortable defaulting to `None`), `SessionKind`, `MarketSession` (`kind_at`/`local` in `America/New_York`), `TradingSessionPolicy` (defaults `regular_hours_only=True`, `eod_close_enabled=False`; cutoff validated inside 09:30–16:00 ET or 0–390 min offset). All frozen with `slots=True`.\n- `mike_trade/domain/market.py` — `Timeframe` (M1/M5/M15/H1/D1 + `duration`), `FeedProvenance` (IEX representable with `is_consolidated=False`), `MarketEventKind`, `MarketEvent` (per-kind validation + bid≤ask check), `Candle` (OHLC > 0, volume ≥ 0, low/high envelope, `end == start + duration`), `DataFreshness`, `MarketContext` (`MappingProxyType` candles/indicators/research with defensive copies, ordering/symbol/timeframe validation, `latest_closed` skipping unclosed).\n- `tests/unit/test_market_values.py` — positive + negative coverage for every invariant: NaN/Infinity/float/negative rejection, naive-datetime rejection, aware→UTC normalization, Candle OHLC/duration violations, `FrozenInstanceError`/`TypeError` immutability, read-only mapping mutation attempts, IEX non-consolidated provenance, and NY conversion/`kind_at` across the 2025-03-09 DST boundary (EST −5 vs EDT −4).\n\n**Notes:**\n- No `errors.py` import was needed: none of its exceptions are `ValueError`-compatible, so plain `ValueError` is raised throughout (explicitly permitted by the task).\n- `market.py` imports only `MarketSession`/`SessionKind` from the sibling `instruments` module; neither module imports brokers, strategies, SDKs, third-party packages, or the forbidden `signals`/`strategy_types`/`trading`/`protection`/`accounts` modules (verified by test + import audit).\n- Design choices (≤3) are recorded in each module's docstring.\n",
+      "stderr": "",
+      "exit_code": 0,
+      "duration_seconds": 172.70495653152466,
+      "model": "openrouter/meta/muse-spark-1.3-contributor",
+      "model_tags": [],
+      "working_directory": "/home/mike/dev/mike/stocks/python/mike_trade",
+      "changed_files": [
+        {
+          "path": "mike_trade/domain/instruments.py",
+          "status": "untracked",
+          "code": "??"
+        },
+        {
+          "path": "mike_trade/domain/market.py",
+          "status": "untracked",
+          "code": "??"
+        },
+        {
+          "path": "tests/unit/test_market_values.py",
+          "status": "untracked",
+          "code": "??"
+        }
+      ],
+      "diff_summary": "git diff reported no changes",
+      "model_attempts": [
+        {
+          "backend": "pi_cli",
+          "model": "openrouter/meta/muse-spark-1.3-contributor",
+          "exit_code": 0,
+          "stdout": "Done. All checks pass: **83 tests**, ruff clean, compile OK.\n\n**Changed files** (only the three allowed paths):\n- `mike_trade/domain/instruments.py` — `to_decimal` / `require_non_negative` / `require_positive` (exact `Decimal`, no quantization; reject float, bool, NaN/sNaN, ±Infinity, bad strings with `ValueError`), `require_utc` (reject naive, normalize aware → UTC), `Money` (same-currency add/subtract), `AssetClass` (`US_EQUITY`), `Instrument` (uppercase-normalized symbol vs `^[A-Z][A-Z0-9.\\-]{0,9}$`, optional tradable/fractionable/shortable defaulting to `None`), `SessionKind`, `MarketSession` (`kind_at`/`local` in `America/New_York`), `TradingSessionPolicy` (defaults `regular_hours_only=True`, `eod_close_enabled=False`; cutoff validated inside 09:30–16:00 ET or 0–390 min offset). All frozen with `slots=True`.\n- `mike_trade/domain/market.py` — `Timeframe` (M1/M5/M15/H1/D1 + `duration`), `FeedProvenance` (IEX representable with `is_consolidated=False`), `MarketEventKind`, `MarketEvent` (per-kind validation + bid≤ask check), `Candle` (OHLC > 0, volume ≥ 0, low/high envelope, `end == start + duration`), `DataFreshness`, `MarketContext` (`MappingProxyType` candles/indicators/research with defensive copies, ordering/symbol/timeframe validation, `latest_closed` skipping unclosed).\n- `tests/unit/test_market_values.py` — positive + negative coverage for every invariant: NaN/Infinity/float/negative rejection, naive-datetime rejection, aware→UTC normalization, Candle OHLC/duration violations, `FrozenInstanceError`/`TypeError` immutability, read-only mapping mutation attempts, IEX non-consolidated provenance, and NY conversion/`kind_at` across the 2025-03-09 DST boundary (EST −5 vs EDT −4).\n\n**Notes:**\n- No `errors.py` import was needed: none of its exceptions are `ValueError`-compatible, so plain `ValueError` is raised throughout (explicitly permitted by the task).\n- `market.py` imports only `MarketSession`/`SessionKind` from the sibling `instruments` module; neither module imports brokers, strategies, SDKs, third-party packages, or the forbidden `signals`/`strategy_types`/`trading`/`protection`/`accounts` modules (verified by test + import audit).\n- Design choices (≤3) are recorded in each module's docstring.\n",
+          "stderr": "",
+          "duration_seconds": 172.70495653152466,
+          "changed_files": [
+            {
+              "path": "mike_trade/domain/instruments.py",
+              "status": "untracked",
+              "code": "??"
+            },
+            {
+              "path": "mike_trade/domain/market.py",
+              "status": "untracked",
+              "code": "??"
+            },
+            {
+              "path": "tests/unit/test_market_values.py",
+              "status": "untracked",
+              "code": "??"
+            }
+          ],
+          "diff_summary": "git diff reported no changes",
+          "outcome_classification": "backend_completed_with_changes",
+          "backend_timeout": false,
+          "backend_verification_timeout": false,
+          "timeout_seconds": null
+        }
+      ],
+      "write_policy_violations": [],
+      "outcome_classification": "backend_completed_with_changes",
+      "backend_timeout": false,
+      "backend_verification_timeout": false,
+      "changed_files_at_timeout_exit": [],
+      "abracapocus_verification_ran_after_backend_timeout": false,
+      "verification_owner": "abracapocus",
+      "verification_result": "skipped"
+    }
+  ],
+  "review": {
+    "status": "approved",
+    "findings": [],
+    "summary": "b.1:Review complete",
+    "created_at": "2026-10-08T13:55:45.126663"
+  },
+  "verification": {
+    "status": "skipped",
+    "checks": [],
+    "created_at": "2026-10-08T13:55:45.126670",
+    "notes": "B:skipped",
+    "profile": "focused"
+  },
+  "metadata": {
+    "run_id": "4fcc7136-025b-4910-b15b-d5d5441f263c",
+    "project_name": "mike_trade",
+    "plan_version": "task-b.1",
+    "task_id": "b.1",
+    "task_title": "Define assets, sessions, money and immutable market event value objects",
+    "task_status": "completed",
+    "selected_backend": "pi_cli",
+    "verification_profile": "focused",
+    "backend_reason": "phase_based",
+    "frame_failures": [],
+    "agents_md": {
+      "loaded": true,
+      "path": "/home/mike/dev/mike/abracapocus/python/abracapocus_2/AGENTS.md",
+      "rule_count": 77,
+      "sha256_12": "3f9b549ba1ce"
+    },
+    "phase_results": [
+      {
+        "phase_name": "B",
+        "status": "passed",
+        "verification": "skipped",
+        "task_results": [
+          {
+            "task_id": "b.1",
+            "status": "passed",
+            "acceptance_status": "accepted",
+            "backend": "pi_cli",
+            "backend_outcome_classification": "backend_completed_with_changes",
+            "changed_files": [
+              {
+                "path": "mike_trade/domain/instruments.py",
+                "status": "untracked",
+                "code": "??"
+              },
+              {
+                "path": "mike_trade/domain/market.py",
+                "status": "untracked",
+                "code": "??"
+              },
+              {
+                "path": "tests/unit/test_market_values.py",
+                "status": "untracked",
+                "code": "??"
+              }
+            ],
+            "backend_timeout": false,
+            "backend_elapsed_seconds": 172.70495653152466,
+            "backend_timeout_seconds": null,
+            "changed_files_at_timeout_exit": [],
+            "abracapocus_verification_ran_after_backend_timeout": false,
+            "verification_owner": "abracapocus",
+            "verification_result": "skipped",
+            "verification_status": "skipped",
+            "verification_checks": [],
+            "frame_failure": false,
+            "retry_attempts": []
+          }
+        ]
+      }
+    ]
+  }
+}
