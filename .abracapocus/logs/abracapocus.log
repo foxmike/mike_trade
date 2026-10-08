@@ -151,3 +151,5 @@
 2026-10-08 16:16:35 | INFO | abracapocus.backends.codex_cli | backend=codex_cli retry_count=0
 2026-10-08 16:16:35 | INFO | abracapocus | run=e862c0d0-66b5-4ddd-8f80-d6787cc24633 phases=1 verification=skipped
 2026-10-08 16:19:00 | INFO | abracapocus.backends.codex_cli | backend=codex_cli retry_count=0
+2026-10-08 16:19:00 | INFO | abracapocus | run=1320fd2a-4151-4b72-b53b-866a2e81a0db phases=1 verification=skipped
+2026-10-08 16:23:49 | INFO | abracapocus.backends.pi_cli | backend=pi_cli retry_count=0
