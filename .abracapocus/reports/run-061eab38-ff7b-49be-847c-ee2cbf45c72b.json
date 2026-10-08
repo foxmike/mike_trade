@@ -1,0 +1,142 @@
+{
+  "plan_summary": "Task run: Implement RSI reversal sell signal with closed-bar and reset semantics",
+  "backend_executions": [
+    {
+      "backend": "pi_cli",
+      "command": [
+        "pi",
+        "-p",
+        "--provider",
+        "openrouter",
+        "--model",
+        "meta/muse-spark-1.3-contributor",
+        "Task: Implement RSI reversal sell signal with closed-bar and reset semantics\nDescription: Implement mike_trade/strategies/sell/rsi_reversal.py as a real SELL plugin using the k.1 SELL contract and the phase j SDK.\n\n1. Inputs. Use the shared, centrally computed RSI (Wilder) from the MarketContext/indicator service on completed bars only. The strategy never computes RSI from fetched data and never fetches data.\n\n2. Trigger. Fire on a documented overbought-reversal crossing: prior completed-bar RSI >= the overbought threshold AND latest completed-bar RSI < the overbought threshold.\n\n3. Validated parameters, through ParameterSchema with inclusive ranges and Decimal for thresholds:\n   - rsi_period, int\n   - overbought threshold, Decimal in (50, 100)\n   - optional reset threshold, Decimal, which must be strictly below the overbought threshold (cross-field validation)\n   - timeframe choice from supported completed-bar timeframes\n\n4. Reset/rearm semantics. After a signal, the rule stays disarmed until RSI first falls to or below the reset threshold (or, if no reset threshold is configured, until RSI has re-exceeded the overbought threshold), and only then can fire again.\n   - The arm/disarm state must be expressed through the declared persistent-state contract, so that k.4 rearm persistence can restore it after restart.\n   - The strategy itself never writes to the filesystem or database.\n   - Same-bar re-evaluation never duplicates a signal, because the signal ID is deterministic from the completed-bar UTC timestamp.\n\n5. Output. A trigger returns an ExitLongRecommendation for 100% of the confirmed remaining quantity only.\n\n6. NO_SIGNAL with explicit reason codes for:\n   - flat/unmanaged/non-long positions (never a short)\n   - minimum hold not elapsed\n   - incomplete or in-progress bar\n   - stale data\n   - missing or unwarmed RSI (fewer than the warmup bars)\n   - outside regular session\n   - disarmed state\n\n7. The spec declares: id rsi_reversal, semver, SELL side, timeframe(s), closed-bar-only, warmup equal to the RSI period plus required history, the EDGE_ON_CLOSED_BAR trigger, persistent state needs, methodology/source metadata (Wilder RSI, with an explicit statement that it is not a profitability claim), execution limitations, and reason codes. There are no confidence scores.\n\nIn tests/unit/test_sell_rsi.py, cover:\n- the crossing boundaries: prior == threshold with latest < threshold signals; latest == threshold does not signal; an upward cross does not signal\n- same-bar replay suppression\n- disarm after a signal and the reset-threshold rearm\n- state round-trip through the declared state representation, simulating a restart\n- incomplete/stale/unwarmed/out-of-session cases\n- flat/unmanaged producing no exit\n- minimum hold blocking\n- the full-quantity-only result after a partial fill\n- parameter validation rejection (reset >= overbought, out-of-range period, float threshold)\n\nUse Decimal throughout.\n\nBefore editing, inspect:\n- mike_trade/strategies/sell/base.py\n- tests/contracts/test_sell_strategy.py\n- mike_trade/strategies/base.py\n- mike_trade/strategies/registry.py\n- mike_trade/strategies/indicators/core.py\n- mike_trade/market_data/context.py\n- mike_trade/market_data/candles.py\n- mike_trade/domain/signals.py\n- mike_trade/risk/session_policy.py\nPhase: K\nAcceptance criteria:\n  - RsiReversalSell declares spec id rsi_reversal, semver, SELL side, completed-bar timeframe, RSI-period-based warmup, the EDGE_ON_CLOSED_BAR trigger, persistent state needs, Wilder RSI methodology metadata stating no profitability claim, limitations, and reason codes.\n  - It emits EXIT_LONG for the full confirmed remaining quantity if and only if prior completed RSI >= overbought AND latest completed RSI < overbought while armed, using only context-supplied RSI.\n  - After a signal, the rule is disarmed and does not fire again until the documented reset condition is met, and tests prove both the suppressed and the re-armed cases.\n  - Arm/disarm state round-trips through the declared persistent-state representation, and a restored state produces the same decisions as uninterrupted evaluation.\n  - Re-evaluating the same completed bar never produces a duplicate signal, because signal IDs are deterministic from the completed-bar timestamp.\n  - Incomplete, stale, unwarmed, out-of-session, flat/unmanaged, non-long, or min-hold-blocked inputs return NO_SIGNAL with explicit reason codes and never a short or partial recommendation.\n  - Parameter validation rejects reset >= overbought, an out-of-range period or threshold, and float thresholds with a typed error.\n  - The module has no broker/network/filesystem/secrets imports and no confidence scores, and tests/unit/test_sell_rsi.py passes when run in isolation.\nContext: AGENTS.md guidance:\n# AGENTS.md\n## Purpose\nThis repository is operated by an autonomous multi-agent system (abracapocus_2).\nAll agents must follow these rules when modifying the codebase.\n---\n## Core Principles\n- Minimal blast radius: only modify what is required for the task\n- Deterministic verification: all changes must be verifiable via code (tests, compile, scripts)\n- No architecture drift: do not introduce new frameworks or major design changes unless explicitly required\n- No unrelated refactors\n- All changes must be reproducible from a clean clone\n---\n## Project Structure\n- docs/ → design, plans, architecture constraints\n- plans/ → master plans\n- phases/ → phase definitions\n- tasks/ → executable task documents\n- backends/ → CLI backend adapters\n- agents/ → specialist agents\n- runtime/ → orchestration, routing, state\n...(truncated)\n\n## Task Contract Constraints\n\n{\n  \"allowed_symbols\": [\n    \"RsiReversalSell\"\n  ],\n  \"allowed_write_paths\": [\n    \"mike_trade/strategies/sell/rsi_reversal.py\",\n    \"tests/unit/test_sell_rsi.py\"\n  ],\n  \"forbidden_changes\": [\n    \"modify files outside allowed_write_paths\",\n    \"modify mike_trade/strategies/sell/base.py, mike_trade/strategies/base.py, registry.py, or indicator modules\",\n    \"change PLAN_SKELETON.json or other planning artifacts\",\n    \"compute RSI from fetched data, fetch data, persist state directly, or submit orders from the strategy\",\n    \"emit partial-exit quantities, short/opposite-side actions, confidence scores, or profitability claims\",\n    \"use float for thresholds, prices, or quantities\",\n    \"create live broker orders or run broad test suites/backtests\"\n  ]\n}\nAGENTS.md:\n# AGENTS.md\n\n## Purpose\n\nThis repository is operated by an autonomous multi-agent system (abracapocus_2).\nAll agents must follow these rules when modifying the codebase.\n\n---\n\n## Core Principles\n\n- Minimal blast radius: only modify what is required for the task\n- Deterministic verification: all changes must be verifiable via code (tests, compile, scripts)\n- No architecture drift: do not introduce new frameworks or major design changes unless explicitly required\n- No unrelated refactors\n- All changes must be reproducible from a clean clone\n\n---\n\n## Project Structure\n\n- docs/ → design, plans, architecture constraints\n- plans/ → master plans\n- phases/ → phase definitions\n- tasks/ → executable task documents\n- backends/ → CLI backend adapters\n- agents/ → specialist agents\n- runtime/ → orchestration, routing, state\n- reports/ → execution reports (DO NOT MODIFY MANUALLY)\n- state/runtime_state.json → runtime state (DO NOT COMMIT)\n\n---\n\n## Task Execution Rules\n\n- Always operate from a task document when available\n- Respect:\n  - selected_backend\n  - verification_profile\n  - acceptance_criteria\n- If a task conflicts with architecture constraints or phase scope:\n  - STOP and report conflict\n\n---\n\n## Backend Rules\n\n- Backends must:\n  - execute commands deterministically\n  - capture stdout, stderr, exit_code\n  - not silently fail\n- Do not invent backend interfaces; use existing adapters\n- Codex CLI, Aider, Gemini, Claude Code should be invoked through backends only\n\n---\n\n## Verification Rules\n\n- Verification must be deterministic\n- Preferred checks:\n  - pytest\n  - python -m py_compile\n- Do not rely on model self-evaluation\n\n---\n\n## Execution Control Flow (PERMANENT ARCHITECTURAL RULE)\n\n**HEURISTIC INFERENCE MUST NEVER PARTICIPATE IN ABRACAPOCUS EXECUTION CONTROL FLOW.**\n\nAbracapocus must not determine execution success, failure, acceptance,\nrejection, blocking, retry eligibility, phase progression, or completion from\nheuristic inference. A heuristic is any conclusion that is *inferred* rather\nthan *directly established by an explicit executable contract or a concrete\nruntime fact*.\n\nRuntime status is derived ONLY from concrete, mechanically observable facts:\n\n1. The backend process exit code. A backend that exits `0` (with no hard\n   write-policy violation) is a successful execution.\n2. Objectively observed hard write-policy violations (changed paths outside the\n   declared allowed write paths).\n3. Explicit operator-authored commands (task/phase verification the plan\n   explicitly contains). Their raw results are reported, kept DISTINCT from\n   backend execution status.\n4. Objective orchestrator failures with direct evidence (backend could not\n   launch, required document could not be parsed, subprocess infrastructure\n   failed).\n\n**Verification results are observational and must not rewrite backend execution\nstatus.** A verifier returning non-zero must NEVER, by itself, turn a\nsuccessful backend execution into unverified, stop a phase, or trigger an\nautomatic rerun. Verification is the result of a command, not authority to\nrewrite history.\n\n**Execution control:** Task-local problems (non-zero exit, timeout,\nwrite-policy violation, frame failure, backend launch failure) produce\nacceptance status ``\"unverified\"`` with truthful evidence preserved. They\nMUST NOT stop sibling tasks, later phases, or the plan. Only operator\ncancellation (SIGINT/SIGTERM/dashboard cancel) may terminate a run\n(acceptance status ``\"interrupted\"``). Dependencies are ordering constraints,\nnot acceptance gates — any terminal attempt outcome satisfies a dependency\nedge. The status ``\"failed\"`` is banned from acceptance output.\n\nDo NOT reintroduce -- under any name, feature flag, \"advisory\" wrapper, or\ncompatibility mode -- context completeness/sufficiency scoring, change or\narchitecture assessment used as a gate, intent/scope matching, reconciliation\ngates, no-progress judgments, confidence/risk scores, model/LLM/reviewer\njudgments over status, shadow/adaptive/secondary-verification gates, or\nheuristic retry/failure-classification control flow. Failure classification may\nonly *summarize* an already-established concrete failure; it must never create\none. Retries are permitted only for explicitly defined mechanical backend\nfailures. Future agents must not add these systems back.\n\n---\n\n## Git Rules\n\n- Do not commit:\n  - runtime_state.json\n  - reports/\n  - logs/\n  - virtual environments\n- Do not modify .gitignore unless required by task\n- Do not create excessive commits; prefer grouped logical commits\n\n---\n\n## Allowed Changes\n\n- Implement task requirements\n- Fix failing verification\n- Update relevant tests\n- Improve documentation tied to the task\n\n---\n\n## Forbidden Changes\n\n- Changing architecture without explicit instruction\n- Adding dependencies without justification\n- Modifying unrelated files\n- Deleting important files\n- Bypassing verification\n\n---\n\n## Planning Rules\n\n- Plans are multi-phase\n- Completed sections are immutable\n- Remaining sections may be updated\n- Tasks must align with:\n  - project brief\n  - architecture constraints\n  - active phase\n\n---\n\n## Reporting\n\n- All executions must produce structured reports\n- Reports must include:\n  - changed files\n  - verification results\n  - assessment\n\n---\n\n## Behavior\n\n- Do not ask unnecessary questions\n- Do not stall execution\n- Do not perform broad scans unless required\n- Prefer direct action over analysis\n\n---\n\n## Priority Order\n\nThis ordering guides *implementation decisions* only. It does NOT make\nverification an acceptance authority: verification results are observational\n(see \"Execution Control Flow\"), and never override a concrete backend\nexecution result.\n\n1. Architecture constraints\n2. Task definition\n3. Verification results (observational signal, not acceptance authority)\n4. Plan guidance\n\nIf conflicts occur, follow this order.\n\nAGENTS metadata:\n{\"loaded\": true, \"path\": \"/home/mike/dev/mike/abracapocus/python/abracapocus_2/AGENTS.md\", \"rule_count\": 77, \"sha256_12\": \"3f9b549ba1ce\"}\n"
+      ],
+      "stdout": "Done. `RsiReversalSell` (`rsi_reversal`) and `tests/unit/test_sell_rsi.py` are implemented, with 22/22 new tests passing in isolation and the existing sell contract + trend suites still green (77 passed).\n\nKey decisions:\n- **Signals**: fires iff `rsi_prev >= overbought` and `rsi < overbought` while armed, reading only the shared `rsi`/`rsi_prev` indicator keys — never computes RSI or fetches data.\n- **Params**: `rsi_period` int 2–50, `overbought` Decimal strictly inside (50, 100) with float rejected, optional `reset_threshold` (absent key = re-exceed rearm; present key must be strictly below overbought), `timeframe` ENUM over `1m/5m/15m/30m/60m` defaulting to `5m`.\n- **Reset/rearm**: `armed`/`last_signal_bar` persistent keys; disarmed after each signal until `rsi <= reset` (or `rsi >= overbought` with no reset). Same-bar replay returns `NO_SIGNAL` with the deterministic bar-timestamp ID.\n- **Warmup**: spec `warmup_bars = 14 + 2 = 16`, with dynamic `period + 2` enforcement; stale/incomplete/unwarmed/out-of-session map to `STALE_DATA`/`INSUFFICIENT_DATA`/`NOT_ELIGIBLE`, and position/min-hold cases go through `evaluate_exit_eligibility` (full remainder only, never short/partial).\n",
+      "stderr": "",
+      "exit_code": 0,
+      "duration_seconds": 214.69454050064087,
+      "model": "openrouter/meta/muse-spark-1.3-contributor",
+      "model_tags": [],
+      "working_directory": "/home/mike/dev/mike/stocks/python/mike_trade",
+      "changed_files": [
+        {
+          "path": "mike_trade/strategies/sell/rsi_reversal.py",
+          "status": "untracked",
+          "code": "??"
+        },
+        {
+          "path": "tests/unit/test_sell_rsi.py",
+          "status": "untracked",
+          "code": "??"
+        }
+      ],
+      "diff_summary": "git diff reported no changes",
+      "model_attempts": [
+        {
+          "backend": "pi_cli",
+          "model": "openrouter/meta/muse-spark-1.3-contributor",
+          "exit_code": 0,
+          "stdout": "Done. `RsiReversalSell` (`rsi_reversal`) and `tests/unit/test_sell_rsi.py` are implemented, with 22/22 new tests passing in isolation and the existing sell contract + trend suites still green (77 passed).\n\nKey decisions:\n- **Signals**: fires iff `rsi_prev >= overbought` and `rsi < overbought` while armed, reading only the shared `rsi`/`rsi_prev` indicator keys — never computes RSI or fetches data.\n- **Params**: `rsi_period` int 2–50, `overbought` Decimal strictly inside (50, 100) with float rejected, optional `reset_threshold` (absent key = re-exceed rearm; present key must be strictly below overbought), `timeframe` ENUM over `1m/5m/15m/30m/60m` defaulting to `5m`.\n- **Reset/rearm**: `armed`/`last_signal_bar` persistent keys; disarmed after each signal until `rsi <= reset` (or `rsi >= overbought` with no reset). Same-bar replay returns `NO_SIGNAL` with the deterministic bar-timestamp ID.\n- **Warmup**: spec `warmup_bars = 14 + 2 = 16`, with dynamic `period + 2` enforcement; stale/incomplete/unwarmed/out-of-session map to `STALE_DATA`/`INSUFFICIENT_DATA`/`NOT_ELIGIBLE`, and position/min-hold cases go through `evaluate_exit_eligibility` (full remainder only, never short/partial).\n",
+          "stderr": "",
+          "duration_seconds": 214.69454050064087,
+          "changed_files": [
+            {
+              "path": "mike_trade/strategies/sell/rsi_reversal.py",
+              "status": "untracked",
+              "code": "??"
+            },
+            {
+              "path": "tests/unit/test_sell_rsi.py",
+              "status": "untracked",
+              "code": "??"
+            }
+          ],
+          "diff_summary": "git diff reported no changes",
+          "outcome_classification": "backend_completed_with_changes",
+          "backend_timeout": false,
+          "backend_verification_timeout": false,
+          "timeout_seconds": null
+        }
+      ],
+      "write_policy_violations": [],
+      "outcome_classification": "backend_completed_with_changes",
+      "backend_timeout": false,
+      "backend_verification_timeout": false,
+      "changed_files_at_timeout_exit": [],
+      "abracapocus_verification_ran_after_backend_timeout": false,
+      "verification_owner": "abracapocus",
+      "verification_result": "skipped"
+    }
+  ],
+  "review": {
+    "status": "approved",
+    "findings": [],
+    "summary": "k.3:Review complete",
+    "created_at": "2026-10-08T18:43:41.015783"
+  },
+  "verification": {
+    "status": "skipped",
+    "checks": [],
+    "created_at": "2026-10-08T18:43:41.015791",
+    "notes": "K:skipped",
+    "profile": "focused"
+  },
+  "metadata": {
+    "run_id": "061eab38-ff7b-49be-847c-ee2cbf45c72b",
+    "project_name": "mike_trade",
+    "plan_version": "task-k.3",
+    "task_id": "k.3",
+    "task_title": "Implement RSI reversal sell signal with closed-bar and reset semantics",
+    "task_status": "completed",
+    "selected_backend": "pi_cli",
+    "verification_profile": "focused",
+    "backend_reason": "phase_based",
+    "frame_failures": [],
+    "agents_md": {
+      "loaded": true,
+      "path": "/home/mike/dev/mike/abracapocus/python/abracapocus_2/AGENTS.md",
+      "rule_count": 77,
+      "sha256_12": "3f9b549ba1ce"
+    },
+    "phase_results": [
+      {
+        "phase_name": "K",
+        "status": "passed",
+        "verification": "skipped",
+        "task_results": [
+          {
+            "task_id": "k.3",
+            "status": "passed",
+            "acceptance_status": "accepted",
+            "backend": "pi_cli",
+            "backend_outcome_classification": "backend_completed_with_changes",
+            "changed_files": [
+              {
+                "path": "mike_trade/strategies/sell/rsi_reversal.py",
+                "status": "untracked",
+                "code": "??"
+              },
+              {
+                "path": "tests/unit/test_sell_rsi.py",
+                "status": "untracked",
+                "code": "??"
+              }
+            ],
+            "backend_timeout": false,
+            "backend_elapsed_seconds": 214.69454050064087,
+            "backend_timeout_seconds": null,
+            "changed_files_at_timeout_exit": [],
+            "abracapocus_verification_ran_after_backend_timeout": false,
+            "verification_owner": "abracapocus",
+            "verification_result": "skipped",
+            "verification_status": "skipped",
+            "verification_checks": [],
+            "frame_failure": false,
+            "retry_attempts": []
+          }
+        ]
+      }
+    ]
+  }
+}
