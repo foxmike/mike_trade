@@ -1,0 +1,95 @@
+{
+  "run_at": "2026-10-08T19:13:30.652982",
+  "phase_dir": "/home/mike/dev/mike/stocks/python/mike_trade/.abracapocus/plans/ACTIVE/MIKE_TRADE_COMPLETE_PRODUCT/l",
+  "status": "passed",
+  "counts": {
+    "passed": 5,
+    "failed": 0,
+    "blocked": 0,
+    "skipped": 0,
+    "unverified": 0
+  },
+  "tasks": [
+    {
+      "task_id": "l.1",
+      "task_file": "/home/mike/dev/mike/stocks/python/mike_trade/.abracapocus/plans/ACTIVE/MIKE_TRADE_COMPLETE_PRODUCT/l/task_l.1_implement_serialized_total_and_per_symbol_budget_reservations_with_atomicity.json",
+      "status": "passed",
+      "acceptance_status": "accepted",
+      "task_verification": {
+        "status": "skipped",
+        "checks": [],
+        "owner": "abracapocus"
+      },
+      "run_id": "f1877e11-a7ca-41ba-ba3f-f737d65d10d4",
+      "write_policy_violations": [],
+      "failure_classification": null,
+      "reviewer_summary": "l.1:Review complete"
+    },
+    {
+      "task_id": "l.2",
+      "task_file": "/home/mike/dev/mike/stocks/python/mike_trade/.abracapocus/plans/ACTIVE/MIKE_TRADE_COMPLETE_PRODUCT/l/task_l.2_implement_fractional_and_whole_share_order_sizing_under_stop_based_loss_budget.json",
+      "status": "passed",
+      "acceptance_status": "accepted",
+      "task_verification": {
+        "status": "skipped",
+        "checks": [],
+        "owner": "abracapocus"
+      },
+      "run_id": "8c0cedd3-abd2-471d-a13a-9fe3673727db",
+      "write_policy_violations": [],
+      "failure_classification": null,
+      "reviewer_summary": "l.2:Review complete"
+    },
+    {
+      "task_id": "l.3",
+      "task_file": "/home/mike/dev/mike/stocks/python/mike_trade/.abracapocus/plans/ACTIVE/MIKE_TRADE_COMPLETE_PRODUCT/l/task_l.3_implement_durable_per_stock_entry_limits_losing_streak_lockouts_and_cooldowns.json",
+      "status": "passed",
+      "acceptance_status": "accepted",
+      "task_verification": {
+        "status": "skipped",
+        "checks": [],
+        "owner": "abracapocus"
+      },
+      "run_id": "bfce2c50-e6a8-46ab-96df-30bc1cd8a251",
+      "write_policy_violations": [],
+      "failure_classification": null,
+      "reviewer_summary": "l.3:Review complete"
+    },
+    {
+      "task_id": "l.4",
+      "task_file": "/home/mike/dev/mike/stocks/python/mike_trade/.abracapocus/plans/ACTIVE/MIKE_TRADE_COMPLETE_PRODUCT/l/task_l.4_implement_session_entry_cutoff_spread_liquidity_and_minimum_hold_policies.json",
+      "status": "passed",
+      "acceptance_status": "accepted",
+      "task_verification": {
+        "status": "skipped",
+        "checks": [],
+        "owner": "abracapocus"
+      },
+      "run_id": "47c6e6b4-8e1e-4787-8c69-a9fbc39abc1b",
+      "write_policy_violations": [],
+      "failure_classification": null,
+      "reviewer_summary": "l.4:Review complete"
+    },
+    {
+      "task_id": "l.5",
+      "task_file": "/home/mike/dev/mike/stocks/python/mike_trade/.abracapocus/plans/ACTIVE/MIKE_TRADE_COMPLETE_PRODUCT/l/task_l.5_add_cross_scenario_trade_cap_loss_streak_and_cooldown_isolation_tests.json",
+      "status": "passed",
+      "acceptance_status": "accepted",
+      "task_verification": {
+        "status": "skipped",
+        "checks": [],
+        "owner": "abracapocus"
+      },
+      "run_id": "c83ade57-6010-446a-8720-21023b8480db",
+      "write_policy_violations": [],
+      "failure_classification": null,
+      "reviewer_summary": "l.5:Review complete"
+    }
+  ],
+  "phase_verification": {
+    "status": "warning",
+    "checks": [],
+    "notes": "phase verification complete",
+    "run_when": "all_tasks_pass"
+  }
+}
