@@ -1,0 +1,157 @@
+{
+  "plan_summary": "Task run: Implement optional research adapter and reference symbol declarations",
+  "backend_executions": [
+    {
+      "backend": "pi_cli",
+      "command": [
+        "pi",
+        "-p",
+        "--provider",
+        "openrouter",
+        "--model",
+        "meta/muse-spark-1.3-contributor",
+        "Task: Implement optional research adapter and reference symbol declarations\nDescription: Implement the optional research data layer.\n\nmike_trade/research/ports.py:\n- Define a ResearchDataProvider port (Protocol/ABC) and immutable research records.\n- Each record carries: input key, symbol, value, source, publication_ts, observed_ts, ingestion_ts (all timezone-aware UTC), revision id/number, freshness/max-age, a missing flag with reason, and licensing/usage metadata.\n- Define a strategy research-requirement declaration: input key, mandatory vs optional, maximum age, and per-symbol applicability.\n\nmike_trade/research/service.py:\n- Implement ResearchService, which builds research context for strategy evaluation.\n- Fetch only the inputs that registered strategies declare as required for the watched symbols. Fetch each (symbol, input key) once per refresh cycle, shared across strategies and scenarios.\n- Cache with a bounded size.\n- Expose an immutable ResearchContext. When a mandatory input is missing or stale, the context reports no-signal-permitted for that strategy/symbol, with a reason code. Optional missing inputs are surfaced as missing without blocking.\n- Provide a built-in NullResearchProvider, the default, which requires no paid provider, no network access, and no manual upload. Basic operation must work with no research configured.\n- Provide reference symbol declarations: a small, documented declaration helper, plus example declarations showing how a strategy declares research inputs. vwap_reference declares none.\n\nStrategies receive only ResearchContext and never the provider.\n\nBefore editing, inspect:\n- mike_trade/market_data/service.py and mike_trade/market_data/cache.py (g.3) for the shared-fetch and immutable-snapshot patterns to mirror\n- mike_trade/market_data/quality.py (g.4) for freshness/reason-code conventions\n- mike_trade/ strategy base/registry and domain modules from earlier phases (if present)\nPhase: G\nAcceptance criteria:\n  - mike_trade/research/ports.py defines a ResearchDataProvider port and frozen research record types. The records include source, publication_ts, observed_ts, ingestion_ts, revision, freshness/max-age, missing flag/reason, and licensing fields, and every timestamp is timezone-aware UTC.\n  - ResearchService requests only the inputs declared by registered strategies; a test with a fake provider asserts that undeclared inputs are never requested.\n  - When two strategies and two scenarios declare the same (symbol, input), the provider is called once per refresh cycle; a test counts the calls.\n  - When a mandatory input is missing or older than its maximum age, ResearchContext reports no-signal-permitted with a reason code; a negative test covers both the missing and the stale case.\n  - A missing optional input is marked missing but does not block signal permission; a test covers this.\n  - With no research configured, the default NullResearchProvider lets ResearchService run without network access, paid providers, or files, and strategies that declare no inputs are unaffected; a test covers this.\n  - Strategy-facing ResearchContext objects are immutable and expose no provider or network handle; a test verifies this.\n  - The reference declaration helper and example declarations exist, and vwap_reference is documented as declaring no research inputs.\nContext: AGENTS.md guidance:\n# AGENTS.md\n## Purpose\nThis repository is operated by an autonomous multi-agent system (abracapocus_2).\nAll agents must follow these rules when modifying the codebase.\n---\n## Core Principles\n- Minimal blast radius: only modify what is required for the task\n- Deterministic verification: all changes must be verifiable via code (tests, compile, scripts)\n- No architecture drift: do not introduce new frameworks or major design changes unless explicitly required\n- No unrelated refactors\n- All changes must be reproducible from a clean clone\n---\n## Project Structure\n- docs/ → design, plans, architecture constraints\n- plans/ → master plans\n- phases/ → phase definitions\n- tasks/ → executable task documents\n- backends/ → CLI backend adapters\n- agents/ → specialist agents\n- runtime/ → orchestration, routing, state\n...(truncated)\n\n## Task Contract Constraints\n\n{\n  \"allowed_write_paths\": [\n    \"mike_trade/research/ports.py\",\n    \"mike_trade/research/service.py\",\n    \"tests/unit/test_research_context.py\"\n  ],\n  \"forbidden_changes\": [\n    \"modify files outside allowed_write_paths\",\n    \"change PLAN_SKELETON.json or other planning artifacts\",\n    \"require a paid research provider or manual upload for basic operation\",\n    \"expose research providers or network clients to strategies\",\n    \"use network access or real credentials in tests\",\n    \"run broad test suites or backtests\"\n  ]\n}\nAGENTS.md:\n# AGENTS.md\n\n## Purpose\n\nThis repository is operated by an autonomous multi-agent system (abracapocus_2).\nAll agents must follow these rules when modifying the codebase.\n\n---\n\n## Core Principles\n\n- Minimal blast radius: only modify what is required for the task\n- Deterministic verification: all changes must be verifiable via code (tests, compile, scripts)\n- No architecture drift: do not introduce new frameworks or major design changes unless explicitly required\n- No unrelated refactors\n- All changes must be reproducible from a clean clone\n\n---\n\n## Project Structure\n\n- docs/ → design, plans, architecture constraints\n- plans/ → master plans\n- phases/ → phase definitions\n- tasks/ → executable task documents\n- backends/ → CLI backend adapters\n- agents/ → specialist agents\n- runtime/ → orchestration, routing, state\n- reports/ → execution reports (DO NOT MODIFY MANUALLY)\n- state/runtime_state.json → runtime state (DO NOT COMMIT)\n\n---\n\n## Task Execution Rules\n\n- Always operate from a task document when available\n- Respect:\n  - selected_backend\n  - verification_profile\n  - acceptance_criteria\n- If a task conflicts with architecture constraints or phase scope:\n  - STOP and report conflict\n\n---\n\n## Backend Rules\n\n- Backends must:\n  - execute commands deterministically\n  - capture stdout, stderr, exit_code\n  - not silently fail\n- Do not invent backend interfaces; use existing adapters\n- Codex CLI, Aider, Gemini, Claude Code should be invoked through backends only\n\n---\n\n## Verification Rules\n\n- Verification must be deterministic\n- Preferred checks:\n  - pytest\n  - python -m py_compile\n- Do not rely on model self-evaluation\n\n---\n\n## Execution Control Flow (PERMANENT ARCHITECTURAL RULE)\n\n**HEURISTIC INFERENCE MUST NEVER PARTICIPATE IN ABRACAPOCUS EXECUTION CONTROL FLOW.**\n\nAbracapocus must not determine execution success, failure, acceptance,\nrejection, blocking, retry eligibility, phase progression, or completion from\nheuristic inference. A heuristic is any conclusion that is *inferred* rather\nthan *directly established by an explicit executable contract or a concrete\nruntime fact*.\n\nRuntime status is derived ONLY from concrete, mechanically observable facts:\n\n1. The backend process exit code. A backend that exits `0` (with no hard\n   write-policy violation) is a successful execution.\n2. Objectively observed hard write-policy violations (changed paths outside the\n   declared allowed write paths).\n3. Explicit operator-authored commands (task/phase verification the plan\n   explicitly contains). Their raw results are reported, kept DISTINCT from\n   backend execution status.\n4. Objective orchestrator failures with direct evidence (backend could not\n   launch, required document could not be parsed, subprocess infrastructure\n   failed).\n\n**Verification results are observational and must not rewrite backend execution\nstatus.** A verifier returning non-zero must NEVER, by itself, turn a\nsuccessful backend execution into unverified, stop a phase, or trigger an\nautomatic rerun. Verification is the result of a command, not authority to\nrewrite history.\n\n**Execution control:** Task-local problems (non-zero exit, timeout,\nwrite-policy violation, frame failure, backend launch failure) produce\nacceptance status ``\"unverified\"`` with truthful evidence preserved. They\nMUST NOT stop sibling tasks, later phases, or the plan. Only operator\ncancellation (SIGINT/SIGTERM/dashboard cancel) may terminate a run\n(acceptance status ``\"interrupted\"``). Dependencies are ordering constraints,\nnot acceptance gates — any terminal attempt outcome satisfies a dependency\nedge. The status ``\"failed\"`` is banned from acceptance output.\n\nDo NOT reintroduce -- under any name, feature flag, \"advisory\" wrapper, or\ncompatibility mode -- context completeness/sufficiency scoring, change or\narchitecture assessment used as a gate, intent/scope matching, reconciliation\ngates, no-progress judgments, confidence/risk scores, model/LLM/reviewer\njudgments over status, shadow/adaptive/secondary-verification gates, or\nheuristic retry/failure-classification control flow. Failure classification may\nonly *summarize* an already-established concrete failure; it must never create\none. Retries are permitted only for explicitly defined mechanical backend\nfailures. Future agents must not add these systems back.\n\n---\n\n## Git Rules\n\n- Do not commit:\n  - runtime_state.json\n  - reports/\n  - logs/\n  - virtual environments\n- Do not modify .gitignore unless required by task\n- Do not create excessive commits; prefer grouped logical commits\n\n---\n\n## Allowed Changes\n\n- Implement task requirements\n- Fix failing verification\n- Update relevant tests\n- Improve documentation tied to the task\n\n---\n\n## Forbidden Changes\n\n- Changing architecture without explicit instruction\n- Adding dependencies without justification\n- Modifying unrelated files\n- Deleting important files\n- Bypassing verification\n\n---\n\n## Planning Rules\n\n- Plans are multi-phase\n- Completed sections are immutable\n- Remaining sections may be updated\n- Tasks must align with:\n  - project brief\n  - architecture constraints\n  - active phase\n\n---\n\n## Reporting\n\n- All executions must produce structured reports\n- Reports must include:\n  - changed files\n  - verification results\n  - assessment\n\n---\n\n## Behavior\n\n- Do not ask unnecessary questions\n- Do not stall execution\n- Do not perform broad scans unless required\n- Prefer direct action over analysis\n\n---\n\n## Priority Order\n\nThis ordering guides *implementation decisions* only. It does NOT make\nverification an acceptance authority: verification results are observational\n(see \"Execution Control Flow\"), and never override a concrete backend\nexecution result.\n\n1. Architecture constraints\n2. Task definition\n3. Verification results (observational signal, not acceptance authority)\n4. Plan guidance\n\nIf conflicts occur, follow this order.\n\nAGENTS metadata:\n{\"loaded\": true, \"path\": \"/home/mike/dev/mike/abracapocus/python/abracapocus_2/AGENTS.md\", \"rule_count\": 77, \"sha256_12\": \"3f9b549ba1ce\"}\n"
+      ],
+      "stdout": "Implemented the optional research data layer (Phase G).\n\n**Changed files:**\n- `mike_trade/research/ports.py` — `ResearchDataProvider` Protocol, frozen `ResearchRecord` (input key, symbol, value, source, publication/observed/ingestion UTC timestamps, revision id/number, max-age, missing flag/reason, license/usage/redistributable), frozen `ResearchRequirement` (input key, mandatory/optional, max age, per-symbol applicability via `symbols` + `applies_to()`), `declare_research_requirement()` helper, `missing_record()` factory.\n- `mike_trade/research/service.py` — `ResearchService` (registers per-strategy requirements, fetches only declared inputs, dedupes each `(symbol, input)` once per `refresh()` cycle, bounded LRU cache via `max_cache_entries`), immutable `ResearchContext` (record access + `signal_permitted`/`reason_code`/`permission` with `RESEARCH_MISSING_MANDATORY` / `RESEARCH_STALE_MANDATORY` codes, no provider handle), `NullResearchProvider` default (returns None, no network/files/paid source), reference declarations (`VWAP_REFERENCE_REQUIREMENTS = ()` documented as declaring none, `EXAMPLE_VALUE/MOMENTUM_REQUIREMENTS`, `EXAMPLE_RESEARCH_DECLARATIONS` registry).\n- `tests/unit/test_research_context.py` — 9 tests covering all acceptance criteria (field/UTC presence, undeclared-never-fetched, once-per-cycle sharing across strategies/scenarios, mandatory missing/stale blocking, optional non-blocking, null-provider default, context immutability/no-provider, declaration helper + vwap-none).\n\n**Verification:** `python -m py_compile` + `python -m pytest tests/unit/test_research_context.py -q` → 9 passed, no network/credentials used.\n",
+      "stderr": "",
+      "exit_code": 0,
+      "duration_seconds": 144.31789445877075,
+      "model": "openrouter/meta/muse-spark-1.3-contributor",
+      "model_tags": [],
+      "working_directory": "/home/mike/dev/mike/stocks/python/mike_trade",
+      "changed_files": [
+        {
+          "path": "mike_trade/research/ports.py",
+          "status": "untracked",
+          "code": "??"
+        },
+        {
+          "path": "mike_trade/research/service.py",
+          "status": "untracked",
+          "code": "??"
+        },
+        {
+          "path": "tests/unit/test_research_context.py",
+          "status": "untracked",
+          "code": "??"
+        }
+      ],
+      "diff_summary": "git diff reported no changes",
+      "model_attempts": [
+        {
+          "backend": "pi_cli",
+          "model": "openrouter/meta/muse-spark-1.3-contributor",
+          "exit_code": 0,
+          "stdout": "Implemented the optional research data layer (Phase G).\n\n**Changed files:**\n- `mike_trade/research/ports.py` — `ResearchDataProvider` Protocol, frozen `ResearchRecord` (input key, symbol, value, source, publication/observed/ingestion UTC timestamps, revision id/number, max-age, missing flag/reason, license/usage/redistributable), frozen `ResearchRequirement` (input key, mandatory/optional, max age, per-symbol applicability via `symbols` + `applies_to()`), `declare_research_requirement()` helper, `missing_record()` factory.\n- `mike_trade/research/service.py` — `ResearchService` (registers per-strategy requirements, fetches only declared inputs, dedupes each `(symbol, input)` once per `refresh()` cycle, bounded LRU cache via `max_cache_entries`), immutable `ResearchContext` (record access + `signal_permitted`/`reason_code`/`permission` with `RESEARCH_MISSING_MANDATORY` / `RESEARCH_STALE_MANDATORY` codes, no provider handle), `NullResearchProvider` default (returns None, no network/files/paid source), reference declarations (`VWAP_REFERENCE_REQUIREMENTS = ()` documented as declaring none, `EXAMPLE_VALUE/MOMENTUM_REQUIREMENTS`, `EXAMPLE_RESEARCH_DECLARATIONS` registry).\n- `tests/unit/test_research_context.py` — 9 tests covering all acceptance criteria (field/UTC presence, undeclared-never-fetched, once-per-cycle sharing across strategies/scenarios, mandatory missing/stale blocking, optional non-blocking, null-provider default, context immutability/no-provider, declaration helper + vwap-none).\n\n**Verification:** `python -m py_compile` + `python -m pytest tests/unit/test_research_context.py -q` → 9 passed, no network/credentials used.\n",
+          "stderr": "",
+          "duration_seconds": 144.31789445877075,
+          "changed_files": [
+            {
+              "path": "mike_trade/research/ports.py",
+              "status": "untracked",
+              "code": "??"
+            },
+            {
+              "path": "mike_trade/research/service.py",
+              "status": "untracked",
+              "code": "??"
+            },
+            {
+              "path": "tests/unit/test_research_context.py",
+              "status": "untracked",
+              "code": "??"
+            }
+          ],
+          "diff_summary": "git diff reported no changes",
+          "outcome_classification": "backend_completed_with_changes",
+          "backend_timeout": false,
+          "backend_verification_timeout": false,
+          "timeout_seconds": null
+        }
+      ],
+      "write_policy_violations": [],
+      "outcome_classification": "backend_completed_with_changes",
+      "backend_timeout": false,
+      "backend_verification_timeout": false,
+      "changed_files_at_timeout_exit": [],
+      "abracapocus_verification_ran_after_backend_timeout": false,
+      "verification_owner": "abracapocus",
+      "verification_result": "skipped"
+    }
+  ],
+  "review": {
+    "status": "approved",
+    "findings": [],
+    "summary": "g.5:Review complete",
+    "created_at": "2026-10-08T16:38:59.630747"
+  },
+  "verification": {
+    "status": "skipped",
+    "checks": [],
+    "created_at": "2026-10-08T16:38:59.630754",
+    "notes": "G:skipped",
+    "profile": "focused"
+  },
+  "metadata": {
+    "run_id": "af0bd43e-d7de-4c5f-8689-be97495e44e3",
+    "project_name": "mike_trade",
+    "plan_version": "task-g.5",
+    "task_id": "g.5",
+    "task_title": "Implement optional research adapter and reference symbol declarations",
+    "task_status": "completed",
+    "selected_backend": "pi_cli",
+    "verification_profile": "focused",
+    "backend_reason": "phase_based",
+    "frame_failures": [],
+    "agents_md": {
+      "loaded": true,
+      "path": "/home/mike/dev/mike/abracapocus/python/abracapocus_2/AGENTS.md",
+      "rule_count": 77,
+      "sha256_12": "3f9b549ba1ce"
+    },
+    "phase_results": [
+      {
+        "phase_name": "G",
+        "status": "passed",
+        "verification": "skipped",
+        "task_results": [
+          {
+            "task_id": "g.5",
+            "status": "passed",
+            "acceptance_status": "accepted",
+            "backend": "pi_cli",
+            "backend_outcome_classification": "backend_completed_with_changes",
+            "changed_files": [
+              {
+                "path": "mike_trade/research/ports.py",
+                "status": "untracked",
+                "code": "??"
+              },
+              {
+                "path": "mike_trade/research/service.py",
+                "status": "untracked",
+                "code": "??"
+              },
+              {
+                "path": "tests/unit/test_research_context.py",
+                "status": "untracked",
+                "code": "??"
+              }
+            ],
+            "backend_timeout": false,
+            "backend_elapsed_seconds": 144.31789445877075,
+            "backend_timeout_seconds": null,
+            "changed_files_at_timeout_exit": [],
+            "abracapocus_verification_ran_after_backend_timeout": false,
+            "verification_owner": "abracapocus",
+            "verification_result": "skipped",
+            "verification_status": "skipped",
+            "verification_checks": [],
+            "frame_failure": false,
+            "retry_attempts": []
+          }
+        ]
+      }
+    ]
+  }
+}

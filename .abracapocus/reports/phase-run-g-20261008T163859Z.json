@@ -1,0 +1,95 @@
+{
+  "run_at": "2026-10-08T16:38:59.696277",
+  "phase_dir": "/home/mike/dev/mike/stocks/python/mike_trade/.abracapocus/plans/ACTIVE/MIKE_TRADE_COMPLETE_PRODUCT/g",
+  "status": "passed",
+  "counts": {
+    "passed": 5,
+    "failed": 0,
+    "blocked": 0,
+    "skipped": 0,
+    "unverified": 0
+  },
+  "tasks": [
+    {
+      "task_id": "g.1",
+      "task_file": "/home/mike/dev/mike/stocks/python/mike_trade/.abracapocus/plans/ACTIVE/MIKE_TRADE_COMPLETE_PRODUCT/g/task_g.1_implement_alpaca_iex_stock_websocket_feed_and_reconnect_semantics.json",
+      "status": "passed",
+      "acceptance_status": "accepted",
+      "task_verification": {
+        "status": "skipped",
+        "checks": [],
+        "owner": "abracapocus"
+      },
+      "run_id": "4eb048e0-ce13-40a7-b832-984d93676ec2",
+      "write_policy_violations": [],
+      "failure_classification": null,
+      "reviewer_summary": "g.1:Review complete"
+    },
+    {
+      "task_id": "g.2",
+      "task_file": "/home/mike/dev/mike/stocks/python/mike_trade/.abracapocus/plans/ACTIVE/MIKE_TRADE_COMPLETE_PRODUCT/g/task_g.2_implement_alpaca_historical_bar_acquisition_and_bounded_rest_fallback.json",
+      "status": "passed",
+      "acceptance_status": "accepted",
+      "task_verification": {
+        "status": "skipped",
+        "checks": [],
+        "owner": "abracapocus"
+      },
+      "run_id": "c4311896-462f-4037-bb4f-1691e0bcf252",
+      "write_policy_violations": [],
+      "failure_classification": null,
+      "reviewer_summary": "g.2:Review complete"
+    },
+    {
+      "task_id": "g.3",
+      "task_file": "/home/mike/dev/mike/stocks/python/mike_trade/.abracapocus/plans/ACTIVE/MIKE_TRADE_COMPLETE_PRODUCT/g/task_g.3_implement_shared_subscription_manager_event_fanout_and_immutable_cache.json",
+      "status": "passed",
+      "acceptance_status": "accepted",
+      "task_verification": {
+        "status": "skipped",
+        "checks": [],
+        "owner": "abracapocus"
+      },
+      "run_id": "89102be0-3e82-46f8-933e-44ef52502669",
+      "write_policy_violations": [],
+      "failure_classification": null,
+      "reviewer_summary": "g.3:Review complete"
+    },
+    {
+      "task_id": "g.4",
+      "task_file": "/home/mike/dev/mike/stocks/python/mike_trade/.abracapocus/plans/ACTIVE/MIKE_TRADE_COMPLETE_PRODUCT/g/task_g.4_add_feed_freshness_provenance_gaps_and_rate_limit_health_tracking.json",
+      "status": "passed",
+      "acceptance_status": "accepted",
+      "task_verification": {
+        "status": "skipped",
+        "checks": [],
+        "owner": "abracapocus"
+      },
+      "run_id": "364d96df-369e-46d0-9392-2e438cbbed48",
+      "write_policy_violations": [],
+      "failure_classification": null,
+      "reviewer_summary": "g.4:Review complete"
+    },
+    {
+      "task_id": "g.5",
+      "task_file": "/home/mike/dev/mike/stocks/python/mike_trade/.abracapocus/plans/ACTIVE/MIKE_TRADE_COMPLETE_PRODUCT/g/task_g.5_implement_optional_research_adapter_and_reference_symbol_declarations.json",
+      "status": "passed",
+      "acceptance_status": "accepted",
+      "task_verification": {
+        "status": "skipped",
+        "checks": [],
+        "owner": "abracapocus"
+      },
+      "run_id": "af0bd43e-d7de-4c5f-8689-be97495e44e3",
+      "write_policy_violations": [],
+      "failure_classification": null,
+      "reviewer_summary": "g.5:Review complete"
+    }
+  ],
+  "phase_verification": {
+    "status": "warning",
+    "checks": [],
+    "notes": "phase verification complete",
+    "run_when": "all_tasks_pass"
+  }
+}
