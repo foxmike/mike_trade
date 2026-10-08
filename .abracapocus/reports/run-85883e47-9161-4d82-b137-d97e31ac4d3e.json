@@ -1,0 +1,142 @@
+{
+  "plan_summary": "Task run: Expose explicit bounded backtest CLI and saved results index",
+  "backend_executions": [
+    {
+      "backend": "pi_cli",
+      "command": [
+        "pi",
+        "-p",
+        "--provider",
+        "openrouter",
+        "--model",
+        "meta/muse-spark-1.3-contributor",
+        "Task: Expose explicit bounded backtest CLI and saved results index\nDescription: Implement the operator-facing backtest command layer in mike_trade/backtest/commands.py. The application CLI and Makefile recipes delegate to it. Business logic stays in the application layer, and these commands only parse, validate, delegate and render.\n\nCommands, as plain functions plus a registration hook compatible with the existing CLI command pattern:\n- backtest run: requires explicit --symbols (1-10), --start and --end (bounded window), --dataset (path to a local offline dataset), --seed and --config. Optional: --role research|dev|holdout and --holdout-lock. It builds a BacktestRequest and delegates to the backtest runner.\n  - It rejects a missing window, a window longer than the configured maximum, more than 10 symbols, missing dataset, or any network/download source with a clear nonzero-exit error.\n  - There is never an implicit history download.\n- backtest list: the saved results index. It lists prior runs with run_id, created_at, symbols, window, role, config hash, seed, trade count and net return. It is bounded by --limit (default e.g. 20).\n- backtest show <run_id>: prints the manifest and summary metrics.\n- backtest export <run_id> --format csv|json --out <path>: writes trades and metrics.\n\nThe results index reads from the runner's persisted results/manifest store. It is read-only and never mutates manifests. Output is deterministic (stable ordering) and supports a --json flag for machine-readable output.\n\nThe command layer must never load broker credentials or construct a broker client, and it must not touch live/paper/shadow account state.\n\nWrite tests/unit/test_backtest_cli.py. It must not run real backtests:\n- inject a fake runner/results store\n- assert argument validation (positive and negative)\n- assert delegation of exact parameters\n- assert index ordering and the --limit bound\n- assert --json output schema\n- assert export file contents\n- assert holdout without lock is refused\n- assert no credential environment variables are read (monkeypatch os.environ to contain fake ALPACA_* keys and assert they are not accessed or used)\n\nBefore editing, inspect:\n- mike_trade/cli.py and mike_trade/controls/commands.py, mike_trade/controls/config_commands.py (existing command/registration pattern and exit-code conventions)\n- mike_trade/backtest/runner.py and mike_trade/backtest/manifest.py interfaces as produced in q.3. If not yet present at execution time, code against the q.3 symbol names BacktestRunner, BacktestRequest, BacktestResult, RunManifest, PeriodRole and compute_metrics via injected protocols.\n- mike_trade/backtest/feed.py (q.1) for dataset/provenance loading entry points\n- mike_trade/persistence/readstore.py (read-only query conventions)\n\nDo not edit mike_trade/cli.py or the Makefile in this task. Expose a register function that the CLI can call.\nPhase: Q\nAcceptance criteria:\n  - mike_trade/backtest/commands.py defines run, list, show and export command handlers and a register function compatible with the existing CLI command pattern\n  - backtest run with 0 or more than 10 symbols, a missing start/end, a window exceeding the configured maximum, or a missing dataset path exits nonzero with a clear error and does not call the runner\n  - backtest run never downloads data; a dataset argument that is a URL/remote source is rejected\n  - --role holdout without --holdout-lock is refused before the runner is invoked\n  - A valid run delegates a BacktestRequest with exactly the parsed symbols, window, dataset, seed, config and role to the injected runner\n  - backtest list returns runs in deterministic order (created_at desc, then run_id) and never more than --limit rows\n  - backtest list/show --json output contains run_id, symbols, window, role, config_hash, seed, trade_count and net_return\n  - backtest export writes CSV/JSON files whose trade rows and metrics match the fake store contents\n  - Command handlers do not mutate manifests or results and do not construct any broker client or read ALPACA_* credentials\n  - tests/unit/test_backtest_cli.py exists with positive and negative tests and passes when run alone\nContext: AGENTS.md guidance:\n# AGENTS.md\n## Purpose\nThis repository is operated by an autonomous multi-agent system (abracapocus_2).\nAll agents must follow these rules when modifying the codebase.\n---\n## Core Principles\n- Minimal blast radius: only modify what is required for the task\n- Deterministic verification: all changes must be verifiable via code (tests, compile, scripts)\n- No architecture drift: do not introduce new frameworks or major design changes unless explicitly required\n- No unrelated refactors\n- All changes must be reproducible from a clean clone\n---\n## Project Structure\n- docs/ → design, plans, architecture constraints\n- plans/ → master plans\n- phases/ → phase definitions\n- tasks/ → executable task documents\n- backends/ → CLI backend adapters\n- agents/ → specialist agents\n- runtime/ → orchestration, routing, state\n...(truncated)\n\n## Task Contract Constraints\n\n{\n  \"allowed_symbols\": [\n    \"register\",\n    \"cmd_backtest_run\",\n    \"cmd_backtest_list\",\n    \"cmd_backtest_show\",\n    \"cmd_backtest_export\",\n    \"BacktestResultsIndex\"\n  ],\n  \"allowed_write_paths\": [\n    \"mike_trade/backtest/commands.py\",\n    \"tests/unit/test_backtest_cli.py\"\n  ],\n  \"forbidden_changes\": [\n    \"modify files outside allowed_write_paths, including mike_trade/cli.py, Makefile, runner.py and manifest.py\",\n    \"change PLAN_SKELETON.json or other planning artifacts\",\n    \"put backtest business logic in Makefile recipes or CLI parsing code\",\n    \"trigger implicit or broad historical data downloads\",\n    \"load broker credentials or construct a broker client\",\n    \"execute a real backtest inside unit tests\",\n    \"create live broker orders or run broad test suites/backtests\"\n  ]\n}\nAGENTS.md:\n# AGENTS.md\n\n## Purpose\n\nThis repository is operated by an autonomous multi-agent system (abracapocus_2).\nAll agents must follow these rules when modifying the codebase.\n\n---\n\n## Core Principles\n\n- Minimal blast radius: only modify what is required for the task\n- Deterministic verification: all changes must be verifiable via code (tests, compile, scripts)\n- No architecture drift: do not introduce new frameworks or major design changes unless explicitly required\n- No unrelated refactors\n- All changes must be reproducible from a clean clone\n\n---\n\n## Project Structure\n\n- docs/ → design, plans, architecture constraints\n- plans/ → master plans\n- phases/ → phase definitions\n- tasks/ → executable task documents\n- backends/ → CLI backend adapters\n- agents/ → specialist agents\n- runtime/ → orchestration, routing, state\n- reports/ → execution reports (DO NOT MODIFY MANUALLY)\n- state/runtime_state.json → runtime state (DO NOT COMMIT)\n\n---\n\n## Task Execution Rules\n\n- Always operate from a task document when available\n- Respect:\n  - selected_backend\n  - verification_profile\n  - acceptance_criteria\n- If a task conflicts with architecture constraints or phase scope:\n  - STOP and report conflict\n\n---\n\n## Backend Rules\n\n- Backends must:\n  - execute commands deterministically\n  - capture stdout, stderr, exit_code\n  - not silently fail\n- Do not invent backend interfaces; use existing adapters\n- Codex CLI, Aider, Gemini, Claude Code should be invoked through backends only\n\n---\n\n## Verification Rules\n\n- Verification must be deterministic\n- Preferred checks:\n  - pytest\n  - python -m py_compile\n- Do not rely on model self-evaluation\n\n---\n\n## Execution Control Flow (PERMANENT ARCHITECTURAL RULE)\n\n**HEURISTIC INFERENCE MUST NEVER PARTICIPATE IN ABRACAPOCUS EXECUTION CONTROL FLOW.**\n\nAbracapocus must not determine execution success, failure, acceptance,\nrejection, blocking, retry eligibility, phase progression, or completion from\nheuristic inference. A heuristic is any conclusion that is *inferred* rather\nthan *directly established by an explicit executable contract or a concrete\nruntime fact*.\n\nRuntime status is derived ONLY from concrete, mechanically observable facts:\n\n1. The backend process exit code. A backend that exits `0` (with no hard\n   write-policy violation) is a successful execution.\n2. Objectively observed hard write-policy violations (changed paths outside the\n   declared allowed write paths).\n3. Explicit operator-authored commands (task/phase verification the plan\n   explicitly contains). Their raw results are reported, kept DISTINCT from\n   backend execution status.\n4. Objective orchestrator failures with direct evidence (backend could not\n   launch, required document could not be parsed, subprocess infrastructure\n   failed).\n\n**Verification results are observational and must not rewrite backend execution\nstatus.** A verifier returning non-zero must NEVER, by itself, turn a\nsuccessful backend execution into unverified, stop a phase, or trigger an\nautomatic rerun. Verification is the result of a command, not authority to\nrewrite history.\n\n**Execution control:** Task-local problems (non-zero exit, timeout,\nwrite-policy violation, frame failure, backend launch failure) produce\nacceptance status ``\"unverified\"`` with truthful evidence preserved. They\nMUST NOT stop sibling tasks, later phases, or the plan. Only operator\ncancellation (SIGINT/SIGTERM/dashboard cancel) may terminate a run\n(acceptance status ``\"interrupted\"``). Dependencies are ordering constraints,\nnot acceptance gates — any terminal attempt outcome satisfies a dependency\nedge. The status ``\"failed\"`` is banned from acceptance output.\n\nDo NOT reintroduce -- under any name, feature flag, \"advisory\" wrapper, or\ncompatibility mode -- context completeness/sufficiency scoring, change or\narchitecture assessment used as a gate, intent/scope matching, reconciliation\ngates, no-progress judgments, confidence/risk scores, model/LLM/reviewer\njudgments over status, shadow/adaptive/secondary-verification gates, or\nheuristic retry/failure-classification control flow. Failure classification may\nonly *summarize* an already-established concrete failure; it must never create\none. Retries are permitted only for explicitly defined mechanical backend\nfailures. Future agents must not add these systems back.\n\n---\n\n## Git Rules\n\n- Do not commit:\n  - runtime_state.json\n  - reports/\n  - logs/\n  - virtual environments\n- Do not modify .gitignore unless required by task\n- Do not create excessive commits; prefer grouped logical commits\n\n---\n\n## Allowed Changes\n\n- Implement task requirements\n- Fix failing verification\n- Update relevant tests\n- Improve documentation tied to the task\n\n---\n\n## Forbidden Changes\n\n- Changing architecture without explicit instruction\n- Adding dependencies without justification\n- Modifying unrelated files\n- Deleting important files\n- Bypassing verification\n\n---\n\n## Planning Rules\n\n- Plans are multi-phase\n- Completed sections are immutable\n- Remaining sections may be updated\n- Tasks must align with:\n  - project brief\n  - architecture constraints\n  - active phase\n\n---\n\n## Reporting\n\n- All executions must produce structured reports\n- Reports must include:\n  - changed files\n  - verification results\n  - assessment\n\n---\n\n## Behavior\n\n- Do not ask unnecessary questions\n- Do not stall execution\n- Do not perform broad scans unless required\n- Prefer direct action over analysis\n\n---\n\n## Priority Order\n\nThis ordering guides *implementation decisions* only. It does NOT make\nverification an acceptance authority: verification results are observational\n(see \"Execution Control Flow\"), and never override a concrete backend\nexecution result.\n\n1. Architecture constraints\n2. Task definition\n3. Verification results (observational signal, not acceptance authority)\n4. Plan guidance\n\nIf conflicts occur, follow this order.\n\nAGENTS metadata:\n{\"loaded\": true, \"path\": \"/home/mike/dev/mike/abracapocus/python/abracapocus_2/AGENTS.md\", \"rule_count\": 77, \"sha256_12\": \"3f9b549ba1ce\"}\n"
+      ],
+      "stdout": "Done. All 37 tests pass under `python3.12 -m pytest tests/unit/test_backtest_cli.py`, and the only files I created are the two allowed paths (`mike_trade/backtest/commands.py`, `tests/unit/test_backtest_cli.py` — the `.abracapocus` entries are harness artifacts). `mike_trade/cli.py`, `Makefile`, `runner.py`, and `manifest.py` are untouched.\n\nWhat was built:\n\n**`mike_trade/backtest/commands.py`** — parse/validate/delegate/render only:\n- `register(subparsers)` wires a `backtest` group (`run|list|show|export`) with argparse defaults pointing at the handlers, mirroring `register_config_commands`.\n- `cmd_backtest_run` requires `--symbols` (1–10, repeatable/comma-separated), `--start`/`--end` (bounded, ≤365-day max), `--dataset`, `--seed`, `--config`; optional `--role research|dev|holdout` + `--holdout-lock`. It rejects remote datasets (`scheme://` → \"never download\" error), missing files, oversized windows, and holdout-without-lock with exit 2 **before** touching the runner, then delegates a real `BacktestRequest` (dataset folded into `config[\"dataset\"]`, `broker=None` always) to the injected runner, awaiting it only if awaitable.\n- `BacktestResultsIndex` is read-only over `<results-dir>/*.manifest.json` + sibling results files: deterministic order (created_at desc, run_id asc tiebreak), `--limit` bound, summaries via the application layer's `compute_metrics`. Never writes or mutates.\n- `list`/`show` support `--json` with the required schema (run_id, symbols, window, role, config_hash, seed, trade_count, net_return); `export` writes JSON (trades+metrics) or CSV (fixed trade columns plus `# key=value` metric lines).\n- No `os` import, no credential reads, no broker construction, no network — verified by grep (zero hits for environ/getenv/alpaca).\n\n**`tests/unit/test_backtest_cli.py`** — 37 tests, no real backtests: fake recording runner + fixture manifest/results files through the real index. Covers exact-parameter delegation, every negative validation (0/11 symbols, missing/inverted/oversized window, missing/remote dataset, bad role, holdout-without-lock), ordering tiebreak + limit bound, JSON schemas, CSV/JSON export round-trip against store contents (net_return `0.00098`, pnl `98` from paired fills), store immutability via hashes, network isolation via sabotaged socket/urllib, credential non-access via a tracking `os.environ` seeded with fake `ALPACA_*`/`APCA_*` keys, and `register` argparse wiring for all four subcommands.\n\nOne environment note: the tree requires Python ≥3.12 (3.11 can't parse `market_data/candles.py`), and PyYAML isn't installed for 3.12 — so config loading prefers JSON with a YAML fallback, and the tests use JSON fixtures.\n",
+      "stderr": "",
+      "exit_code": 0,
+      "duration_seconds": 492.42496275901794,
+      "model": "openrouter/meta/muse-spark-1.3-contributor",
+      "model_tags": [],
+      "working_directory": "/home/mike/dev/mike/stocks/python/mike_trade",
+      "changed_files": [
+        {
+          "path": "mike_trade/backtest/commands.py",
+          "status": "untracked",
+          "code": "??"
+        },
+        {
+          "path": "tests/unit/test_backtest_cli.py",
+          "status": "untracked",
+          "code": "??"
+        }
+      ],
+      "diff_summary": "git diff reported no changes",
+      "model_attempts": [
+        {
+          "backend": "pi_cli",
+          "model": "openrouter/meta/muse-spark-1.3-contributor",
+          "exit_code": 0,
+          "stdout": "Done. All 37 tests pass under `python3.12 -m pytest tests/unit/test_backtest_cli.py`, and the only files I created are the two allowed paths (`mike_trade/backtest/commands.py`, `tests/unit/test_backtest_cli.py` — the `.abracapocus` entries are harness artifacts). `mike_trade/cli.py`, `Makefile`, `runner.py`, and `manifest.py` are untouched.\n\nWhat was built:\n\n**`mike_trade/backtest/commands.py`** — parse/validate/delegate/render only:\n- `register(subparsers)` wires a `backtest` group (`run|list|show|export`) with argparse defaults pointing at the handlers, mirroring `register_config_commands`.\n- `cmd_backtest_run` requires `--symbols` (1–10, repeatable/comma-separated), `--start`/`--end` (bounded, ≤365-day max), `--dataset`, `--seed`, `--config`; optional `--role research|dev|holdout` + `--holdout-lock`. It rejects remote datasets (`scheme://` → \"never download\" error), missing files, oversized windows, and holdout-without-lock with exit 2 **before** touching the runner, then delegates a real `BacktestRequest` (dataset folded into `config[\"dataset\"]`, `broker=None` always) to the injected runner, awaiting it only if awaitable.\n- `BacktestResultsIndex` is read-only over `<results-dir>/*.manifest.json` + sibling results files: deterministic order (created_at desc, run_id asc tiebreak), `--limit` bound, summaries via the application layer's `compute_metrics`. Never writes or mutates.\n- `list`/`show` support `--json` with the required schema (run_id, symbols, window, role, config_hash, seed, trade_count, net_return); `export` writes JSON (trades+metrics) or CSV (fixed trade columns plus `# key=value` metric lines).\n- No `os` import, no credential reads, no broker construction, no network — verified by grep (zero hits for environ/getenv/alpaca).\n\n**`tests/unit/test_backtest_cli.py`** — 37 tests, no real backtests: fake recording runner + fixture manifest/results files through the real index. Covers exact-parameter delegation, every negative validation (0/11 symbols, missing/inverted/oversized window, missing/remote dataset, bad role, holdout-without-lock), ordering tiebreak + limit bound, JSON schemas, CSV/JSON export round-trip against store contents (net_return `0.00098`, pnl `98` from paired fills), store immutability via hashes, network isolation via sabotaged socket/urllib, credential non-access via a tracking `os.environ` seeded with fake `ALPACA_*`/`APCA_*` keys, and `register` argparse wiring for all four subcommands.\n\nOne environment note: the tree requires Python ≥3.12 (3.11 can't parse `market_data/candles.py`), and PyYAML isn't installed for 3.12 — so config loading prefers JSON with a YAML fallback, and the tests use JSON fixtures.\n",
+          "stderr": "",
+          "duration_seconds": 492.42496275901794,
+          "changed_files": [
+            {
+              "path": "mike_trade/backtest/commands.py",
+              "status": "untracked",
+              "code": "??"
+            },
+            {
+              "path": "tests/unit/test_backtest_cli.py",
+              "status": "untracked",
+              "code": "??"
+            }
+          ],
+          "diff_summary": "git diff reported no changes",
+          "outcome_classification": "backend_completed_with_changes",
+          "backend_timeout": false,
+          "backend_verification_timeout": false,
+          "timeout_seconds": null
+        }
+      ],
+      "write_policy_violations": [],
+      "outcome_classification": "backend_completed_with_changes",
+      "backend_timeout": false,
+      "backend_verification_timeout": false,
+      "changed_files_at_timeout_exit": [],
+      "abracapocus_verification_ran_after_backend_timeout": false,
+      "verification_owner": "abracapocus",
+      "verification_result": "skipped"
+    }
+  ],
+  "review": {
+    "status": "approved",
+    "findings": [],
+    "summary": "q.4:Review complete",
+    "created_at": "2026-10-08T22:43:52.058824"
+  },
+  "verification": {
+    "status": "skipped",
+    "checks": [],
+    "created_at": "2026-10-08T22:43:52.058832",
+    "notes": "Q:skipped",
+    "profile": "focused"
+  },
+  "metadata": {
+    "run_id": "85883e47-9161-4d82-b137-d97e31ac4d3e",
+    "project_name": "mike_trade",
+    "plan_version": "task-q.4",
+    "task_id": "q.4",
+    "task_title": "Expose explicit bounded backtest CLI and saved results index",
+    "task_status": "completed",
+    "selected_backend": "pi_cli",
+    "verification_profile": "focused",
+    "backend_reason": "phase_based",
+    "frame_failures": [],
+    "agents_md": {
+      "loaded": true,
+      "path": "/home/mike/dev/mike/abracapocus/python/abracapocus_2/AGENTS.md",
+      "rule_count": 77,
+      "sha256_12": "3f9b549ba1ce"
+    },
+    "phase_results": [
+      {
+        "phase_name": "Q",
+        "status": "passed",
+        "verification": "skipped",
+        "task_results": [
+          {
+            "task_id": "q.4",
+            "status": "passed",
+            "acceptance_status": "accepted",
+            "backend": "pi_cli",
+            "backend_outcome_classification": "backend_completed_with_changes",
+            "changed_files": [
+              {
+                "path": "mike_trade/backtest/commands.py",
+                "status": "untracked",
+                "code": "??"
+              },
+              {
+                "path": "tests/unit/test_backtest_cli.py",
+                "status": "untracked",
+                "code": "??"
+              }
+            ],
+            "backend_timeout": false,
+            "backend_elapsed_seconds": 492.42496275901794,
+            "backend_timeout_seconds": null,
+            "changed_files_at_timeout_exit": [],
+            "abracapocus_verification_ran_after_backend_timeout": false,
+            "verification_owner": "abracapocus",
+            "verification_result": "skipped",
+            "verification_status": "skipped",
+            "verification_checks": [],
+            "frame_failure": false,
+            "retry_attempts": []
+          }
+        ]
+      }
+    ]
+  }
+}
