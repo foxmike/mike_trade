@@ -1,0 +1,158 @@
+{
+  "plan_summary": "Task run: Implement historical replay clock and as-of deterministic event provider",
+  "backend_executions": [
+    {
+      "backend": "claude_code_cli",
+      "command": [
+        "claude",
+        "-p",
+        "Task: Implement historical replay clock and as-of deterministic event provider\nPhase: Q\nDescription: Build the base of the production historical replay/backtest subsystem: a simulated Clock and an as-of historical MarketDataProvider. Later phase-q tasks (execution simulator, runner/manifest, CLI, integrity tests) build on these. This is production code, not a disposable script.\n\n1. mike_trade/backtest/clock.py: implement ReplayClock. It conforms to the application's existing Clock port, so engine/scheduler/strategy code reads time only through it.\n   - Time is timezone-aware UTC. It only moves forward, through explicit advance_to(t) calls driven by the replay event loop. Trying to move backwards or pass a naive datetime raises an error.\n   - It must not read the wall clock or sleep in real time.\n   - It exposes America/New_York session presentation through the existing exchange session calendar in mike_trade/scheduling/calendar.py. Covered: regular open/close, early closes, holidays/no-session days, session boundaries.\n\n2. mike_trade/backtest/feed.py: implement HistoricalReplayFeed, a MarketDataProvider adapter. It is injected in place of the live Alpaca feed and wraps a bounded, operator-supplied, offline dataset: in-memory records or local fixture files. No network download.\n   - It carries explicit provenance through a DataProvenance value: source, feed (for example IEX, not consolidated SIP), revision/vintage, adjustment policy and dataset content hash.\n   - It emits events in strict chronological order with a deterministic tie-break for equal timestamps: event kind, then symbol, then sequence.\n   - Point-in-time availability: a 1-minute bar covering [t, t+1m) becomes available only at its completion time t+1m plus an optional configured availability latency. Developing/partial candles are never exposed as completed. as_of(t) queries never return any record with availability time > t.\n   - Future-adjusted data is refused (fail closed) unless the provenance declares it point-in-time. This includes split-adjusted series that use adjustment factors announced after the evaluation time, and revised bars whose revision vintage is later than the evaluation time.\n   - Splits are represented as dated corporate-action events that are applied only from their effective time.\n   - Halts, gaps and missing bars are surfaced as explicit data-quality markers that reuse the existing freshness/quality types. They are never forward-filled into synthetic bars.\n   - Quotes/bid-ask: if the dataset has no quotes, the feed reports quote fidelity as UNAVAILABLE. When quotes exist but are sampled, it reports them as BAR_DERIVED/SAMPLED. Downstream fill logic can then flag the limitation instead of assuming quote evidence.\n   - A deterministic seed is accepted and exposed for any randomized tie-breaking or jitter. The same dataset + seed must yield an identical event sequence.\n   - All prices/volumes/quantities are Decimal.\n\n3. tests/unit/test_replay_clock.py: positive and negative tests for both modules, using only small synthetic in-memory fixtures. No network, no credentials, no Alpaca client imports.\n\nBefore editing, inspect:\n- mike_trade/market_data/ports.py (MarketDataProvider port and bar/quote types)\n- mike_trade/domain/market.py (bar, quote and provenance value types)\n- mike_trade/market_data/candles.py and mike_trade/market_data/context.py (completed-bar semantics, session VWAP context)\n- mike_trade/market_data/quality.py (freshness/gap/halt markers)\n- mike_trade/scheduling/calendar.py (exchange session calendar, early closes)\n- the existing Clock port and any system/fake clock implementations under mike_trade/\n- mike_trade/shadow/scenarios.py (how a feed is fanned out to consumers)\n\nDecision budget: if an existing port shape is ambiguous, adapt to it with a thin adapter class in feed.py or clock.py rather than changing the port. Record the choice in a module docstring.\nContext: AGENTS.md guidance:\n# AGENTS.md\n## Purpose\nThis repository is operated by an autonomous multi-agent system (abracapocus_2).\nAll agents must follow these rules when modifying the codebase.\n---\n## Core Principles\n- Minimal blast radius: only modify what is required for the task\n- Deterministic verification: all changes must be verifiable via code (tests, compile, scripts)\n- No architecture drift: do not introduce new frameworks or major design changes unless explicitly required\n- No unrelated refactors\n- All changes must be reproducible from a clean clone\n---\n## Project Structure\n- docs/ → design, plans, architecture constraints\n- plans/ → master plans\n- phases/ → phase definitions\n- tasks/ → executable task documents\n- backends/ → CLI backend adapters\n- agents/ → specialist agents\n- runtime/ → orchestration, routing, state\n...(truncated)\n\n## Task Contract Constraints\n\n{\n  \"allowed_symbols\": [\n    \"ReplayClock\",\n    \"HistoricalReplayFeed\",\n    \"DataProvenance\",\n    \"QuoteFidelity\",\n    \"ReplayEvent\",\n    \"LookaheadError\",\n    \"FutureAdjustedDataError\"\n  ],\n  \"allowed_write_paths\": [\n    \"mike_trade/backtest/clock.py\",\n    \"mike_trade/backtest/feed.py\",\n    \"tests/unit/test_replay_clock.py\"\n  ],\n  \"forbidden_changes\": [\n    \"modify files outside allowed_write_paths, including existing market_data ports, scheduling calendar or domain types\",\n    \"change PLAN_SKELETON.json or other planning artifacts\",\n    \"download or fetch historical data over the network, or read broker credentials\",\n    \"expose developing/partial candles as completed bars or forward-fill missing bars\",\n    \"read the wall clock or sleep in real time inside replay code\",\n    \"use float for prices, volumes or quantities\",\n    \"create live broker orders or run broad test suites/backtests\"\n  ]\n}\n\nAGENTS.md guidance:\n# AGENTS.md\n\n## Purpose\n\nThis repository is operated by an autonomous multi-agent system (abracapocus_2).\nAll agents must follow these rules when modifying the codebase.\n\n---\n\n## Core Principles\n\n- Minimal blast radius: only modify what is required for the task\n- Deterministic verification: all changes must be verifiable via code (tests, compile, scripts)\n- No architecture drift: do not introduce new frameworks or major design changes unless explicitly required\n- No unrelated refactors\n- All changes must be reproducible from a clean clone\n\n---\n\n## Project Structure\n\n- docs/ → design, plans, architecture constraints\n- plans/ → master plans\n- phases/ → phase definitions\n- tasks/ → executable task documents\n- backends/ → CLI backend adapters\n- agents/ → specialist agents\n- runtime/ → orchestration, routing, state\n- reports/ → execution reports (DO NOT MODIFY MANUALLY)\n- state/runtime_state.json → runtime state (DO NOT COMMIT)\n\n---\n\n## Task Execution Rules\n\n- Always operate from a task document when available\n- Respect:\n  - selected_backend\n  - verification_profile\n  - acceptance_criteria\n- If a task conflicts with architecture constraints or phase scope:\n  - STOP and report conflict\n\n---\n\n## Backend Rules\n\n- Backends must:\n  - execute commands deterministically\n  - capture stdout, stderr, exit_code\n  - not silently fail\n- Do not invent backend interfaces; use existing adapters\n- Codex CLI, Aider, Gemini, Claude Code should be invoked through backends only\n\n---\n\n## Verification Rules\n\n- Verification must be deterministic\n- Preferred checks:\n  - pytest\n  - python -m py_compile\n- Do not rely on model self-evaluation\n\n---\n\n## Execution Control Flow (PERMANENT ARCHITECTURAL RULE)\n\n**HEURISTIC INFERENCE MUST NEVER PARTICIPATE IN ABRACAPOCUS EXECUTION CONTROL FLOW.**\n\nAbracapocus must not determine execution success, failure, acceptance,\nrejection, blocking, retry eligibility, phase progression, or completion from\nheuristic inference. A heuristic is any conclusion that is *inferred* rather\nthan *directly established by an explicit executable contract or a concrete\nruntime fact*.\n\nRuntime status is derived ONLY from concrete, mechanically observable facts:\n\n1. The backend process exit code. A backend that exits `0` (with no hard\n   write-policy violation) is a successful execution.\n2. Objectively observed hard write-policy violations (changed paths outside the\n   declared allowed write paths).\n3. Explicit operator-authored commands (task/phase verification the plan\n   explicitly contains). Their raw results are reported, kept DISTINCT from\n   backend execution status.\n4. Objective orchestrator failures with direct evidence (backend could not\n   launch, required document could not be parsed, subprocess infrastructure\n   failed).\n\n**Verification results are observational and must not rewrite backend execution\nstatus.** A verifier returning non-zero must NEVER, by itself, turn a\nsuccessful backend execution into unverified, stop a phase, or trigger an\nautomatic rerun. Verification is the result of a command, not authority to\nrewrite history.\n\n**Execution control:** Task-local problems (non-zero exit, timeout,\nwrite-policy violation, frame failure, backend launch failure) produce\nacceptance status ``\"unverified\"`` with truthful evidence preserved. They\nMUST NOT stop sibling tasks, later phases, or the plan. Only operator\ncancellation (SIGINT/SIGTERM/dashboard cancel) may terminate a run\n(acceptance status ``\"interrupted\"``). Dependencies are ordering constraints,\nnot acceptance gates — any terminal attempt outcome satisfies a dependency\nedge. The status ``\"failed\"`` is banned from acceptance output.\n\nDo NOT reintroduce -- under any name, feature flag, \"advisory\" wrapper, or\ncompatibility mode -- context completeness/sufficiency scoring, change or\narchitecture assessment used as a gate, intent/scope matching, reconciliation\ngates, no-progress judgments, confidence/risk scores, model/LLM/reviewer\njudgments over status, shadow/adaptive/secondary-verification gates, or\nheuristic retry/failure-classification control flow. Failure classification may\nonly *summarize* an already-established concrete failure; it must never create\none. Retries are permitted only for explicitly defined mechanical backend\nfailures. Future agents must not add these systems back.\n\n---\n\n## Git Rules\n\n- Do not commit:\n  - runtime_state.json\n  - reports/\n  - logs/\n  - virtual environments\n- Do not modify .gitignore unless required by task\n- Do not create excessive commits; prefer grouped logical commits\n\n---\n\n## Allowed Changes\n\n- Implement task requirements\n- Fix failing verification\n- Update relevant tests\n- Improve documentation tied to the task\n\n---\n\n## Forbidden Changes\n\n- Changing architecture without explicit instruction\n- Adding dependencies without justification\n- Modifying unrelated files\n- Deleting important files\n- Bypassing verification\n\n---\n\n## Planning Rules\n\n- Plans are multi-phase\n- Completed sections are immutable\n- Remaining sections may be updated\n- Tasks must align with:\n  - project brief\n  - architecture constraints\n  - active phase\n\n---\n\n## Reporting\n\n- All executions must produce structured reports\n- Reports must include:\n  - changed files\n  - verification results\n  - assessment\n\n---\n\n## Behavior\n\n- Do not ask unnecessary questions\n- Do not stall execution\n- Do not perform broad scans unless required\n- Prefer direct action over analysis\n\n---\n\n## Priority Order\n\nThis ordering guides *implementation decisions* only. It does NOT make\nverification an acceptance authority: verification results are observational\n(see \"Execution Control Flow\"), and never override a concrete backend\nexecution result.\n\n1. Architecture constraints\n2. Task definition\n3. Verification results (observational signal, not acceptance authority)\n4. Plan guidance\n\nIf conflicts occur, follow this order.\n",
+        "--dangerously-skip-permissions",
+        "--output-format",
+        "text",
+        "--model",
+        "claude-sonnet-5-5"
+      ],
+      "stdout": "I added `ReplayClock`, `HistoricalReplayFeed` and the tests, and all 39 new tests pass. Ruff and mypy are clean on the new code. I ran only `tests/unit/test_replay_clock.py` and `py_compile`, as the contract's no-broad-suites rule requires. Nothing is committed.\n\n## What I built\n- **`mike_trade/backtest/clock.py`**: `ReplayClock` implements `now()`, so it fits the existing `runtime.ClockPort`.\n  - It moves forward only through `advance_to(t)`. A backwards move or a naive datetime raises `ValueError`, and moving to the same instant is a no-op.\n  - It never reads the wall clock and never sleeps.\n  - It presents America/New_York time through `scheduling/calendar.py`: open and close, early closes, holidays and no-session days, session boundaries, and the next session. Dates outside the calendar's supported years give `UNKNOWN` rather than an error.\n- **`mike_trade/backtest/feed.py`**: it adds `DataProvenance`, `QuoteFidelity`, `ReplayEvent`, `LookaheadError`, `FutureAdjustedDataError` and `HistoricalReplayFeed`.\n  - **Availability:** a 1m bar becomes available at completion plus the configured latency, and `as_of(t)` never returns anything available after `t`.\n  - **Ordering:** events are strictly chronological. Ties break by kind (SPLIT, DATA_QUALITY, BAR, QUOTE), then symbol, then sequence.\n  - **Future-adjusted data:** it is refused unless provenance declares `point_in_time`. That covers adjusted series, and bars whose revision or adjustment-announcement time is after the time they would first be served. When point-in-time is declared, such a bar is withheld until its vintage time, and only the latest vintage is returned.\n  - **Splits and quality markers:** splits apply only from their effective time. Missing minutes within a regular session become gap markers that reuse `DataFreshness` and `HealthState`. Halts are operator-supplied markers that suppress gap markers for the halted minutes. Nothing is forward-filled.\n  - **Quote fidelity:** it reports `UNAVAILABLE` when there are no quotes, and otherwise the declared level (default `SAMPLED`).\n  - **Seed and hash:** the seed is exposed, and `rng(stream)` gives a deterministic generator. The dataset hash is computed from the supplied records and checked against the declared one if there is one.\n  - **Inputs:** records can be in-memory or loaded from a local JSON fixture with `from_json_file` (floats rejected, size bounded).\n- **`tests/unit/test_replay_clock.py`**: 39 positive and negative tests using only small synthetic fixtures. No network, credentials or Alpaca imports.\n\n## Port decisions (recorded in the `feed.py` docstring)\n- There is no `MarketDataProvider`; the actual port is `MarketDataPort` in `market_data/ports.py`. The feed implements it structurally, unchanged.\n- `subscribe` yields only `MarketEvent` BAR and QUOTE, because splits and quality markers have no `MarketEvent` shape. A BAR event carries close and volume. Full OHLCV, splits and markers come from `fetch_bars`, `events()` and `as_of()`.\n- If a `ReplayClock` is passed to the feed, `subscribe` advances it to each event's availability time, and `as_of(t)` raises `LookaheadError` for `t` ahead of the clock.\n\n## Things to know\n- `mike_trade/backtest/` has no `__init__.py`, because it isn't in the allowed write paths. Imports and pytest work (it's a namespace subpackage), but Pyright can't resolve `mike_trade.backtest.feed` in the test file. A later task should add the `__init__.py`.\n- Gap markers are derived only between two bars in the same regular session. Missing bars at the session open or close aren't flagged, since the dataset can't distinguish those from its own start or end.\n- Non-RAW adjustment without `point_in_time` is rejected when the feed is constructed, not at query time.\n- `DataProvenance.revision` is only a label. The per-record `revision_at` and `adjustment_announced_at` fields are what drive the checks.\n",
+      "stderr": "",
+      "exit_code": 0,
+      "duration_seconds": 323.6993670463562,
+      "model": "claude-sonnet-5-5",
+      "model_tags": [],
+      "working_directory": "/home/mike/dev/mike/stocks/python/mike_trade",
+      "changed_files": [
+        {
+          "path": "mike_trade/backtest/clock.py",
+          "status": "untracked",
+          "code": "??"
+        },
+        {
+          "path": "mike_trade/backtest/feed.py",
+          "status": "untracked",
+          "code": "??"
+        },
+        {
+          "path": "tests/unit/test_replay_clock.py",
+          "status": "untracked",
+          "code": "??"
+        }
+      ],
+      "diff_summary": "git diff reported no changes",
+      "model_attempts": [
+        {
+          "backend": "claude_code_cli",
+          "model": "claude-sonnet-5-5",
+          "exit_code": 0,
+          "stdout": "I added `ReplayClock`, `HistoricalReplayFeed` and the tests, and all 39 new tests pass. Ruff and mypy are clean on the new code. I ran only `tests/unit/test_replay_clock.py` and `py_compile`, as the contract's no-broad-suites rule requires. Nothing is committed.\n\n## What I built\n- **`mike_trade/backtest/clock.py`**: `ReplayClock` implements `now()`, so it fits the existing `runtime.ClockPort`.\n  - It moves forward only through `advance_to(t)`. A backwards move or a naive datetime raises `ValueError`, and moving to the same instant is a no-op.\n  - It never reads the wall clock and never sleeps.\n  - It presents America/New_York time through `scheduling/calendar.py`: open and close, early closes, holidays and no-session days, session boundaries, and the next session. Dates outside the calendar's supported years give `UNKNOWN` rather than an error.\n- **`mike_trade/backtest/feed.py`**: it adds `DataProvenance`, `QuoteFidelity`, `ReplayEvent`, `LookaheadError`, `FutureAdjustedDataError` and `HistoricalReplayFeed`.\n  - **Availability:** a 1m bar becomes available at completion plus the configured latency, and `as_of(t)` never returns anything available after `t`.\n  - **Ordering:** events are strictly chronological. Ties break by kind (SPLIT, DATA_QUALITY, BAR, QUOTE), then symbol, then sequence.\n  - **Future-adjusted data:** it is refused unless provenance declares `point_in_time`. That covers adjusted series, and bars whose revision or adjustment-announcement time is after the time they would first be served. When point-in-time is declared, such a bar is withheld until its vintage time, and only the latest vintage is returned.\n  - **Splits and quality markers:** splits apply only from their effective time. Missing minutes within a regular session become gap markers that reuse `DataFreshness` and `HealthState`. Halts are operator-supplied markers that suppress gap markers for the halted minutes. Nothing is forward-filled.\n  - **Quote fidelity:** it reports `UNAVAILABLE` when there are no quotes, and otherwise the declared level (default `SAMPLED`).\n  - **Seed and hash:** the seed is exposed, and `rng(stream)` gives a deterministic generator. The dataset hash is computed from the supplied records and checked against the declared one if there is one.\n  - **Inputs:** records can be in-memory or loaded from a local JSON fixture with `from_json_file` (floats rejected, size bounded).\n- **`tests/unit/test_replay_clock.py`**: 39 positive and negative tests using only small synthetic fixtures. No network, credentials or Alpaca imports.\n\n## Port decisions (recorded in the `feed.py` docstring)\n- There is no `MarketDataProvider`; the actual port is `MarketDataPort` in `market_data/ports.py`. The feed implements it structurally, unchanged.\n- `subscribe` yields only `MarketEvent` BAR and QUOTE, because splits and quality markers have no `MarketEvent` shape. A BAR event carries close and volume. Full OHLCV, splits and markers come from `fetch_bars`, `events()` and `as_of()`.\n- If a `ReplayClock` is passed to the feed, `subscribe` advances it to each event's availability time, and `as_of(t)` raises `LookaheadError` for `t` ahead of the clock.\n\n## Things to know\n- `mike_trade/backtest/` has no `__init__.py`, because it isn't in the allowed write paths. Imports and pytest work (it's a namespace subpackage), but Pyright can't resolve `mike_trade.backtest.feed` in the test file. A later task should add the `__init__.py`.\n- Gap markers are derived only between two bars in the same regular session. Missing bars at the session open or close aren't flagged, since the dataset can't distinguish those from its own start or end.\n- Non-RAW adjustment without `point_in_time` is rejected when the feed is constructed, not at query time.\n- `DataProvenance.revision` is only a label. The per-record `revision_at` and `adjustment_announced_at` fields are what drive the checks.\n",
+          "stderr": "",
+          "duration_seconds": 323.6993670463562,
+          "changed_files": [
+            {
+              "path": "mike_trade/backtest/clock.py",
+              "status": "untracked",
+              "code": "??"
+            },
+            {
+              "path": "mike_trade/backtest/feed.py",
+              "status": "untracked",
+              "code": "??"
+            },
+            {
+              "path": "tests/unit/test_replay_clock.py",
+              "status": "untracked",
+              "code": "??"
+            }
+          ],
+          "diff_summary": "git diff reported no changes",
+          "outcome_classification": "backend_completed_with_changes",
+          "backend_timeout": false,
+          "backend_verification_timeout": false,
+          "timeout_seconds": null
+        }
+      ],
+      "write_policy_violations": [],
+      "outcome_classification": "backend_completed_with_changes",
+      "backend_timeout": false,
+      "backend_verification_timeout": false,
+      "changed_files_at_timeout_exit": [],
+      "abracapocus_verification_ran_after_backend_timeout": false,
+      "verification_owner": "abracapocus",
+      "verification_result": "skipped"
+    }
+  ],
+  "review": {
+    "status": "approved",
+    "findings": [],
+    "summary": "q.1:Review complete",
+    "created_at": "2026-10-08T22:18:09.245393"
+  },
+  "verification": {
+    "status": "skipped",
+    "checks": [],
+    "created_at": "2026-10-08T22:18:09.245402",
+    "notes": "Q:skipped",
+    "profile": "focused"
+  },
+  "metadata": {
+    "run_id": "fe2252d9-bed4-4886-8ee1-600d65285333",
+    "project_name": "mike_trade",
+    "plan_version": "task-q.1",
+    "task_id": "q.1",
+    "task_title": "Implement historical replay clock and as-of deterministic event provider",
+    "task_status": "completed",
+    "selected_backend": "claude_code_cli",
+    "verification_profile": "focused",
+    "backend_reason": "phase_based",
+    "frame_failures": [],
+    "agents_md": {
+      "loaded": true,
+      "path": "/home/mike/dev/mike/abracapocus/python/abracapocus_2/AGENTS.md",
+      "rule_count": 77,
+      "sha256_12": "3f9b549ba1ce"
+    },
+    "phase_results": [
+      {
+        "phase_name": "Q",
+        "status": "passed",
+        "verification": "skipped",
+        "task_results": [
+          {
+            "task_id": "q.1",
+            "status": "passed",
+            "acceptance_status": "accepted",
+            "backend": "claude_code_cli",
+            "backend_outcome_classification": "backend_completed_with_changes",
+            "changed_files": [
+              {
+                "path": "mike_trade/backtest/clock.py",
+                "status": "untracked",
+                "code": "??"
+              },
+              {
+                "path": "mike_trade/backtest/feed.py",
+                "status": "untracked",
+                "code": "??"
+              },
+              {
+                "path": "tests/unit/test_replay_clock.py",
+                "status": "untracked",
+                "code": "??"
+              }
+            ],
+            "backend_timeout": false,
+            "backend_elapsed_seconds": 323.6993670463562,
+            "backend_timeout_seconds": null,
+            "changed_files_at_timeout_exit": [],
+            "abracapocus_verification_ran_after_backend_timeout": false,
+            "verification_owner": "abracapocus",
+            "verification_result": "skipped",
+            "verification_status": "skipped",
+            "verification_checks": [],
+            "frame_failure": false,
+            "retry_attempts": []
+          }
+        ]
+      }
+    ]
+  }
+}
