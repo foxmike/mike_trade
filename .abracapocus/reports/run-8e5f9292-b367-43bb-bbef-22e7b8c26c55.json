@@ -1,0 +1,142 @@
+{
+  "plan_summary": "Task run: Implement momentum breakout buy algorithm and explicit no-signal reasons",
+  "backend_executions": [
+    {
+      "backend": "pi_cli",
+      "command": [
+        "pi",
+        "-p",
+        "--provider",
+        "openrouter",
+        "--model",
+        "meta/muse-spark-1.3-contributor",
+        "Task: Implement momentum breakout buy algorithm and explicit no-signal reasons\nDescription: Implement a real momentum_breakout BUY strategy in mike_trade/strategies/buy/momentum_breakout.py as a BuyStrategy subclass using the j.1 SDK.\n\nDefinition (objective and configurable):\n1. On completed 1-minute regular-session bars, compute the highest high of the `lookback_bars` completed bars that precede the latest completed bar. `lookback_bars` is a validated int range.\n2. A BUY signal triggers when the latest completed close is strictly greater than that lookback high and the prior completed close is less than or equal to its own corresponding lookback high. This makes the strategy edge-triggered.\n3. The breakout bar's volume must be at least `volume_multiple` (validated Decimal range) times the average volume of the lookback bars.\n\nThe spec must declare:\n- 1-minute timeframe\n- closed-bar-only input\n- volume requirement\n- warmup of lookback_bars + 2\n- trigger kind EDGE_ON_CLOSED_BAR\n- regular-session only\n- methodology/source metadata describing the classic N-bar high breakout with volume confirmation, stated as not an alpha claim\n- execution limitations\n- reason codes\n\nEvery non-signal path must return an explicit reason code:\n- INSUFFICIENT_DATA: warmup is not met, or bars are missing\n- STALE_DATA\n- invalid or incomplete bar\n- zero volume, or volume below the threshold, using a specific volume reason\n- NOT_ELIGIBLE: outside regular session, or the symbol is not WATCHING_BUY\n- NO_SIGNAL: no breakout\n\nSignal IDs are deterministic via the SDK helper. The same completed bar cannot emit twice. The strategy rearms only after the close falls back to or below the lookback high. Lookback windows do not span sessions. There is no broker, network, or filesystem access, and no confidence scores.\n\nWrite tests/unit/test_buy_momentum.py covering:\n- exact boundary (close == lookback high produces no signal)\n- a valid breakout\n- insufficient volume\n- zero volume\n- warmup\n- stale data\n- same-bar replay suppression\n- rearm\n- session reset\n- parameter validation failures\n\nUse Decimal for prices.\n\nBefore editing, inspect:\n- mike_trade/strategies/base.py\n- mike_trade/strategies/registry.py\n- tests/contracts/test_strategy_registry.py\n- mike_trade/market_data/context.py\n- mike_trade/market_data/candles.py\n- mike_trade/strategies/indicators/core.py\n- mike_trade/domain/signals.py\n- mike_trade/domain/strategy_types.py\n- mike_trade/risk/session_policy.py\n- mike_trade/signals/rearm.py\nPhase: J\nAcceptance criteria:\n  - MomentumBreakoutBuy subclasses BuyStrategy, declares a complete StrategySpec (id momentum_breakout, semver, BUY side, 1m timeframe, closed-bar and volume requirements, warmup, edge trigger, validated lookback_bars and volume_multiple parameters, methodology metadata, limitations, reason codes), and can be registered in StrategyRegistry.\n  - A BUY signal is emitted only when prior close <= its lookback high, latest completed close > the lookback high, and breakout volume >= volume_multiple x the average lookback volume.\n  - A close exactly equal to the lookback high returns NO_SIGNAL, and insufficient volume returns a distinct volume reason code.\n  - Every non-signal path returns an explicit reason code (INSUFFICIENT_DATA, STALE_DATA, invalid/zero-volume, NOT_ELIGIBLE, NO_SIGNAL), and none returns an empty or ambiguous result.\n  - Replaying the same completed bar does not emit a second signal; the strategy rearms after the close returns to or below the lookback high; windows reset per session.\n  - Signal IDs are deterministic; prices use Decimal; there are no confidence scores and no profitability claims; the module has no broker, network, filesystem, or secrets imports.\n  - tests/unit/test_buy_momentum.py covers all of the above cases and passes when run in isolation.\nContext: AGENTS.md guidance:\n# AGENTS.md\n## Purpose\nThis repository is operated by an autonomous multi-agent system (abracapocus_2).\nAll agents must follow these rules when modifying the codebase.\n---\n## Core Principles\n- Minimal blast radius: only modify what is required for the task\n- Deterministic verification: all changes must be verifiable via code (tests, compile, scripts)\n- No architecture drift: do not introduce new frameworks or major design changes unless explicitly required\n- No unrelated refactors\n- All changes must be reproducible from a clean clone\n---\n## Project Structure\n- docs/ → design, plans, architecture constraints\n- plans/ → master plans\n- phases/ → phase definitions\n- tasks/ → executable task documents\n- backends/ → CLI backend adapters\n- agents/ → specialist agents\n- runtime/ → orchestration, routing, state\n...(truncated)\n\n## Task Contract Constraints\n\n{\n  \"allowed_write_paths\": [\n    \"mike_trade/strategies/buy/momentum_breakout.py\",\n    \"tests/unit/test_buy_momentum.py\"\n  ],\n  \"forbidden_changes\": [\n    \"modify files outside allowed_write_paths\",\n    \"modify mike_trade/strategies/base.py or registry.py\",\n    \"change PLAN_SKELETON.json or other planning artifacts\",\n    \"fetch data, open connections, or submit orders from the strategy\",\n    \"invent profitable defaults or confidence scores\",\n    \"use float for prices\",\n    \"create live broker orders or run broad test suites/backtests\"\n  ]\n}\nAGENTS.md:\n# AGENTS.md\n\n## Purpose\n\nThis repository is operated by an autonomous multi-agent system (abracapocus_2).\nAll agents must follow these rules when modifying the codebase.\n\n---\n\n## Core Principles\n\n- Minimal blast radius: only modify what is required for the task\n- Deterministic verification: all changes must be verifiable via code (tests, compile, scripts)\n- No architecture drift: do not introduce new frameworks or major design changes unless explicitly required\n- No unrelated refactors\n- All changes must be reproducible from a clean clone\n\n---\n\n## Project Structure\n\n- docs/ → design, plans, architecture constraints\n- plans/ → master plans\n- phases/ → phase definitions\n- tasks/ → executable task documents\n- backends/ → CLI backend adapters\n- agents/ → specialist agents\n- runtime/ → orchestration, routing, state\n- reports/ → execution reports (DO NOT MODIFY MANUALLY)\n- state/runtime_state.json → runtime state (DO NOT COMMIT)\n\n---\n\n## Task Execution Rules\n\n- Always operate from a task document when available\n- Respect:\n  - selected_backend\n  - verification_profile\n  - acceptance_criteria\n- If a task conflicts with architecture constraints or phase scope:\n  - STOP and report conflict\n\n---\n\n## Backend Rules\n\n- Backends must:\n  - execute commands deterministically\n  - capture stdout, stderr, exit_code\n  - not silently fail\n- Do not invent backend interfaces; use existing adapters\n- Codex CLI, Aider, Gemini, Claude Code should be invoked through backends only\n\n---\n\n## Verification Rules\n\n- Verification must be deterministic\n- Preferred checks:\n  - pytest\n  - python -m py_compile\n- Do not rely on model self-evaluation\n\n---\n\n## Execution Control Flow (PERMANENT ARCHITECTURAL RULE)\n\n**HEURISTIC INFERENCE MUST NEVER PARTICIPATE IN ABRACAPOCUS EXECUTION CONTROL FLOW.**\n\nAbracapocus must not determine execution success, failure, acceptance,\nrejection, blocking, retry eligibility, phase progression, or completion from\nheuristic inference. A heuristic is any conclusion that is *inferred* rather\nthan *directly established by an explicit executable contract or a concrete\nruntime fact*.\n\nRuntime status is derived ONLY from concrete, mechanically observable facts:\n\n1. The backend process exit code. A backend that exits `0` (with no hard\n   write-policy violation) is a successful execution.\n2. Objectively observed hard write-policy violations (changed paths outside the\n   declared allowed write paths).\n3. Explicit operator-authored commands (task/phase verification the plan\n   explicitly contains). Their raw results are reported, kept DISTINCT from\n   backend execution status.\n4. Objective orchestrator failures with direct evidence (backend could not\n   launch, required document could not be parsed, subprocess infrastructure\n   failed).\n\n**Verification results are observational and must not rewrite backend execution\nstatus.** A verifier returning non-zero must NEVER, by itself, turn a\nsuccessful backend execution into unverified, stop a phase, or trigger an\nautomatic rerun. Verification is the result of a command, not authority to\nrewrite history.\n\n**Execution control:** Task-local problems (non-zero exit, timeout,\nwrite-policy violation, frame failure, backend launch failure) produce\nacceptance status ``\"unverified\"`` with truthful evidence preserved. They\nMUST NOT stop sibling tasks, later phases, or the plan. Only operator\ncancellation (SIGINT/SIGTERM/dashboard cancel) may terminate a run\n(acceptance status ``\"interrupted\"``). Dependencies are ordering constraints,\nnot acceptance gates — any terminal attempt outcome satisfies a dependency\nedge. The status ``\"failed\"`` is banned from acceptance output.\n\nDo NOT reintroduce -- under any name, feature flag, \"advisory\" wrapper, or\ncompatibility mode -- context completeness/sufficiency scoring, change or\narchitecture assessment used as a gate, intent/scope matching, reconciliation\ngates, no-progress judgments, confidence/risk scores, model/LLM/reviewer\njudgments over status, shadow/adaptive/secondary-verification gates, or\nheuristic retry/failure-classification control flow. Failure classification may\nonly *summarize* an already-established concrete failure; it must never create\none. Retries are permitted only for explicitly defined mechanical backend\nfailures. Future agents must not add these systems back.\n\n---\n\n## Git Rules\n\n- Do not commit:\n  - runtime_state.json\n  - reports/\n  - logs/\n  - virtual environments\n- Do not modify .gitignore unless required by task\n- Do not create excessive commits; prefer grouped logical commits\n\n---\n\n## Allowed Changes\n\n- Implement task requirements\n- Fix failing verification\n- Update relevant tests\n- Improve documentation tied to the task\n\n---\n\n## Forbidden Changes\n\n- Changing architecture without explicit instruction\n- Adding dependencies without justification\n- Modifying unrelated files\n- Deleting important files\n- Bypassing verification\n\n---\n\n## Planning Rules\n\n- Plans are multi-phase\n- Completed sections are immutable\n- Remaining sections may be updated\n- Tasks must align with:\n  - project brief\n  - architecture constraints\n  - active phase\n\n---\n\n## Reporting\n\n- All executions must produce structured reports\n- Reports must include:\n  - changed files\n  - verification results\n  - assessment\n\n---\n\n## Behavior\n\n- Do not ask unnecessary questions\n- Do not stall execution\n- Do not perform broad scans unless required\n- Prefer direct action over analysis\n\n---\n\n## Priority Order\n\nThis ordering guides *implementation decisions* only. It does NOT make\nverification an acceptance authority: verification results are observational\n(see \"Execution Control Flow\"), and never override a concrete backend\nexecution result.\n\n1. Architecture constraints\n2. Task definition\n3. Verification results (observational signal, not acceptance authority)\n4. Plan guidance\n\nIf conflicts occur, follow this order.\n\nAGENTS metadata:\n{\"loaded\": true, \"path\": \"/home/mike/dev/mike/abracapocus/python/abracapocus_2/AGENTS.md\", \"rule_count\": 77, \"sha256_12\": \"3f9b549ba1ce\"}\n"
+      ],
+      "stdout": "Done. All green in isolation and no collateral damage.\n\n**Changed files (only the two allowed paths):**\n- `mike_trade/strategies/buy/momentum_breakout.py` — `MomentumBreakoutBuy(BuyStrategy)` with `StrategySpec` (`momentum_breakout` 1.0.0, BUY, 1m, `completed_bars_only=True`, `requires_volume=True`, warmup 22 = default lookback 20 + 2, `EDGE_ON_CLOSED_BAR`, validated `lookback_bars` INT 2–100 and `volume_multiple` DECIMAL 1–10, textbook methodology/source with no-alpha disclaimer, limitations, all 5 reason codes). Edge-triggered N-bar-high breakout with volume confirmation; same-bar suppression via `last_signal_bar`; rearm when close falls back to/below lookback high; windows never span sessions (NY-date filter + contiguity check); deterministic IDs via `StrategyEvaluation.for_signal`; Decimal throughout; stdlib + domain/market-data imports only.\n- `tests/unit/test_buy_momentum.py` — 28 tests covering spec/registration, valid breakout with deterministic ID, exact boundary (`close == high` → `NO_SIGNAL`), non-edge prior, insufficient volume and zero volume (→ `INSUFFICIENT_DATA`, distinct from `NO_SIGNAL`), exact-threshold volume, warmup/missing/invalid bars, stale, not-eligible (session + eligibility), replay suppression, no-rearm-while-above, rearm-after-pullback with new signal ID, session reset + no cross-session windows, parameter validation failures, Decimal normalization, import hygiene.\n\n**Verification:**\n- `tests/unit/test_buy_momentum.py` — 28 passed\n- `tests/unit/test_buy_opening_range.py` + `tests/contracts/test_strategy_registry.py` — 91 passed (untouched, sanity only)\n\nOne judgment call to flag: `ReasonCode` is a fixed 5-member enum in the unmodifiable SDK, so volume failures (zero/below-threshold) return `INSUFFICIENT_DATA` as their specific reason, distinct from the `NO_SIGNAL` used for exact-boundary non-breakouts — this is documented in the strategy docstring-adjacent comment.\n",
+      "stderr": "",
+      "exit_code": 0,
+      "duration_seconds": 130.77807211875916,
+      "model": "openrouter/meta/muse-spark-1.3-contributor",
+      "model_tags": [],
+      "working_directory": "/home/mike/dev/mike/stocks/python/mike_trade",
+      "changed_files": [
+        {
+          "path": "mike_trade/strategies/buy/momentum_breakout.py",
+          "status": "untracked",
+          "code": "??"
+        },
+        {
+          "path": "tests/unit/test_buy_momentum.py",
+          "status": "untracked",
+          "code": "??"
+        }
+      ],
+      "diff_summary": "git diff reported no changes",
+      "model_attempts": [
+        {
+          "backend": "pi_cli",
+          "model": "openrouter/meta/muse-spark-1.3-contributor",
+          "exit_code": 0,
+          "stdout": "Done. All green in isolation and no collateral damage.\n\n**Changed files (only the two allowed paths):**\n- `mike_trade/strategies/buy/momentum_breakout.py` — `MomentumBreakoutBuy(BuyStrategy)` with `StrategySpec` (`momentum_breakout` 1.0.0, BUY, 1m, `completed_bars_only=True`, `requires_volume=True`, warmup 22 = default lookback 20 + 2, `EDGE_ON_CLOSED_BAR`, validated `lookback_bars` INT 2–100 and `volume_multiple` DECIMAL 1–10, textbook methodology/source with no-alpha disclaimer, limitations, all 5 reason codes). Edge-triggered N-bar-high breakout with volume confirmation; same-bar suppression via `last_signal_bar`; rearm when close falls back to/below lookback high; windows never span sessions (NY-date filter + contiguity check); deterministic IDs via `StrategyEvaluation.for_signal`; Decimal throughout; stdlib + domain/market-data imports only.\n- `tests/unit/test_buy_momentum.py` — 28 tests covering spec/registration, valid breakout with deterministic ID, exact boundary (`close == high` → `NO_SIGNAL`), non-edge prior, insufficient volume and zero volume (→ `INSUFFICIENT_DATA`, distinct from `NO_SIGNAL`), exact-threshold volume, warmup/missing/invalid bars, stale, not-eligible (session + eligibility), replay suppression, no-rearm-while-above, rearm-after-pullback with new signal ID, session reset + no cross-session windows, parameter validation failures, Decimal normalization, import hygiene.\n\n**Verification:**\n- `tests/unit/test_buy_momentum.py` — 28 passed\n- `tests/unit/test_buy_opening_range.py` + `tests/contracts/test_strategy_registry.py` — 91 passed (untouched, sanity only)\n\nOne judgment call to flag: `ReasonCode` is a fixed 5-member enum in the unmodifiable SDK, so volume failures (zero/below-threshold) return `INSUFFICIENT_DATA` as their specific reason, distinct from the `NO_SIGNAL` used for exact-boundary non-breakouts — this is documented in the strategy docstring-adjacent comment.\n",
+          "stderr": "",
+          "duration_seconds": 130.77807211875916,
+          "changed_files": [
+            {
+              "path": "mike_trade/strategies/buy/momentum_breakout.py",
+              "status": "untracked",
+              "code": "??"
+            },
+            {
+              "path": "tests/unit/test_buy_momentum.py",
+              "status": "untracked",
+              "code": "??"
+            }
+          ],
+          "diff_summary": "git diff reported no changes",
+          "outcome_classification": "backend_completed_with_changes",
+          "backend_timeout": false,
+          "backend_verification_timeout": false,
+          "timeout_seconds": null
+        }
+      ],
+      "write_policy_violations": [],
+      "outcome_classification": "backend_completed_with_changes",
+      "backend_timeout": false,
+      "backend_verification_timeout": false,
+      "changed_files_at_timeout_exit": [],
+      "abracapocus_verification_ran_after_backend_timeout": false,
+      "verification_owner": "abracapocus",
+      "verification_result": "skipped"
+    }
+  ],
+  "review": {
+    "status": "approved",
+    "findings": [],
+    "summary": "j.3:Review complete",
+    "created_at": "2026-10-08T18:07:28.770546"
+  },
+  "verification": {
+    "status": "skipped",
+    "checks": [],
+    "created_at": "2026-10-08T18:07:28.770555",
+    "notes": "J:skipped",
+    "profile": "focused"
+  },
+  "metadata": {
+    "run_id": "8e5f9292-b367-43bb-bbef-22e7b8c26c55",
+    "project_name": "mike_trade",
+    "plan_version": "task-j.3",
+    "task_id": "j.3",
+    "task_title": "Implement momentum breakout buy algorithm and explicit no-signal reasons",
+    "task_status": "completed",
+    "selected_backend": "pi_cli",
+    "verification_profile": "focused",
+    "backend_reason": "phase_based",
+    "frame_failures": [],
+    "agents_md": {
+      "loaded": true,
+      "path": "/home/mike/dev/mike/abracapocus/python/abracapocus_2/AGENTS.md",
+      "rule_count": 77,
+      "sha256_12": "3f9b549ba1ce"
+    },
+    "phase_results": [
+      {
+        "phase_name": "J",
+        "status": "passed",
+        "verification": "skipped",
+        "task_results": [
+          {
+            "task_id": "j.3",
+            "status": "passed",
+            "acceptance_status": "accepted",
+            "backend": "pi_cli",
+            "backend_outcome_classification": "backend_completed_with_changes",
+            "changed_files": [
+              {
+                "path": "mike_trade/strategies/buy/momentum_breakout.py",
+                "status": "untracked",
+                "code": "??"
+              },
+              {
+                "path": "tests/unit/test_buy_momentum.py",
+                "status": "untracked",
+                "code": "??"
+              }
+            ],
+            "backend_timeout": false,
+            "backend_elapsed_seconds": 130.77807211875916,
+            "backend_timeout_seconds": null,
+            "changed_files_at_timeout_exit": [],
+            "abracapocus_verification_ran_after_backend_timeout": false,
+            "verification_owner": "abracapocus",
+            "verification_result": "skipped",
+            "verification_status": "skipped",
+            "verification_checks": [],
+            "frame_failure": false,
+            "retry_attempts": []
+          }
+        ]
+      }
+    ]
+  }
+}
