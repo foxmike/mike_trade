@@ -1,0 +1,176 @@
+# mike_trade reference configuration (schema_version 1).
+#
+# This file is a complete operator reference: every key from the
+# schema_version 1 contract is written explicitly with its default value.
+# Copy to config/mike_trade.yaml and edit, or point MIKE_TRADE_CONFIG at it.
+#
+# Precedence (lowest to highest):
+#   built-in defaults -> this main file -> optional mode file
+#   (MIKE_TRADE_MODE_CONFIG, e.g. config/mike_trade.paper.yaml) ->
+#   allowlisted environment (MIKE_TRADE_DATA_DIR, MIKE_TRADE_DASHBOARD_BIND,
+#   MIKE_TRADE_ACCOUNT_MODE) -> one-shot CLI --set dotted.path=value.
+# Later layers deep-merge mappings; lists and scalars replace.
+#
+# Secrets never go in YAML. Any mapping key matching api_key, secret,
+# password, token, key_id, or private_key is rejected. Credentials live only
+# in environment variables listed in .env.example and config/providers.yaml.
+#
+# Optional mode-file snippets (commented out; keep schema_version aligned):
+#   # config/mike_trade.paper.yaml
+#   # schema_version: 1
+#   # execution:
+#   #   account_mode: paper
+#   # market_data:
+#   #   feed: iex
+#   # config/mike_trade.live.yaml
+#   # schema_version: 1
+#   # execution:
+#   #   account_mode: live
+#   #   live_trading_enabled: true
+#   #   stop_required: true
+#   #   block_new_entries_when_unprotected: true
+#
+# Live safety: live requires BOTH account_mode: live AND
+# live_trading_enabled: true in a config file, plus an explicit CLI live
+# confirmation for live-mutating commands. Environment variables and CLI
+# --set overrides cannot enable live; attempts are refused.
+#
+# end_of_day_close is disabled by default (enabled: false).
+#
+# Entry blocks (cutoff, cooldowns, lockouts, pauses) never disable fills,
+# stops, reconciliation, manual closes, or safety exits.
+#
+# Fractional plus native trailing fails closed until demonstrated in Alpaca
+# paper (see provider catalog capability flags).
+#
+# Long-only: short_selling_enabled stays false; margin stays disabled.
+schema_version: 1
+service:
+  timezone: America/New_York
+  data_dir: /var/lib/mike_trade
+  engine_heartbeat_interval_seconds: 5
+  dashboard:
+    bind_host: 127.0.0.1
+    port: 8765
+    heartbeat_stale_seconds: 15
+    heartbeat_offline_seconds: 60
+market_data:
+  # IEX is a single-venue feed, not consolidated SIP; provenance is preserved
+  # on every bar (provenance IEX, consolidated false in the provider catalog).
+  provider: alpaca
+  feed: iex
+  mode: stream
+  max_bar_age_seconds: 90
+  warmup_bars: 60
+  timeframes:
+    - 1Min
+    - 5Min
+research:
+  # Research is optional and never in the decision path.
+  providers: []
+scheduler:
+  cadence_seconds: 5
+  max_workers: 4
+  queue_max: 100
+  evaluation_timeout_seconds: 10
+execution:
+  broker: alpaca
+  account_mode: shadow
+  live_trading_enabled: false
+  fractional_enabled: false
+  entry_order_type: market
+  exit_order_type: market
+  regular_hours_only: true
+  entry_cutoff: "15:30"
+  end_of_day_close:
+    enabled: false
+    at: "15:55"
+  stop_required: true
+  block_new_entries_when_unprotected: true
+  margin_enabled: false
+  short_selling_enabled: false
+risk:
+  total_application_budget: "10000.00"
+  max_open_positions: 3
+  daily_loss_limit: "300.00"
+  require_buying_power_check: true
+symbols:
+  SPY:
+    enabled: true
+    budget: "3000.00"
+    planned_loss_cap: "30.00"
+    min_hold_seconds: 0
+    max_entry_cycles_per_session: 1
+    consecutive_loss_limit: 2
+    consecutive_loss_reset: session
+    consecutive_loss_scope: symbol
+    post_sale_cooldown_seconds: 0
+    buy_strategy: vwap_bounce_default
+    sell_strategy: vwap_breakdown_default
+    stop_policy:
+      type: fixed
+      stop_percent: "1.0"
+  AAPL:
+    enabled: true
+    budget: "2500.00"
+    planned_loss_cap: "25.00"
+    min_hold_seconds: 0
+    max_entry_cycles_per_session: 1
+    consecutive_loss_limit: 2
+    consecutive_loss_reset: session
+    consecutive_loss_scope: symbol
+    post_sale_cooldown_seconds: 0
+    buy_strategy: vwap_bounce_default
+    sell_strategy: vwap_breakdown_default
+    stop_policy:
+      type: native_trailing
+      trail_percent: "1.5"
+  MSFT:
+    enabled: true
+    budget: "2500.00"
+    planned_loss_cap: "25.00"
+    min_hold_seconds: 0
+    max_entry_cycles_per_session: 1
+    consecutive_loss_limit: 2
+    consecutive_loss_reset: session
+    consecutive_loss_scope: symbol
+    post_sale_cooldown_seconds: 0
+    buy_strategy: vwap_bounce_default
+    sell_strategy: vwap_breakdown_default
+    stop_policy:
+      type: stepped_trailing
+      initial_stop_percent: "1.5"
+      step_trigger_percent: "1.0"
+      step_percent: "0.5"
+strategies:
+  # vwap_bounce_default BUY rule: completed 1-minute regular-session bars only,
+  # with warmed/fresh session-reset shared VWAP; prior close at or below prior
+  # VWAP and latest completed close above latest VWAP. Same bar never signals
+  # twice; incomplete, stale, or unwarmed input yields no signal.
+  vwap_bounce_default:
+    plugin: vwap_bounce
+    side: buy
+    pair: vwap_reference
+    parameters: {}
+  # vwap_breakdown_default SELL rule: completed 1-minute regular-session bars
+  # only, with warmed/fresh session VWAP; prior close at or above prior VWAP
+  # and latest completed close below latest VWAP. Full-position exit only.
+  vwap_breakdown_default:
+    plugin: vwap_breakdown
+    side: sell
+    pair: vwap_reference
+    parameters: {}
+shadow_scenarios:
+  - name: vwap_reference_baseline
+    starting_cash: "25000.00"
+    enabled: true
+    symbols: []
+  - name: small_account
+    starting_cash: "5000.00"
+    enabled: true
+    symbols:
+      - SPY
+reporting:
+  evidence_dir: evidence
+  evidence_retention_days: 90
+  log_retention_days: 30

@@ -1,0 +1,47 @@
+# Provider catalog reference (schema_version 1).
+#
+# Paper and live endpoints and credentials are strictly isolated: paper uses
+# only MIKE_TRADE_ALPACA_PAPER_* names with the paper base URL, live uses
+# only MIKE_TRADE_ALPACA_LIVE_* names with the live base URL. Never mix them.
+# Values here are environment variable NAMES only, never credential values.
+#
+# Capability flags fail closed: unsupported order types, native trailing
+# without capability, short selling, and fractional plus native trailing
+# that is not demonstrated in paper are rejected by the loader.
+schema_version: 1
+brokers:
+  alpaca:
+    paper:
+      trading_base_url: https://paper-api.alpaca.markets
+      key_id_env: MIKE_TRADE_ALPACA_PAPER_KEY_ID
+      secret_key_env: MIKE_TRADE_ALPACA_PAPER_SECRET_KEY
+    live:
+      trading_base_url: https://api.alpaca.markets
+      key_id_env: MIKE_TRADE_ALPACA_LIVE_KEY_ID
+      secret_key_env: MIKE_TRADE_ALPACA_LIVE_SECRET_KEY
+    capabilities:
+      order_types:
+        - market
+        - limit
+        - stop
+        - stop_limit
+        - trailing_stop
+      native_trailing_stop: true
+      fractional_order_types:
+        - market
+        - limit
+      fractional_native_trailing: false
+      fractional_demonstrated_in_paper: false
+      short_selling_enabled: false
+market_data:
+  alpaca:
+    key_id_env: MIKE_TRADE_ALPACA_DATA_KEY_ID
+    secret_key_env: MIKE_TRADE_ALPACA_DATA_SECRET_KEY
+    feeds:
+      iex:
+        stream_url: wss://stream.data.alpaca.markets/v2/iex
+        rest_base_url: https://data.alpaca.markets
+        consolidated: false
+        provenance: IEX
+# Research providers are optional and never in the decision path.
+research: {}

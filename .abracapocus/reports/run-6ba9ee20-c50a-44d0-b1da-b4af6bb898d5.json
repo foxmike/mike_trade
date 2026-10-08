@@ -1,0 +1,157 @@
+{
+  "plan_summary": "Task run: Add SQLite integrity migration backup restore and maintenance utilities",
+  "backend_executions": [
+    {
+      "backend": "pi_cli",
+      "command": [
+        "pi",
+        "-p",
+        "--provider",
+        "openrouter",
+        "--model",
+        "meta/muse-spark-1.3-contributor",
+        "Task: Add SQLite integrity migration backup restore and maintenance utilities\nDescription: Implement database maintenance as application services, so later CLI/Makefile recipes can delegate to them without business logic. The services cover integrity checks, migration status, online backups with manifests, verified restore and restore rehearsal, WAL checkpointing, and optimize. Then document the database. Ledger and account isolation must hold throughout, and corruption must be detected rather than ignored.\n\nmike_trade/persistence/maintenance.py:\n- `check_integrity(db_path) -> IntegrityReport`:\n  - Runs PRAGMA integrity_check, foreign_key_check, and journal_mode, plus schema version vs known migrations (via schema.current_schema_version / discover_migrations) and journal.DomainEventJournal.verify_chain for each account scope.\n  - Uses a read-only connection.\n  - ok is True only if every check passes.\n- `migration_status(db_path)`: applied versions, pending versions, and checksum mismatches.\n- `apply_pending_migrations(db_path, *, now)`: must hold transaction.WriterLock while running.\n- `create_backup(db_path, backup_dir, *, now) -> BackupManifest`:\n  - Uses sqlite3.Connection.backup from a read connection, so it is safe while the engine writes.\n  - Writes '<environment>-<database_id>-<UTC timestamp>.sqlite3' plus a JSON manifest sidecar. The manifest holds: environment and database_id from db_identity, account_scope_ids, schema_version, sha256 of the backup file, byte size, created_at, and the integrity result of the backup copy.\n  - Refuses to finalize when the backup's integrity_check fails.\n- `verify_backup(backup_path) -> BackupVerification`: recomputes sha256 against the manifest and runs integrity_check. Any mismatch or a missing manifest is a failure.\n- `rehearse_restore(backup_path, scratch_dir)`: restores to a scratch path, then runs check_integrity and the identity/version checks without touching the live database file. It returns a report.\n- `restore_backup(backup_path, target_db_path, *, confirm_environment)`:\n  - Verifies the backup first.\n  - Requires confirm_environment to equal the manifest environment.\n  - Refuses when the target exists with a different db_identity environment or database_id (a PAPER or SHADOW backup can never overwrite a LIVE ledger, and vice versa).\n  - Refuses while another process holds the target's WriterLock.\n  - Moves the existing target and its -wal/-shm files to a timestamped '.pre-restore' copy rather than deleting them, then copies the backup atomically (temp file + os.replace) and re-runs check_integrity.\n- `checkpoint(db_path, mode='TRUNCATE')`: requires the WriterLock.\n- `optimize(db_path)`: PRAGMA optimize and ANALYZE, under the WriterLock.\n- No function deletes ledger rows or prunes append-only tables.\n- Exceptions: BackupVerificationError, RestoreRefusedError, IntegrityCheckFailedError.\n\ntests/unit/test_backup_restore.py must use tmp_path databases created via schema.initialize_database and populated through the c.3 repositories with small fixtures. Cover:\n- The integrity report is ok on a fresh database.\n- A backup taken while a WriterSession holds the lock (online) succeeds and verifies.\n- The manifest has the correct environment, scope ids, and sha256.\n- Flipping bytes inside a backup copy is detected by verify_backup (checksum and/or integrity failure).\n- A missing manifest fails.\n- rehearse_restore leaves the original database byte-identical.\n- Restoring a PAPER backup onto a LIVE database is refused.\n- A wrong confirm_environment is refused.\n- Restore while the WriterLock is held is refused.\n- A successful restore preserves a '.pre-restore' copy and passes integrity.\n- migration_status reports no pending versions after initialize.\n- checkpoint without the lock is refused when another writer holds it.\n- verify_chain tampering surfaces in check_integrity.\n\ndocs/DATABASE.md must document:\n- One SQLite WAL database per operational environment (LIVE, PAPER, SHADOW with multiple named scenarios, and BACKTEST runs), and the db_identity/account_scopes isolation rules.\n- The single-writer lock, and read-only projection access for the dashboard.\n- PRAGMA settings.\n- Forward-only migrations and checksum rules.\n- Append-only tables and journal semantics, including intent-before-submit and exactly-once fill ingestion by external activity ID.\n- Reconciliation drift and resolution tables.\n- The no-raw-tick-archive policy.\n- Decimal-as-TEXT and the UTC timestamp format.\n- Backup, verify, rehearsal, and restore procedures, with the refusal rules.\n- Corruption detection and response steps.\n- A placeholder note that operator CLI/Makefile entrypoints delegate to mike_trade.persistence.maintenance.\n\nDecision budget: make at most four design choices not covered here, and record them in the maintenance.py module docstring.\n\nBefore editing, inspect:\n- mike_trade/persistence/schema.py and mike_trade/persistence/migrations/0001_initial.sql (read-only)\n- mike_trade/persistence/journal.py (read-only)\n- mike_trade/persistence/transaction.py and mike_trade/persistence/repositories.py (read-only)\n- mike_trade/persistence/readstore.py and mike_trade/persistence/projections.py (read-only)\n- docs/ARCHITECTURE.md (read-only, if present)\nPhase: C\nAcceptance criteria:\n  - mike_trade/persistence/maintenance.py defines check_integrity, migration_status, apply_pending_migrations, create_backup, verify_backup, rehearse_restore, restore_backup, checkpoint, optimize, IntegrityReport, BackupManifest, BackupVerification, BackupVerificationError, RestoreRefusedError, and IntegrityCheckFailedError\n  - create_backup uses the sqlite3 online backup API and writes a JSON manifest containing environment, database_id, account_scope_ids, schema_version, sha256, size, created_at, and integrity result\n  - verify_backup fails on a byte-corrupted backup copy and on a missing manifest\n  - restore_backup refuses cross-environment or cross-database_id restores, a mismatched confirm_environment, and a target whose WriterLock is held\n  - A successful restore preserves the previous database files as a '.pre-restore' copy and passes check_integrity afterward\n  - rehearse_restore never modifies the source database file (verified byte-identical in tests)\n  - check_integrity reports failure on journal payload tampering, foreign-key violations, or a schema version mismatch\n  - No maintenance function deletes or prunes ledger/append-only rows\n  - docs/DATABASE.md documents environment isolation, the single-writer model, migrations, append-only/journal semantics, exactly-once fill ingestion, drift tables, the no-tick-archive policy, and backup/verify/rehearse/restore procedures with refusal rules\n  - tests/unit/test_backup_restore.py contains positive and negative tests for the behaviors above and passes with targeted pytest of that file only\nContext: AGENTS.md guidance:\n# AGENTS.md\n## Purpose\nThis repository is operated by an autonomous multi-agent system (abracapocus_2).\nAll agents must follow these rules when modifying the codebase.\n---\n## Core Principles\n- Minimal blast radius: only modify what is required for the task\n- Deterministic verification: all changes must be verifiable via code (tests, compile, scripts)\n- No architecture drift: do not introduce new frameworks or major design changes unless explicitly required\n- No unrelated refactors\n- All changes must be reproducible from a clean clone\n---\n## Project Structure\n- docs/ → design, plans, architecture constraints\n- plans/ → master plans\n- phases/ → phase definitions\n- tasks/ → executable task documents\n- backends/ → CLI backend adapters\n- agents/ → specialist agents\n- runtime/ → orchestration, routing, state\n...(truncated)\n\n## Task Contract Constraints\n\n{\n  \"allowed_symbols\": [\n    \"check_integrity\",\n    \"migration_status\",\n    \"apply_pending_migrations\",\n    \"create_backup\",\n    \"verify_backup\",\n    \"rehearse_restore\",\n    \"restore_backup\",\n    \"checkpoint\",\n    \"optimize\",\n    \"IntegrityReport\",\n    \"BackupManifest\",\n    \"BackupVerification\",\n    \"BackupVerificationError\",\n    \"RestoreRefusedError\",\n    \"IntegrityCheckFailedError\"\n  ],\n  \"allowed_write_paths\": [\n    \"mike_trade/persistence/maintenance.py\",\n    \"tests/unit/test_backup_restore.py\",\n    \"docs/DATABASE.md\"\n  ],\n  \"forbidden_changes\": [\n    \"modify files outside allowed_write_paths\",\n    \"change PLAN_SKELETON.json or other planning artifacts\",\n    \"edit schema.py, migrations, journal.py, repositories.py, transaction.py, projections.py, or readstore.py\",\n    \"delete or overwrite an existing database without preserving a pre-restore copy\",\n    \"restore across environments or database identities\",\n    \"prune or delete append-only ledger rows\",\n    \"touch real operational databases outside tmp_path in tests\",\n    \"run broad test suites, backtests, or create broker orders\"\n  ]\n}\nAGENTS.md:\n# AGENTS.md\n\n## Purpose\n\nThis repository is operated by an autonomous multi-agent system (abracapocus_2).\nAll agents must follow these rules when modifying the codebase.\n\n---\n\n## Core Principles\n\n- Minimal blast radius: only modify what is required for the task\n- Deterministic verification: all changes must be verifiable via code (tests, compile, scripts)\n- No architecture drift: do not introduce new frameworks or major design changes unless explicitly required\n- No unrelated refactors\n- All changes must be reproducible from a clean clone\n\n---\n\n## Project Structure\n\n- docs/ → design, plans, architecture constraints\n- plans/ → master plans\n- phases/ → phase definitions\n- tasks/ → executable task documents\n- backends/ → CLI backend adapters\n- agents/ → specialist agents\n- runtime/ → orchestration, routing, state\n- reports/ → execution reports (DO NOT MODIFY MANUALLY)\n- state/runtime_state.json → runtime state (DO NOT COMMIT)\n\n---\n\n## Task Execution Rules\n\n- Always operate from a task document when available\n- Respect:\n  - selected_backend\n  - verification_profile\n  - acceptance_criteria\n- If a task conflicts with architecture constraints or phase scope:\n  - STOP and report conflict\n\n---\n\n## Backend Rules\n\n- Backends must:\n  - execute commands deterministically\n  - capture stdout, stderr, exit_code\n  - not silently fail\n- Do not invent backend interfaces; use existing adapters\n- Codex CLI, Aider, Gemini, Claude Code should be invoked through backends only\n\n---\n\n## Verification Rules\n\n- Verification must be deterministic\n- Preferred checks:\n  - pytest\n  - python -m py_compile\n- Do not rely on model self-evaluation\n\n---\n\n## Execution Control Flow (PERMANENT ARCHITECTURAL RULE)\n\n**HEURISTIC INFERENCE MUST NEVER PARTICIPATE IN ABRACAPOCUS EXECUTION CONTROL FLOW.**\n\nAbracapocus must not determine execution success, failure, acceptance,\nrejection, blocking, retry eligibility, phase progression, or completion from\nheuristic inference. A heuristic is any conclusion that is *inferred* rather\nthan *directly established by an explicit executable contract or a concrete\nruntime fact*.\n\nRuntime status is derived ONLY from concrete, mechanically observable facts:\n\n1. The backend process exit code. A backend that exits `0` (with no hard\n   write-policy violation) is a successful execution.\n2. Objectively observed hard write-policy violations (changed paths outside the\n   declared allowed write paths).\n3. Explicit operator-authored commands (task/phase verification the plan\n   explicitly contains). Their raw results are reported, kept DISTINCT from\n   backend execution status.\n4. Objective orchestrator failures with direct evidence (backend could not\n   launch, required document could not be parsed, subprocess infrastructure\n   failed).\n\n**Verification results are observational and must not rewrite backend execution\nstatus.** A verifier returning non-zero must NEVER, by itself, turn a\nsuccessful backend execution into unverified, stop a phase, or trigger an\nautomatic rerun. Verification is the result of a command, not authority to\nrewrite history.\n\n**Execution control:** Task-local problems (non-zero exit, timeout,\nwrite-policy violation, frame failure, backend launch failure) produce\nacceptance status ``\"unverified\"`` with truthful evidence preserved. They\nMUST NOT stop sibling tasks, later phases, or the plan. Only operator\ncancellation (SIGINT/SIGTERM/dashboard cancel) may terminate a run\n(acceptance status ``\"interrupted\"``). Dependencies are ordering constraints,\nnot acceptance gates — any terminal attempt outcome satisfies a dependency\nedge. The status ``\"failed\"`` is banned from acceptance output.\n\nDo NOT reintroduce -- under any name, feature flag, \"advisory\" wrapper, or\ncompatibility mode -- context completeness/sufficiency scoring, change or\narchitecture assessment used as a gate, intent/scope matching, reconciliation\ngates, no-progress judgments, confidence/risk scores, model/LLM/reviewer\njudgments over status, shadow/adaptive/secondary-verification gates, or\nheuristic retry/failure-classification control flow. Failure classification may\nonly *summarize* an already-established concrete failure; it must never create\none. Retries are permitted only for explicitly defined mechanical backend\nfailures. Future agents must not add these systems back.\n\n---\n\n## Git Rules\n\n- Do not commit:\n  - runtime_state.json\n  - reports/\n  - logs/\n  - virtual environments\n- Do not modify .gitignore unless required by task\n- Do not create excessive commits; prefer grouped logical commits\n\n---\n\n## Allowed Changes\n\n- Implement task requirements\n- Fix failing verification\n- Update relevant tests\n- Improve documentation tied to the task\n\n---\n\n## Forbidden Changes\n\n- Changing architecture without explicit instruction\n- Adding dependencies without justification\n- Modifying unrelated files\n- Deleting important files\n- Bypassing verification\n\n---\n\n## Planning Rules\n\n- Plans are multi-phase\n- Completed sections are immutable\n- Remaining sections may be updated\n- Tasks must align with:\n  - project brief\n  - architecture constraints\n  - active phase\n\n---\n\n## Reporting\n\n- All executions must produce structured reports\n- Reports must include:\n  - changed files\n  - verification results\n  - assessment\n\n---\n\n## Behavior\n\n- Do not ask unnecessary questions\n- Do not stall execution\n- Do not perform broad scans unless required\n- Prefer direct action over analysis\n\n---\n\n## Priority Order\n\nThis ordering guides *implementation decisions* only. It does NOT make\nverification an acceptance authority: verification results are observational\n(see \"Execution Control Flow\"), and never override a concrete backend\nexecution result.\n\n1. Architecture constraints\n2. Task definition\n3. Verification results (observational signal, not acceptance authority)\n4. Plan guidance\n\nIf conflicts occur, follow this order.\n\nAGENTS metadata:\n{\"loaded\": true, \"path\": \"/home/mike/dev/mike/abracapocus/python/abracapocus_2/AGENTS.md\", \"rule_count\": 77, \"sha256_12\": \"3f9b549ba1ce\"}\n"
+      ],
+      "stdout": "Done. Targeted suite passes (19 passed) with only the three allowed paths written.\n\n**`mike_trade/persistence/maintenance.py`** (new) — application services for later CLI/Makefile delegation:\n- `check_integrity` — read-only `integrity_check` + `foreign_key_check` + `journal_mode` + schema-version/checksum vs `discover_migrations` + `verify_chain` per scope; `ok` only if all pass.\n- `migration_status` — dict of applied/pending/checksum-mismatch versions; `apply_pending_migrations` holds `WriterLock`.\n- `create_backup` — `sqlite3.Connection.backup` from a read connection while the writer holds the lock; `<env>-<id>-<stamp>.sqlite3` + JSON sidecar (environment, database_id, scope ids, schema version, sha256, size, created_at, integrity result); raises `IntegrityCheckFailedError` and removes partial file on integrity failure.\n- `verify_backup` → `BackupVerification` (sha256 recompute + integrity; mismatch/missing manifest = `ok=False`); `rehearse_restore` copies to scratch, validates, never touches live DB; `restore_backup` verifies first, enforces `confirm_environment`, refuses cross-env/cross-id and held-`WriterLock`, preserves target + `-wal`/`-shm` into `.pre-restore-<stamp>/`, installs via temp + `os.replace`, re-checks integrity.\n- `checkpoint` (mode-validated, lock-held) and `optimize` (`PRAGMA optimize` + `ANALYZE`, lock-held). Nothing deletes ledger rows. 4 decision choices recorded in the module docstring.\n\n**`tests/unit/test_backup_restore.py`** (new, 19 tests) — tmp_path DBs via `initialize_database` + c.3 repositories; covers fresh-DB ok, online backup under held lock, manifest fields, byte-flip detection, missing manifest, byte-identical rehearsal, PAPER→LIVE refusal, wrong-confirm refusal, held-lock refusal, pre-restore preservation + post-restore integrity, no-pending status, checkpoint refusal/success, journal/FK/schema-version tampering, verification-error path, and the public API surface.\n\n**`docs/DATABASE.md`** (new) — per-environment WAL files, `db_identity`/`account_scopes` isolation, single-writer + read-only dashboard projections, PRAGMAs, forward-only/checksummed migrations, append-only + journal semantics (intent-before-submit, exactly-once fills by external activity ID), drift/resolution tables, no-tick-archive, Decimal-TEXT/UTC format, backup/verify/rehearse/restore procedures with refusal rules, corruption response, and the CLI/Makefile-delegation note.\n",
+      "stderr": "",
+      "exit_code": 0,
+      "duration_seconds": 167.6779181957245,
+      "model": "openrouter/meta/muse-spark-1.3-contributor",
+      "model_tags": [],
+      "working_directory": "/home/mike/dev/mike/stocks/python/mike_trade",
+      "changed_files": [
+        {
+          "path": "docs/DATABASE.md",
+          "status": "untracked",
+          "code": "??"
+        },
+        {
+          "path": "mike_trade/persistence/maintenance.py",
+          "status": "untracked",
+          "code": "??"
+        },
+        {
+          "path": "tests/unit/test_backup_restore.py",
+          "status": "untracked",
+          "code": "??"
+        }
+      ],
+      "diff_summary": "git diff reported no changes",
+      "model_attempts": [
+        {
+          "backend": "pi_cli",
+          "model": "openrouter/meta/muse-spark-1.3-contributor",
+          "exit_code": 0,
+          "stdout": "Done. Targeted suite passes (19 passed) with only the three allowed paths written.\n\n**`mike_trade/persistence/maintenance.py`** (new) — application services for later CLI/Makefile delegation:\n- `check_integrity` — read-only `integrity_check` + `foreign_key_check` + `journal_mode` + schema-version/checksum vs `discover_migrations` + `verify_chain` per scope; `ok` only if all pass.\n- `migration_status` — dict of applied/pending/checksum-mismatch versions; `apply_pending_migrations` holds `WriterLock`.\n- `create_backup` — `sqlite3.Connection.backup` from a read connection while the writer holds the lock; `<env>-<id>-<stamp>.sqlite3` + JSON sidecar (environment, database_id, scope ids, schema version, sha256, size, created_at, integrity result); raises `IntegrityCheckFailedError` and removes partial file on integrity failure.\n- `verify_backup` → `BackupVerification` (sha256 recompute + integrity; mismatch/missing manifest = `ok=False`); `rehearse_restore` copies to scratch, validates, never touches live DB; `restore_backup` verifies first, enforces `confirm_environment`, refuses cross-env/cross-id and held-`WriterLock`, preserves target + `-wal`/`-shm` into `.pre-restore-<stamp>/`, installs via temp + `os.replace`, re-checks integrity.\n- `checkpoint` (mode-validated, lock-held) and `optimize` (`PRAGMA optimize` + `ANALYZE`, lock-held). Nothing deletes ledger rows. 4 decision choices recorded in the module docstring.\n\n**`tests/unit/test_backup_restore.py`** (new, 19 tests) — tmp_path DBs via `initialize_database` + c.3 repositories; covers fresh-DB ok, online backup under held lock, manifest fields, byte-flip detection, missing manifest, byte-identical rehearsal, PAPER→LIVE refusal, wrong-confirm refusal, held-lock refusal, pre-restore preservation + post-restore integrity, no-pending status, checkpoint refusal/success, journal/FK/schema-version tampering, verification-error path, and the public API surface.\n\n**`docs/DATABASE.md`** (new) — per-environment WAL files, `db_identity`/`account_scopes` isolation, single-writer + read-only dashboard projections, PRAGMAs, forward-only/checksummed migrations, append-only + journal semantics (intent-before-submit, exactly-once fills by external activity ID), drift/resolution tables, no-tick-archive, Decimal-TEXT/UTC format, backup/verify/rehearse/restore procedures with refusal rules, corruption response, and the CLI/Makefile-delegation note.\n",
+          "stderr": "",
+          "duration_seconds": 167.6779181957245,
+          "changed_files": [
+            {
+              "path": "docs/DATABASE.md",
+              "status": "untracked",
+              "code": "??"
+            },
+            {
+              "path": "mike_trade/persistence/maintenance.py",
+              "status": "untracked",
+              "code": "??"
+            },
+            {
+              "path": "tests/unit/test_backup_restore.py",
+              "status": "untracked",
+              "code": "??"
+            }
+          ],
+          "diff_summary": "git diff reported no changes",
+          "outcome_classification": "backend_completed_with_changes",
+          "backend_timeout": false,
+          "backend_verification_timeout": false,
+          "timeout_seconds": null
+        }
+      ],
+      "write_policy_violations": [],
+      "outcome_classification": "backend_completed_with_changes",
+      "backend_timeout": false,
+      "backend_verification_timeout": false,
+      "changed_files_at_timeout_exit": [],
+      "abracapocus_verification_ran_after_backend_timeout": false,
+      "verification_owner": "abracapocus",
+      "verification_result": "skipped"
+    }
+  ],
+  "review": {
+    "status": "approved",
+    "findings": [],
+    "summary": "c.5:Review complete",
+    "created_at": "2026-10-08T14:43:41.998847"
+  },
+  "verification": {
+    "status": "skipped",
+    "checks": [],
+    "created_at": "2026-10-08T14:43:41.998854",
+    "notes": "C:skipped",
+    "profile": "focused"
+  },
+  "metadata": {
+    "run_id": "6ba9ee20-c50a-44d0-b1da-b4af6bb898d5",
+    "project_name": "mike_trade",
+    "plan_version": "task-c.5",
+    "task_id": "c.5",
+    "task_title": "Add SQLite integrity migration backup restore and maintenance utilities",
+    "task_status": "completed",
+    "selected_backend": "pi_cli",
+    "verification_profile": "focused",
+    "backend_reason": "phase_based",
+    "frame_failures": [],
+    "agents_md": {
+      "loaded": true,
+      "path": "/home/mike/dev/mike/abracapocus/python/abracapocus_2/AGENTS.md",
+      "rule_count": 77,
+      "sha256_12": "3f9b549ba1ce"
+    },
+    "phase_results": [
+      {
+        "phase_name": "C",
+        "status": "passed",
+        "verification": "skipped",
+        "task_results": [
+          {
+            "task_id": "c.5",
+            "status": "passed",
+            "acceptance_status": "accepted",
+            "backend": "pi_cli",
+            "backend_outcome_classification": "backend_completed_with_changes",
+            "changed_files": [
+              {
+                "path": "docs/DATABASE.md",
+                "status": "untracked",
+                "code": "??"
+              },
+              {
+                "path": "mike_trade/persistence/maintenance.py",
+                "status": "untracked",
+                "code": "??"
+              },
+              {
+                "path": "tests/unit/test_backup_restore.py",
+                "status": "untracked",
+                "code": "??"
+              }
+            ],
+            "backend_timeout": false,
+            "backend_elapsed_seconds": 167.6779181957245,
+            "backend_timeout_seconds": null,
+            "changed_files_at_timeout_exit": [],
+            "abracapocus_verification_ran_after_backend_timeout": false,
+            "verification_owner": "abracapocus",
+            "verification_result": "skipped",
+            "verification_status": "skipped",
+            "verification_checks": [],
+            "frame_failure": false,
+            "retry_attempts": []
+          }
+        ]
+      }
+    ]
+  }
+}
