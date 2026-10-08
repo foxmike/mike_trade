@@ -16,8 +16,8 @@
     "A test confirms that a strategy exception during operation surfaces as DEGRADED/error health detail and never produces a BUY.",
     "engine.py constructs no broker or provider client directly. All collaborators are injected, and tests use only fakes with no credentials or network."
   ],
-  "selected_backend": "codex_cli",
-  "model": "gpt-6-luna",
+  "selected_backend": "pi_cli",
+  "model": "openrouter/meta/muse-spark-1.3-contributor",
   "verification_profile": "focused",
   "allowed_write_paths": [
     "mike_trade/engine.py",
