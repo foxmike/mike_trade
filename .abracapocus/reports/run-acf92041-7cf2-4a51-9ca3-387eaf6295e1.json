@@ -1,0 +1,157 @@
+{
+  "plan_summary": "Task run: Ship executable VWAP BUY/SELL reference preset and shadow-only configuration",
+  "backend_executions": [
+    {
+      "backend": "pi_cli",
+      "command": [
+        "pi",
+        "-p",
+        "--provider",
+        "openrouter",
+        "--model",
+        "meta/muse-spark-1.3-contributor",
+        "Task: Ship executable VWAP BUY/SELL reference preset and shadow-only configuration\nDescription: Ship the executable vwap_reference pairing and a genuine runnable SHADOW-only reference configuration.\n\n1. In mike_trade/strategies/presets/pairs.py, define validated BUY/SELL pair presets.\n   - vwap_reference pairs the independently registered vwap_bounce BUY and vwap_breakdown SELL by (strategy_id, version) through configuration only. vwap_bounce and vwap_breakdown must not import each other.\n   - pairs.py resolves both through StrategyRegistry and may reuse the BUY preset from mike_trade/strategies/presets/buy_presets.py.\n   - The preset carries:\n     - parameter dicts\n     - the 1m completed-candle trigger timeframe\n     - an allowed-modes set containing only SHADOW (plus BACKTEST/replay only if the existing mode model treats it as non-broker)\n     - a mandatory trailing-protection requirement flag\n     - default policy first_valid_exit\n   - Provide validate_pair_preset / resolve_pair_preset functions. They fail closed on:\n     - an unknown strategy/version\n     - a side mismatch (BUY slot must be BUY, SELL slot must be SELL)\n     - invalid parameters\n     - any request to use the preset in PAPER or LIVE\n   - No profitability claims and no confidence values.\n\n2. Ship config/reference_vwap_shadow.yaml as a real configuration that the normal application configuration loader accepts without test-specific shortcuts. It contains:\n   - mode SHADOW with a named shadow scenario\n   - the shared Alpaca Basic IEX live feed with IEX provenance noted\n   - one editable symbol with a clear operator comment\n   - initial shadow funds and per-symbol and total budgets as Decimal-compatible strings\n   - the vwap_reference preset (vwap_bounce BUY + vwap_breakdown SELL)\n   - 1m completed-candle triggers\n   - mandatory trailing protection enabled\n   - minimum hold, max entry cycles, cooldown, and entry cutoff using existing config keys\n   - end-of-day close disabled by default\n   It must be structurally incapable of authorizing live orders:\n   - no live or paper credentials, endpoints, or authorization fields\n   - the mode is fixed to SHADOW\n   - the existing config schema/loader must reject it if anyone changes it to LIVE without the separate explicit live authorization mechanism, and pairs.py independently rejects the vwap_reference preset outside SHADOW\n   - no secrets of any kind\n\n3. In tests/unit/test_strategy_presets.py, cover:\n   - vwap_reference resolving to registered vwap_bounce BUY and vwap_breakdown SELL\n   - a static check that neither strategy module imports the other\n   - fail-closed rejection of an unknown id/version, a side swap, invalid params, and PAPER/LIVE use\n   - loading config/reference_vwap_shadow.yaml through the normal config loader, with assertions that mode == SHADOW, trailing protection is required, the timeframe is 1m completed bars, the feed is IEX, budgets are Decimal, and EOD close is disabled\n   - a mutated copy written to a pytest tmp_path with mode set to LIVE (or with live credentials injected) being rejected by the loader and/or the preset validation\n   - the config containing no credential/secret fields\n   Tests must not read real credentials or contact any broker.\n\nBefore editing, inspect:\n- mike_trade/strategies/presets/buy_presets.py\n- mike_trade/strategies/registry.py\n- mike_trade/strategies/base.py\n- mike_trade/strategies/buy/vwap_bounce.py\n- mike_trade/strategies/sell/vwap_breakdown.py\n- mike_trade/strategies/sell/base.py\n- mike_trade/signals/decisions.py\n- docs/STRATEGIES.md\n- the existing application configuration loader/schema and execution-mode/live-authorization modules (under mike_trade/config/ and mike_trade/domain/)\n- any existing files under config/, for key naming and style\n\nDecision budget: use only configuration keys the existing loader/schema already defines. If a required concept (for example the mandatory trailing flag) has no key, express it through the preset in pairs.py rather than inventing loader changes outside allowed_write_paths.\nPhase: K\nAcceptance criteria:\n  - mike_trade/strategies/presets/pairs.py defines a vwap_reference pair preset that references vwap_bounce (BUY) and vwap_breakdown (SELL) by (id, version) through configuration only, with 1m completed-candle triggers, the first_valid_exit policy, and a mandatory trailing-protection flag.\n  - Pair validation fails closed on an unknown strategy/version, a BUY/SELL slot side mismatch, invalid parameters, and any PAPER or LIVE mode request for vwap_reference (each tested).\n  - A static test confirms vwap_bounce.py does not import vwap_breakdown and vwap_breakdown.py does not import vwap_bounce.\n  - config/reference_vwap_shadow.yaml loads through the normal application config loader with mode SHADOW, a named shadow scenario, the shared IEX feed, an editable symbol, initial shadow funds, per-symbol/total budgets as Decimal, mandatory trailing protection, 1m completed-candle triggers, and EOD close disabled.\n  - The reference config contains no credentials, secrets, endpoints, or live-authorization fields, and a tmp_path copy mutated to LIVE or given live credentials is rejected by the loader and/or the preset validation.\n  - Neither file contains profitability claims or confidence values, and tests never read real credentials or contact a broker.\n  - tests/unit/test_strategy_presets.py passes when run in isolation.\nContext: AGENTS.md guidance:\n# AGENTS.md\n## Purpose\nThis repository is operated by an autonomous multi-agent system (abracapocus_2).\nAll agents must follow these rules when modifying the codebase.\n---\n## Core Principles\n- Minimal blast radius: only modify what is required for the task\n- Deterministic verification: all changes must be verifiable via code (tests, compile, scripts)\n- No architecture drift: do not introduce new frameworks or major design changes unless explicitly required\n- No unrelated refactors\n- All changes must be reproducible from a clean clone\n---\n## Project Structure\n- docs/ → design, plans, architecture constraints\n- plans/ → master plans\n- phases/ → phase definitions\n- tasks/ → executable task documents\n- backends/ → CLI backend adapters\n- agents/ → specialist agents\n- runtime/ → orchestration, routing, state\n...(truncated)\n\n## Task Contract Constraints\n\n{\n  \"allowed_symbols\": [\n    \"PairPreset\",\n    \"VWAP_REFERENCE\",\n    \"validate_pair_preset\",\n    \"resolve_pair_preset\",\n    \"PairPresetError\"\n  ],\n  \"allowed_write_paths\": [\n    \"mike_trade/strategies/presets/pairs.py\",\n    \"tests/unit/test_strategy_presets.py\",\n    \"config/reference_vwap_shadow.yaml\"\n  ],\n  \"forbidden_changes\": [\n    \"modify files outside allowed_write_paths\",\n    \"modify strategy modules, buy_presets.py, registry.py, or the config loader/schema\",\n    \"change PLAN_SKELETON.json or other planning artifacts\",\n    \"add a hard code dependency between vwap_bounce and vwap_breakdown\",\n    \"allow the vwap_reference preset or reference config to authorize PAPER or LIVE orders\",\n    \"include credentials, secrets, endpoints, or live-authorization fields in the config\",\n    \"add profitability claims, profitable defaults, or confidence scores\",\n    \"create live broker orders, contact brokers, or run broad test suites/backtests\"\n  ]\n}\nAGENTS.md:\n# AGENTS.md\n\n## Purpose\n\nThis repository is operated by an autonomous multi-agent system (abracapocus_2).\nAll agents must follow these rules when modifying the codebase.\n\n---\n\n## Core Principles\n\n- Minimal blast radius: only modify what is required for the task\n- Deterministic verification: all changes must be verifiable via code (tests, compile, scripts)\n- No architecture drift: do not introduce new frameworks or major design changes unless explicitly required\n- No unrelated refactors\n- All changes must be reproducible from a clean clone\n\n---\n\n## Project Structure\n\n- docs/ → design, plans, architecture constraints\n- plans/ → master plans\n- phases/ → phase definitions\n- tasks/ → executable task documents\n- backends/ → CLI backend adapters\n- agents/ → specialist agents\n- runtime/ → orchestration, routing, state\n- reports/ → execution reports (DO NOT MODIFY MANUALLY)\n- state/runtime_state.json → runtime state (DO NOT COMMIT)\n\n---\n\n## Task Execution Rules\n\n- Always operate from a task document when available\n- Respect:\n  - selected_backend\n  - verification_profile\n  - acceptance_criteria\n- If a task conflicts with architecture constraints or phase scope:\n  - STOP and report conflict\n\n---\n\n## Backend Rules\n\n- Backends must:\n  - execute commands deterministically\n  - capture stdout, stderr, exit_code\n  - not silently fail\n- Do not invent backend interfaces; use existing adapters\n- Codex CLI, Aider, Gemini, Claude Code should be invoked through backends only\n\n---\n\n## Verification Rules\n\n- Verification must be deterministic\n- Preferred checks:\n  - pytest\n  - python -m py_compile\n- Do not rely on model self-evaluation\n\n---\n\n## Execution Control Flow (PERMANENT ARCHITECTURAL RULE)\n\n**HEURISTIC INFERENCE MUST NEVER PARTICIPATE IN ABRACAPOCUS EXECUTION CONTROL FLOW.**\n\nAbracapocus must not determine execution success, failure, acceptance,\nrejection, blocking, retry eligibility, phase progression, or completion from\nheuristic inference. A heuristic is any conclusion that is *inferred* rather\nthan *directly established by an explicit executable contract or a concrete\nruntime fact*.\n\nRuntime status is derived ONLY from concrete, mechanically observable facts:\n\n1. The backend process exit code. A backend that exits `0` (with no hard\n   write-policy violation) is a successful execution.\n2. Objectively observed hard write-policy violations (changed paths outside the\n   declared allowed write paths).\n3. Explicit operator-authored commands (task/phase verification the plan\n   explicitly contains). Their raw results are reported, kept DISTINCT from\n   backend execution status.\n4. Objective orchestrator failures with direct evidence (backend could not\n   launch, required document could not be parsed, subprocess infrastructure\n   failed).\n\n**Verification results are observational and must not rewrite backend execution\nstatus.** A verifier returning non-zero must NEVER, by itself, turn a\nsuccessful backend execution into unverified, stop a phase, or trigger an\nautomatic rerun. Verification is the result of a command, not authority to\nrewrite history.\n\n**Execution control:** Task-local problems (non-zero exit, timeout,\nwrite-policy violation, frame failure, backend launch failure) produce\nacceptance status ``\"unverified\"`` with truthful evidence preserved. They\nMUST NOT stop sibling tasks, later phases, or the plan. Only operator\ncancellation (SIGINT/SIGTERM/dashboard cancel) may terminate a run\n(acceptance status ``\"interrupted\"``). Dependencies are ordering constraints,\nnot acceptance gates — any terminal attempt outcome satisfies a dependency\nedge. The status ``\"failed\"`` is banned from acceptance output.\n\nDo NOT reintroduce -- under any name, feature flag, \"advisory\" wrapper, or\ncompatibility mode -- context completeness/sufficiency scoring, change or\narchitecture assessment used as a gate, intent/scope matching, reconciliation\ngates, no-progress judgments, confidence/risk scores, model/LLM/reviewer\njudgments over status, shadow/adaptive/secondary-verification gates, or\nheuristic retry/failure-classification control flow. Failure classification may\nonly *summarize* an already-established concrete failure; it must never create\none. Retries are permitted only for explicitly defined mechanical backend\nfailures. Future agents must not add these systems back.\n\n---\n\n## Git Rules\n\n- Do not commit:\n  - runtime_state.json\n  - reports/\n  - logs/\n  - virtual environments\n- Do not modify .gitignore unless required by task\n- Do not create excessive commits; prefer grouped logical commits\n\n---\n\n## Allowed Changes\n\n- Implement task requirements\n- Fix failing verification\n- Update relevant tests\n- Improve documentation tied to the task\n\n---\n\n## Forbidden Changes\n\n- Changing architecture without explicit instruction\n- Adding dependencies without justification\n- Modifying unrelated files\n- Deleting important files\n- Bypassing verification\n\n---\n\n## Planning Rules\n\n- Plans are multi-phase\n- Completed sections are immutable\n- Remaining sections may be updated\n- Tasks must align with:\n  - project brief\n  - architecture constraints\n  - active phase\n\n---\n\n## Reporting\n\n- All executions must produce structured reports\n- Reports must include:\n  - changed files\n  - verification results\n  - assessment\n\n---\n\n## Behavior\n\n- Do not ask unnecessary questions\n- Do not stall execution\n- Do not perform broad scans unless required\n- Prefer direct action over analysis\n\n---\n\n## Priority Order\n\nThis ordering guides *implementation decisions* only. It does NOT make\nverification an acceptance authority: verification results are observational\n(see \"Execution Control Flow\"), and never override a concrete backend\nexecution result.\n\n1. Architecture constraints\n2. Task definition\n3. Verification results (observational signal, not acceptance authority)\n4. Plan guidance\n\nIf conflicts occur, follow this order.\n\nAGENTS metadata:\n{\"loaded\": true, \"path\": \"/home/mike/dev/mike/abracapocus/python/abracapocus_2/AGENTS.md\", \"rule_count\": 77, \"sha256_12\": \"3f9b549ba1ce\"}\n"
+      ],
+      "stdout": "Done. All acceptance criteria verified.\n\n## Changes (3 new files, all within `allowed_write_paths`)\n\n**`mike_trade/strategies/presets/pairs.py`**\n- `PairPreset` dataclass: pinned BUY/SELL `(strategy_id, version)` + param dicts, `trigger_timeframe=M1`, `completed_bars_only=True`, `allowed_modes=frozenset({\"shadow\"})`, `requires_trailing_protection=True`, `exit_policy=\"first_valid_exit\"`.\n- `VWAP_REFERENCE` pairs `vwap_bounce` BUY with `vwap_breakdown` SELL by id/version only — BUY identity reused from `buy_presets.VWAP_REFERENCE`, SELL identity from `vwap_breakdown` constants; both classes resolved exclusively through `StrategyRegistry`. Only `SHADOW_ONLY`/`FIRST_VALID_EXIT` module constants plus the 5 allowed symbols are public.\n- `validate_pair_preset` / `resolve_pair_preset` fail closed (`PairPresetError`) on unknown id/version, BUY↔SELL slot side swap, invalid params (delegated to spec schemas), non-`M1`/non-completed triggers, dropped trailing flag, wrong exit policy, and any `paper`/`live` mode (case/whitespace-tolerant). No profitability claims, no confidence.\n\n**`config/reference_vwap_shadow.yaml`**\n- Loads through the normal loader (`_load_effective` / `config validate`): `account_mode: shadow`, named `vwap_reference_shadow` scenario, Alpaca `iex` feed with provenance comment, one operator-commented `SPY` block, quoted-Decimal `starting_cash`/`budget`/`total_application_budget`, `vwap_reference` BUY+SELL strategy pair, `1Min` timeframes, `native_trailing` stop + `stop_required`/`block_new_entries_when_unprotected`, `min_hold_seconds`/`max_entry_cycles_per_session`/`post_sale_cooldown_seconds`/`entry_cutoff`, EOD close disabled. Declares **no** `live_trading_enabled` key, credentials, secrets, or endpoints.\n\n**`tests/unit/test_strategy_presets.py`** — 24 tests, all passing in isolation:\n- Resolution to registered BUY/SELL legs; static no-mutual-import check; fail-closed cases (unknown id/version, side swap, bad params, parametrized paper/live/blank modes, widened modes).\n- Loader assertions (SHADOW, IEX, Decimal budgets, trailing, 1m triggers, EOD off, pair wiring) plus end-to-end `validate`/`show` CLI runs; `tmp_path` LIVE mutation rejected by the loader, credential injection rejected (`SecretInConfigError`), `--set ...=live` refused with exit 2; secret/endpoint sweep and no-live-auth-key checks; no real credentials (explicit empty environ everywhere, no broker contact).\n\n## Verification\n- `uv run pytest tests/unit/test_strategy_presets.py` → **24 passed**; `test_config_cli.py` still 34 passed; `ruff check` clean.\n- `git status` shows only the three allowed new files (plus harness-owned `.abracapocus` noise I didn't touch).\n- Environment note: the project venv was missing PyYAML (already imported by `config_commands.py`); I installed it into the venv only — no repo dependency files changed.\n",
+      "stderr": "",
+      "exit_code": 0,
+      "duration_seconds": 420.528751373291,
+      "model": "openrouter/meta/muse-spark-1.3-contributor",
+      "model_tags": [],
+      "working_directory": "/home/mike/dev/mike/stocks/python/mike_trade",
+      "changed_files": [
+        {
+          "path": "config/reference_vwap_shadow.yaml",
+          "status": "untracked",
+          "code": "??"
+        },
+        {
+          "path": "mike_trade/strategies/presets/pairs.py",
+          "status": "untracked",
+          "code": "??"
+        },
+        {
+          "path": "tests/unit/test_strategy_presets.py",
+          "status": "untracked",
+          "code": "??"
+        }
+      ],
+      "diff_summary": "git diff reported no changes",
+      "model_attempts": [
+        {
+          "backend": "pi_cli",
+          "model": "openrouter/meta/muse-spark-1.3-contributor",
+          "exit_code": 0,
+          "stdout": "Done. All acceptance criteria verified.\n\n## Changes (3 new files, all within `allowed_write_paths`)\n\n**`mike_trade/strategies/presets/pairs.py`**\n- `PairPreset` dataclass: pinned BUY/SELL `(strategy_id, version)` + param dicts, `trigger_timeframe=M1`, `completed_bars_only=True`, `allowed_modes=frozenset({\"shadow\"})`, `requires_trailing_protection=True`, `exit_policy=\"first_valid_exit\"`.\n- `VWAP_REFERENCE` pairs `vwap_bounce` BUY with `vwap_breakdown` SELL by id/version only — BUY identity reused from `buy_presets.VWAP_REFERENCE`, SELL identity from `vwap_breakdown` constants; both classes resolved exclusively through `StrategyRegistry`. Only `SHADOW_ONLY`/`FIRST_VALID_EXIT` module constants plus the 5 allowed symbols are public.\n- `validate_pair_preset` / `resolve_pair_preset` fail closed (`PairPresetError`) on unknown id/version, BUY↔SELL slot side swap, invalid params (delegated to spec schemas), non-`M1`/non-completed triggers, dropped trailing flag, wrong exit policy, and any `paper`/`live` mode (case/whitespace-tolerant). No profitability claims, no confidence.\n\n**`config/reference_vwap_shadow.yaml`**\n- Loads through the normal loader (`_load_effective` / `config validate`): `account_mode: shadow`, named `vwap_reference_shadow` scenario, Alpaca `iex` feed with provenance comment, one operator-commented `SPY` block, quoted-Decimal `starting_cash`/`budget`/`total_application_budget`, `vwap_reference` BUY+SELL strategy pair, `1Min` timeframes, `native_trailing` stop + `stop_required`/`block_new_entries_when_unprotected`, `min_hold_seconds`/`max_entry_cycles_per_session`/`post_sale_cooldown_seconds`/`entry_cutoff`, EOD close disabled. Declares **no** `live_trading_enabled` key, credentials, secrets, or endpoints.\n\n**`tests/unit/test_strategy_presets.py`** — 24 tests, all passing in isolation:\n- Resolution to registered BUY/SELL legs; static no-mutual-import check; fail-closed cases (unknown id/version, side swap, bad params, parametrized paper/live/blank modes, widened modes).\n- Loader assertions (SHADOW, IEX, Decimal budgets, trailing, 1m triggers, EOD off, pair wiring) plus end-to-end `validate`/`show` CLI runs; `tmp_path` LIVE mutation rejected by the loader, credential injection rejected (`SecretInConfigError`), `--set ...=live` refused with exit 2; secret/endpoint sweep and no-live-auth-key checks; no real credentials (explicit empty environ everywhere, no broker contact).\n\n## Verification\n- `uv run pytest tests/unit/test_strategy_presets.py` → **24 passed**; `test_config_cli.py` still 34 passed; `ruff check` clean.\n- `git status` shows only the three allowed new files (plus harness-owned `.abracapocus` noise I didn't touch).\n- Environment note: the project venv was missing PyYAML (already imported by `config_commands.py`); I installed it into the venv only — no repo dependency files changed.\n",
+          "stderr": "",
+          "duration_seconds": 420.528751373291,
+          "changed_files": [
+            {
+              "path": "config/reference_vwap_shadow.yaml",
+              "status": "untracked",
+              "code": "??"
+            },
+            {
+              "path": "mike_trade/strategies/presets/pairs.py",
+              "status": "untracked",
+              "code": "??"
+            },
+            {
+              "path": "tests/unit/test_strategy_presets.py",
+              "status": "untracked",
+              "code": "??"
+            }
+          ],
+          "diff_summary": "git diff reported no changes",
+          "outcome_classification": "backend_completed_with_changes",
+          "backend_timeout": false,
+          "backend_verification_timeout": false,
+          "timeout_seconds": null
+        }
+      ],
+      "write_policy_violations": [],
+      "outcome_classification": "backend_completed_with_changes",
+      "backend_timeout": false,
+      "backend_verification_timeout": false,
+      "changed_files_at_timeout_exit": [],
+      "abracapocus_verification_ran_after_backend_timeout": false,
+      "verification_owner": "abracapocus",
+      "verification_result": "skipped"
+    }
+  ],
+  "review": {
+    "status": "approved",
+    "findings": [],
+    "summary": "k.5:Review complete",
+    "created_at": "2026-10-08T18:54:17.621074"
+  },
+  "verification": {
+    "status": "skipped",
+    "checks": [],
+    "created_at": "2026-10-08T18:54:17.621081",
+    "notes": "K:skipped",
+    "profile": "focused"
+  },
+  "metadata": {
+    "run_id": "acf92041-7cf2-4a51-9ca3-387eaf6295e1",
+    "project_name": "mike_trade",
+    "plan_version": "task-k.5",
+    "task_id": "k.5",
+    "task_title": "Ship executable VWAP BUY/SELL reference preset and shadow-only configuration",
+    "task_status": "completed",
+    "selected_backend": "pi_cli",
+    "verification_profile": "focused",
+    "backend_reason": "phase_based",
+    "frame_failures": [],
+    "agents_md": {
+      "loaded": true,
+      "path": "/home/mike/dev/mike/abracapocus/python/abracapocus_2/AGENTS.md",
+      "rule_count": 77,
+      "sha256_12": "3f9b549ba1ce"
+    },
+    "phase_results": [
+      {
+        "phase_name": "K",
+        "status": "passed",
+        "verification": "skipped",
+        "task_results": [
+          {
+            "task_id": "k.5",
+            "status": "passed",
+            "acceptance_status": "accepted",
+            "backend": "pi_cli",
+            "backend_outcome_classification": "backend_completed_with_changes",
+            "changed_files": [
+              {
+                "path": "config/reference_vwap_shadow.yaml",
+                "status": "untracked",
+                "code": "??"
+              },
+              {
+                "path": "mike_trade/strategies/presets/pairs.py",
+                "status": "untracked",
+                "code": "??"
+              },
+              {
+                "path": "tests/unit/test_strategy_presets.py",
+                "status": "untracked",
+                "code": "??"
+              }
+            ],
+            "backend_timeout": false,
+            "backend_elapsed_seconds": 420.528751373291,
+            "backend_timeout_seconds": null,
+            "changed_files_at_timeout_exit": [],
+            "abracapocus_verification_ran_after_backend_timeout": false,
+            "verification_owner": "abracapocus",
+            "verification_result": "skipped",
+            "verification_status": "skipped",
+            "verification_checks": [],
+            "frame_failure": false,
+            "retry_attempts": []
+          }
+        ]
+      }
+    ]
+  }
+}

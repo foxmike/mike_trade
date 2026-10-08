@@ -1,0 +1,95 @@
+{
+  "run_at": "2026-10-08T18:54:17.693374",
+  "phase_dir": "/home/mike/dev/mike/stocks/python/mike_trade/.abracapocus/plans/ACTIVE/MIKE_TRADE_COMPLETE_PRODUCT/k",
+  "status": "passed",
+  "counts": {
+    "passed": 5,
+    "failed": 0,
+    "blocked": 0,
+    "skipped": 0,
+    "unverified": 0
+  },
+  "tasks": [
+    {
+      "task_id": "k.1",
+      "task_file": "/home/mike/dev/mike/stocks/python/mike_trade/.abracapocus/plans/ACTIVE/MIKE_TRADE_COMPLETE_PRODUCT/k/task_k.1_implement_sell_rule_shared_evaluation_contract_and_full_exit_eligibility.json",
+      "status": "passed",
+      "acceptance_status": "accepted",
+      "task_verification": {
+        "status": "skipped",
+        "checks": [],
+        "owner": "abracapocus"
+      },
+      "run_id": "d9814051-e271-4000-8b22-b317e2a44364",
+      "write_policy_violations": [],
+      "failure_classification": null,
+      "reviewer_summary": "k.1:Review complete"
+    },
+    {
+      "task_id": "k.2",
+      "task_file": "/home/mike/dev/mike/stocks/python/mike_trade/.abracapocus/plans/ACTIVE/MIKE_TRADE_COMPLETE_PRODUCT/k/task_k.2_implement_documented_vwap_breakdown_reference_sell_and_momentum_reversal.json",
+      "status": "passed",
+      "acceptance_status": "accepted",
+      "task_verification": {
+        "status": "skipped",
+        "checks": [],
+        "owner": "abracapocus"
+      },
+      "run_id": "9b348545-a719-40f7-94ad-9937370438fd",
+      "write_policy_violations": [],
+      "failure_classification": null,
+      "reviewer_summary": "k.2:Review complete"
+    },
+    {
+      "task_id": "k.3",
+      "task_file": "/home/mike/dev/mike/stocks/python/mike_trade/.abracapocus/plans/ACTIVE/MIKE_TRADE_COMPLETE_PRODUCT/k/task_k.3_implement_rsi_reversal_sell_signal_with_closed_bar_and_reset_semantics.json",
+      "status": "passed",
+      "acceptance_status": "accepted",
+      "task_verification": {
+        "status": "skipped",
+        "checks": [],
+        "owner": "abracapocus"
+      },
+      "run_id": "061eab38-ff7b-49be-847c-ee2cbf45c72b",
+      "write_policy_violations": [],
+      "failure_classification": null,
+      "reviewer_summary": "k.3:Review complete"
+    },
+    {
+      "task_id": "k.4",
+      "task_file": "/home/mike/dev/mike/stocks/python/mike_trade/.abracapocus/plans/ACTIVE/MIKE_TRADE_COMPLETE_PRODUCT/k/task_k.4_build_signal_arbitration_valid_vs_rejected_decision_and_rearm_policy.json",
+      "status": "passed",
+      "acceptance_status": "accepted",
+      "task_verification": {
+        "status": "skipped",
+        "checks": [],
+        "owner": "abracapocus"
+      },
+      "run_id": "3d3a8f53-6bcb-43f2-842b-69616f6b2acf",
+      "write_policy_violations": [],
+      "failure_classification": null,
+      "reviewer_summary": "k.4:Review complete"
+    },
+    {
+      "task_id": "k.5",
+      "task_file": "/home/mike/dev/mike/stocks/python/mike_trade/.abracapocus/plans/ACTIVE/MIKE_TRADE_COMPLETE_PRODUCT/k/task_k.5_ship_executable_vwap_buy_sell_reference_preset_and_shadow_only_configuration.json",
+      "status": "passed",
+      "acceptance_status": "accepted",
+      "task_verification": {
+        "status": "skipped",
+        "checks": [],
+        "owner": "abracapocus"
+      },
+      "run_id": "acf92041-7cf2-4a51-9ca3-387eaf6295e1",
+      "write_policy_violations": [],
+      "failure_classification": null,
+      "reviewer_summary": "k.5:Review complete"
+    }
+  ],
+  "phase_verification": {
+    "status": "warning",
+    "checks": [],
+    "notes": "phase verification complete",
+    "run_when": "all_tasks_pass"
+  }
+}
