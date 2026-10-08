@@ -1,0 +1,158 @@
+{
+  "plan_summary": "Task run: Implement account cycle order fill and control repositories",
+  "backend_executions": [
+    {
+      "backend": "claude_code_cli",
+      "command": [
+        "claude",
+        "-p",
+        "Task: Implement account cycle order fill and control repositories\nPhase: C\nDescription: Implement the single-writer transaction layer and the account-scoped write repositories. They persist order intent before broker submission, apply broker fills and activities exactly once, and keep budget reservations, position cycles, protection coverage, the positions read model, and the journal atomically consistent. Build on c.1 (schema.py, 0001_initial.sql) and c.2 (journal.py) without modifying them.\n\nmike_trade/persistence/transaction.py:\n- `WriterLock(db_path)`: an exclusive advisory fcntl.flock on '<db_path>.writer.lock', acquired non-blocking.\n  - A second writer for the same database raises WriterLockHeldError, which enforces one authoritative writer per operational database.\n  - Release on close or context exit.\n- `WriterSession`: owns the lock plus one connection from schema.open_connection, and exposes `unit_of_work()`.\n- `unit_of_work()`: a context manager that does BEGIN IMMEDIATE, commits on success, rolls back on any exception, and re-raises. Nested use raises.\n- Surface SQLITE_BUSY after busy_timeout as WriterBusyError.\n- `bind_scope(account_scope_id)`:\n  - Returns a `ScopedWriter` whose repositories reject any entity whose account_scope_id differs (CrossScopeWriteError).\n  - Rejects scopes whose environment is not the database identity environment.\n\nmike_trade/persistence/repositories.py: repositories take a ScopedWriter and an injected clock, and map to the domain types in mike_trade/domain/trading.py and protection.py. Provide:\n- **AccountScopeRepository**\n  - register_scope.\n  - get_scope.\n- **RunConfigRepository**\n  - record_run_config: stores the fingerprint sha256 and config JSON; idempotent on the fingerprint.\n- **OrderIntentRepository**\n  - `record_intent(intent, reservation_amount)`:\n    - In one transaction it checks the budget and inserts order_intents (status RECORDED), an ACTIVE budget_reservation, and an 'OrderIntentRecorded' journal event with idempotency_key = client_order_id.\n    - It commits before returning an IntentReceipt.\n    - The budget check passes only when active reservations plus open-position cost basis stay within total_application_budget for the account scope, and within per_symbol_budget for the symbol. Otherwise it raises BudgetExceededError.\n    - A symbol is never a cash account.\n  - `submit_recorded_intent(receipt, submit)`:\n    - Uses journal.commit_then_effect semantics, so the broker submit callable runs only for a durably recorded intent.\n    - On a submit exception it marks the intent SUBMIT_FAILED or UNKNOWN; it never deletes the intent.\n  - mark_submitted.\n- **BrokerOrderRepository**\n  - upsert_broker_order: status transitions are recorded as broker_order_events.\n  - record_activity: idempotent on external_activity_id.\n- **FillRepository**\n  - `apply_fill(fill) -> FillApplyResult(applied | duplicate)`. In one unit_of_work it:\n    1. Inserts the fill keyed by (account_scope_id, external_activity_id).\n    2. Updates broker_orders filled_quantity and avg price.\n    3. Applies PositionCycle.apply_entry_fill or apply_exit_fill. Domain violations roll back the whole transaction.\n    4. Consumes or releases the budget reservation in proportion.\n    5. Upserts the positions read model.\n    6. Resizes covered_quantity on the active trailing_stop_state to the remaining quantity.\n    7. Appends a 'FillApplied' journal event.\n  - A duplicate activity ID returns duplicate and changes nothing. Partial fills accumulate correctly.\n- **PositionCycleRepository**\n  - open_cycle.\n  - get_cycle.\n  - list_open.\n- **ProtectionRepository**\n  - record_protection_order.\n  - save_trailing_state: rejects a downward long stop move by delegating to TrailingStopState.ratchet.\n  - append_trailing_event.\n  - mark_status: includes UNKNOWN.\n- **EntryControlRepository**\n  - increment_filled_entry_cycles: per symbol/session_date and optionally originating buy strategy.\n  - record_trade_result: updates consecutive losses and sets a lockout once the threshold is reached.\n  - set_cooldown.\n  - set_kill_switch.\n  - set_paused.\n  - load_eligibility_state.\n  - These affect entries only; there is no API to block exits.\n- **OperatorCommandRepository**\n  - record_command: append-only.\n- **ReconciliationRepository**\n  - start_run.\n  - record_drift: append-only; never rewrites fills or orders.\n  - resolve_drift: inserts into reconciliation_resolutions.\n  - has_unresolved_drift.\n- **StrategyStateRepository**\n  - save_state and load_state, including rearm.\n- **CashEquityRepository**\n  - append_cash_event.\n  - append_equity_snapshot.\n- **ServiceHealthRepository**\n  - heartbeat.\n- **Value handling.** Use schema.decimal_to_db and schema.to_db_timestamp for every value. Every trade-affecting mutation appends a journal event in the same transaction.\n\ntests/unit/test_repositories.py must use tmp_path databases initialized via schema.initialize_database and cover:\n- A second WriterLock raises WriterLockHeldError.\n- Writing an entity of another scope raises CrossScopeWriteError.\n- record_intent commits intent + reservation + event together. A journal append failure (monkeypatched) leaves none of them, and the submit callable is never invoked.\n- submit failure marks the intent SUBMIT_FAILED/UNKNOWN and keeps it.\n- Budget exceeded at both the total and the per-symbol level.\n- Two partial BUY fills accumulate into an OPEN cycle, and the positions read model is correct.\n- A duplicate external_activity_id is a no-op.\n- Over-exit and buy-after-exit fills roll back with no partial rows.\n- A full exit closes the cycle and releases the reservation.\n- Trailing coverage is resized to remaining quantity.\n- A downward stop save is rejected.\n- A consecutive-loss lockout is set at the threshold.\n- Drift recording does not alter existing fills, and has_unresolved_drift clears only after resolve_drift.\n- A unit_of_work exception rolls back everything.\n\nDecision budget: make at most five design choices not covered here, and record them in the repositories.py module docstring.\n\nBefore editing, inspect:\n- mike_trade/persistence/schema.py and mike_trade/persistence/migrations/0001_initial.sql (read-only)\n- mike_trade/persistence/journal.py (read-only)\n- mike_trade/domain/trading.py, mike_trade/domain/protection.py, mike_trade/domain/accounts.py, mike_trade/domain/errors.py (read-only)\nContext: AGENTS.md guidance:\n# AGENTS.md\n## Purpose\nThis repository is operated by an autonomous multi-agent system (abracapocus_2).\nAll agents must follow these rules when modifying the codebase.\n---\n## Core Principles\n- Minimal blast radius: only modify what is required for the task\n- Deterministic verification: all changes must be verifiable via code (tests, compile, scripts)\n- No architecture drift: do not introduce new frameworks or major design changes unless explicitly required\n- No unrelated refactors\n- All changes must be reproducible from a clean clone\n---\n## Project Structure\n- docs/ → design, plans, architecture constraints\n- plans/ → master plans\n- phases/ → phase definitions\n- tasks/ → executable task documents\n- backends/ → CLI backend adapters\n- agents/ → specialist agents\n- runtime/ → orchestration, routing, state\n...(truncated)\n\n## Task Contract Constraints\n\n{\n  \"allowed_symbols\": [\n    \"WriterLock\",\n    \"WriterSession\",\n    \"ScopedWriter\",\n    \"WriterLockHeldError\",\n    \"WriterBusyError\",\n    \"CrossScopeWriteError\",\n    \"AccountScopeRepository\",\n    \"RunConfigRepository\",\n    \"OrderIntentRepository\",\n    \"IntentReceipt\",\n    \"BrokerOrderRepository\",\n    \"FillRepository\",\n    \"FillApplyResult\",\n    \"PositionCycleRepository\",\n    \"ProtectionRepository\",\n    \"EntryControlRepository\",\n    \"OperatorCommandRepository\",\n    \"ReconciliationRepository\",\n    \"StrategyStateRepository\",\n    \"CashEquityRepository\",\n    \"ServiceHealthRepository\",\n    \"BudgetExceededError\"\n  ],\n  \"allowed_write_paths\": [\n    \"mike_trade/persistence/repositories.py\",\n    \"mike_trade/persistence/transaction.py\",\n    \"tests/unit/test_repositories.py\"\n  ],\n  \"forbidden_changes\": [\n    \"modify files outside allowed_write_paths\",\n    \"change PLAN_SKELETON.json or other planning artifacts\",\n    \"edit schema.py, 0001_initial.sql, or journal.py\",\n    \"add a new migration file\",\n    \"invoke a broker submit callable before the intent is durably committed\",\n    \"update or delete append-only rows or silently rewrite fills on drift\",\n    \"treat a symbol as an independent cash account\",\n    \"use float for money or quantities\",\n    \"access broker credentials or create broker orders\",\n    \"run broad test suites or backtests\"\n  ]\n}\n\nAGENTS.md guidance:\n# AGENTS.md\n\n## Purpose\n\nThis repository is operated by an autonomous multi-agent system (abracapocus_2).\nAll agents must follow these rules when modifying the codebase.\n\n---\n\n## Core Principles\n\n- Minimal blast radius: only modify what is required for the task\n- Deterministic verification: all changes must be verifiable via code (tests, compile, scripts)\n- No architecture drift: do not introduce new frameworks or major design changes unless explicitly required\n- No unrelated refactors\n- All changes must be reproducible from a clean clone\n\n---\n\n## Project Structure\n\n- docs/ → design, plans, architecture constraints\n- plans/ → master plans\n- phases/ → phase definitions\n- tasks/ → executable task documents\n- backends/ → CLI backend adapters\n- agents/ → specialist agents\n- runtime/ → orchestration, routing, state\n- reports/ → execution reports (DO NOT MODIFY MANUALLY)\n- state/runtime_state.json → runtime state (DO NOT COMMIT)\n\n---\n\n## Task Execution Rules\n\n- Always operate from a task document when available\n- Respect:\n  - selected_backend\n  - verification_profile\n  - acceptance_criteria\n- If a task conflicts with architecture constraints or phase scope:\n  - STOP and report conflict\n\n---\n\n## Backend Rules\n\n- Backends must:\n  - execute commands deterministically\n  - capture stdout, stderr, exit_code\n  - not silently fail\n- Do not invent backend interfaces; use existing adapters\n- Codex CLI, Aider, Gemini, Claude Code should be invoked through backends only\n\n---\n\n## Verification Rules\n\n- Verification must be deterministic\n- Preferred checks:\n  - pytest\n  - python -m py_compile\n- Do not rely on model self-evaluation\n\n---\n\n## Execution Control Flow (PERMANENT ARCHITECTURAL RULE)\n\n**HEURISTIC INFERENCE MUST NEVER PARTICIPATE IN ABRACAPOCUS EXECUTION CONTROL FLOW.**\n\nAbracapocus must not determine execution success, failure, acceptance,\nrejection, blocking, retry eligibility, phase progression, or completion from\nheuristic inference. A heuristic is any conclusion that is *inferred* rather\nthan *directly established by an explicit executable contract or a concrete\nruntime fact*.\n\nRuntime status is derived ONLY from concrete, mechanically observable facts:\n\n1. The backend process exit code. A backend that exits `0` (with no hard\n   write-policy violation) is a successful execution.\n2. Objectively observed hard write-policy violations (changed paths outside the\n   declared allowed write paths).\n3. Explicit operator-authored commands (task/phase verification the plan\n   explicitly contains). Their raw results are reported, kept DISTINCT from\n   backend execution status.\n4. Objective orchestrator failures with direct evidence (backend could not\n   launch, required document could not be parsed, subprocess infrastructure\n   failed).\n\n**Verification results are observational and must not rewrite backend execution\nstatus.** A verifier returning non-zero must NEVER, by itself, turn a\nsuccessful backend execution into unverified, stop a phase, or trigger an\nautomatic rerun. Verification is the result of a command, not authority to\nrewrite history.\n\n**Execution control:** Task-local problems (non-zero exit, timeout,\nwrite-policy violation, frame failure, backend launch failure) produce\nacceptance status ``\"unverified\"`` with truthful evidence preserved. They\nMUST NOT stop sibling tasks, later phases, or the plan. Only operator\ncancellation (SIGINT/SIGTERM/dashboard cancel) may terminate a run\n(acceptance status ``\"interrupted\"``). Dependencies are ordering constraints,\nnot acceptance gates — any terminal attempt outcome satisfies a dependency\nedge. The status ``\"failed\"`` is banned from acceptance output.\n\nDo NOT reintroduce -- under any name, feature flag, \"advisory\" wrapper, or\ncompatibility mode -- context completeness/sufficiency scoring, change or\narchitecture assessment used as a gate, intent/scope matching, reconciliation\ngates, no-progress judgments, confidence/risk scores, model/LLM/reviewer\njudgments over status, shadow/adaptive/secondary-verification gates, or\nheuristic retry/failure-classification control flow. Failure classification may\nonly *summarize* an already-established concrete failure; it must never create\none. Retries are permitted only for explicitly defined mechanical backend\nfailures. Future agents must not add these systems back.\n\n---\n\n## Git Rules\n\n- Do not commit:\n  - runtime_state.json\n  - reports/\n  - logs/\n  - virtual environments\n- Do not modify .gitignore unless required by task\n- Do not create excessive commits; prefer grouped logical commits\n\n---\n\n## Allowed Changes\n\n- Implement task requirements\n- Fix failing verification\n- Update relevant tests\n- Improve documentation tied to the task\n\n---\n\n## Forbidden Changes\n\n- Changing architecture without explicit instruction\n- Adding dependencies without justification\n- Modifying unrelated files\n- Deleting important files\n- Bypassing verification\n\n---\n\n## Planning Rules\n\n- Plans are multi-phase\n- Completed sections are immutable\n- Remaining sections may be updated\n- Tasks must align with:\n  - project brief\n  - architecture constraints\n  - active phase\n\n---\n\n## Reporting\n\n- All executions must produce structured reports\n- Reports must include:\n  - changed files\n  - verification results\n  - assessment\n\n---\n\n## Behavior\n\n- Do not ask unnecessary questions\n- Do not stall execution\n- Do not perform broad scans unless required\n- Prefer direct action over analysis\n\n---\n\n## Priority Order\n\nThis ordering guides *implementation decisions* only. It does NOT make\nverification an acceptance authority: verification results are observational\n(see \"Execution Control Flow\"), and never override a concrete backend\nexecution result.\n\n1. Architecture constraints\n2. Task definition\n3. Verification results (observational signal, not acceptance authority)\n4. Plan guidance\n\nIf conflicts occur, follow this order.\n",
+        "--dangerously-skip-permissions",
+        "--output-format",
+        "text",
+        "--model",
+        "claude-sonnet-5-5"
+      ],
+      "stdout": "`transaction.py`, `repositories.py` and `tests/unit/test_repositories.py` are written. The 37 new tests pass, and `ruff check` and `py_compile` are clean on all three. I ran only this test file, not the wider suite. I didn't touch `schema.py`, `0001_initial.sql`, `journal.py` or any other file, and I didn't commit.\n\nThe tests ran under the repo's Python 3.11 venv, though `pyproject.toml` asks for 3.12 or newer. I didn't try 3.12.\n\nThe five design choices are in the `repositories.py` docstring:\n1. **Fill identity.** `Fill.fill_id` is used as the `external_activity_id`. A fill's cycle is found through its broker order's intent. `filled_quantity` comes from the fills ledger and never decreases. Broker snapshots older than the stored `updated_at` are ignored.\n2. **Budget reservations.** Only ENTRY intents are budget-checked and reserve. Entry fills consume the reservation in proportion to their share of the intent. It is released when the order ends partly unfilled, when the cycle closes, or when a submit is definitively rejected.\n3. **Submit outcomes.** A `BrokerRejectedError` marks the intent SUBMIT_FAILED and releases its reservation. Any other exception marks it UNKNOWN and keeps the reservation. The original exception is re-raised after the mark, and success marks the intent SUBMITTED. A second submit is refused.\n4. **Derived rows.** The `positions` row is deleted when its cycle closes. Exit fills shrink trailing coverage to the remaining quantity, and entry fills never grow it. When a cycle closes, the trailing state becomes TRIGGERED if the filling order is its broker order, otherwise CANCELED.\n5. **Entry controls.** The loss streak carries forward across sessions. A loss is `realized_pnl < 0`. Reaching the threshold inserts one indefinite lockout per symbol and strategy scope.\n\n- **No unlock path:** there is no API to clear a lockout, because the task listed none, so a lockout stays in force until a later task adds one.\n- **Extra methods:** beyond your list I added `ReconciliationRepository.complete_run` and `ProtectionRepository.load_trailing_state`.\n- **Non-ENTRY reservations:** non-ENTRY intents must pass a zero `reservation_amount`.\n- **Domain violations:** these propagate as `ValueError`, not `PersistenceError`.\n- **Backtests:** `register_scope` takes the backtest `run_id` from the scenario when you don't pass one.\n\nThe tests cover each case in your list. I also added tests for a busy database, nested units of work, scope-environment mismatch, a successful submit and a broker rejection.\n\nThe Pyright \"unaccessed parameter\" hints on the test callbacks and on `__exit__` are noise. It also reported an unresolved `mike_trade.persistence.repositories` import in the test file, which looks stale since pytest imports it fine.\n",
+      "stderr": "",
+      "exit_code": 0,
+      "duration_seconds": 648.7515861988068,
+      "model": "claude-sonnet-5-5",
+      "model_tags": [],
+      "working_directory": "/home/mike/dev/mike/stocks/python/mike_trade",
+      "changed_files": [
+        {
+          "path": "mike_trade/persistence/repositories.py",
+          "status": "untracked",
+          "code": "??"
+        },
+        {
+          "path": "mike_trade/persistence/transaction.py",
+          "status": "untracked",
+          "code": "??"
+        },
+        {
+          "path": "tests/unit/test_repositories.py",
+          "status": "untracked",
+          "code": "??"
+        }
+      ],
+      "diff_summary": "git diff reported no changes",
+      "model_attempts": [
+        {
+          "backend": "claude_code_cli",
+          "model": "claude-sonnet-5-5",
+          "exit_code": 0,
+          "stdout": "`transaction.py`, `repositories.py` and `tests/unit/test_repositories.py` are written. The 37 new tests pass, and `ruff check` and `py_compile` are clean on all three. I ran only this test file, not the wider suite. I didn't touch `schema.py`, `0001_initial.sql`, `journal.py` or any other file, and I didn't commit.\n\nThe tests ran under the repo's Python 3.11 venv, though `pyproject.toml` asks for 3.12 or newer. I didn't try 3.12.\n\nThe five design choices are in the `repositories.py` docstring:\n1. **Fill identity.** `Fill.fill_id` is used as the `external_activity_id`. A fill's cycle is found through its broker order's intent. `filled_quantity` comes from the fills ledger and never decreases. Broker snapshots older than the stored `updated_at` are ignored.\n2. **Budget reservations.** Only ENTRY intents are budget-checked and reserve. Entry fills consume the reservation in proportion to their share of the intent. It is released when the order ends partly unfilled, when the cycle closes, or when a submit is definitively rejected.\n3. **Submit outcomes.** A `BrokerRejectedError` marks the intent SUBMIT_FAILED and releases its reservation. Any other exception marks it UNKNOWN and keeps the reservation. The original exception is re-raised after the mark, and success marks the intent SUBMITTED. A second submit is refused.\n4. **Derived rows.** The `positions` row is deleted when its cycle closes. Exit fills shrink trailing coverage to the remaining quantity, and entry fills never grow it. When a cycle closes, the trailing state becomes TRIGGERED if the filling order is its broker order, otherwise CANCELED.\n5. **Entry controls.** The loss streak carries forward across sessions. A loss is `realized_pnl < 0`. Reaching the threshold inserts one indefinite lockout per symbol and strategy scope.\n\n- **No unlock path:** there is no API to clear a lockout, because the task listed none, so a lockout stays in force until a later task adds one.\n- **Extra methods:** beyond your list I added `ReconciliationRepository.complete_run` and `ProtectionRepository.load_trailing_state`.\n- **Non-ENTRY reservations:** non-ENTRY intents must pass a zero `reservation_amount`.\n- **Domain violations:** these propagate as `ValueError`, not `PersistenceError`.\n- **Backtests:** `register_scope` takes the backtest `run_id` from the scenario when you don't pass one.\n\nThe tests cover each case in your list. I also added tests for a busy database, nested units of work, scope-environment mismatch, a successful submit and a broker rejection.\n\nThe Pyright \"unaccessed parameter\" hints on the test callbacks and on `__exit__` are noise. It also reported an unresolved `mike_trade.persistence.repositories` import in the test file, which looks stale since pytest imports it fine.\n",
+          "stderr": "",
+          "duration_seconds": 648.7515861988068,
+          "changed_files": [
+            {
+              "path": "mike_trade/persistence/repositories.py",
+              "status": "untracked",
+              "code": "??"
+            },
+            {
+              "path": "mike_trade/persistence/transaction.py",
+              "status": "untracked",
+              "code": "??"
+            },
+            {
+              "path": "tests/unit/test_repositories.py",
+              "status": "untracked",
+              "code": "??"
+            }
+          ],
+          "diff_summary": "git diff reported no changes",
+          "outcome_classification": "backend_completed_with_changes",
+          "backend_timeout": false,
+          "backend_verification_timeout": false,
+          "timeout_seconds": null
+        }
+      ],
+      "write_policy_violations": [],
+      "outcome_classification": "backend_completed_with_changes",
+      "backend_timeout": false,
+      "backend_verification_timeout": false,
+      "changed_files_at_timeout_exit": [],
+      "abracapocus_verification_ran_after_backend_timeout": false,
+      "verification_owner": "abracapocus",
+      "verification_result": "skipped"
+    }
+  ],
+  "review": {
+    "status": "approved",
+    "findings": [],
+    "summary": "c.3:Review complete",
+    "created_at": "2026-10-08T14:37:59.650078"
+  },
+  "verification": {
+    "status": "skipped",
+    "checks": [],
+    "created_at": "2026-10-08T14:37:59.650088",
+    "notes": "C:skipped",
+    "profile": "focused"
+  },
+  "metadata": {
+    "run_id": "9e10bb79-e1f2-41a7-b066-35fc57216d23",
+    "project_name": "mike_trade",
+    "plan_version": "task-c.3",
+    "task_id": "c.3",
+    "task_title": "Implement account cycle order fill and control repositories",
+    "task_status": "completed",
+    "selected_backend": "claude_code_cli",
+    "verification_profile": "focused",
+    "backend_reason": "phase_based",
+    "frame_failures": [],
+    "agents_md": {
+      "loaded": true,
+      "path": "/home/mike/dev/mike/abracapocus/python/abracapocus_2/AGENTS.md",
+      "rule_count": 77,
+      "sha256_12": "3f9b549ba1ce"
+    },
+    "phase_results": [
+      {
+        "phase_name": "C",
+        "status": "passed",
+        "verification": "skipped",
+        "task_results": [
+          {
+            "task_id": "c.3",
+            "status": "passed",
+            "acceptance_status": "accepted",
+            "backend": "claude_code_cli",
+            "backend_outcome_classification": "backend_completed_with_changes",
+            "changed_files": [
+              {
+                "path": "mike_trade/persistence/repositories.py",
+                "status": "untracked",
+                "code": "??"
+              },
+              {
+                "path": "mike_trade/persistence/transaction.py",
+                "status": "untracked",
+                "code": "??"
+              },
+              {
+                "path": "tests/unit/test_repositories.py",
+                "status": "untracked",
+                "code": "??"
+              }
+            ],
+            "backend_timeout": false,
+            "backend_elapsed_seconds": 648.7515861988068,
+            "backend_timeout_seconds": null,
+            "changed_files_at_timeout_exit": [],
+            "abracapocus_verification_ran_after_backend_timeout": false,
+            "verification_owner": "abracapocus",
+            "verification_result": "skipped",
+            "verification_status": "skipped",
+            "verification_checks": [],
+            "frame_failure": false,
+            "retry_attempts": []
+          }
+        ]
+      }
+    ]
+  }
+}
