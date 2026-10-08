@@ -1,0 +1,143 @@
+{
+  "plan_summary": "Task run: Implement portfolio coordinator one buy full sell and priority rules",
+  "backend_executions": [
+    {
+      "backend": "claude_code_cli",
+      "command": [
+        "claude",
+        "-p",
+        "Task: Implement portfolio coordinator one buy full sell and priority rules\nPhase: M\nDescription: Implement the portfolio coordinator in mike_trade/portfolio/manager.py, with unit tests in tests/unit/test_portfolio_manager.py. The coordinator owns the PositionCycle objects from mike_trade/portfolio/cycles.py for each account/scenario + symbol. It routes strategy signals, fills, protection updates, operator commands and risk/safety exits through a single serialized mutation path.\n\nBefore editing, inspect: mike_trade/portfolio/cycles.py (CycleState, PositionCycle, the transition API), the existing risk/eligibility and budget modules (per-symbol/total budgets, daily entry slots, cooldown, min hold, lockouts, entry cutoff), the order execution/broker port interfaces, the protective/trailing stop coordinator, and the clock/scheduler abstractions. Do not modify any of them.\n\nRequirements:\n1. Coordinate mutations per account/scenario through one serialized path (for example one asyncio.Lock or queue per account), so that two concurrent signals for the same symbol cannot both reserve an entry.\n2. One buy: accept a BUY signal only when the cycle is WATCHING_BUY and the injected eligibility/risk gate permits it. Recurring BUY signals are ignored (and audited as ignored) until the cycle is confirmed flat and rearmed.\n3. Full sell: a valid discretionary SELL strategy exit after the minimum hold submits an exit for the full remaining managed quantity. There are no planned partial exits. Partial exit fills update remaining quantity and request protection resize, and no buy is possible until the position is confirmed flat.\n4. Priority rules: manual/operator close and safety/risk exits bypass the minimum hold, which applies to ordinary strategy exits only, and take priority over strategy sells. Coordinate with protective stops so that the protective order is canceled or replaced and confirmed before an overlapping sell is submitted, or the sell quantity is otherwise capped, so that overlapping sells can never create a short position.\n5. Once any real quantity is held, only SELL strategies plus independent risk/protection handlers are evaluated for that symbol. BUY strategies are not consulted.\n6. Operator pause and the entry kill switch block new entries only. Fills, stops, sells, reconciliation and manual close continue.\n7. Final close: release the budget reservation and start the cooldown/rearm only after the cycle reaches CLOSED, meaning zero position is verified and no stale sell/protective order remains.\n8. The optional auto end-of-day liquidation policy is disabled by default. When enabled through config, it issues a full close through the same priority path.\n9. Entries are blocked when the cycle is RECONCILING, ERROR or UNMANAGED, when protection status is unknown, or when the injected gate reports stale data or unresolved orders.\n10. Strategies never call brokers. All broker and simulation access goes through injected ports. Unit tests use in-memory fakes only and no network.\n\nDecision budget: keep the coordinator API small (handle_signal, handle_fill, handle_protection_update, handle_operator_command, handle_risk_exit, plus a snapshot accessor). Do not implement broker reconciliation; that is task m.3.\nContext: AGENTS.md guidance:\n# AGENTS.md\n## Purpose\nThis repository is operated by an autonomous multi-agent system (abracapocus_2).\nAll agents must follow these rules when modifying the codebase.\n---\n## Core Principles\n- Minimal blast radius: only modify what is required for the task\n- Deterministic verification: all changes must be verifiable via code (tests, compile, scripts)\n- No architecture drift: do not introduce new frameworks or major design changes unless explicitly required\n- No unrelated refactors\n- All changes must be reproducible from a clean clone\n---\n## Project Structure\n- docs/ → design, plans, architecture constraints\n- plans/ → master plans\n- phases/ → phase definitions\n- tasks/ → executable task documents\n- backends/ → CLI backend adapters\n- agents/ → specialist agents\n- runtime/ → orchestration, routing, state\n...(truncated)\n\n## Task Contract Constraints\n\n{\n  \"allowed_write_paths\": [\n    \"mike_trade/portfolio/manager.py\",\n    \"tests/unit/test_portfolio_manager.py\"\n  ],\n  \"forbidden_changes\": [\n    \"modify files outside allowed_write_paths\",\n    \"modify mike_trade/portfolio/cycles.py\",\n    \"change PLAN_SKELETON.json or other planning artifacts\",\n    \"create live broker orders or access live broker credentials\",\n    \"allow strategies to call brokers or open data connections\",\n    \"enable automatic end-of-day liquidation by default\",\n    \"implement averaging down, pyramiding or planned partial exits\",\n    \"run broad full-suite tests or backtests\"\n  ]\n}\n\nAGENTS.md guidance:\n# AGENTS.md\n\n## Purpose\n\nThis repository is operated by an autonomous multi-agent system (abracapocus_2).\nAll agents must follow these rules when modifying the codebase.\n\n---\n\n## Core Principles\n\n- Minimal blast radius: only modify what is required for the task\n- Deterministic verification: all changes must be verifiable via code (tests, compile, scripts)\n- No architecture drift: do not introduce new frameworks or major design changes unless explicitly required\n- No unrelated refactors\n- All changes must be reproducible from a clean clone\n\n---\n\n## Project Structure\n\n- docs/ → design, plans, architecture constraints\n- plans/ → master plans\n- phases/ → phase definitions\n- tasks/ → executable task documents\n- backends/ → CLI backend adapters\n- agents/ → specialist agents\n- runtime/ → orchestration, routing, state\n- reports/ → execution reports (DO NOT MODIFY MANUALLY)\n- state/runtime_state.json → runtime state (DO NOT COMMIT)\n\n---\n\n## Task Execution Rules\n\n- Always operate from a task document when available\n- Respect:\n  - selected_backend\n  - verification_profile\n  - acceptance_criteria\n- If a task conflicts with architecture constraints or phase scope:\n  - STOP and report conflict\n\n---\n\n## Backend Rules\n\n- Backends must:\n  - execute commands deterministically\n  - capture stdout, stderr, exit_code\n  - not silently fail\n- Do not invent backend interfaces; use existing adapters\n- Codex CLI, Aider, Gemini, Claude Code should be invoked through backends only\n\n---\n\n## Verification Rules\n\n- Verification must be deterministic\n- Preferred checks:\n  - pytest\n  - python -m py_compile\n- Do not rely on model self-evaluation\n\n---\n\n## Execution Control Flow (PERMANENT ARCHITECTURAL RULE)\n\n**HEURISTIC INFERENCE MUST NEVER PARTICIPATE IN ABRACAPOCUS EXECUTION CONTROL FLOW.**\n\nAbracapocus must not determine execution success, failure, acceptance,\nrejection, blocking, retry eligibility, phase progression, or completion from\nheuristic inference. A heuristic is any conclusion that is *inferred* rather\nthan *directly established by an explicit executable contract or a concrete\nruntime fact*.\n\nRuntime status is derived ONLY from concrete, mechanically observable facts:\n\n1. The backend process exit code. A backend that exits `0` (with no hard\n   write-policy violation) is a successful execution.\n2. Objectively observed hard write-policy violations (changed paths outside the\n   declared allowed write paths).\n3. Explicit operator-authored commands (task/phase verification the plan\n   explicitly contains). Their raw results are reported, kept DISTINCT from\n   backend execution status.\n4. Objective orchestrator failures with direct evidence (backend could not\n   launch, required document could not be parsed, subprocess infrastructure\n   failed).\n\n**Verification results are observational and must not rewrite backend execution\nstatus.** A verifier returning non-zero must NEVER, by itself, turn a\nsuccessful backend execution into unverified, stop a phase, or trigger an\nautomatic rerun. Verification is the result of a command, not authority to\nrewrite history.\n\n**Execution control:** Task-local problems (non-zero exit, timeout,\nwrite-policy violation, frame failure, backend launch failure) produce\nacceptance status ``\"unverified\"`` with truthful evidence preserved. They\nMUST NOT stop sibling tasks, later phases, or the plan. Only operator\ncancellation (SIGINT/SIGTERM/dashboard cancel) may terminate a run\n(acceptance status ``\"interrupted\"``). Dependencies are ordering constraints,\nnot acceptance gates — any terminal attempt outcome satisfies a dependency\nedge. The status ``\"failed\"`` is banned from acceptance output.\n\nDo NOT reintroduce -- under any name, feature flag, \"advisory\" wrapper, or\ncompatibility mode -- context completeness/sufficiency scoring, change or\narchitecture assessment used as a gate, intent/scope matching, reconciliation\ngates, no-progress judgments, confidence/risk scores, model/LLM/reviewer\njudgments over status, shadow/adaptive/secondary-verification gates, or\nheuristic retry/failure-classification control flow. Failure classification may\nonly *summarize* an already-established concrete failure; it must never create\none. Retries are permitted only for explicitly defined mechanical backend\nfailures. Future agents must not add these systems back.\n\n---\n\n## Git Rules\n\n- Do not commit:\n  - runtime_state.json\n  - reports/\n  - logs/\n  - virtual environments\n- Do not modify .gitignore unless required by task\n- Do not create excessive commits; prefer grouped logical commits\n\n---\n\n## Allowed Changes\n\n- Implement task requirements\n- Fix failing verification\n- Update relevant tests\n- Improve documentation tied to the task\n\n---\n\n## Forbidden Changes\n\n- Changing architecture without explicit instruction\n- Adding dependencies without justification\n- Modifying unrelated files\n- Deleting important files\n- Bypassing verification\n\n---\n\n## Planning Rules\n\n- Plans are multi-phase\n- Completed sections are immutable\n- Remaining sections may be updated\n- Tasks must align with:\n  - project brief\n  - architecture constraints\n  - active phase\n\n---\n\n## Reporting\n\n- All executions must produce structured reports\n- Reports must include:\n  - changed files\n  - verification results\n  - assessment\n\n---\n\n## Behavior\n\n- Do not ask unnecessary questions\n- Do not stall execution\n- Do not perform broad scans unless required\n- Prefer direct action over analysis\n\n---\n\n## Priority Order\n\nThis ordering guides *implementation decisions* only. It does NOT make\nverification an acceptance authority: verification results are observational\n(see \"Execution Control Flow\"), and never override a concrete backend\nexecution result.\n\n1. Architecture constraints\n2. Task definition\n3. Verification results (observational signal, not acceptance authority)\n4. Plan guidance\n\nIf conflicts occur, follow this order.\n",
+        "--dangerously-skip-permissions",
+        "--output-format",
+        "text",
+        "--model",
+        "claude-sonnet-5-5"
+      ],
+      "stdout": "The portfolio coordinator is in `mike_trade/portfolio/manager.py`, with 47 unit tests in `tests/unit/test_portfolio_manager.py`. All 47 pass, and the existing cycle and session-policy tests still pass (80 total across those files). `ruff check` is clean on both files. I couldn't run mypy or pyright because neither is installed in the project venv. I changed nothing outside the two allowed paths and did not commit.\n\n## What's there\n- **API:** `handle_signal`, `handle_fill`, `handle_protection_update`, `handle_operator_command`, `handle_risk_exit` and `snapshot`. `snapshot(...).consulted_roles(symbol)` returns SELL only once any quantity is held, and BUY only for a flat, armed, unpaused symbol.\n- **Serialization:** there is one `asyncio.Lock` per account scope, held for the whole handler. In the 4-way concurrent BUY test, exactly one signal reserves and the rest are ignored. With the lock replaced by a fresh one per call, that test fails, so it does depend on the lock.\n- **Entry:** a BUY goes through the cycle, pause and kill-switch flags, the injected gate, then the budget reservation, then a write-ahead submit. A cycle in RECONCILING, ERROR or UNMANAGED, unknown protection status, stale data or unresolved orders all block the entry. An ambiguous submit failure keeps the reservation and goes to reconciliation.\n- **Exit:** the order of steps is:\n  1. Cancel any open entry remainder.\n  2. Cancel and confirm protection.\n  3. For a priority exit, cancel and confirm a working strategy sell.\n  4. Cap the quantity at the broker-confirmed position.\n  5. Submit the full remainder.\n- **Priority exits:** manual, safety and end-of-day exits skip the minimum hold. If a step can't be confirmed, a priority exit is stored and retried on the next event for that symbol. Strategy exits are not retried; the strategy has to signal again.\n- **Close:** the cycle closes only after it reaches CLOSING, the broker confirms zero position, and no stale sell or protective order remains. Only then does the coordinator release the budget, notify the gate, and start the cooldown and rearm.\n- **End-of-day liquidation:** off by default (`auto_eod_liquidation=False`). When enabled it goes through the same priority exit.\n\n## Things to know\n- **Ports:** the injected ports are Protocols defined in `manager.py`: gate, budget, orders, protection, positions and clock. The real adapters over the existing eligibility, reservation and execution modules don't exist yet.\n- **Canceled sells:** the cycle FSM has no event for a canceled sell. I record a superseded or terminal-without-fill sell with the `RECONCILIATION_REQUIRED` and `RESOLVED` events. Full reconciliation stays with task m.3.\n- **Pause and kill switch:** these are in-memory flags on the coordinator and are lost on restart, so entries would be enabled again. Persisting them is separate work.\n- **Added constructor argument:** I added an optional `cycles=` argument for restoring cycles. The tests use it to seed ERROR, UNMANAGED and RECONCILING states.\n",
+      "stderr": "",
+      "exit_code": 0,
+      "duration_seconds": 624.6945972442627,
+      "model": "claude-sonnet-5-5",
+      "model_tags": [],
+      "working_directory": "/home/mike/dev/mike/stocks/python/mike_trade",
+      "changed_files": [
+        {
+          "path": "mike_trade/portfolio/manager.py",
+          "status": "untracked",
+          "code": "??"
+        },
+        {
+          "path": "tests/unit/test_portfolio_manager.py",
+          "status": "untracked",
+          "code": "??"
+        }
+      ],
+      "diff_summary": "git diff reported no changes",
+      "model_attempts": [
+        {
+          "backend": "claude_code_cli",
+          "model": "claude-sonnet-5-5",
+          "exit_code": 0,
+          "stdout": "The portfolio coordinator is in `mike_trade/portfolio/manager.py`, with 47 unit tests in `tests/unit/test_portfolio_manager.py`. All 47 pass, and the existing cycle and session-policy tests still pass (80 total across those files). `ruff check` is clean on both files. I couldn't run mypy or pyright because neither is installed in the project venv. I changed nothing outside the two allowed paths and did not commit.\n\n## What's there\n- **API:** `handle_signal`, `handle_fill`, `handle_protection_update`, `handle_operator_command`, `handle_risk_exit` and `snapshot`. `snapshot(...).consulted_roles(symbol)` returns SELL only once any quantity is held, and BUY only for a flat, armed, unpaused symbol.\n- **Serialization:** there is one `asyncio.Lock` per account scope, held for the whole handler. In the 4-way concurrent BUY test, exactly one signal reserves and the rest are ignored. With the lock replaced by a fresh one per call, that test fails, so it does depend on the lock.\n- **Entry:** a BUY goes through the cycle, pause and kill-switch flags, the injected gate, then the budget reservation, then a write-ahead submit. A cycle in RECONCILING, ERROR or UNMANAGED, unknown protection status, stale data or unresolved orders all block the entry. An ambiguous submit failure keeps the reservation and goes to reconciliation.\n- **Exit:** the order of steps is:\n  1. Cancel any open entry remainder.\n  2. Cancel and confirm protection.\n  3. For a priority exit, cancel and confirm a working strategy sell.\n  4. Cap the quantity at the broker-confirmed position.\n  5. Submit the full remainder.\n- **Priority exits:** manual, safety and end-of-day exits skip the minimum hold. If a step can't be confirmed, a priority exit is stored and retried on the next event for that symbol. Strategy exits are not retried; the strategy has to signal again.\n- **Close:** the cycle closes only after it reaches CLOSING, the broker confirms zero position, and no stale sell or protective order remains. Only then does the coordinator release the budget, notify the gate, and start the cooldown and rearm.\n- **End-of-day liquidation:** off by default (`auto_eod_liquidation=False`). When enabled it goes through the same priority exit.\n\n## Things to know\n- **Ports:** the injected ports are Protocols defined in `manager.py`: gate, budget, orders, protection, positions and clock. The real adapters over the existing eligibility, reservation and execution modules don't exist yet.\n- **Canceled sells:** the cycle FSM has no event for a canceled sell. I record a superseded or terminal-without-fill sell with the `RECONCILIATION_REQUIRED` and `RESOLVED` events. Full reconciliation stays with task m.3.\n- **Pause and kill switch:** these are in-memory flags on the coordinator and are lost on restart, so entries would be enabled again. Persisting them is separate work.\n- **Added constructor argument:** I added an optional `cycles=` argument for restoring cycles. The tests use it to seed ERROR, UNMANAGED and RECONCILING states.\n",
+          "stderr": "",
+          "duration_seconds": 624.6945972442627,
+          "changed_files": [
+            {
+              "path": "mike_trade/portfolio/manager.py",
+              "status": "untracked",
+              "code": "??"
+            },
+            {
+              "path": "tests/unit/test_portfolio_manager.py",
+              "status": "untracked",
+              "code": "??"
+            }
+          ],
+          "diff_summary": "git diff reported no changes",
+          "outcome_classification": "backend_completed_with_changes",
+          "backend_timeout": false,
+          "backend_verification_timeout": false,
+          "timeout_seconds": null
+        }
+      ],
+      "write_policy_violations": [],
+      "outcome_classification": "backend_completed_with_changes",
+      "backend_timeout": false,
+      "backend_verification_timeout": false,
+      "changed_files_at_timeout_exit": [],
+      "abracapocus_verification_ran_after_backend_timeout": false,
+      "verification_owner": "abracapocus",
+      "verification_result": "skipped"
+    }
+  ],
+  "review": {
+    "status": "approved",
+    "findings": [],
+    "summary": "m.2:Review complete",
+    "created_at": "2026-10-08T19:31:30.014113"
+  },
+  "verification": {
+    "status": "skipped",
+    "checks": [],
+    "created_at": "2026-10-08T19:31:30.014120",
+    "notes": "M:skipped",
+    "profile": "focused"
+  },
+  "metadata": {
+    "run_id": "397a3b9f-c7a1-4f79-9c08-0b01210bfba7",
+    "project_name": "mike_trade",
+    "plan_version": "task-m.2",
+    "task_id": "m.2",
+    "task_title": "Implement portfolio coordinator one buy full sell and priority rules",
+    "task_status": "completed",
+    "selected_backend": "claude_code_cli",
+    "verification_profile": "focused",
+    "backend_reason": "phase_based",
+    "frame_failures": [],
+    "agents_md": {
+      "loaded": true,
+      "path": "/home/mike/dev/mike/abracapocus/python/abracapocus_2/AGENTS.md",
+      "rule_count": 77,
+      "sha256_12": "3f9b549ba1ce"
+    },
+    "phase_results": [
+      {
+        "phase_name": "M",
+        "status": "passed",
+        "verification": "skipped",
+        "task_results": [
+          {
+            "task_id": "m.2",
+            "status": "passed",
+            "acceptance_status": "accepted",
+            "backend": "claude_code_cli",
+            "backend_outcome_classification": "backend_completed_with_changes",
+            "changed_files": [
+              {
+                "path": "mike_trade/portfolio/manager.py",
+                "status": "untracked",
+                "code": "??"
+              },
+              {
+                "path": "tests/unit/test_portfolio_manager.py",
+                "status": "untracked",
+                "code": "??"
+              }
+            ],
+            "backend_timeout": false,
+            "backend_elapsed_seconds": 624.6945972442627,
+            "backend_timeout_seconds": null,
+            "changed_files_at_timeout_exit": [],
+            "abracapocus_verification_ran_after_backend_timeout": false,
+            "verification_owner": "abracapocus",
+            "verification_result": "skipped",
+            "verification_status": "skipped",
+            "verification_checks": [],
+            "frame_failure": false,
+            "retry_attempts": []
+          }
+        ]
+      }
+    ]
+  }
+}
