@@ -1,0 +1,157 @@
+{
+  "plan_summary": "Task run: Implement Alpaca environment auth endpoints and API exception mapping",
+  "backend_executions": [
+    {
+      "backend": "pi_cli",
+      "command": [
+        "pi",
+        "-p",
+        "--provider",
+        "openrouter",
+        "--model",
+        "meta/muse-spark-1.3-contributor",
+        "Task: Implement Alpaca environment auth endpoints and API exception mapping\nDescription: Build the authenticated, bounded HTTP foundation for the Alpaca individual Trading API. This uses the trading endpoints only, never the enterprise Broker API.\n\nmike_trade/brokers/alpaca/auth.py:\n(1) Define an AlpacaEnvironment enum with exactly two values: PAPER and LIVE. PAPER maps to the paper trading base URL (https://paper-api.alpaca.markets) and LIVE maps to the live trading base URL (https://api.alpaca.markets). Define the trade_updates stream URLs for each environment in the same place. No Broker API host (broker-api.*) may appear anywhere.\n(2) Define an immutable AlpacaCredentials value object holding key_id, a secret that is excluded from repr and str, and the environment. Load credentials from environment-specific variables or a config source, for example ALPACA_PAPER_KEY_ID/ALPACA_PAPER_SECRET_KEY and ALPACA_LIVE_KEY_ID/ALPACA_LIVE_SECRET_KEY. There is no fallback from one environment's variables to the other's.\n(3) Compute a non-reversible credential fingerprint, for example a truncated SHA-256 of environment + key_id. The fingerprint is used for state-directory and ledger isolation and never exposes the secret.\n(4) Provide a guard that raises a typed error when credentials, the base URL, or a persisted account fingerprint disagree on environment. Examples: paper keys used with the live URL, or a live fingerprint presented to a paper state directory.\n(5) Building a LIVE client requires an explicit live-authorization token or flag passed by the caller. Without it, raise LiveAuthorizationRequired.\n\nmike_trade/brokers/alpaca/http.py:\n(1) Implement AlpacaHttpClient on top of an injectable transport, preferably httpx with an injectable transport or client, so tests can use httpx.MockTransport with no network access.\n(2) Every request has explicit connect and read timeouts. Send the APCA-API-KEY-ID and APCA-API-SECRET-KEY headers. Never log the secret header.\n(3) Map provider errors to a structured exception hierarchy. The base is AlpacaApiError and carries status code, Alpaca error code, message, and request id where present. Subclasses: AlpacaAuthError (401/403), AlpacaNotFound (404), AlpacaUnprocessable (422), AlpacaRateLimited (429, carrying retry-after/reset), AlpacaServerError (5xx), AlpacaTimeout, and AlpacaTransportError. Include an explicit unknown-outcome marker for timeouts on non-idempotent requests.\n(4) Retry with bounded exponential backoff plus jitter, using an injectable sleep/clock, only for safe idempotent reads (GET). Retries cover 429, 5xx, and transport timeouts, up to a configurable maximum number of attempts. On 429, honor Retry-After and X-RateLimit-Reset.\n(5) POST, PATCH, and DELETE on orders are never retried automatically. A timeout or connection loss on an order POST raises a timeout or unknown-outcome error so callers resolve the outcome by looking up client_order_id.\n(6) Parse JSON numeric strings into Decimal, never float.\n\nCreate tests/contracts/test_alpaca_http.py using fixture and mock transports only, with no network access and no real credentials. Positive and negative tests must cover: URL selection per environment; rejection of the Broker API host; cross-environment credential mismatch; that the fingerprint is stable and excludes the secret; secret redaction in repr and logs; the live authorization requirement; mapping for each status code; GET retry and backoff with a fake sleep; 429 Retry-After handling; no retry on order POST; timeout on POST surfacing unknown outcome; and Decimal parsing.\n\nBefore editing, inspect: the existing mike_trade package layout, especially any broker port/protocol interfaces, domain value types (Decimal money/quantity, mode/account identifiers), configuration/settings loaders, and clock abstractions defined in earlier phases. Also inspect any existing mike_trade/brokers/__init__.py or mike_trade/brokers/alpaca/__init__.py, to reuse and not duplicate them. Do not create files outside allowed_write_paths. If a package __init__.py is missing and is required for import, report it instead of creating it.\n\nDecision budget: use at most one HTTP library already present in the dependency lock. Do not add new third-party dependencies.\nPhase: E\nAcceptance criteria:\n  - auth.py defines exactly two environments (PAPER, LIVE) with distinct Trading API base URLs and trade-stream URLs; no Broker API hostname appears in either module\n  - Constructing a client whose credential environment differs from the selected base URL or persisted fingerprint raises a typed environment-mismatch error, verified by a negative test\n  - Constructing a LIVE client without explicit live authorization raises LiveAuthorizationRequired, verified by a test\n  - The credential fingerprint is deterministic per environment+key_id, differs between paper and live, and never contains the secret; repr/str of credentials and logged request headers do not contain the secret\n  - HTTP status codes 401/403/404/422/429/5xx and timeouts map to distinct typed exceptions carrying status code, Alpaca error code, and message where available\n  - GET requests retry with bounded exponential backoff on 429/5xx/timeouts up to a configured maximum, honoring Retry-After; tests use an injected fake sleep with no real delay\n  - Order-creating POST requests are never retried automatically; a timeout surfaces an unknown-outcome error, verified by a test asserting exactly one transport call\n  - All requests have explicit finite timeouts; monetary and quantity fields parse to Decimal\n  - tests/contracts/test_alpaca_http.py passes without network access or real credentials\nContext: AGENTS.md guidance:\n# AGENTS.md\n## Purpose\nThis repository is operated by an autonomous multi-agent system (abracapocus_2).\nAll agents must follow these rules when modifying the codebase.\n---\n## Core Principles\n- Minimal blast radius: only modify what is required for the task\n- Deterministic verification: all changes must be verifiable via code (tests, compile, scripts)\n- No architecture drift: do not introduce new frameworks or major design changes unless explicitly required\n- No unrelated refactors\n- All changes must be reproducible from a clean clone\n---\n## Project Structure\n- docs/ → design, plans, architecture constraints\n- plans/ → master plans\n- phases/ → phase definitions\n- tasks/ → executable task documents\n- backends/ → CLI backend adapters\n- agents/ → specialist agents\n- runtime/ → orchestration, routing, state\n...(truncated)\n\n## Task Contract Constraints\n\n{\n  \"allowed_symbols\": [\n    \"AlpacaEnvironment\",\n    \"AlpacaCredentials\",\n    \"credential_fingerprint\",\n    \"LiveAuthorizationRequired\",\n    \"EnvironmentMismatchError\",\n    \"AlpacaHttpClient\",\n    \"AlpacaApiError\",\n    \"AlpacaAuthError\",\n    \"AlpacaNotFound\",\n    \"AlpacaUnprocessable\",\n    \"AlpacaRateLimited\",\n    \"AlpacaServerError\",\n    \"AlpacaTimeout\",\n    \"AlpacaTransportError\",\n    \"AlpacaUnknownOutcome\",\n    \"RetryPolicy\"\n  ],\n  \"allowed_write_paths\": [\n    \"mike_trade/brokers/alpaca/auth.py\",\n    \"mike_trade/brokers/alpaca/http.py\",\n    \"tests/contracts/test_alpaca_http.py\"\n  ],\n  \"forbidden_changes\": [\n    \"modify files outside allowed_write_paths\",\n    \"change PLAN_SKELETON.json or any planning artifacts\",\n    \"use or reference the Alpaca Broker API (enterprise) endpoints\",\n    \"share or fall back between paper and live credentials, URLs, fingerprints, or state directories\",\n    \"make real network calls or read real credentials in tests\",\n    \"submit any live broker order\",\n    \"automatically retry order-creating or order-mutating requests\",\n    \"use float for money or quantities\",\n    \"add new third-party dependencies\",\n    \"run broad test suites or backtests\"\n  ]\n}\nAGENTS.md:\n# AGENTS.md\n\n## Purpose\n\nThis repository is operated by an autonomous multi-agent system (abracapocus_2).\nAll agents must follow these rules when modifying the codebase.\n\n---\n\n## Core Principles\n\n- Minimal blast radius: only modify what is required for the task\n- Deterministic verification: all changes must be verifiable via code (tests, compile, scripts)\n- No architecture drift: do not introduce new frameworks or major design changes unless explicitly required\n- No unrelated refactors\n- All changes must be reproducible from a clean clone\n\n---\n\n## Project Structure\n\n- docs/ → design, plans, architecture constraints\n- plans/ → master plans\n- phases/ → phase definitions\n- tasks/ → executable task documents\n- backends/ → CLI backend adapters\n- agents/ → specialist agents\n- runtime/ → orchestration, routing, state\n- reports/ → execution reports (DO NOT MODIFY MANUALLY)\n- state/runtime_state.json → runtime state (DO NOT COMMIT)\n\n---\n\n## Task Execution Rules\n\n- Always operate from a task document when available\n- Respect:\n  - selected_backend\n  - verification_profile\n  - acceptance_criteria\n- If a task conflicts with architecture constraints or phase scope:\n  - STOP and report conflict\n\n---\n\n## Backend Rules\n\n- Backends must:\n  - execute commands deterministically\n  - capture stdout, stderr, exit_code\n  - not silently fail\n- Do not invent backend interfaces; use existing adapters\n- Codex CLI, Aider, Gemini, Claude Code should be invoked through backends only\n\n---\n\n## Verification Rules\n\n- Verification must be deterministic\n- Preferred checks:\n  - pytest\n  - python -m py_compile\n- Do not rely on model self-evaluation\n\n---\n\n## Execution Control Flow (PERMANENT ARCHITECTURAL RULE)\n\n**HEURISTIC INFERENCE MUST NEVER PARTICIPATE IN ABRACAPOCUS EXECUTION CONTROL FLOW.**\n\nAbracapocus must not determine execution success, failure, acceptance,\nrejection, blocking, retry eligibility, phase progression, or completion from\nheuristic inference. A heuristic is any conclusion that is *inferred* rather\nthan *directly established by an explicit executable contract or a concrete\nruntime fact*.\n\nRuntime status is derived ONLY from concrete, mechanically observable facts:\n\n1. The backend process exit code. A backend that exits `0` (with no hard\n   write-policy violation) is a successful execution.\n2. Objectively observed hard write-policy violations (changed paths outside the\n   declared allowed write paths).\n3. Explicit operator-authored commands (task/phase verification the plan\n   explicitly contains). Their raw results are reported, kept DISTINCT from\n   backend execution status.\n4. Objective orchestrator failures with direct evidence (backend could not\n   launch, required document could not be parsed, subprocess infrastructure\n   failed).\n\n**Verification results are observational and must not rewrite backend execution\nstatus.** A verifier returning non-zero must NEVER, by itself, turn a\nsuccessful backend execution into unverified, stop a phase, or trigger an\nautomatic rerun. Verification is the result of a command, not authority to\nrewrite history.\n\n**Execution control:** Task-local problems (non-zero exit, timeout,\nwrite-policy violation, frame failure, backend launch failure) produce\nacceptance status ``\"unverified\"`` with truthful evidence preserved. They\nMUST NOT stop sibling tasks, later phases, or the plan. Only operator\ncancellation (SIGINT/SIGTERM/dashboard cancel) may terminate a run\n(acceptance status ``\"interrupted\"``). Dependencies are ordering constraints,\nnot acceptance gates — any terminal attempt outcome satisfies a dependency\nedge. The status ``\"failed\"`` is banned from acceptance output.\n\nDo NOT reintroduce -- under any name, feature flag, \"advisory\" wrapper, or\ncompatibility mode -- context completeness/sufficiency scoring, change or\narchitecture assessment used as a gate, intent/scope matching, reconciliation\ngates, no-progress judgments, confidence/risk scores, model/LLM/reviewer\njudgments over status, shadow/adaptive/secondary-verification gates, or\nheuristic retry/failure-classification control flow. Failure classification may\nonly *summarize* an already-established concrete failure; it must never create\none. Retries are permitted only for explicitly defined mechanical backend\nfailures. Future agents must not add these systems back.\n\n---\n\n## Git Rules\n\n- Do not commit:\n  - runtime_state.json\n  - reports/\n  - logs/\n  - virtual environments\n- Do not modify .gitignore unless required by task\n- Do not create excessive commits; prefer grouped logical commits\n\n---\n\n## Allowed Changes\n\n- Implement task requirements\n- Fix failing verification\n- Update relevant tests\n- Improve documentation tied to the task\n\n---\n\n## Forbidden Changes\n\n- Changing architecture without explicit instruction\n- Adding dependencies without justification\n- Modifying unrelated files\n- Deleting important files\n- Bypassing verification\n\n---\n\n## Planning Rules\n\n- Plans are multi-phase\n- Completed sections are immutable\n- Remaining sections may be updated\n- Tasks must align with:\n  - project brief\n  - architecture constraints\n  - active phase\n\n---\n\n## Reporting\n\n- All executions must produce structured reports\n- Reports must include:\n  - changed files\n  - verification results\n  - assessment\n\n---\n\n## Behavior\n\n- Do not ask unnecessary questions\n- Do not stall execution\n- Do not perform broad scans unless required\n- Prefer direct action over analysis\n\n---\n\n## Priority Order\n\nThis ordering guides *implementation decisions* only. It does NOT make\nverification an acceptance authority: verification results are observational\n(see \"Execution Control Flow\"), and never override a concrete backend\nexecution result.\n\n1. Architecture constraints\n2. Task definition\n3. Verification results (observational signal, not acceptance authority)\n4. Plan guidance\n\nIf conflicts occur, follow this order.\n\nAGENTS metadata:\n{\"loaded\": true, \"path\": \"/home/mike/dev/mike/abracapocus/python/abracapocus_2/AGENTS.md\", \"rule_count\": 77, \"sha256_12\": \"3f9b549ba1ce\"}\n"
+      ],
+      "stdout": "Done. All 36 contract tests pass with no network access and no real credentials.\n\n**What was built** (only `allowed_write_paths`, no `__init__.py` created — namespace-package imports verified working):\n\n- **`mike_trade/brokers/alpaca/auth.py`**\n  - `AlpacaEnvironment` with exactly `PAPER`/`LIVE`; base URLs `https://paper-api.alpaca.markets` / `https://api.alpaca.markets` plus per-environment `trade_stream_url` (`wss://…/stream`). `broker-api.*` appears only in the rejection guard, never as an endpoint.\n  - Immutable `AlpacaCredentials` (`key_id`, `secret_key` with `repr=False`, `environment`); custom `repr`/`str` exclude the secret. `from_env()` reads `ALPACA_PAPER_KEY_ID/SECRET_KEY` or `ALPACA_LIVE_KEY_ID/SECRET_KEY` with no cross-environment fallback.\n  - `credential_fingerprint()` — truncated SHA-256 of `environment:key_id`; stable, differs paper vs live, never contains the secret.\n  - `EnvironmentMismatchError` (extends domain `ModeIsolationError`) for credential↔URL↔persisted-fingerprint disagreement; `LiveAuthorizationRequired` (extends domain `LiveTradingNotAuthorizedError`) for LIVE builds without `live_authorized=True`.\n\n- **`mike_trade/brokers/alpaca/http.py`** (httpx only — the one already-locked HTTP lib, injectable transport/client)\n  - `AlpacaHttpClient` sends `APCA-API-KEY-ID`/`APCA-API-SECRET-KEY` on every request with explicit finite connect/read/write/pool timeouts; logs carry only `redacted_headers()` (`***REDACTED***`).\n  - Hierarchy rooted at `AlpacaApiError` (also a domain `BrokerError`) carrying `status_code`, `error_code`, `message`, `request_id`: `AlpacaAuthError` (401/403), `AlpacaNotFound` (404), `AlpacaUnprocessable` (422), `AlpacaRateLimited` (429 + `retry_after`/`rate_limit_reset`), `AlpacaServerError` (5xx), `AlpacaTimeout`, `AlpacaTransportError`, `AlpacaUnknownOutcome` (timeout/connection-loss on non-idempotent requests, `unknown_outcome=True`).\n  - `RetryPolicy` + injectable `sleep`/`clock`/`rng`: only `GET` retries (429/5xx/timeouts, bounded exponential backoff + jitter, honors `Retry-After` and `X-RateLimit-Reset`). POST/PATCH/DELETE never retried — a single transport call, with order-POST failures surfacing unknown outcome.\n  - JSON parsed with `parse_float=Decimal` plus coercion of money/qty string-or-int fields to `Decimal`; `float` used only for timeout/backoff arithmetic, never money.\n\n- **`tests/contracts/test_alpaca_http.py`** — 36 tests via `httpx.MockTransport` + `FakeSleep`/fake clock covering every acceptance item: URL selection, Broker-host rejection, cross-env mismatch, fingerprint stability/secrecy, repr/str/log redaction, live-auth gate, per-status mapping with code/message/request-id, GET backoff sequence `[0.5, 1.0]`, `Retry-After`/`X-RateLimit-Reset` waits, no-retry on mutations, order-POST timeout → `AlpacaUnknownOutcome` with exactly one call, and Decimal parsing with a no-floats assertion.\n",
+      "stderr": "",
+      "exit_code": 0,
+      "duration_seconds": 412.62891602516174,
+      "model": "openrouter/meta/muse-spark-1.3-contributor",
+      "model_tags": [],
+      "working_directory": "/home/mike/dev/mike/stocks/python/mike_trade",
+      "changed_files": [
+        {
+          "path": "mike_trade/brokers/alpaca/auth.py",
+          "status": "untracked",
+          "code": "??"
+        },
+        {
+          "path": "mike_trade/brokers/alpaca/http.py",
+          "status": "untracked",
+          "code": "??"
+        },
+        {
+          "path": "tests/contracts/test_alpaca_http.py",
+          "status": "untracked",
+          "code": "??"
+        }
+      ],
+      "diff_summary": "git diff reported no changes",
+      "model_attempts": [
+        {
+          "backend": "pi_cli",
+          "model": "openrouter/meta/muse-spark-1.3-contributor",
+          "exit_code": 0,
+          "stdout": "Done. All 36 contract tests pass with no network access and no real credentials.\n\n**What was built** (only `allowed_write_paths`, no `__init__.py` created — namespace-package imports verified working):\n\n- **`mike_trade/brokers/alpaca/auth.py`**\n  - `AlpacaEnvironment` with exactly `PAPER`/`LIVE`; base URLs `https://paper-api.alpaca.markets` / `https://api.alpaca.markets` plus per-environment `trade_stream_url` (`wss://…/stream`). `broker-api.*` appears only in the rejection guard, never as an endpoint.\n  - Immutable `AlpacaCredentials` (`key_id`, `secret_key` with `repr=False`, `environment`); custom `repr`/`str` exclude the secret. `from_env()` reads `ALPACA_PAPER_KEY_ID/SECRET_KEY` or `ALPACA_LIVE_KEY_ID/SECRET_KEY` with no cross-environment fallback.\n  - `credential_fingerprint()` — truncated SHA-256 of `environment:key_id`; stable, differs paper vs live, never contains the secret.\n  - `EnvironmentMismatchError` (extends domain `ModeIsolationError`) for credential↔URL↔persisted-fingerprint disagreement; `LiveAuthorizationRequired` (extends domain `LiveTradingNotAuthorizedError`) for LIVE builds without `live_authorized=True`.\n\n- **`mike_trade/brokers/alpaca/http.py`** (httpx only — the one already-locked HTTP lib, injectable transport/client)\n  - `AlpacaHttpClient` sends `APCA-API-KEY-ID`/`APCA-API-SECRET-KEY` on every request with explicit finite connect/read/write/pool timeouts; logs carry only `redacted_headers()` (`***REDACTED***`).\n  - Hierarchy rooted at `AlpacaApiError` (also a domain `BrokerError`) carrying `status_code`, `error_code`, `message`, `request_id`: `AlpacaAuthError` (401/403), `AlpacaNotFound` (404), `AlpacaUnprocessable` (422), `AlpacaRateLimited` (429 + `retry_after`/`rate_limit_reset`), `AlpacaServerError` (5xx), `AlpacaTimeout`, `AlpacaTransportError`, `AlpacaUnknownOutcome` (timeout/connection-loss on non-idempotent requests, `unknown_outcome=True`).\n  - `RetryPolicy` + injectable `sleep`/`clock`/`rng`: only `GET` retries (429/5xx/timeouts, bounded exponential backoff + jitter, honors `Retry-After` and `X-RateLimit-Reset`). POST/PATCH/DELETE never retried — a single transport call, with order-POST failures surfacing unknown outcome.\n  - JSON parsed with `parse_float=Decimal` plus coercion of money/qty string-or-int fields to `Decimal`; `float` used only for timeout/backoff arithmetic, never money.\n\n- **`tests/contracts/test_alpaca_http.py`** — 36 tests via `httpx.MockTransport` + `FakeSleep`/fake clock covering every acceptance item: URL selection, Broker-host rejection, cross-env mismatch, fingerprint stability/secrecy, repr/str/log redaction, live-auth gate, per-status mapping with code/message/request-id, GET backoff sequence `[0.5, 1.0]`, `Retry-After`/`X-RateLimit-Reset` waits, no-retry on mutations, order-POST timeout → `AlpacaUnknownOutcome` with exactly one call, and Decimal parsing with a no-floats assertion.\n",
+          "stderr": "",
+          "duration_seconds": 412.62891602516174,
+          "changed_files": [
+            {
+              "path": "mike_trade/brokers/alpaca/auth.py",
+              "status": "untracked",
+              "code": "??"
+            },
+            {
+              "path": "mike_trade/brokers/alpaca/http.py",
+              "status": "untracked",
+              "code": "??"
+            },
+            {
+              "path": "tests/contracts/test_alpaca_http.py",
+              "status": "untracked",
+              "code": "??"
+            }
+          ],
+          "diff_summary": "git diff reported no changes",
+          "outcome_classification": "backend_completed_with_changes",
+          "backend_timeout": false,
+          "backend_verification_timeout": false,
+          "timeout_seconds": null
+        }
+      ],
+      "write_policy_violations": [],
+      "outcome_classification": "backend_completed_with_changes",
+      "backend_timeout": false,
+      "backend_verification_timeout": false,
+      "changed_files_at_timeout_exit": [],
+      "abracapocus_verification_ran_after_backend_timeout": false,
+      "verification_owner": "abracapocus",
+      "verification_result": "skipped"
+    }
+  ],
+  "review": {
+    "status": "approved",
+    "findings": [],
+    "summary": "e.1:Review complete",
+    "created_at": "2026-10-08T15:09:21.231262"
+  },
+  "verification": {
+    "status": "skipped",
+    "checks": [],
+    "created_at": "2026-10-08T15:09:21.231270",
+    "notes": "E:skipped",
+    "profile": "focused"
+  },
+  "metadata": {
+    "run_id": "f2bec807-0235-4d98-ae7b-b2ae9353e3d3",
+    "project_name": "mike_trade",
+    "plan_version": "task-e.1",
+    "task_id": "e.1",
+    "task_title": "Implement Alpaca environment auth endpoints and API exception mapping",
+    "task_status": "completed",
+    "selected_backend": "pi_cli",
+    "verification_profile": "focused",
+    "backend_reason": "phase_based",
+    "frame_failures": [],
+    "agents_md": {
+      "loaded": true,
+      "path": "/home/mike/dev/mike/abracapocus/python/abracapocus_2/AGENTS.md",
+      "rule_count": 77,
+      "sha256_12": "3f9b549ba1ce"
+    },
+    "phase_results": [
+      {
+        "phase_name": "E",
+        "status": "passed",
+        "verification": "skipped",
+        "task_results": [
+          {
+            "task_id": "e.1",
+            "status": "passed",
+            "acceptance_status": "accepted",
+            "backend": "pi_cli",
+            "backend_outcome_classification": "backend_completed_with_changes",
+            "changed_files": [
+              {
+                "path": "mike_trade/brokers/alpaca/auth.py",
+                "status": "untracked",
+                "code": "??"
+              },
+              {
+                "path": "mike_trade/brokers/alpaca/http.py",
+                "status": "untracked",
+                "code": "??"
+              },
+              {
+                "path": "tests/contracts/test_alpaca_http.py",
+                "status": "untracked",
+                "code": "??"
+              }
+            ],
+            "backend_timeout": false,
+            "backend_elapsed_seconds": 412.62891602516174,
+            "backend_timeout_seconds": null,
+            "changed_files_at_timeout_exit": [],
+            "abracapocus_verification_ran_after_backend_timeout": false,
+            "verification_owner": "abracapocus",
+            "verification_result": "skipped",
+            "verification_status": "skipped",
+            "verification_checks": [],
+            "frame_failure": false,
+            "retry_attempts": []
+          }
+        ]
+      }
+    ]
+  }
+}
