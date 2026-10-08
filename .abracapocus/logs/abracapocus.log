@@ -63,3 +63,5 @@
 2026-10-08 12:28:21 | INFO | abracapocus | run=c4311896-462f-4037-bb4f-1691e0bcf252 phases=1 verification=skipped
 2026-10-08 12:34:01 | INFO | abracapocus.backends.codex_cli | backend=codex_cli retry_count=0
 2026-10-08 12:36:33 | INFO | abracapocus.backends.codex_cli | backend=codex_cli retry_count=0
+2026-10-08 12:36:34 | INFO | abracapocus | run=364d96df-369e-46d0-9392-2e438cbbed48 phases=1 verification=skipped
+2026-10-08 12:38:59 | INFO | abracapocus.backends.pi_cli | backend=pi_cli retry_count=0
