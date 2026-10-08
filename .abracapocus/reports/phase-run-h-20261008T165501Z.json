@@ -1,0 +1,95 @@
+{
+  "run_at": "2026-10-08T16:55:01.772186",
+  "phase_dir": "/home/mike/dev/mike/stocks/python/mike_trade/.abracapocus/plans/ACTIVE/MIKE_TRADE_COMPLETE_PRODUCT/h",
+  "status": "passed",
+  "counts": {
+    "passed": 5,
+    "failed": 0,
+    "blocked": 0,
+    "skipped": 0,
+    "unverified": 0
+  },
+  "tasks": [
+    {
+      "task_id": "h.1",
+      "task_file": "/home/mike/dev/mike/stocks/python/mike_trade/.abracapocus/plans/ACTIVE/MIKE_TRADE_COMPLETE_PRODUCT/h/task_h.1_implement_multi_timeframe_candle_builders_with_closed_bar_finalization.json",
+      "status": "passed",
+      "acceptance_status": "accepted",
+      "task_verification": {
+        "status": "skipped",
+        "checks": [],
+        "owner": "abracapocus"
+      },
+      "run_id": "69f790c1-4c56-4f84-acc4-964f35632f76",
+      "write_policy_violations": [],
+      "failure_classification": null,
+      "reviewer_summary": "h.1:Review complete"
+    },
+    {
+      "task_id": "h.2",
+      "task_file": "/home/mike/dev/mike/stocks/python/mike_trade/.abracapocus/plans/ACTIVE/MIKE_TRADE_COMPLETE_PRODUCT/h/task_h.2_implement_pure_technical_indicators_rsi_ema_atr_vwap_and_volume.json",
+      "status": "passed",
+      "acceptance_status": "accepted",
+      "task_verification": {
+        "status": "skipped",
+        "checks": [],
+        "owner": "abracapocus"
+      },
+      "run_id": "0a768417-9a74-4774-ad62-2334887c3169",
+      "write_policy_violations": [],
+      "failure_classification": null,
+      "reviewer_summary": "h.2:Review complete"
+    },
+    {
+      "task_id": "h.3",
+      "task_file": "/home/mike/dev/mike/stocks/python/mike_trade/.abracapocus/plans/ACTIVE/MIKE_TRADE_COMPLETE_PRODUCT/h/task_h.3_implement_exchange_calendar_market_hours_and_early_close_logic.json",
+      "status": "passed",
+      "acceptance_status": "accepted",
+      "task_verification": {
+        "status": "skipped",
+        "checks": [],
+        "owner": "abracapocus"
+      },
+      "run_id": "176dc038-19cd-4ca1-ac78-ed79208fdc7b",
+      "write_policy_violations": [],
+      "failure_classification": null,
+      "reviewer_summary": "h.3:Review complete"
+    },
+    {
+      "task_id": "h.4",
+      "task_file": "/home/mike/dev/mike/stocks/python/mike_trade/.abracapocus/plans/ACTIVE/MIKE_TRADE_COMPLETE_PRODUCT/h/task_h.4_build_immutable_strategy_market_context_and_reference_symbol_binder.json",
+      "status": "passed",
+      "acceptance_status": "accepted",
+      "task_verification": {
+        "status": "skipped",
+        "checks": [],
+        "owner": "abracapocus"
+      },
+      "run_id": "a890a9f0-82fc-413f-8de8-b0b1b5f8830e",
+      "write_policy_violations": [],
+      "failure_classification": null,
+      "reviewer_summary": "h.4:Review complete"
+    },
+    {
+      "task_id": "h.5",
+      "task_file": "/home/mike/dev/mike/stocks/python/mike_trade/.abracapocus/plans/ACTIVE/MIKE_TRADE_COMPLETE_PRODUCT/h/task_h.5_implement_bounded_candle_and_indicator_warmup_state_diagnostics.json",
+      "status": "passed",
+      "acceptance_status": "accepted",
+      "task_verification": {
+        "status": "skipped",
+        "checks": [],
+        "owner": "abracapocus"
+      },
+      "run_id": "161d04e6-973e-484b-85b5-9f3675913b8c",
+      "write_policy_violations": [],
+      "failure_classification": null,
+      "reviewer_summary": "h.5:Review complete"
+    }
+  ],
+  "phase_verification": {
+    "status": "warning",
+    "checks": [],
+    "notes": "phase verification complete",
+    "run_when": "all_tasks_pass"
+  }
+}

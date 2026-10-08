@@ -1,0 +1,142 @@
+{
+  "plan_summary": "Task run: Implement bounded candle and indicator warmup state diagnostics",
+  "backend_executions": [
+    {
+      "backend": "pi_cli",
+      "command": [
+        "pi",
+        "-p",
+        "--provider",
+        "openrouter",
+        "--model",
+        "meta/muse-spark-1.3-contributor",
+        "Task: Implement bounded candle and indicator warmup state diagnostics\nDescription: Implement bounded warmup state tracking and data-quality gating diagnostics in mike_trade/market_data/warmup.py, with unit tests in tests/unit/test_warmup.py.\n\nRequired behavior:\n- A WarmupTracker keeps per-(symbol, timeframe) state and computes per-requirement readiness from declared needs: required completed-bar counts per timeframe, plus indicator warmup lengths from the h.2 calculators' warmup_bars. It uses only bounded buffers (deque maxlen or equivalent) and never stores an unbounded bar history.\n- States: COLD → WARMING → READY, plus DEGRADED and INVALID. Transitions are deterministic: the same ordered input sequence and injected clock always produce identical states and diagnostics.\n- An immutable WarmupDiagnostics snapshot reports, per symbol and requirement: bars_have / bars_needed, state, and a tuple of blocking reason codes. Reason codes include at least INSUFFICIENT_BARS, STALE_DATA, MISSING_DATA, BAR_GAP, ZERO_VOLUME, INVALID_OHLC, MIXED_FEED, UNCLOSED_BAR, PRICE_BASIS_MISMATCH, SESSION_NOT_REGULAR, and UNKNOWN_SESSION.\n- The buy_gate(symbol, context) decision returns allowed=True only when every declared requirement is READY and there are no blocking reasons. Otherwise it fails closed with reason codes. Specifically:\n  - stale or missing context, a gap in completed 1-minute bars within the current session, a zero-volume bar where the requirement declares volume relevance, invalid OHLC, mixed feed_id, an unclosed bar offered as completed, an adjusted/raw basis mismatch, or a non-regular/unknown session must each block BUY\n  - session VWAP readiness requires bars from the current session_id, and resets at a session change\n- The gate is for new entries only. The module must expose no API that blocks exits, fills, stops, reconciliation, or manual closes; document this in the module docstring.\n- Support seeding from historical completed bars (for example replay or REST warmup) followed by live bars. Seeding must yield the same state as feeding the same bars live.\n- Consume MarketContext (h.4), Candle (h.1), indicator warmup metadata (h.2), and session info (h.3) through their public APIs only. Do no network or broker I/O. Do not invent numerical trading thresholds; bar counts come from declarations.\n\nBefore editing, inspect:\n- mike_trade/market_data/context.py (h.4), mike_trade/market_data/candles.py (h.1), mike_trade/strategies/indicators/core.py (h.2), and mike_trade/scheduling/calendar.py (h.3)\n- mike_trade/market_data/quality.py (if present) for existing freshness and gap reason codes to align with\n- mike_trade/strategies/base.py (if present) for strategy input declarations\nPhase: H\nAcceptance criteria:\n  - A test confirms that a requirement with N bars needed reports WARMING with INSUFFICIENT_BARS at N-1 completed bars and READY at exactly N.\n  - A test confirms that replaying an identical input sequence twice yields equal WarmupDiagnostics, and that historical seeding yields the same state as live feeding of the same bars.\n  - Negative tests confirm that each of these causes buy_gate to return allowed=False with the matching reason code: stale context, missing context, a 1-minute bar gap, a zero-volume bar (volume-relevant requirement), invalid OHLC, mixed feed_id, an unclosed bar, a price-basis mismatch, and a non-regular or unknown session.\n  - A positive test confirms that buy_gate returns allowed=True when all requirements are READY with fresh, regular-session, single-feed RAW-basis closed bars.\n  - A test confirms that VWAP-dependent readiness resets when the session_id changes and requires current-session bars.\n  - A test confirms that internal buffers stay at or below the configured bound after feeding many more bars than needed.\n  - A test or docstring assertion confirms that the module exposes no API affecting exits, fills, stops, reconciliation, or manual closes.\n  - WarmupDiagnostics is immutable; a test confirms that mutation raises.\nContext: AGENTS.md guidance:\n# AGENTS.md\n## Purpose\nThis repository is operated by an autonomous multi-agent system (abracapocus_2).\nAll agents must follow these rules when modifying the codebase.\n---\n## Core Principles\n- Minimal blast radius: only modify what is required for the task\n- Deterministic verification: all changes must be verifiable via code (tests, compile, scripts)\n- No architecture drift: do not introduce new frameworks or major design changes unless explicitly required\n- No unrelated refactors\n- All changes must be reproducible from a clean clone\n---\n## Project Structure\n- docs/ → design, plans, architecture constraints\n- plans/ → master plans\n- phases/ → phase definitions\n- tasks/ → executable task documents\n- backends/ → CLI backend adapters\n- agents/ → specialist agents\n- runtime/ → orchestration, routing, state\n...(truncated)\n\n## Task Contract Constraints\n\n{\n  \"allowed_write_paths\": [\n    \"mike_trade/market_data/warmup.py\",\n    \"tests/unit/test_warmup.py\"\n  ],\n  \"forbidden_changes\": [\n    \"modify files outside allowed_write_paths\",\n    \"change PLAN_SKELETON.json or other planning artifacts\",\n    \"modify candles.py, context.py, indicators/core.py, or calendar.py\",\n    \"block exits, fills, stops, reconciliation, or manual closes based on warmup state\",\n    \"store unbounded bar or tick history\",\n    \"invent numerical trading thresholds\",\n    \"perform network, provider, or broker I/O\",\n    \"run broad test suites or backtests\"\n  ]\n}\nAGENTS.md:\n# AGENTS.md\n\n## Purpose\n\nThis repository is operated by an autonomous multi-agent system (abracapocus_2).\nAll agents must follow these rules when modifying the codebase.\n\n---\n\n## Core Principles\n\n- Minimal blast radius: only modify what is required for the task\n- Deterministic verification: all changes must be verifiable via code (tests, compile, scripts)\n- No architecture drift: do not introduce new frameworks or major design changes unless explicitly required\n- No unrelated refactors\n- All changes must be reproducible from a clean clone\n\n---\n\n## Project Structure\n\n- docs/ → design, plans, architecture constraints\n- plans/ → master plans\n- phases/ → phase definitions\n- tasks/ → executable task documents\n- backends/ → CLI backend adapters\n- agents/ → specialist agents\n- runtime/ → orchestration, routing, state\n- reports/ → execution reports (DO NOT MODIFY MANUALLY)\n- state/runtime_state.json → runtime state (DO NOT COMMIT)\n\n---\n\n## Task Execution Rules\n\n- Always operate from a task document when available\n- Respect:\n  - selected_backend\n  - verification_profile\n  - acceptance_criteria\n- If a task conflicts with architecture constraints or phase scope:\n  - STOP and report conflict\n\n---\n\n## Backend Rules\n\n- Backends must:\n  - execute commands deterministically\n  - capture stdout, stderr, exit_code\n  - not silently fail\n- Do not invent backend interfaces; use existing adapters\n- Codex CLI, Aider, Gemini, Claude Code should be invoked through backends only\n\n---\n\n## Verification Rules\n\n- Verification must be deterministic\n- Preferred checks:\n  - pytest\n  - python -m py_compile\n- Do not rely on model self-evaluation\n\n---\n\n## Execution Control Flow (PERMANENT ARCHITECTURAL RULE)\n\n**HEURISTIC INFERENCE MUST NEVER PARTICIPATE IN ABRACAPOCUS EXECUTION CONTROL FLOW.**\n\nAbracapocus must not determine execution success, failure, acceptance,\nrejection, blocking, retry eligibility, phase progression, or completion from\nheuristic inference. A heuristic is any conclusion that is *inferred* rather\nthan *directly established by an explicit executable contract or a concrete\nruntime fact*.\n\nRuntime status is derived ONLY from concrete, mechanically observable facts:\n\n1. The backend process exit code. A backend that exits `0` (with no hard\n   write-policy violation) is a successful execution.\n2. Objectively observed hard write-policy violations (changed paths outside the\n   declared allowed write paths).\n3. Explicit operator-authored commands (task/phase verification the plan\n   explicitly contains). Their raw results are reported, kept DISTINCT from\n   backend execution status.\n4. Objective orchestrator failures with direct evidence (backend could not\n   launch, required document could not be parsed, subprocess infrastructure\n   failed).\n\n**Verification results are observational and must not rewrite backend execution\nstatus.** A verifier returning non-zero must NEVER, by itself, turn a\nsuccessful backend execution into unverified, stop a phase, or trigger an\nautomatic rerun. Verification is the result of a command, not authority to\nrewrite history.\n\n**Execution control:** Task-local problems (non-zero exit, timeout,\nwrite-policy violation, frame failure, backend launch failure) produce\nacceptance status ``\"unverified\"`` with truthful evidence preserved. They\nMUST NOT stop sibling tasks, later phases, or the plan. Only operator\ncancellation (SIGINT/SIGTERM/dashboard cancel) may terminate a run\n(acceptance status ``\"interrupted\"``). Dependencies are ordering constraints,\nnot acceptance gates — any terminal attempt outcome satisfies a dependency\nedge. The status ``\"failed\"`` is banned from acceptance output.\n\nDo NOT reintroduce -- under any name, feature flag, \"advisory\" wrapper, or\ncompatibility mode -- context completeness/sufficiency scoring, change or\narchitecture assessment used as a gate, intent/scope matching, reconciliation\ngates, no-progress judgments, confidence/risk scores, model/LLM/reviewer\njudgments over status, shadow/adaptive/secondary-verification gates, or\nheuristic retry/failure-classification control flow. Failure classification may\nonly *summarize* an already-established concrete failure; it must never create\none. Retries are permitted only for explicitly defined mechanical backend\nfailures. Future agents must not add these systems back.\n\n---\n\n## Git Rules\n\n- Do not commit:\n  - runtime_state.json\n  - reports/\n  - logs/\n  - virtual environments\n- Do not modify .gitignore unless required by task\n- Do not create excessive commits; prefer grouped logical commits\n\n---\n\n## Allowed Changes\n\n- Implement task requirements\n- Fix failing verification\n- Update relevant tests\n- Improve documentation tied to the task\n\n---\n\n## Forbidden Changes\n\n- Changing architecture without explicit instruction\n- Adding dependencies without justification\n- Modifying unrelated files\n- Deleting important files\n- Bypassing verification\n\n---\n\n## Planning Rules\n\n- Plans are multi-phase\n- Completed sections are immutable\n- Remaining sections may be updated\n- Tasks must align with:\n  - project brief\n  - architecture constraints\n  - active phase\n\n---\n\n## Reporting\n\n- All executions must produce structured reports\n- Reports must include:\n  - changed files\n  - verification results\n  - assessment\n\n---\n\n## Behavior\n\n- Do not ask unnecessary questions\n- Do not stall execution\n- Do not perform broad scans unless required\n- Prefer direct action over analysis\n\n---\n\n## Priority Order\n\nThis ordering guides *implementation decisions* only. It does NOT make\nverification an acceptance authority: verification results are observational\n(see \"Execution Control Flow\"), and never override a concrete backend\nexecution result.\n\n1. Architecture constraints\n2. Task definition\n3. Verification results (observational signal, not acceptance authority)\n4. Plan guidance\n\nIf conflicts occur, follow this order.\n\nAGENTS metadata:\n{\"loaded\": true, \"path\": \"/home/mike/dev/mike/abracapocus/python/abracapocus_2/AGENTS.md\", \"rule_count\": 77, \"sha256_12\": \"3f9b549ba1ce\"}\n"
+      ],
+      "stdout": "Done. All 19 warmup tests pass (`pytest tests/unit/test_warmup.py`, Python 3.12 venv) and both files compile.\n\n**Created `mike_trade/market_data/warmup.py`:**\n- `WarmupRequirement` (name, timeframe, `bars_needed`, `volume_relevant`, `session_scoped`, `indicator_factory`) with `effective_bars_needed = max(bars_needed, factory().warmup_bars)` — consumes h.2 metadata, no invented thresholds.\n- `WarmupTracker` keeps per-(symbol, timeframe) `deque(maxlen=need)` buffers (never unbounded); ingest via `add_bar` (live), `seed_historical` (same code path → identical state), `update_from_context`.\n- States `COLD/WARMING/READY/DEGRADED/INVALID`, deterministic from ordered inputs + injected clock. Integrity faults (`INVALID_OHLC`, `UNCLOSED_BAR`, `PRICE_BASIS_MISMATCH`, `MIXED_FEED`) → `INVALID`; count/quality faults → `COLD/WARMING/DEGRADED`; `READY` only when counts met and clean.\n- Immutable frozen `WarmupDiagnostics` (`bars_have/bars_needed/state/reasons` per requirement) and frozen `GateDecision`.\n- `buy_gate(symbol, context)` fails closed: stale/missing context, M1 gaps, zero-volume (volume-relevant only), invalid OHLC, mixed feed, unclosed bars, basis mismatch, `SESSION_NOT_REGULAR`/`UNKNOWN_SESSION` each block; session-scoped (VWAP) counts only current-`session_id` bars and resets on session change.\n- Module docstring states the gate is for **new entries only** with no exit/fill/stop/reconciliation/manual-close API; consumes h.1/h.3/h.4 only via public APIs, no I/O.\n\n**Created `tests/unit/test_warmup.py`** (19 tests): N-1 `WARMING`/`INSUFFICIENT_BARS` → N `READY`, indicator-warmup extension, replay-equality + seed≡live, all 9 negative gate codes (+ non-regular/unknown session), positive allow, VWAP session reset, buffer-bound (200 bars → size ≤ bound 3), diagnostics/gate immutability, and no-exit-API surface assertion.\n",
+      "stderr": "",
+      "exit_code": 0,
+      "duration_seconds": 233.5806860923767,
+      "model": "openrouter/meta/muse-spark-1.3-contributor",
+      "model_tags": [],
+      "working_directory": "/home/mike/dev/mike/stocks/python/mike_trade",
+      "changed_files": [
+        {
+          "path": "mike_trade/market_data/warmup.py",
+          "status": "untracked",
+          "code": "??"
+        },
+        {
+          "path": "tests/unit/test_warmup.py",
+          "status": "untracked",
+          "code": "??"
+        }
+      ],
+      "diff_summary": "git diff reported no changes",
+      "model_attempts": [
+        {
+          "backend": "pi_cli",
+          "model": "openrouter/meta/muse-spark-1.3-contributor",
+          "exit_code": 0,
+          "stdout": "Done. All 19 warmup tests pass (`pytest tests/unit/test_warmup.py`, Python 3.12 venv) and both files compile.\n\n**Created `mike_trade/market_data/warmup.py`:**\n- `WarmupRequirement` (name, timeframe, `bars_needed`, `volume_relevant`, `session_scoped`, `indicator_factory`) with `effective_bars_needed = max(bars_needed, factory().warmup_bars)` — consumes h.2 metadata, no invented thresholds.\n- `WarmupTracker` keeps per-(symbol, timeframe) `deque(maxlen=need)` buffers (never unbounded); ingest via `add_bar` (live), `seed_historical` (same code path → identical state), `update_from_context`.\n- States `COLD/WARMING/READY/DEGRADED/INVALID`, deterministic from ordered inputs + injected clock. Integrity faults (`INVALID_OHLC`, `UNCLOSED_BAR`, `PRICE_BASIS_MISMATCH`, `MIXED_FEED`) → `INVALID`; count/quality faults → `COLD/WARMING/DEGRADED`; `READY` only when counts met and clean.\n- Immutable frozen `WarmupDiagnostics` (`bars_have/bars_needed/state/reasons` per requirement) and frozen `GateDecision`.\n- `buy_gate(symbol, context)` fails closed: stale/missing context, M1 gaps, zero-volume (volume-relevant only), invalid OHLC, mixed feed, unclosed bars, basis mismatch, `SESSION_NOT_REGULAR`/`UNKNOWN_SESSION` each block; session-scoped (VWAP) counts only current-`session_id` bars and resets on session change.\n- Module docstring states the gate is for **new entries only** with no exit/fill/stop/reconciliation/manual-close API; consumes h.1/h.3/h.4 only via public APIs, no I/O.\n\n**Created `tests/unit/test_warmup.py`** (19 tests): N-1 `WARMING`/`INSUFFICIENT_BARS` → N `READY`, indicator-warmup extension, replay-equality + seed≡live, all 9 negative gate codes (+ non-regular/unknown session), positive allow, VWAP session reset, buffer-bound (200 bars → size ≤ bound 3), diagnostics/gate immutability, and no-exit-API surface assertion.\n",
+          "stderr": "",
+          "duration_seconds": 233.5806860923767,
+          "changed_files": [
+            {
+              "path": "mike_trade/market_data/warmup.py",
+              "status": "untracked",
+              "code": "??"
+            },
+            {
+              "path": "tests/unit/test_warmup.py",
+              "status": "untracked",
+              "code": "??"
+            }
+          ],
+          "diff_summary": "git diff reported no changes",
+          "outcome_classification": "backend_completed_with_changes",
+          "backend_timeout": false,
+          "backend_verification_timeout": false,
+          "timeout_seconds": null
+        }
+      ],
+      "write_policy_violations": [],
+      "outcome_classification": "backend_completed_with_changes",
+      "backend_timeout": false,
+      "backend_verification_timeout": false,
+      "changed_files_at_timeout_exit": [],
+      "abracapocus_verification_ran_after_backend_timeout": false,
+      "verification_owner": "abracapocus",
+      "verification_result": "skipped"
+    }
+  ],
+  "review": {
+    "status": "approved",
+    "findings": [],
+    "summary": "h.5:Review complete",
+    "created_at": "2026-10-08T16:55:01.706932"
+  },
+  "verification": {
+    "status": "skipped",
+    "checks": [],
+    "created_at": "2026-10-08T16:55:01.706939",
+    "notes": "H:skipped",
+    "profile": "focused"
+  },
+  "metadata": {
+    "run_id": "161d04e6-973e-484b-85b5-9f3675913b8c",
+    "project_name": "mike_trade",
+    "plan_version": "task-h.5",
+    "task_id": "h.5",
+    "task_title": "Implement bounded candle and indicator warmup state diagnostics",
+    "task_status": "completed",
+    "selected_backend": "pi_cli",
+    "verification_profile": "focused",
+    "backend_reason": "phase_based",
+    "frame_failures": [],
+    "agents_md": {
+      "loaded": true,
+      "path": "/home/mike/dev/mike/abracapocus/python/abracapocus_2/AGENTS.md",
+      "rule_count": 77,
+      "sha256_12": "3f9b549ba1ce"
+    },
+    "phase_results": [
+      {
+        "phase_name": "H",
+        "status": "passed",
+        "verification": "skipped",
+        "task_results": [
+          {
+            "task_id": "h.5",
+            "status": "passed",
+            "acceptance_status": "accepted",
+            "backend": "pi_cli",
+            "backend_outcome_classification": "backend_completed_with_changes",
+            "changed_files": [
+              {
+                "path": "mike_trade/market_data/warmup.py",
+                "status": "untracked",
+                "code": "??"
+              },
+              {
+                "path": "tests/unit/test_warmup.py",
+                "status": "untracked",
+                "code": "??"
+              }
+            ],
+            "backend_timeout": false,
+            "backend_elapsed_seconds": 233.5806860923767,
+            "backend_timeout_seconds": null,
+            "changed_files_at_timeout_exit": [],
+            "abracapocus_verification_ran_after_backend_timeout": false,
+            "verification_owner": "abracapocus",
+            "verification_result": "skipped",
+            "verification_status": "skipped",
+            "verification_checks": [],
+            "frame_failure": false,
+            "retry_attempts": []
+          }
+        ]
+      }
+    ]
+  }
+}
