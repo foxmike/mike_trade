@@ -1,0 +1,143 @@
+{
+  "plan_summary": "Task run: Implement Alpaca IEX stock WebSocket feed and reconnect semantics",
+  "backend_executions": [
+    {
+      "backend": "claude_code_cli",
+      "command": [
+        "claude",
+        "-p",
+        "Task: Implement Alpaca IEX stock WebSocket feed and reconnect semantics\nPhase: G\nDescription: Implement the Alpaca real-time stock market-data WebSocket adapter in mike_trade/market_data/alpaca_stream.py, plus contract tests in tests/contracts/test_alpaca_stream.py. The adapter implements the market-data streaming port defined in earlier phases. It opens exactly one authenticated connection per MarketDataService instance. The feed is configurable and defaults to Alpaca Basic IEX ('iex'); the SIP option exists only behind an explicit entitlement flag. Required behavior: (1) An auth handshake that uses injected credentials from the configured mode's credential source only. Never read live credentials in tests, and never log secrets. (2) An idempotent subscribe/unsubscribe API that takes a set of (symbol, channel) pairs for trades, quotes, and minute bars. Subscribing a pair that is already active sends no new wire message. The adapter keeps a diff against the active subscription set and re-sends the full active set after a reconnect. (3) Normalize each wire message (T=t/q/b, plus subscription/success/error control messages) into immutable, frozen domain events. Prices and sizes are Decimal parsed from strings or JSON numbers without float rounding. provider_source_ts is the timezone-aware UTC time parsed from the provider 't' field. receive_ts comes from the injected clock. feed_id is the actual feed identity reported or configured, e.g. 'iex'. Events also carry the provider sequence/trade id where present. (4) Reconnect with exponential backoff, jitter, and a configurable cap, using an injected clock/sleeper so tests are deterministic. Emit connection state transitions CONNECTING, AUTHENTICATED, SUBSCRIBED, DISCONNECTED, and RECONNECTING to a callback/observer so the quality layer can mark DEGRADED. (5) Treat provider errors (auth failure, connection limit exceeded/406, insufficient subscription/entitlement, invalid syntax) as typed exceptions or state events. Auth and entitlement failures do not retry in a tight loop. (6) The stream is market data only. It must not carry or depend on broker trade/order update channels, which use a separate higher-priority channel. Contract tests use a fake WebSocket transport that replays recorded or synthetic Alpaca JSON frames. They must not use the network or real credentials. Do not import the broker SDK in any strategy module. Do not persist raw ticks.\n\nBefore editing, inspect:\n- mike_trade/ domain/ports modules from earlier phases that define market-data event types, the clock port, the streaming port, and Decimal/UTC conventions (if present)\n- mike_trade/config or settings modules that define feed selection and per-mode credential sources (if present)\n- existing tests/contracts/ fixtures and conftest for fake transport patterns (if present)\n- pyproject.toml for the locked websocket/HTTP client dependencies already approved\nContext: AGENTS.md guidance:\n# AGENTS.md\n## Purpose\nThis repository is operated by an autonomous multi-agent system (abracapocus_2).\nAll agents must follow these rules when modifying the codebase.\n---\n## Core Principles\n- Minimal blast radius: only modify what is required for the task\n- Deterministic verification: all changes must be verifiable via code (tests, compile, scripts)\n- No architecture drift: do not introduce new frameworks or major design changes unless explicitly required\n- No unrelated refactors\n- All changes must be reproducible from a clean clone\n---\n## Project Structure\n- docs/ → design, plans, architecture constraints\n- plans/ → master plans\n- phases/ → phase definitions\n- tasks/ → executable task documents\n- backends/ → CLI backend adapters\n- agents/ → specialist agents\n- runtime/ → orchestration, routing, state\n...(truncated)\n\n## Task Contract Constraints\n\n{\n  \"allowed_write_paths\": [\n    \"mike_trade/market_data/alpaca_stream.py\",\n    \"tests/contracts/test_alpaca_stream.py\"\n  ],\n  \"forbidden_changes\": [\n    \"modify files outside allowed_write_paths\",\n    \"change PLAN_SKELETON.json or other planning artifacts\",\n    \"use real Alpaca credentials or network access in tests\",\n    \"create live broker orders\",\n    \"persist raw tick streams to disk or database\",\n    \"import broker SDK from strategy modules\",\n    \"run broad test suites or backtests\"\n  ]\n}\n\nAGENTS.md guidance:\n# AGENTS.md\n\n## Purpose\n\nThis repository is operated by an autonomous multi-agent system (abracapocus_2).\nAll agents must follow these rules when modifying the codebase.\n\n---\n\n## Core Principles\n\n- Minimal blast radius: only modify what is required for the task\n- Deterministic verification: all changes must be verifiable via code (tests, compile, scripts)\n- No architecture drift: do not introduce new frameworks or major design changes unless explicitly required\n- No unrelated refactors\n- All changes must be reproducible from a clean clone\n\n---\n\n## Project Structure\n\n- docs/ → design, plans, architecture constraints\n- plans/ → master plans\n- phases/ → phase definitions\n- tasks/ → executable task documents\n- backends/ → CLI backend adapters\n- agents/ → specialist agents\n- runtime/ → orchestration, routing, state\n- reports/ → execution reports (DO NOT MODIFY MANUALLY)\n- state/runtime_state.json → runtime state (DO NOT COMMIT)\n\n---\n\n## Task Execution Rules\n\n- Always operate from a task document when available\n- Respect:\n  - selected_backend\n  - verification_profile\n  - acceptance_criteria\n- If a task conflicts with architecture constraints or phase scope:\n  - STOP and report conflict\n\n---\n\n## Backend Rules\n\n- Backends must:\n  - execute commands deterministically\n  - capture stdout, stderr, exit_code\n  - not silently fail\n- Do not invent backend interfaces; use existing adapters\n- Codex CLI, Aider, Gemini, Claude Code should be invoked through backends only\n\n---\n\n## Verification Rules\n\n- Verification must be deterministic\n- Preferred checks:\n  - pytest\n  - python -m py_compile\n- Do not rely on model self-evaluation\n\n---\n\n## Execution Control Flow (PERMANENT ARCHITECTURAL RULE)\n\n**HEURISTIC INFERENCE MUST NEVER PARTICIPATE IN ABRACAPOCUS EXECUTION CONTROL FLOW.**\n\nAbracapocus must not determine execution success, failure, acceptance,\nrejection, blocking, retry eligibility, phase progression, or completion from\nheuristic inference. A heuristic is any conclusion that is *inferred* rather\nthan *directly established by an explicit executable contract or a concrete\nruntime fact*.\n\nRuntime status is derived ONLY from concrete, mechanically observable facts:\n\n1. The backend process exit code. A backend that exits `0` (with no hard\n   write-policy violation) is a successful execution.\n2. Objectively observed hard write-policy violations (changed paths outside the\n   declared allowed write paths).\n3. Explicit operator-authored commands (task/phase verification the plan\n   explicitly contains). Their raw results are reported, kept DISTINCT from\n   backend execution status.\n4. Objective orchestrator failures with direct evidence (backend could not\n   launch, required document could not be parsed, subprocess infrastructure\n   failed).\n\n**Verification results are observational and must not rewrite backend execution\nstatus.** A verifier returning non-zero must NEVER, by itself, turn a\nsuccessful backend execution into unverified, stop a phase, or trigger an\nautomatic rerun. Verification is the result of a command, not authority to\nrewrite history.\n\n**Execution control:** Task-local problems (non-zero exit, timeout,\nwrite-policy violation, frame failure, backend launch failure) produce\nacceptance status ``\"unverified\"`` with truthful evidence preserved. They\nMUST NOT stop sibling tasks, later phases, or the plan. Only operator\ncancellation (SIGINT/SIGTERM/dashboard cancel) may terminate a run\n(acceptance status ``\"interrupted\"``). Dependencies are ordering constraints,\nnot acceptance gates — any terminal attempt outcome satisfies a dependency\nedge. The status ``\"failed\"`` is banned from acceptance output.\n\nDo NOT reintroduce -- under any name, feature flag, \"advisory\" wrapper, or\ncompatibility mode -- context completeness/sufficiency scoring, change or\narchitecture assessment used as a gate, intent/scope matching, reconciliation\ngates, no-progress judgments, confidence/risk scores, model/LLM/reviewer\njudgments over status, shadow/adaptive/secondary-verification gates, or\nheuristic retry/failure-classification control flow. Failure classification may\nonly *summarize* an already-established concrete failure; it must never create\none. Retries are permitted only for explicitly defined mechanical backend\nfailures. Future agents must not add these systems back.\n\n---\n\n## Git Rules\n\n- Do not commit:\n  - runtime_state.json\n  - reports/\n  - logs/\n  - virtual environments\n- Do not modify .gitignore unless required by task\n- Do not create excessive commits; prefer grouped logical commits\n\n---\n\n## Allowed Changes\n\n- Implement task requirements\n- Fix failing verification\n- Update relevant tests\n- Improve documentation tied to the task\n\n---\n\n## Forbidden Changes\n\n- Changing architecture without explicit instruction\n- Adding dependencies without justification\n- Modifying unrelated files\n- Deleting important files\n- Bypassing verification\n\n---\n\n## Planning Rules\n\n- Plans are multi-phase\n- Completed sections are immutable\n- Remaining sections may be updated\n- Tasks must align with:\n  - project brief\n  - architecture constraints\n  - active phase\n\n---\n\n## Reporting\n\n- All executions must produce structured reports\n- Reports must include:\n  - changed files\n  - verification results\n  - assessment\n\n---\n\n## Behavior\n\n- Do not ask unnecessary questions\n- Do not stall execution\n- Do not perform broad scans unless required\n- Prefer direct action over analysis\n\n---\n\n## Priority Order\n\nThis ordering guides *implementation decisions* only. It does NOT make\nverification an acceptance authority: verification results are observational\n(see \"Execution Control Flow\"), and never override a concrete backend\nexecution result.\n\n1. Architecture constraints\n2. Task definition\n3. Verification results (observational signal, not acceptance authority)\n4. Plan guidance\n\nIf conflicts occur, follow this order.\n",
+        "--dangerously-skip-permissions",
+        "--output-format",
+        "text",
+        "--model",
+        "claude-sonnet-5-5"
+      ],
+      "stdout": "I added the Alpaca market-data stream adapter and its contract tests, and all 35 tests in `tests/contracts/test_alpaca_stream.py` pass. Ruff is clean on both files and mypy reports nothing for the adapter. I ran only that test file, not the wider suite. Nothing is committed. The only new files are the two allowed paths, and the `.abracapocus` files in git status were already there.\n\n**What I built in `mike_trade/market_data/alpaca_stream.py`**\n- **Connection:** `AlpacaMarketDataStream` opens one connection, and a second concurrent `events()` call raises. The feed defaults to `iex`, and `sip` raises `ConfigurationError` unless `sip_entitled=True`.\n- **Credentials:** `StreamCredentials` is injected and hides the secret in `repr`/`str`. The adapter never reads environment variables, and the secret does not appear in logs, errors or state events.\n- **Subscriptions:** `subscribe` and `unsubscribe` take `(symbol, Channel)` pairs and keep a diff against the active set, so re-subscribing an active pair sends nothing. Pairs added before connecting go out in one full-set message after auth, and the full active set is re-sent after every reconnect.\n- **Events:** `StreamTrade`, `StreamQuote`, `StreamBar` and `SubscriptionUpdate` are frozen dataclasses. Prices and sizes are exact `Decimal`s from JSON numbers or strings. `provider_source_ts` is UTC, including nanosecond timestamps (truncated to microseconds). `receive_ts` comes from the injected clock, and the trade id is carried as `sequence_id`. Each event also has `to_market_event()`, which converts to the existing domain `MarketEvent` with IEX provenance.\n- **Reconnect:** `BackoffPolicy` gives exponential backoff with jitter and a cap, plus an optional `max_attempts`. The sleeper, clock and rng are all injected. The observer callback receives `StateChange` events for `CONNECTING`, `AUTHENTICATED`, `SUBSCRIBED`, `DISCONNECTED` and `RECONNECTING`.\n- **Errors:**\n  - Auth failures (401/402/403/408) raise `AlpacaStreamAuthError`.\n  - Entitlement failures (409/410) raise `AlpacaStreamEntitlementError`.\n  - Syntax and symbol-limit errors (400/405) raise `AlpacaStreamSyntaxError`.\n  - All three are fatal and never retried.\n  - The connection-limit error (406) and other provider or socket errors are retried with backoff.\n  - Running out of retries raises `AlpacaStreamReconnectExhausted`.\n- **Scope:** only `auth`, `subscribe` and `unsubscribe` frames on trades, quotes and bars are ever sent. Nothing is persisted.\n\n**Decisions you may want to revisit**\n- **Own credentials and transport types:** I did not reuse `AlpacaCredentials` or `ReconnectPolicy` from the broker package, to keep the stream independent of the broker/trade-updates module. The transport is a small injected `connect`/`send`/`recv`/`close` protocol. `websockets` is only a transitive dependency, so I did not add it.\n- **Malformed messages:** a malformed trade, quote or bar is dropped and counted in `dropped_message_count`, and the stream carries on. Message types outside the three channels are ignored.\n- **Reconnect counter:** the attempt counter resets after a successful authentication.\n",
+      "stderr": "",
+      "exit_code": 0,
+      "duration_seconds": 233.4703230857849,
+      "model": "claude-sonnet-5-5",
+      "model_tags": [],
+      "working_directory": "/home/mike/dev/mike/stocks/python/mike_trade",
+      "changed_files": [
+        {
+          "path": "mike_trade/market_data/alpaca_stream.py",
+          "status": "untracked",
+          "code": "??"
+        },
+        {
+          "path": "tests/contracts/test_alpaca_stream.py",
+          "status": "untracked",
+          "code": "??"
+        }
+      ],
+      "diff_summary": "git diff reported no changes",
+      "model_attempts": [
+        {
+          "backend": "claude_code_cli",
+          "model": "claude-sonnet-5-5",
+          "exit_code": 0,
+          "stdout": "I added the Alpaca market-data stream adapter and its contract tests, and all 35 tests in `tests/contracts/test_alpaca_stream.py` pass. Ruff is clean on both files and mypy reports nothing for the adapter. I ran only that test file, not the wider suite. Nothing is committed. The only new files are the two allowed paths, and the `.abracapocus` files in git status were already there.\n\n**What I built in `mike_trade/market_data/alpaca_stream.py`**\n- **Connection:** `AlpacaMarketDataStream` opens one connection, and a second concurrent `events()` call raises. The feed defaults to `iex`, and `sip` raises `ConfigurationError` unless `sip_entitled=True`.\n- **Credentials:** `StreamCredentials` is injected and hides the secret in `repr`/`str`. The adapter never reads environment variables, and the secret does not appear in logs, errors or state events.\n- **Subscriptions:** `subscribe` and `unsubscribe` take `(symbol, Channel)` pairs and keep a diff against the active set, so re-subscribing an active pair sends nothing. Pairs added before connecting go out in one full-set message after auth, and the full active set is re-sent after every reconnect.\n- **Events:** `StreamTrade`, `StreamQuote`, `StreamBar` and `SubscriptionUpdate` are frozen dataclasses. Prices and sizes are exact `Decimal`s from JSON numbers or strings. `provider_source_ts` is UTC, including nanosecond timestamps (truncated to microseconds). `receive_ts` comes from the injected clock, and the trade id is carried as `sequence_id`. Each event also has `to_market_event()`, which converts to the existing domain `MarketEvent` with IEX provenance.\n- **Reconnect:** `BackoffPolicy` gives exponential backoff with jitter and a cap, plus an optional `max_attempts`. The sleeper, clock and rng are all injected. The observer callback receives `StateChange` events for `CONNECTING`, `AUTHENTICATED`, `SUBSCRIBED`, `DISCONNECTED` and `RECONNECTING`.\n- **Errors:**\n  - Auth failures (401/402/403/408) raise `AlpacaStreamAuthError`.\n  - Entitlement failures (409/410) raise `AlpacaStreamEntitlementError`.\n  - Syntax and symbol-limit errors (400/405) raise `AlpacaStreamSyntaxError`.\n  - All three are fatal and never retried.\n  - The connection-limit error (406) and other provider or socket errors are retried with backoff.\n  - Running out of retries raises `AlpacaStreamReconnectExhausted`.\n- **Scope:** only `auth`, `subscribe` and `unsubscribe` frames on trades, quotes and bars are ever sent. Nothing is persisted.\n\n**Decisions you may want to revisit**\n- **Own credentials and transport types:** I did not reuse `AlpacaCredentials` or `ReconnectPolicy` from the broker package, to keep the stream independent of the broker/trade-updates module. The transport is a small injected `connect`/`send`/`recv`/`close` protocol. `websockets` is only a transitive dependency, so I did not add it.\n- **Malformed messages:** a malformed trade, quote or bar is dropped and counted in `dropped_message_count`, and the stream carries on. Message types outside the three channels are ignored.\n- **Reconnect counter:** the attempt counter resets after a successful authentication.\n",
+          "stderr": "",
+          "duration_seconds": 233.4703230857849,
+          "changed_files": [
+            {
+              "path": "mike_trade/market_data/alpaca_stream.py",
+              "status": "untracked",
+              "code": "??"
+            },
+            {
+              "path": "tests/contracts/test_alpaca_stream.py",
+              "status": "untracked",
+              "code": "??"
+            }
+          ],
+          "diff_summary": "git diff reported no changes",
+          "outcome_classification": "backend_completed_with_changes",
+          "backend_timeout": false,
+          "backend_verification_timeout": false,
+          "timeout_seconds": null
+        }
+      ],
+      "write_policy_violations": [],
+      "outcome_classification": "backend_completed_with_changes",
+      "backend_timeout": false,
+      "backend_verification_timeout": false,
+      "changed_files_at_timeout_exit": [],
+      "abracapocus_verification_ran_after_backend_timeout": false,
+      "verification_owner": "abracapocus",
+      "verification_result": "skipped"
+    }
+  ],
+  "review": {
+    "status": "approved",
+    "findings": [],
+    "summary": "g.1:Review complete",
+    "created_at": "2026-10-08T16:25:41.734894"
+  },
+  "verification": {
+    "status": "skipped",
+    "checks": [],
+    "created_at": "2026-10-08T16:25:41.734900",
+    "notes": "G:skipped",
+    "profile": "focused"
+  },
+  "metadata": {
+    "run_id": "4eb048e0-ce13-40a7-b832-984d93676ec2",
+    "project_name": "mike_trade",
+    "plan_version": "task-g.1",
+    "task_id": "g.1",
+    "task_title": "Implement Alpaca IEX stock WebSocket feed and reconnect semantics",
+    "task_status": "completed",
+    "selected_backend": "claude_code_cli",
+    "verification_profile": "focused",
+    "backend_reason": "phase_based",
+    "frame_failures": [],
+    "agents_md": {
+      "loaded": true,
+      "path": "/home/mike/dev/mike/abracapocus/python/abracapocus_2/AGENTS.md",
+      "rule_count": 77,
+      "sha256_12": "3f9b549ba1ce"
+    },
+    "phase_results": [
+      {
+        "phase_name": "G",
+        "status": "passed",
+        "verification": "skipped",
+        "task_results": [
+          {
+            "task_id": "g.1",
+            "status": "passed",
+            "acceptance_status": "accepted",
+            "backend": "claude_code_cli",
+            "backend_outcome_classification": "backend_completed_with_changes",
+            "changed_files": [
+              {
+                "path": "mike_trade/market_data/alpaca_stream.py",
+                "status": "untracked",
+                "code": "??"
+              },
+              {
+                "path": "tests/contracts/test_alpaca_stream.py",
+                "status": "untracked",
+                "code": "??"
+              }
+            ],
+            "backend_timeout": false,
+            "backend_elapsed_seconds": 233.4703230857849,
+            "backend_timeout_seconds": null,
+            "changed_files_at_timeout_exit": [],
+            "abracapocus_verification_ran_after_backend_timeout": false,
+            "verification_owner": "abracapocus",
+            "verification_result": "skipped",
+            "verification_status": "skipped",
+            "verification_checks": [],
+            "frame_failure": false,
+            "retry_attempts": []
+          }
+        ]
+      }
+    ]
+  }
+}
