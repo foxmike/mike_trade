@@ -1,0 +1,142 @@
+{
+  "plan_summary": "Task run: Add shadow restart ledger balance and live-nonexecution acceptance tests",
+  "backend_executions": [
+    {
+      "backend": "pi_cli",
+      "command": [
+        "pi",
+        "-p",
+        "--provider",
+        "openrouter",
+        "--model",
+        "meta/muse-spark-1.3-contributor",
+        "Task: Add shadow restart ledger balance and live-nonexecution acceptance tests\nDescription: This is a verification-only task. Write real acceptance tests and an audit artifact for the phase p SHADOW implementation. Do not modify production code. If a defect is found, record it in the verification doc as a failing/open item rather than editing source files.\n\ntests/integration/test_shadow_restart.py must use a temporary SQLite WAL database. It runs at least one named scenario (via mike_trade/shadow/scenarios.py) through a deterministic, fixed quote/bar sequence. The sequence must cover:\n- buy fill\n- partial fill\n- stop arming\n- trailing stop update\n- stop-triggered or discretionary exit\n- cash adjustment\n- cooldown/loss-streak counter changes\n\nThe test then closes everything and reopens from the same database file in a fresh account/ledger/runner instance. It asserts that cash, positions, open orders, stop state, realized/unrealized P&L, per-symbol session entry counts, loss streaks and cooldown expiry are identical after the restart. It also asserts that starting cash is not re-applied and positions are not reset. Include a second scenario to prove that restart restores each scenario independently.\n\nThe file must also include live-nonexecution tests:\n- With Alpaca trading client constructors/order submission patched to raise, and paper/live credential env vars poisoned, a full shadow run completes without any call to them.\n- SHADOW ledgers reject PAPER/LIVE account IDs.\n- All shadow fill and stop records are labeled estimated and not broker-confirmed, and carry simulator version and feed provenance.\n\ndocs/verification/phase_p_shadow.md must document: what was verified; the exact focused commands used to run these tests; their results; the simulator assumptions (quote side, latency, slippage, participation, stop trigger); the restart/isolation/nonexecution guarantees and evidence; any gaps or open defects; and the explicit statement that shadow results are estimates, not broker-confirmed, and imply no profitability claim.\n\nBefore editing, inspect:\n- mike_trade/brokers/shadow/account.py, mike_trade/brokers/shadow/ledger.py, mike_trade/brokers/shadow/fills.py, mike_trade/brokers/shadow/stops.py\n- mike_trade/shadow/scenarios.py\n- tests/unit/test_shadow_account.py, tests/unit/test_shadow_fills.py, tests/unit/test_shadow_stops.py, tests/integration/test_shadow_isolation.py\n- the existing Alpaca adapter module(s) under mike_trade/brokers/ (only to identify the symbols to patch, not to edit them)\nPhase: P\nAcceptance criteria:\n  - tests/integration/test_shadow_restart.py exists and passes when run alone, using only a temporary database and deterministic fixtures\n  - After the restart, cash, positions, open orders, stop state, realized/unrealized P&L, session entry counts, loss streaks and cooldown expiry exactly equal their pre-restart Decimal/UTC values\n  - The restart test proves starting cash is not re-applied and positions are not reset, for at least two independent scenarios\n  - The live-nonexecution test fails if any Alpaca trading client constructor or order-submission path is invoked during a full shadow run, and it passes with the current implementation\n  - The test asserts that SHADOW ledgers reject PAPER/LIVE account identifiers\n  - The test asserts that every shadow fill/stop record is estimated=True and broker_confirmed=False and carries simulator version and provenance\n  - docs/verification/phase_p_shadow.md exists and lists the exact commands run, results, simulator assumptions, guarantees, open gaps, and the estimated/no-profitability-claim statement\n  - No production source files are modified by this task\nContext: AGENTS.md guidance:\n# AGENTS.md\n## Purpose\nThis repository is operated by an autonomous multi-agent system (abracapocus_2).\nAll agents must follow these rules when modifying the codebase.\n---\n## Core Principles\n- Minimal blast radius: only modify what is required for the task\n- Deterministic verification: all changes must be verifiable via code (tests, compile, scripts)\n- No architecture drift: do not introduce new frameworks or major design changes unless explicitly required\n- No unrelated refactors\n- All changes must be reproducible from a clean clone\n---\n## Project Structure\n- docs/ → design, plans, architecture constraints\n- plans/ → master plans\n- phases/ → phase definitions\n- tasks/ → executable task documents\n- backends/ → CLI backend adapters\n- agents/ → specialist agents\n- runtime/ → orchestration, routing, state\n...(truncated)\n\n## Task Contract Constraints\n\n{\n  \"allowed_write_paths\": [\n    \"tests/integration/test_shadow_restart.py\",\n    \"docs/verification/phase_p_shadow.md\"\n  ],\n  \"forbidden_changes\": [\n    \"modify files outside allowed_write_paths, including any mike_trade/ production source\",\n    \"change PLAN_SKELETON.json or other planning artifacts\",\n    \"use real broker credentials or network access in tests\",\n    \"create live or paper broker orders\",\n    \"run broad test suites, large backtests, or paid data acquisition\"\n  ]\n}\nAGENTS.md:\n# AGENTS.md\n\n## Purpose\n\nThis repository is operated by an autonomous multi-agent system (abracapocus_2).\nAll agents must follow these rules when modifying the codebase.\n\n---\n\n## Core Principles\n\n- Minimal blast radius: only modify what is required for the task\n- Deterministic verification: all changes must be verifiable via code (tests, compile, scripts)\n- No architecture drift: do not introduce new frameworks or major design changes unless explicitly required\n- No unrelated refactors\n- All changes must be reproducible from a clean clone\n\n---\n\n## Project Structure\n\n- docs/ → design, plans, architecture constraints\n- plans/ → master plans\n- phases/ → phase definitions\n- tasks/ → executable task documents\n- backends/ → CLI backend adapters\n- agents/ → specialist agents\n- runtime/ → orchestration, routing, state\n- reports/ → execution reports (DO NOT MODIFY MANUALLY)\n- state/runtime_state.json → runtime state (DO NOT COMMIT)\n\n---\n\n## Task Execution Rules\n\n- Always operate from a task document when available\n- Respect:\n  - selected_backend\n  - verification_profile\n  - acceptance_criteria\n- If a task conflicts with architecture constraints or phase scope:\n  - STOP and report conflict\n\n---\n\n## Backend Rules\n\n- Backends must:\n  - execute commands deterministically\n  - capture stdout, stderr, exit_code\n  - not silently fail\n- Do not invent backend interfaces; use existing adapters\n- Codex CLI, Aider, Gemini, Claude Code should be invoked through backends only\n\n---\n\n## Verification Rules\n\n- Verification must be deterministic\n- Preferred checks:\n  - pytest\n  - python -m py_compile\n- Do not rely on model self-evaluation\n\n---\n\n## Execution Control Flow (PERMANENT ARCHITECTURAL RULE)\n\n**HEURISTIC INFERENCE MUST NEVER PARTICIPATE IN ABRACAPOCUS EXECUTION CONTROL FLOW.**\n\nAbracapocus must not determine execution success, failure, acceptance,\nrejection, blocking, retry eligibility, phase progression, or completion from\nheuristic inference. A heuristic is any conclusion that is *inferred* rather\nthan *directly established by an explicit executable contract or a concrete\nruntime fact*.\n\nRuntime status is derived ONLY from concrete, mechanically observable facts:\n\n1. The backend process exit code. A backend that exits `0` (with no hard\n   write-policy violation) is a successful execution.\n2. Objectively observed hard write-policy violations (changed paths outside the\n   declared allowed write paths).\n3. Explicit operator-authored commands (task/phase verification the plan\n   explicitly contains). Their raw results are reported, kept DISTINCT from\n   backend execution status.\n4. Objective orchestrator failures with direct evidence (backend could not\n   launch, required document could not be parsed, subprocess infrastructure\n   failed).\n\n**Verification results are observational and must not rewrite backend execution\nstatus.** A verifier returning non-zero must NEVER, by itself, turn a\nsuccessful backend execution into unverified, stop a phase, or trigger an\nautomatic rerun. Verification is the result of a command, not authority to\nrewrite history.\n\n**Execution control:** Task-local problems (non-zero exit, timeout,\nwrite-policy violation, frame failure, backend launch failure) produce\nacceptance status ``\"unverified\"`` with truthful evidence preserved. They\nMUST NOT stop sibling tasks, later phases, or the plan. Only operator\ncancellation (SIGINT/SIGTERM/dashboard cancel) may terminate a run\n(acceptance status ``\"interrupted\"``). Dependencies are ordering constraints,\nnot acceptance gates — any terminal attempt outcome satisfies a dependency\nedge. The status ``\"failed\"`` is banned from acceptance output.\n\nDo NOT reintroduce -- under any name, feature flag, \"advisory\" wrapper, or\ncompatibility mode -- context completeness/sufficiency scoring, change or\narchitecture assessment used as a gate, intent/scope matching, reconciliation\ngates, no-progress judgments, confidence/risk scores, model/LLM/reviewer\njudgments over status, shadow/adaptive/secondary-verification gates, or\nheuristic retry/failure-classification control flow. Failure classification may\nonly *summarize* an already-established concrete failure; it must never create\none. Retries are permitted only for explicitly defined mechanical backend\nfailures. Future agents must not add these systems back.\n\n---\n\n## Git Rules\n\n- Do not commit:\n  - runtime_state.json\n  - reports/\n  - logs/\n  - virtual environments\n- Do not modify .gitignore unless required by task\n- Do not create excessive commits; prefer grouped logical commits\n\n---\n\n## Allowed Changes\n\n- Implement task requirements\n- Fix failing verification\n- Update relevant tests\n- Improve documentation tied to the task\n\n---\n\n## Forbidden Changes\n\n- Changing architecture without explicit instruction\n- Adding dependencies without justification\n- Modifying unrelated files\n- Deleting important files\n- Bypassing verification\n\n---\n\n## Planning Rules\n\n- Plans are multi-phase\n- Completed sections are immutable\n- Remaining sections may be updated\n- Tasks must align with:\n  - project brief\n  - architecture constraints\n  - active phase\n\n---\n\n## Reporting\n\n- All executions must produce structured reports\n- Reports must include:\n  - changed files\n  - verification results\n  - assessment\n\n---\n\n## Behavior\n\n- Do not ask unnecessary questions\n- Do not stall execution\n- Do not perform broad scans unless required\n- Prefer direct action over analysis\n\n---\n\n## Priority Order\n\nThis ordering guides *implementation decisions* only. It does NOT make\nverification an acceptance authority: verification results are observational\n(see \"Execution Control Flow\"), and never override a concrete backend\nexecution result.\n\n1. Architecture constraints\n2. Task definition\n3. Verification results (observational signal, not acceptance authority)\n4. Plan guidance\n\nIf conflicts occur, follow this order.\n\nAGENTS metadata:\n{\"loaded\": true, \"path\": \"/home/mike/dev/mike/abracapocus/python/abracapocus_2/AGENTS.md\", \"rule_count\": 77, \"sha256_12\": \"3f9b549ba1ce\"}\n"
+      ],
+      "stdout": "Done. All acceptance criteria verified with no production changes.\n\n**New files (only writes, per task contract):**\n- `tests/integration/test_shadow_restart.py` — 4 tests, all passing\n- `docs/verification/phase_p_shadow.md` — audit artifact\n\n**Test results** (`.venv/bin/python -m pytest tests/integration/test_shadow_restart.py`): 4 passed\n- `test_shadow_restart_ledger_balance` — deterministic quote sequence (partial 6/10 fill, arm 95 → trail 97 → stop-triggered exit, realized −60, +250 cash adjustment, streak 0→1, 10-min cooldown) run through `ScenarioRunner` named scenarios `restart-alpha`/`restart-beta` on a temp WAL SQLite DB; full pre/post snapshot equality; reopen uses wrong `starting_cash=D(\"1\")` to prove no re-application (keeps 50000, cash 49190, MSFT + beta positions intact)\n- `test_shadow_records_estimated_with_provenance` — every fill/stop/ledger record asserts `estimated=True`, `broker_confirmed=False`, `shadow-sim/1`, `iex` provenance\n- `test_shadow_live_nonexecution` — Alpaca HTTP/order/account constructors + `submit_order` patched to raise, all credential env vars poisoned; full run (entry, fill, stop arm + trigger) completes with zero Alpaca calls\n- `test_shadow_ledger_rejects_paper_live_ids` — `ScenarioConfig` and `ShadowLedger` refuse PAPER/LIVE identities\n\n**Fixes during development:** stop-exit fills carry `iex:quote(...)` provenance rather than the fill-simulator feed label (assertions scoped accordingly); nonexecution config must reference its `buy-aapl` strategy.\n\n**Verification doc** records exact commands, results, simulator assumptions (ask/bid fills, zero latency/slippage/fees, participation 1.0, BID trigger, regular NY session), guarantees with evidence, no open defects, and the explicit estimated-results / no-profitability-claim statement.\n\n`git status` confirms zero modifications under `mike_trade/`.\n",
+      "stderr": "",
+      "exit_code": 0,
+      "duration_seconds": 252.44840502738953,
+      "model": "openrouter/meta/muse-spark-1.3-contributor",
+      "model_tags": [],
+      "working_directory": "/home/mike/dev/mike/stocks/python/mike_trade",
+      "changed_files": [
+        {
+          "path": "docs/verification/phase_p_shadow.md",
+          "status": "untracked",
+          "code": "??"
+        },
+        {
+          "path": "tests/integration/test_shadow_restart.py",
+          "status": "untracked",
+          "code": "??"
+        }
+      ],
+      "diff_summary": "git diff reported no changes",
+      "model_attempts": [
+        {
+          "backend": "pi_cli",
+          "model": "openrouter/meta/muse-spark-1.3-contributor",
+          "exit_code": 0,
+          "stdout": "Done. All acceptance criteria verified with no production changes.\n\n**New files (only writes, per task contract):**\n- `tests/integration/test_shadow_restart.py` — 4 tests, all passing\n- `docs/verification/phase_p_shadow.md` — audit artifact\n\n**Test results** (`.venv/bin/python -m pytest tests/integration/test_shadow_restart.py`): 4 passed\n- `test_shadow_restart_ledger_balance` — deterministic quote sequence (partial 6/10 fill, arm 95 → trail 97 → stop-triggered exit, realized −60, +250 cash adjustment, streak 0→1, 10-min cooldown) run through `ScenarioRunner` named scenarios `restart-alpha`/`restart-beta` on a temp WAL SQLite DB; full pre/post snapshot equality; reopen uses wrong `starting_cash=D(\"1\")` to prove no re-application (keeps 50000, cash 49190, MSFT + beta positions intact)\n- `test_shadow_records_estimated_with_provenance` — every fill/stop/ledger record asserts `estimated=True`, `broker_confirmed=False`, `shadow-sim/1`, `iex` provenance\n- `test_shadow_live_nonexecution` — Alpaca HTTP/order/account constructors + `submit_order` patched to raise, all credential env vars poisoned; full run (entry, fill, stop arm + trigger) completes with zero Alpaca calls\n- `test_shadow_ledger_rejects_paper_live_ids` — `ScenarioConfig` and `ShadowLedger` refuse PAPER/LIVE identities\n\n**Fixes during development:** stop-exit fills carry `iex:quote(...)` provenance rather than the fill-simulator feed label (assertions scoped accordingly); nonexecution config must reference its `buy-aapl` strategy.\n\n**Verification doc** records exact commands, results, simulator assumptions (ask/bid fills, zero latency/slippage/fees, participation 1.0, BID trigger, regular NY session), guarantees with evidence, no open defects, and the explicit estimated-results / no-profitability-claim statement.\n\n`git status` confirms zero modifications under `mike_trade/`.\n",
+          "stderr": "",
+          "duration_seconds": 252.44840502738953,
+          "changed_files": [
+            {
+              "path": "docs/verification/phase_p_shadow.md",
+              "status": "untracked",
+              "code": "??"
+            },
+            {
+              "path": "tests/integration/test_shadow_restart.py",
+              "status": "untracked",
+              "code": "??"
+            }
+          ],
+          "diff_summary": "git diff reported no changes",
+          "outcome_classification": "backend_completed_with_changes",
+          "backend_timeout": false,
+          "backend_verification_timeout": false,
+          "timeout_seconds": null
+        }
+      ],
+      "write_policy_violations": [],
+      "outcome_classification": "backend_completed_with_changes",
+      "backend_timeout": false,
+      "backend_verification_timeout": false,
+      "changed_files_at_timeout_exit": [],
+      "abracapocus_verification_ran_after_backend_timeout": false,
+      "verification_owner": "abracapocus",
+      "verification_result": "skipped"
+    }
+  ],
+  "review": {
+    "status": "approved",
+    "findings": [],
+    "summary": "p.5:Review complete",
+    "created_at": "2026-10-08T22:12:44.641349"
+  },
+  "verification": {
+    "status": "skipped",
+    "checks": [],
+    "created_at": "2026-10-08T22:12:44.641355",
+    "notes": "P:skipped",
+    "profile": "focused"
+  },
+  "metadata": {
+    "run_id": "3b4d9190-2aad-45df-9685-66b68cadaf7a",
+    "project_name": "mike_trade",
+    "plan_version": "task-p.5",
+    "task_id": "p.5",
+    "task_title": "Add shadow restart ledger balance and live-nonexecution acceptance tests",
+    "task_status": "completed",
+    "selected_backend": "pi_cli",
+    "verification_profile": "focused",
+    "backend_reason": "phase_based",
+    "frame_failures": [],
+    "agents_md": {
+      "loaded": true,
+      "path": "/home/mike/dev/mike/abracapocus/python/abracapocus_2/AGENTS.md",
+      "rule_count": 77,
+      "sha256_12": "3f9b549ba1ce"
+    },
+    "phase_results": [
+      {
+        "phase_name": "P",
+        "status": "passed",
+        "verification": "skipped",
+        "task_results": [
+          {
+            "task_id": "p.5",
+            "status": "passed",
+            "acceptance_status": "accepted",
+            "backend": "pi_cli",
+            "backend_outcome_classification": "backend_completed_with_changes",
+            "changed_files": [
+              {
+                "path": "docs/verification/phase_p_shadow.md",
+                "status": "untracked",
+                "code": "??"
+              },
+              {
+                "path": "tests/integration/test_shadow_restart.py",
+                "status": "untracked",
+                "code": "??"
+              }
+            ],
+            "backend_timeout": false,
+            "backend_elapsed_seconds": 252.44840502738953,
+            "backend_timeout_seconds": null,
+            "changed_files_at_timeout_exit": [],
+            "abracapocus_verification_ran_after_backend_timeout": false,
+            "verification_owner": "abracapocus",
+            "verification_result": "skipped",
+            "verification_status": "skipped",
+            "verification_checks": [],
+            "frame_failure": false,
+            "retry_attempts": []
+          }
+        ]
+      }
+    ]
+  }
+}

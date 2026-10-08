@@ -1,0 +1,95 @@
+{
+  "run_at": "2026-10-08T22:12:44.696769",
+  "phase_dir": "/home/mike/dev/mike/stocks/python/mike_trade/.abracapocus/plans/ACTIVE/MIKE_TRADE_COMPLETE_PRODUCT/p",
+  "status": "passed",
+  "counts": {
+    "passed": 5,
+    "failed": 0,
+    "blocked": 0,
+    "skipped": 0,
+    "unverified": 0
+  },
+  "tasks": [
+    {
+      "task_id": "p.1",
+      "task_file": "/home/mike/dev/mike/stocks/python/mike_trade/.abracapocus/plans/ACTIVE/MIKE_TRADE_COMPLETE_PRODUCT/p/task_p.1_implement_durable_shadow_accounts_cash_holdings_and_exact_cycle_accounting.json",
+      "status": "passed",
+      "acceptance_status": "accepted",
+      "task_verification": {
+        "status": "skipped",
+        "checks": [],
+        "owner": "abracapocus"
+      },
+      "run_id": "d9f0c925-c8f2-4d74-bebc-993af542c9ad",
+      "write_policy_violations": [],
+      "failure_classification": null,
+      "reviewer_summary": "p.1:Review complete"
+    },
+    {
+      "task_id": "p.2",
+      "task_file": "/home/mike/dev/mike/stocks/python/mike_trade/.abracapocus/plans/ACTIVE/MIKE_TRADE_COMPLETE_PRODUCT/p/task_p.2_implement_shadow_simulated_order_matching_quote_slippage_and_costs.json",
+      "status": "passed",
+      "acceptance_status": "accepted",
+      "task_verification": {
+        "status": "skipped",
+        "checks": [],
+        "owner": "abracapocus"
+      },
+      "run_id": "5033ff9f-3e38-4966-85a8-1bc8660a9940",
+      "write_policy_violations": [],
+      "failure_classification": null,
+      "reviewer_summary": "p.2:Review complete"
+    },
+    {
+      "task_id": "p.3",
+      "task_file": "/home/mike/dev/mike/stocks/python/mike_trade/.abracapocus/plans/ACTIVE/MIKE_TRADE_COMPLETE_PRODUCT/p/task_p.3_simulate_fixed_native_continuous_and_stepped_trailing_stop_execution.json",
+      "status": "passed",
+      "acceptance_status": "accepted",
+      "task_verification": {
+        "status": "skipped",
+        "checks": [],
+        "owner": "abracapocus"
+      },
+      "run_id": "26dd1715-f5f2-47ec-bc59-acacd6cc1dc2",
+      "write_policy_violations": [],
+      "failure_classification": null,
+      "reviewer_summary": "p.3:Review complete"
+    },
+    {
+      "task_id": "p.4",
+      "task_file": "/home/mike/dev/mike/stocks/python/mike_trade/.abracapocus/plans/ACTIVE/MIKE_TRADE_COMPLETE_PRODUCT/p/task_p.4_run_independent_concurrent_named_shadow_scenarios_on_common_event_feed.json",
+      "status": "passed",
+      "acceptance_status": "accepted",
+      "task_verification": {
+        "status": "skipped",
+        "checks": [],
+        "owner": "abracapocus"
+      },
+      "run_id": "c1462ad0-d75d-43ff-8074-78e6f2fbe826",
+      "write_policy_violations": [],
+      "failure_classification": null,
+      "reviewer_summary": "p.4:Review complete"
+    },
+    {
+      "task_id": "p.5",
+      "task_file": "/home/mike/dev/mike/stocks/python/mike_trade/.abracapocus/plans/ACTIVE/MIKE_TRADE_COMPLETE_PRODUCT/p/task_p.5_add_shadow_restart_ledger_balance_and_live_nonexecution_acceptance_tests.json",
+      "status": "passed",
+      "acceptance_status": "accepted",
+      "task_verification": {
+        "status": "skipped",
+        "checks": [],
+        "owner": "abracapocus"
+      },
+      "run_id": "3b4d9190-2aad-45df-9685-66b68cadaf7a",
+      "write_policy_violations": [],
+      "failure_classification": null,
+      "reviewer_summary": "p.5:Review complete"
+    }
+  ],
+  "phase_verification": {
+    "status": "warning",
+    "checks": [],
+    "notes": "phase verification complete",
+    "run_when": "all_tasks_pass"
+  }
+}
