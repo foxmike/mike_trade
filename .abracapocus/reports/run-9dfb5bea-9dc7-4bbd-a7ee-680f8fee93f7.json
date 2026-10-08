@@ -1,0 +1,143 @@
+{
+  "plan_summary": "Task run: Implement historical execution simulator with costs and partial fill policies",
+  "backend_executions": [
+    {
+      "backend": "claude_code_cli",
+      "command": [
+        "claude",
+        "-p",
+        "Task: Implement historical execution simulator with costs and partial fill policies\nPhase: Q\nDescription: Implement the historical execution simulator in mike_trade/backtest/execution.py. It is a broker-port-shaped, replay-only adapter that receives the same order intents the real position coordinator produces in live/shadow modes and turns them into simulated fills, driven by the HistoricalReplayFeed and ReplayClock from q.1. It never calls a real broker API.\n\nRequirements:\n- Reuse existing concepts rather than re-implementing them: order types/FSM, protection math (fixed stop, broker-native continuous trailing, stepped trailing), the never-move-down rule for long stops, and fractional/order-capability fail-closed policy. Where the shadow fill/stop simulator logic in mike_trade/brokers/shadow/fills.py and mike_trade/brokers/shadow/stops.py applies, call or compose it instead of duplicating it.\n- Fill evidence:\n  - When quote data is available (quote fidelity not UNAVAILABLE), buys fill at ask and sells at bid, plus adverse slippage.\n  - When only bars exist, use an explicit configured BarFillPolicy, for example next-completed-bar open plus adverse slippage. Never fill at the close of the bar that generated the signal. Mark each such fill with fidelity_limitation=BAR_ONLY.\n- Costs: configurable per-share/per-order/bps fees and slippage in bps/ticks. Everything is Decimal and recorded on each fill.\n- Latency: a configurable order-submission latency and a stop-replacement latency, measured in simulated time. A replaced stop is not active until its replacement latency has elapsed. The previous stop stays active in the meantime.\n- Partial fills: a configurable participation cap relative to bar volume (or quote size when available). Leftover quantity stays pending across bars. Protective stop coverage always equals the actual filled remaining quantity, and protection starts only after a confirmed positive fill.\n- Stop simulation with intrabar ambiguity:\n  - A stop triggers when the bar low <= the stop price for a long position.\n  - Gap-through opens fill at the open, not the stop price.\n  - If one bar both reaches a favorable level (a strategy limit/target, or a high that would ratchet a trailing stop) and touches the stop, the simulator must not assume the favorable order. Apply a configured AmbiguityPolicy whose default is STOP_FIRST/pessimistic. Record an AMBIGUOUS_INTRABAR_ORDER flag on the result.\n  - Trailing stops ratchet only on completed-bar information that was available before the evaluated bar. They never move down.\n- Overlap safety: when a discretionary/strategy SELL and the protective stop could both execute, total sold quantity never exceeds the held quantity, so the result never goes short.\n- Session rules: no fills outside regular hours. Halts/missing bars produce no fill. Early closes are respected.\n- Determinism: given the same events, config and seed, the output fill sequence is identical.\n- Every fill record carries a simulator version, the assumptions used, an estimated=True / broker_confirmed=False label, and data provenance.\n\nWrite tests/unit/test_backtest_execution.py with small synthetic in-memory bars/quotes only, covering positive and negative cases.\n\nBefore editing, inspect:\n- mike_trade/backtest/clock.py and mike_trade/backtest/feed.py (from q.1)\n- mike_trade/brokers/ports.py (broker port shape)\n- mike_trade/brokers/shadow/fills.py, mike_trade/brokers/shadow/stops.py, mike_trade/brokers/shadow/ledger.py\n- mike_trade/execution/coordinator.py, mike_trade/execution/close_coordinator.py, mike_trade/execution/order_fsm.py, mike_trade/execution/intents.py\n- mike_trade/risk/fixed_stop.py, mike_trade/risk/trailing.py, mike_trade/risk/protection.py, mike_trade/domain/protection.py\n- mike_trade/brokers/alpaca/capabilities.py (fractional/order-type capability rules to mirror fail-closed)\nContext: AGENTS.md guidance:\n# AGENTS.md\n## Purpose\nThis repository is operated by an autonomous multi-agent system (abracapocus_2).\nAll agents must follow these rules when modifying the codebase.\n---\n## Core Principles\n- Minimal blast radius: only modify what is required for the task\n- Deterministic verification: all changes must be verifiable via code (tests, compile, scripts)\n- No architecture drift: do not introduce new frameworks or major design changes unless explicitly required\n- No unrelated refactors\n- All changes must be reproducible from a clean clone\n---\n## Project Structure\n- docs/ → design, plans, architecture constraints\n- plans/ → master plans\n- phases/ → phase definitions\n- tasks/ → executable task documents\n- backends/ → CLI backend adapters\n- agents/ → specialist agents\n- runtime/ → orchestration, routing, state\n...(truncated)\n\n## Task Contract Constraints\n\n{\n  \"allowed_symbols\": [\n    \"HistoricalExecutionSimulator\",\n    \"ExecutionAssumptions\",\n    \"BarFillPolicy\",\n    \"AmbiguityPolicy\",\n    \"SimulatedExecution\",\n    \"AMBIGUOUS_INTRABAR_ORDER\",\n    \"EXECUTION_SIMULATOR_VERSION\"\n  ],\n  \"allowed_write_paths\": [\n    \"mike_trade/backtest/execution.py\",\n    \"tests/unit/test_backtest_execution.py\"\n  ],\n  \"forbidden_changes\": [\n    \"modify files outside allowed_write_paths, including q.1 modules, shadow broker modules, risk or execution modules\",\n    \"change PLAN_SKELETON.json or other planning artifacts\",\n    \"infer a favorable intrabar order from candle high/low when ordering is ambiguous\",\n    \"fill at the close of the signal bar or at any price not supported by the configured fill policy\",\n    \"lower a long protective stop or allow sold quantity to exceed held quantity\",\n    \"import or call any Alpaca trading client, paper/live endpoint or broker credential\",\n    \"use float for prices, quantities, fees or slippage\",\n    \"create live broker orders or run broad test suites/backtests\"\n  ]\n}\n\nAGENTS.md guidance:\n# AGENTS.md\n\n## Purpose\n\nThis repository is operated by an autonomous multi-agent system (abracapocus_2).\nAll agents must follow these rules when modifying the codebase.\n\n---\n\n## Core Principles\n\n- Minimal blast radius: only modify what is required for the task\n- Deterministic verification: all changes must be verifiable via code (tests, compile, scripts)\n- No architecture drift: do not introduce new frameworks or major design changes unless explicitly required\n- No unrelated refactors\n- All changes must be reproducible from a clean clone\n\n---\n\n## Project Structure\n\n- docs/ → design, plans, architecture constraints\n- plans/ → master plans\n- phases/ → phase definitions\n- tasks/ → executable task documents\n- backends/ → CLI backend adapters\n- agents/ → specialist agents\n- runtime/ → orchestration, routing, state\n- reports/ → execution reports (DO NOT MODIFY MANUALLY)\n- state/runtime_state.json → runtime state (DO NOT COMMIT)\n\n---\n\n## Task Execution Rules\n\n- Always operate from a task document when available\n- Respect:\n  - selected_backend\n  - verification_profile\n  - acceptance_criteria\n- If a task conflicts with architecture constraints or phase scope:\n  - STOP and report conflict\n\n---\n\n## Backend Rules\n\n- Backends must:\n  - execute commands deterministically\n  - capture stdout, stderr, exit_code\n  - not silently fail\n- Do not invent backend interfaces; use existing adapters\n- Codex CLI, Aider, Gemini, Claude Code should be invoked through backends only\n\n---\n\n## Verification Rules\n\n- Verification must be deterministic\n- Preferred checks:\n  - pytest\n  - python -m py_compile\n- Do not rely on model self-evaluation\n\n---\n\n## Execution Control Flow (PERMANENT ARCHITECTURAL RULE)\n\n**HEURISTIC INFERENCE MUST NEVER PARTICIPATE IN ABRACAPOCUS EXECUTION CONTROL FLOW.**\n\nAbracapocus must not determine execution success, failure, acceptance,\nrejection, blocking, retry eligibility, phase progression, or completion from\nheuristic inference. A heuristic is any conclusion that is *inferred* rather\nthan *directly established by an explicit executable contract or a concrete\nruntime fact*.\n\nRuntime status is derived ONLY from concrete, mechanically observable facts:\n\n1. The backend process exit code. A backend that exits `0` (with no hard\n   write-policy violation) is a successful execution.\n2. Objectively observed hard write-policy violations (changed paths outside the\n   declared allowed write paths).\n3. Explicit operator-authored commands (task/phase verification the plan\n   explicitly contains). Their raw results are reported, kept DISTINCT from\n   backend execution status.\n4. Objective orchestrator failures with direct evidence (backend could not\n   launch, required document could not be parsed, subprocess infrastructure\n   failed).\n\n**Verification results are observational and must not rewrite backend execution\nstatus.** A verifier returning non-zero must NEVER, by itself, turn a\nsuccessful backend execution into unverified, stop a phase, or trigger an\nautomatic rerun. Verification is the result of a command, not authority to\nrewrite history.\n\n**Execution control:** Task-local problems (non-zero exit, timeout,\nwrite-policy violation, frame failure, backend launch failure) produce\nacceptance status ``\"unverified\"`` with truthful evidence preserved. They\nMUST NOT stop sibling tasks, later phases, or the plan. Only operator\ncancellation (SIGINT/SIGTERM/dashboard cancel) may terminate a run\n(acceptance status ``\"interrupted\"``). Dependencies are ordering constraints,\nnot acceptance gates — any terminal attempt outcome satisfies a dependency\nedge. The status ``\"failed\"`` is banned from acceptance output.\n\nDo NOT reintroduce -- under any name, feature flag, \"advisory\" wrapper, or\ncompatibility mode -- context completeness/sufficiency scoring, change or\narchitecture assessment used as a gate, intent/scope matching, reconciliation\ngates, no-progress judgments, confidence/risk scores, model/LLM/reviewer\njudgments over status, shadow/adaptive/secondary-verification gates, or\nheuristic retry/failure-classification control flow. Failure classification may\nonly *summarize* an already-established concrete failure; it must never create\none. Retries are permitted only for explicitly defined mechanical backend\nfailures. Future agents must not add these systems back.\n\n---\n\n## Git Rules\n\n- Do not commit:\n  - runtime_state.json\n  - reports/\n  - logs/\n  - virtual environments\n- Do not modify .gitignore unless required by task\n- Do not create excessive commits; prefer grouped logical commits\n\n---\n\n## Allowed Changes\n\n- Implement task requirements\n- Fix failing verification\n- Update relevant tests\n- Improve documentation tied to the task\n\n---\n\n## Forbidden Changes\n\n- Changing architecture without explicit instruction\n- Adding dependencies without justification\n- Modifying unrelated files\n- Deleting important files\n- Bypassing verification\n\n---\n\n## Planning Rules\n\n- Plans are multi-phase\n- Completed sections are immutable\n- Remaining sections may be updated\n- Tasks must align with:\n  - project brief\n  - architecture constraints\n  - active phase\n\n---\n\n## Reporting\n\n- All executions must produce structured reports\n- Reports must include:\n  - changed files\n  - verification results\n  - assessment\n\n---\n\n## Behavior\n\n- Do not ask unnecessary questions\n- Do not stall execution\n- Do not perform broad scans unless required\n- Prefer direct action over analysis\n\n---\n\n## Priority Order\n\nThis ordering guides *implementation decisions* only. It does NOT make\nverification an acceptance authority: verification results are observational\n(see \"Execution Control Flow\"), and never override a concrete backend\nexecution result.\n\n1. Architecture constraints\n2. Task definition\n3. Verification results (observational signal, not acceptance authority)\n4. Plan guidance\n\nIf conflicts occur, follow this order.\n",
+        "--dangerously-skip-permissions",
+        "--output-format",
+        "text",
+        "--model",
+        "claude-sonnet-5-5"
+      ],
+      "stdout": "`mike_trade/backtest/execution.py` and `tests/unit/test_backtest_execution.py` are written. The 64 new tests pass, along with the existing replay-clock tests (103 passed in all). `ruff` and `mypy` are clean on the module. I didn't run the broader suite, as the task forbids it, and nothing is committed.\n\n**What the simulator does**\n- **Shape:** it is a `BrokerPort`-shaped adapter, `HistoricalExecutionSimulator`, with `environment` set to `BACKTEST`. It takes the same `OrderIntent` values the coordinator produces. `get_account` raises `NotImplementedError`, because there is no cash or equity model.\n- **Reuse of existing code:**\n  - Order status changes go through the order FSM.\n  - Stop state is the existing `TrailingStopState`, whose `ratchet` gives the never-move-down rule.\n  - Native trailing stops use `start_protection` plus the tick floor from `risk.fixed_stop`.\n  - The fractional/order-type fail-closed check is `BrokerCapabilities.supports_order`, as the shadow account does.\n  - When quote data exists, market and limit matching goes through `ShadowFillSimulator.simulate`. The simulator then applies its own fees, shared-liquidity cap and held-quantity cap.\n- **Fills with quotes:** buys fill at the ask and sells at the bid, plus adverse slippage. A stop triggers when the bid is at or below the stop and fills at the bid.\n- **Fills with bars only:** fills happen at the open of the first bar that starts at or after submission plus latency. They carry `fidelity_limitation=\"BAR_ONLY\"`. A bar that opens beyond the stop fills at the open, not the stop price.\n- **Intrabar ambiguity:** a bar that touches a stop and also reaches a sell limit, or a high that would ratchet the same trailing stop, gets `AMBIGUOUS_INTRABAR_ORDER`. The stop executes first. Trailing stops ratchet only from highs seen on earlier bars and never move down.\n- **Latency and coverage:**\n  - A stop replacement stays pending for the configured latency, and the old stop stays active meanwhile.\n  - A protective stop is rejected unless it is covered by a confirmed filled position.\n  - Stop quantity is clamped to the held quantity.\n  - Overlapping sells are clamped at fill time, and every open SELL is canceled once the position is flat.\n- **Session and data gaps:** pre-open, post-close, early-close, halted, zero-volume and missing-bar cases produce no fill.\n- **Records:** `SimulatedExecution` has `estimated=True`, `broker_confirmed=False`, version, assumptions, provenance and flags. Non-fill decisions are kept in `diagnostics`.\n\n**Decisions for you**\n- **`AmbiguityPolicy`:** it has only `STOP_FIRST` (default) and `STOP_ONLY`. I did not add an optimistic option, because the contract forbids inferring a favorable intrabar order. With `STOP_FIRST`, a limit order can still fill after a partial stop, using the shares left over. `STOP_ONLY` withholds those favorable limits for that bar.\n- **Splits:** a split event while a position or open order exists raises `NotImplementedError`. This fails closed, since split-adjusting quantities isn't in scope.\n- **Open-ended halts:** a halt with no resume time lasts until that day's session close. This is my assumption.\n- **Stepped trailing:** it reaches the simulator as stop replacements computed by the coordinator. The simulator only enforces latency and never-down.\n- **Transitive imports:** importing `mike_trade.market_data` (which the q.1 feed already does) pulls in `alpaca_stream` and `alpaca_history`. The new module has no direct broker-client import, and a source-scan test enforces that.\n- **Test tooling:** the repo's `.venv` Python 3.12 is required. The system `python` is 3.11 and can't parse the repo.\n",
+      "stderr": "",
+      "exit_code": 0,
+      "duration_seconds": 790.7418584823608,
+      "model": "claude-sonnet-5-5",
+      "model_tags": [],
+      "working_directory": "/home/mike/dev/mike/stocks/python/mike_trade",
+      "changed_files": [
+        {
+          "path": "mike_trade/backtest/execution.py",
+          "status": "untracked",
+          "code": "??"
+        },
+        {
+          "path": "tests/unit/test_backtest_execution.py",
+          "status": "untracked",
+          "code": "??"
+        }
+      ],
+      "diff_summary": "git diff reported no changes",
+      "model_attempts": [
+        {
+          "backend": "claude_code_cli",
+          "model": "claude-sonnet-5-5",
+          "exit_code": 0,
+          "stdout": "`mike_trade/backtest/execution.py` and `tests/unit/test_backtest_execution.py` are written. The 64 new tests pass, along with the existing replay-clock tests (103 passed in all). `ruff` and `mypy` are clean on the module. I didn't run the broader suite, as the task forbids it, and nothing is committed.\n\n**What the simulator does**\n- **Shape:** it is a `BrokerPort`-shaped adapter, `HistoricalExecutionSimulator`, with `environment` set to `BACKTEST`. It takes the same `OrderIntent` values the coordinator produces. `get_account` raises `NotImplementedError`, because there is no cash or equity model.\n- **Reuse of existing code:**\n  - Order status changes go through the order FSM.\n  - Stop state is the existing `TrailingStopState`, whose `ratchet` gives the never-move-down rule.\n  - Native trailing stops use `start_protection` plus the tick floor from `risk.fixed_stop`.\n  - The fractional/order-type fail-closed check is `BrokerCapabilities.supports_order`, as the shadow account does.\n  - When quote data exists, market and limit matching goes through `ShadowFillSimulator.simulate`. The simulator then applies its own fees, shared-liquidity cap and held-quantity cap.\n- **Fills with quotes:** buys fill at the ask and sells at the bid, plus adverse slippage. A stop triggers when the bid is at or below the stop and fills at the bid.\n- **Fills with bars only:** fills happen at the open of the first bar that starts at or after submission plus latency. They carry `fidelity_limitation=\"BAR_ONLY\"`. A bar that opens beyond the stop fills at the open, not the stop price.\n- **Intrabar ambiguity:** a bar that touches a stop and also reaches a sell limit, or a high that would ratchet the same trailing stop, gets `AMBIGUOUS_INTRABAR_ORDER`. The stop executes first. Trailing stops ratchet only from highs seen on earlier bars and never move down.\n- **Latency and coverage:**\n  - A stop replacement stays pending for the configured latency, and the old stop stays active meanwhile.\n  - A protective stop is rejected unless it is covered by a confirmed filled position.\n  - Stop quantity is clamped to the held quantity.\n  - Overlapping sells are clamped at fill time, and every open SELL is canceled once the position is flat.\n- **Session and data gaps:** pre-open, post-close, early-close, halted, zero-volume and missing-bar cases produce no fill.\n- **Records:** `SimulatedExecution` has `estimated=True`, `broker_confirmed=False`, version, assumptions, provenance and flags. Non-fill decisions are kept in `diagnostics`.\n\n**Decisions for you**\n- **`AmbiguityPolicy`:** it has only `STOP_FIRST` (default) and `STOP_ONLY`. I did not add an optimistic option, because the contract forbids inferring a favorable intrabar order. With `STOP_FIRST`, a limit order can still fill after a partial stop, using the shares left over. `STOP_ONLY` withholds those favorable limits for that bar.\n- **Splits:** a split event while a position or open order exists raises `NotImplementedError`. This fails closed, since split-adjusting quantities isn't in scope.\n- **Open-ended halts:** a halt with no resume time lasts until that day's session close. This is my assumption.\n- **Stepped trailing:** it reaches the simulator as stop replacements computed by the coordinator. The simulator only enforces latency and never-down.\n- **Transitive imports:** importing `mike_trade.market_data` (which the q.1 feed already does) pulls in `alpaca_stream` and `alpaca_history`. The new module has no direct broker-client import, and a source-scan test enforces that.\n- **Test tooling:** the repo's `.venv` Python 3.12 is required. The system `python` is 3.11 and can't parse the repo.\n",
+          "stderr": "",
+          "duration_seconds": 790.7418584823608,
+          "changed_files": [
+            {
+              "path": "mike_trade/backtest/execution.py",
+              "status": "untracked",
+              "code": "??"
+            },
+            {
+              "path": "tests/unit/test_backtest_execution.py",
+              "status": "untracked",
+              "code": "??"
+            }
+          ],
+          "diff_summary": "git diff reported no changes",
+          "outcome_classification": "backend_completed_with_changes",
+          "backend_timeout": false,
+          "backend_verification_timeout": false,
+          "timeout_seconds": null
+        }
+      ],
+      "write_policy_violations": [],
+      "outcome_classification": "backend_completed_with_changes",
+      "backend_timeout": false,
+      "backend_verification_timeout": false,
+      "changed_files_at_timeout_exit": [],
+      "abracapocus_verification_ran_after_backend_timeout": false,
+      "verification_owner": "abracapocus",
+      "verification_result": "skipped"
+    }
+  ],
+  "review": {
+    "status": "approved",
+    "findings": [],
+    "summary": "q.2:Review complete",
+    "created_at": "2026-10-08T22:31:20.879143"
+  },
+  "verification": {
+    "status": "skipped",
+    "checks": [],
+    "created_at": "2026-10-08T22:31:20.879154",
+    "notes": "Q:skipped",
+    "profile": "focused"
+  },
+  "metadata": {
+    "run_id": "9dfb5bea-9dc7-4bbd-a7ee-680f8fee93f7",
+    "project_name": "mike_trade",
+    "plan_version": "task-q.2",
+    "task_id": "q.2",
+    "task_title": "Implement historical execution simulator with costs and partial fill policies",
+    "task_status": "completed",
+    "selected_backend": "claude_code_cli",
+    "verification_profile": "focused",
+    "backend_reason": "phase_based",
+    "frame_failures": [],
+    "agents_md": {
+      "loaded": true,
+      "path": "/home/mike/dev/mike/abracapocus/python/abracapocus_2/AGENTS.md",
+      "rule_count": 77,
+      "sha256_12": "3f9b549ba1ce"
+    },
+    "phase_results": [
+      {
+        "phase_name": "Q",
+        "status": "passed",
+        "verification": "skipped",
+        "task_results": [
+          {
+            "task_id": "q.2",
+            "status": "passed",
+            "acceptance_status": "accepted",
+            "backend": "claude_code_cli",
+            "backend_outcome_classification": "backend_completed_with_changes",
+            "changed_files": [
+              {
+                "path": "mike_trade/backtest/execution.py",
+                "status": "untracked",
+                "code": "??"
+              },
+              {
+                "path": "tests/unit/test_backtest_execution.py",
+                "status": "untracked",
+                "code": "??"
+              }
+            ],
+            "backend_timeout": false,
+            "backend_elapsed_seconds": 790.7418584823608,
+            "backend_timeout_seconds": null,
+            "changed_files_at_timeout_exit": [],
+            "abracapocus_verification_ran_after_backend_timeout": false,
+            "verification_owner": "abracapocus",
+            "verification_result": "skipped",
+            "verification_status": "skipped",
+            "verification_checks": [],
+            "frame_failure": false,
+            "retry_attempts": []
+          }
+        ]
+      }
+    ]
+  }
+}
