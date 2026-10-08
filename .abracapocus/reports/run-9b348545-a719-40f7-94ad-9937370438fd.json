@@ -1,0 +1,157 @@
+{
+  "plan_summary": "Task run: Implement documented VWAP breakdown reference SELL and momentum reversal",
+  "backend_executions": [
+    {
+      "backend": "pi_cli",
+      "command": [
+        "pi",
+        "-p",
+        "--provider",
+        "openrouter",
+        "--model",
+        "meta/muse-spark-1.3-contributor",
+        "Task: Implement documented VWAP breakdown reference SELL and momentum reversal\nDescription: Implement two real SELL plugins using the k.1 SELL contract and the phase j SDK.\n\n1. mike_trade/strategies/sell/vwap_breakdown.py: the required reference SELL. The definition is exact:\n   - Use completed one-minute regular-session bars only.\n   - Use the warmed, fresh, session-reset shared VWAP supplied by the MarketContext/indicator service. The strategy never computes VWAP from fetched data and never fetches data.\n   - It triggers if and only if prior completed close >= prior completed-bar VWAP AND latest completed close < latest completed-bar VWAP.\n   - On trigger, it returns an ExitLongRecommendation for 100% of the confirmed remaining quantity of the owned managed long position.\n   - Every other case returns NO_SIGNAL with an explicit reason code, through the k.1 eligibility pre-checks plus its own checks. Cases include: incomplete bar, stale bar/VWAP, missing bars/VWAP, invalid values, zero-volume bar, unwarmed VWAP, fewer than two completed session bars, prior-session bar (VWAP resets each session), outside regular session, flat/unmanaged position, and minimum hold not elapsed.\n   - The signal ID is deterministic from (strategy_id, version, symbol, side, completed-bar UTC timestamp), so re-evaluating the same bar cannot produce a duplicate signal. A later fresh downward crossing produces a new ID.\n   - The spec declares: id vwap_breakdown, semver, SELL side, 1m timeframe, closed-bar-only and volume requirements, warmup of 2 completed session bars plus VWAP warm, trigger kind EDGE_ON_CLOSED_BAR, methodology/source metadata describing the session-VWAP downward crossing with an explicit statement that it is not a profitability claim, execution limitations (advisory only, subject to min hold and arbitration, never shorts), and reason codes.\n   - It registers independently and must not import or reference vwap_bounce or any BUY module.\n   - Add no extra filters beyond the definition.\n\n2. mike_trade/strategies/sell/momentum_reversal.py: a real momentum reversal SELL.\n   - It uses shared completed-bar context and shared indicators only.\n   - It triggers on an objective, documented loss-of-momentum condition on completed bars, for example a configured lookback rate-of-change crossing from > 0 to <= a validated negative threshold, or N consecutive lower completed closes after a configured high-water mark since entry. Pick one rule, document it precisely in the spec methodology, and validate its parameters (lookback, threshold, timeframe) through ParameterSchema with Decimal for price/threshold values and inclusive ranges.\n   - It applies the same closed-bar, staleness, warmup, session, full-exit-only, deterministic-ID, and replay-suppression semantics.\n   - It has no profitability claims and no confidence scores.\n\nIn tests/unit/test_sell_trends.py, cover vwap_breakdown crossing boundaries:\n- prior close == prior VWAP with latest close < VWAP: signal\n- latest close == latest VWAP: no signal\n- prior close < prior VWAP: no signal\n- upward cross: no signal\n\nAlso cover:\n- same-bar replay suppression and rearm with a new ID on a later crossing\n- stale data, incomplete bar, missing VWAP, zero volume, unwarmed VWAP, and session reset\n- flat/unmanaged positions producing no exit and never a short\n- minimum hold blocking the strategy exit\n- full remaining quantity after a partial fill\n- registration without a BUY partner\n- momentum_reversal trigger, no-trigger, boundary, parameter-validation rejection, and stale/incomplete cases\n\nUse Decimal throughout.\n\nBefore editing, inspect:\n- mike_trade/strategies/sell/base.py\n- tests/contracts/test_sell_strategy.py\n- mike_trade/strategies/base.py\n- mike_trade/strategies/registry.py\n- mike_trade/strategies/buy/vwap_bounce.py (for style parity only; do not import it)\n- mike_trade/strategies/buy/momentum_breakout.py\n- mike_trade/market_data/context.py\n- mike_trade/market_data/candles.py\n- mike_trade/strategies/indicators/core.py\n- mike_trade/domain/signals.py\n- mike_trade/risk/session_policy.py\nPhase: K\nAcceptance criteria:\n  - VwapBreakdownSell declares spec id vwap_breakdown, semver, SELL side, 1m completed-bar and volume requirements, a 2-bar plus VWAP-warm warmup, the EDGE_ON_CLOSED_BAR trigger, methodology metadata stating no profitability claim, limitations, and reason codes.\n  - vwap_breakdown emits an EXIT_LONG recommendation if and only if prior completed close >= prior VWAP AND latest completed close < latest VWAP, using only context-supplied session VWAP, and the quantity equals the full confirmed remaining quantity.\n  - Boundary tests show prior close == prior VWAP with latest close < VWAP signals; latest close == latest VWAP does not signal; prior close < prior VWAP does not signal; an upward cross does not signal.\n  - Incomplete, stale, missing, invalid, zero-volume, unwarmed, prior-session, out-of-session, flat/unmanaged, or min-hold-blocked inputs produce NO_SIGNAL with an explicit reason code, and no input ever yields a short or partial-quantity recommendation.\n  - Replaying the same completed bar yields the same signal ID with no duplicate signal, and a later fresh crossing yields a new deterministic ID.\n  - momentum_reversal implements one precisely documented completed-bar reversal rule with validated Decimal parameters, applies the same full-exit/closed-bar/stale/session semantics, and has tests for trigger, non-trigger, boundary, invalid-parameter, and stale/incomplete cases.\n  - Neither module imports a BUY strategy module or any broker/network/filesystem/secrets module, and both register in StrategyRegistry independently.\n  - tests/unit/test_sell_trends.py passes when run in isolation.\nContext: AGENTS.md guidance:\n# AGENTS.md\n## Purpose\nThis repository is operated by an autonomous multi-agent system (abracapocus_2).\nAll agents must follow these rules when modifying the codebase.\n---\n## Core Principles\n- Minimal blast radius: only modify what is required for the task\n- Deterministic verification: all changes must be verifiable via code (tests, compile, scripts)\n- No architecture drift: do not introduce new frameworks or major design changes unless explicitly required\n- No unrelated refactors\n- All changes must be reproducible from a clean clone\n---\n## Project Structure\n- docs/ → design, plans, architecture constraints\n- plans/ → master plans\n- phases/ → phase definitions\n- tasks/ → executable task documents\n- backends/ → CLI backend adapters\n- agents/ → specialist agents\n- runtime/ → orchestration, routing, state\n...(truncated)\n\n## Task Contract Constraints\n\n{\n  \"allowed_symbols\": [\n    \"VwapBreakdownSell\",\n    \"MomentumReversalSell\"\n  ],\n  \"allowed_write_paths\": [\n    \"mike_trade/strategies/sell/vwap_breakdown.py\",\n    \"mike_trade/strategies/sell/momentum_reversal.py\",\n    \"tests/unit/test_sell_trends.py\"\n  ],\n  \"forbidden_changes\": [\n    \"modify files outside allowed_write_paths\",\n    \"modify mike_trade/strategies/sell/base.py, mike_trade/strategies/base.py, or registry.py\",\n    \"change PLAN_SKELETON.json or other planning artifacts\",\n    \"add filters beyond the exact completed-bar session VWAP downward-crossing definition\",\n    \"import or hard-reference vwap_bounce or any BUY module\",\n    \"fetch data, compute VWAP from external sources, or submit orders from a strategy\",\n    \"emit partial-exit quantities, short/opposite-side actions, confidence scores, or profitability claims\",\n    \"create live broker orders or run broad test suites/backtests\"\n  ]\n}\nAGENTS.md:\n# AGENTS.md\n\n## Purpose\n\nThis repository is operated by an autonomous multi-agent system (abracapocus_2).\nAll agents must follow these rules when modifying the codebase.\n\n---\n\n## Core Principles\n\n- Minimal blast radius: only modify what is required for the task\n- Deterministic verification: all changes must be verifiable via code (tests, compile, scripts)\n- No architecture drift: do not introduce new frameworks or major design changes unless explicitly required\n- No unrelated refactors\n- All changes must be reproducible from a clean clone\n\n---\n\n## Project Structure\n\n- docs/ → design, plans, architecture constraints\n- plans/ → master plans\n- phases/ → phase definitions\n- tasks/ → executable task documents\n- backends/ → CLI backend adapters\n- agents/ → specialist agents\n- runtime/ → orchestration, routing, state\n- reports/ → execution reports (DO NOT MODIFY MANUALLY)\n- state/runtime_state.json → runtime state (DO NOT COMMIT)\n\n---\n\n## Task Execution Rules\n\n- Always operate from a task document when available\n- Respect:\n  - selected_backend\n  - verification_profile\n  - acceptance_criteria\n- If a task conflicts with architecture constraints or phase scope:\n  - STOP and report conflict\n\n---\n\n## Backend Rules\n\n- Backends must:\n  - execute commands deterministically\n  - capture stdout, stderr, exit_code\n  - not silently fail\n- Do not invent backend interfaces; use existing adapters\n- Codex CLI, Aider, Gemini, Claude Code should be invoked through backends only\n\n---\n\n## Verification Rules\n\n- Verification must be deterministic\n- Preferred checks:\n  - pytest\n  - python -m py_compile\n- Do not rely on model self-evaluation\n\n---\n\n## Execution Control Flow (PERMANENT ARCHITECTURAL RULE)\n\n**HEURISTIC INFERENCE MUST NEVER PARTICIPATE IN ABRACAPOCUS EXECUTION CONTROL FLOW.**\n\nAbracapocus must not determine execution success, failure, acceptance,\nrejection, blocking, retry eligibility, phase progression, or completion from\nheuristic inference. A heuristic is any conclusion that is *inferred* rather\nthan *directly established by an explicit executable contract or a concrete\nruntime fact*.\n\nRuntime status is derived ONLY from concrete, mechanically observable facts:\n\n1. The backend process exit code. A backend that exits `0` (with no hard\n   write-policy violation) is a successful execution.\n2. Objectively observed hard write-policy violations (changed paths outside the\n   declared allowed write paths).\n3. Explicit operator-authored commands (task/phase verification the plan\n   explicitly contains). Their raw results are reported, kept DISTINCT from\n   backend execution status.\n4. Objective orchestrator failures with direct evidence (backend could not\n   launch, required document could not be parsed, subprocess infrastructure\n   failed).\n\n**Verification results are observational and must not rewrite backend execution\nstatus.** A verifier returning non-zero must NEVER, by itself, turn a\nsuccessful backend execution into unverified, stop a phase, or trigger an\nautomatic rerun. Verification is the result of a command, not authority to\nrewrite history.\n\n**Execution control:** Task-local problems (non-zero exit, timeout,\nwrite-policy violation, frame failure, backend launch failure) produce\nacceptance status ``\"unverified\"`` with truthful evidence preserved. They\nMUST NOT stop sibling tasks, later phases, or the plan. Only operator\ncancellation (SIGINT/SIGTERM/dashboard cancel) may terminate a run\n(acceptance status ``\"interrupted\"``). Dependencies are ordering constraints,\nnot acceptance gates — any terminal attempt outcome satisfies a dependency\nedge. The status ``\"failed\"`` is banned from acceptance output.\n\nDo NOT reintroduce -- under any name, feature flag, \"advisory\" wrapper, or\ncompatibility mode -- context completeness/sufficiency scoring, change or\narchitecture assessment used as a gate, intent/scope matching, reconciliation\ngates, no-progress judgments, confidence/risk scores, model/LLM/reviewer\njudgments over status, shadow/adaptive/secondary-verification gates, or\nheuristic retry/failure-classification control flow. Failure classification may\nonly *summarize* an already-established concrete failure; it must never create\none. Retries are permitted only for explicitly defined mechanical backend\nfailures. Future agents must not add these systems back.\n\n---\n\n## Git Rules\n\n- Do not commit:\n  - runtime_state.json\n  - reports/\n  - logs/\n  - virtual environments\n- Do not modify .gitignore unless required by task\n- Do not create excessive commits; prefer grouped logical commits\n\n---\n\n## Allowed Changes\n\n- Implement task requirements\n- Fix failing verification\n- Update relevant tests\n- Improve documentation tied to the task\n\n---\n\n## Forbidden Changes\n\n- Changing architecture without explicit instruction\n- Adding dependencies without justification\n- Modifying unrelated files\n- Deleting important files\n- Bypassing verification\n\n---\n\n## Planning Rules\n\n- Plans are multi-phase\n- Completed sections are immutable\n- Remaining sections may be updated\n- Tasks must align with:\n  - project brief\n  - architecture constraints\n  - active phase\n\n---\n\n## Reporting\n\n- All executions must produce structured reports\n- Reports must include:\n  - changed files\n  - verification results\n  - assessment\n\n---\n\n## Behavior\n\n- Do not ask unnecessary questions\n- Do not stall execution\n- Do not perform broad scans unless required\n- Prefer direct action over analysis\n\n---\n\n## Priority Order\n\nThis ordering guides *implementation decisions* only. It does NOT make\nverification an acceptance authority: verification results are observational\n(see \"Execution Control Flow\"), and never override a concrete backend\nexecution result.\n\n1. Architecture constraints\n2. Task definition\n3. Verification results (observational signal, not acceptance authority)\n4. Plan guidance\n\nIf conflicts occur, follow this order.\n\nAGENTS metadata:\n{\"loaded\": true, \"path\": \"/home/mike/dev/mike/abracapocus/python/abracapocus_2/AGENTS.md\", \"rule_count\": 77, \"sha256_12\": \"3f9b549ba1ce\"}\n"
+      ],
+      "stdout": "Implemented and verified.\n\n**Changed files (allowed paths only):**\n- `mike_trade/strategies/sell/vwap_breakdown.py` — `VwapBreakdownSell(SellRule)`: spec `vwap_breakdown/1.0.0`, SELL, M1, `completed_bars_only`, `requires_volume`, warmup 2, `EDGE_ON_CLOSED_BAR`, empty `ParameterSchema`, `(\"session_id\",\"last_signal_bar\")` state, methodology/source with explicit no-profitability statements, advisory/min-hold/arbitration/never-shorts limitations, 5 reason codes. Trigger iff `prior.close >= vwap_prev AND latest.close < vwap_latest` using only context-supplied `vwap`/`vwap_prev`; all other cases `NO_SIGNAL` with explicit codes; deterministic `make_signal_id` IDs; same-bar replay suppression; natural rearm; session-reset isolation.\n- `mike_trade/strategies/sell/momentum_reversal.py` — `MomentumReversalSell(SellRule)`: spec `momentum_reversal/1.0.0`, SELL, M1, warmup 4 (min lookback 2 + pair; larger lookbacks enforced dynamically), validated `ParameterSchema` (`lookback_bars` INT [2,100] default 5; `reversal_threshold` DECIMAL [−0.50,−0.0001] default −0.02). Documented ROC rule (`roc_prior>0` strict, `roc_latest<=threshold` inclusive); same closed-bar/stale/session/replay/deterministic-ID semantics; full-exit advisory only.\n- `tests/unit/test_sell_trends.py` — 55 tests: vwap crossing boundaries (==, ==, below, upward), replay/rearm with new IDs, stale/incomplete/missing/unwarmed/invalid/zero-volume/short-session/session-reset/out-of-session gating, flat/unmanaged/short-direction/min-hold eligibility, full remainder after partial fill, EXIT_LONG-only assertions, independent registry tests, momentum trigger/no-trigger/boundaries/param rejections/stale-incomplete/zero-volume/full-exit, and no-BUY/no-broker-network-fs-secrets hygiene.\n\n**Verification:**\n- `tests/unit/test_sell_trends.py` in isolation: **55 passed**.\n- Hygiene grep for BUY references in both sell modules: clean.\n- Neighbor suites (`test_sell_strategy`, `test_buy_vwap`, `test_buy_momentum`): **77 passed**, no regressions.\n",
+      "stderr": "",
+      "exit_code": 0,
+      "duration_seconds": 327.0172264575958,
+      "model": "openrouter/meta/muse-spark-1.3-contributor",
+      "model_tags": [],
+      "working_directory": "/home/mike/dev/mike/stocks/python/mike_trade",
+      "changed_files": [
+        {
+          "path": "mike_trade/strategies/sell/momentum_reversal.py",
+          "status": "untracked",
+          "code": "??"
+        },
+        {
+          "path": "mike_trade/strategies/sell/vwap_breakdown.py",
+          "status": "untracked",
+          "code": "??"
+        },
+        {
+          "path": "tests/unit/test_sell_trends.py",
+          "status": "untracked",
+          "code": "??"
+        }
+      ],
+      "diff_summary": "git diff reported no changes",
+      "model_attempts": [
+        {
+          "backend": "pi_cli",
+          "model": "openrouter/meta/muse-spark-1.3-contributor",
+          "exit_code": 0,
+          "stdout": "Implemented and verified.\n\n**Changed files (allowed paths only):**\n- `mike_trade/strategies/sell/vwap_breakdown.py` — `VwapBreakdownSell(SellRule)`: spec `vwap_breakdown/1.0.0`, SELL, M1, `completed_bars_only`, `requires_volume`, warmup 2, `EDGE_ON_CLOSED_BAR`, empty `ParameterSchema`, `(\"session_id\",\"last_signal_bar\")` state, methodology/source with explicit no-profitability statements, advisory/min-hold/arbitration/never-shorts limitations, 5 reason codes. Trigger iff `prior.close >= vwap_prev AND latest.close < vwap_latest` using only context-supplied `vwap`/`vwap_prev`; all other cases `NO_SIGNAL` with explicit codes; deterministic `make_signal_id` IDs; same-bar replay suppression; natural rearm; session-reset isolation.\n- `mike_trade/strategies/sell/momentum_reversal.py` — `MomentumReversalSell(SellRule)`: spec `momentum_reversal/1.0.0`, SELL, M1, warmup 4 (min lookback 2 + pair; larger lookbacks enforced dynamically), validated `ParameterSchema` (`lookback_bars` INT [2,100] default 5; `reversal_threshold` DECIMAL [−0.50,−0.0001] default −0.02). Documented ROC rule (`roc_prior>0` strict, `roc_latest<=threshold` inclusive); same closed-bar/stale/session/replay/deterministic-ID semantics; full-exit advisory only.\n- `tests/unit/test_sell_trends.py` — 55 tests: vwap crossing boundaries (==, ==, below, upward), replay/rearm with new IDs, stale/incomplete/missing/unwarmed/invalid/zero-volume/short-session/session-reset/out-of-session gating, flat/unmanaged/short-direction/min-hold eligibility, full remainder after partial fill, EXIT_LONG-only assertions, independent registry tests, momentum trigger/no-trigger/boundaries/param rejections/stale-incomplete/zero-volume/full-exit, and no-BUY/no-broker-network-fs-secrets hygiene.\n\n**Verification:**\n- `tests/unit/test_sell_trends.py` in isolation: **55 passed**.\n- Hygiene grep for BUY references in both sell modules: clean.\n- Neighbor suites (`test_sell_strategy`, `test_buy_vwap`, `test_buy_momentum`): **77 passed**, no regressions.\n",
+          "stderr": "",
+          "duration_seconds": 327.0172264575958,
+          "changed_files": [
+            {
+              "path": "mike_trade/strategies/sell/momentum_reversal.py",
+              "status": "untracked",
+              "code": "??"
+            },
+            {
+              "path": "mike_trade/strategies/sell/vwap_breakdown.py",
+              "status": "untracked",
+              "code": "??"
+            },
+            {
+              "path": "tests/unit/test_sell_trends.py",
+              "status": "untracked",
+              "code": "??"
+            }
+          ],
+          "diff_summary": "git diff reported no changes",
+          "outcome_classification": "backend_completed_with_changes",
+          "backend_timeout": false,
+          "backend_verification_timeout": false,
+          "timeout_seconds": null
+        }
+      ],
+      "write_policy_violations": [],
+      "outcome_classification": "backend_completed_with_changes",
+      "backend_timeout": false,
+      "backend_verification_timeout": false,
+      "changed_files_at_timeout_exit": [],
+      "abracapocus_verification_ran_after_backend_timeout": false,
+      "verification_owner": "abracapocus",
+      "verification_result": "skipped"
+    }
+  ],
+  "review": {
+    "status": "approved",
+    "findings": [],
+    "summary": "k.2:Review complete",
+    "created_at": "2026-10-08T18:40:05.657832"
+  },
+  "verification": {
+    "status": "skipped",
+    "checks": [],
+    "created_at": "2026-10-08T18:40:05.657839",
+    "notes": "K:skipped",
+    "profile": "focused"
+  },
+  "metadata": {
+    "run_id": "9b348545-a719-40f7-94ad-9937370438fd",
+    "project_name": "mike_trade",
+    "plan_version": "task-k.2",
+    "task_id": "k.2",
+    "task_title": "Implement documented VWAP breakdown reference SELL and momentum reversal",
+    "task_status": "completed",
+    "selected_backend": "pi_cli",
+    "verification_profile": "focused",
+    "backend_reason": "phase_based",
+    "frame_failures": [],
+    "agents_md": {
+      "loaded": true,
+      "path": "/home/mike/dev/mike/abracapocus/python/abracapocus_2/AGENTS.md",
+      "rule_count": 77,
+      "sha256_12": "3f9b549ba1ce"
+    },
+    "phase_results": [
+      {
+        "phase_name": "K",
+        "status": "passed",
+        "verification": "skipped",
+        "task_results": [
+          {
+            "task_id": "k.2",
+            "status": "passed",
+            "acceptance_status": "accepted",
+            "backend": "pi_cli",
+            "backend_outcome_classification": "backend_completed_with_changes",
+            "changed_files": [
+              {
+                "path": "mike_trade/strategies/sell/momentum_reversal.py",
+                "status": "untracked",
+                "code": "??"
+              },
+              {
+                "path": "mike_trade/strategies/sell/vwap_breakdown.py",
+                "status": "untracked",
+                "code": "??"
+              },
+              {
+                "path": "tests/unit/test_sell_trends.py",
+                "status": "untracked",
+                "code": "??"
+              }
+            ],
+            "backend_timeout": false,
+            "backend_elapsed_seconds": 327.0172264575958,
+            "backend_timeout_seconds": null,
+            "changed_files_at_timeout_exit": [],
+            "abracapocus_verification_ran_after_backend_timeout": false,
+            "verification_owner": "abracapocus",
+            "verification_result": "skipped",
+            "verification_status": "skipped",
+            "verification_checks": [],
+            "frame_failure": false,
+            "retry_attempts": []
+          }
+        ]
+      }
+    ]
+  }
+}
