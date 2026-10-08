@@ -1,0 +1,142 @@
+{
+  "plan_summary": "Task run: Implement safe atomic operator configuration mutation rules",
+  "backend_executions": [
+    {
+      "backend": "pi_cli",
+      "command": [
+        "pi",
+        "-p",
+        "--provider",
+        "openrouter",
+        "--model",
+        "meta/muse-spark-1.3-contributor",
+        "Task: Implement safe atomic operator configuration mutation rules\nDescription: Implement mike_trade/config/mutations.py: the single path for safe, atomic, audited operator configuration changes.\n\nThis task runs at the same time as d.1 (models.py/loader.py). Do NOT import mike_trade.config.models or mike_trade.config.loader. Inject validation through a callable so this module and its tests work standalone.\n\nIt operates on the raw YAML mapping using the schema_version 1 key names: execution.account_mode, execution.live_trading_enabled, execution.broker, execution.stop_required, execution.block_new_entries_when_unprotected, symbols.<TICKER>.{enabled, budget, buy_strategy, sell_strategy, stop_policy.type}, strategies.<name>, shadow_scenarios[].name, schema_version, reporting.*.\n\nDATA TYPES (frozen dataclasses)\n- **ConfigMutation**\n  - path: dotted str. List items in shadow_scenarios are addressed by name, e.g. shadow_scenarios[small_account].starting_cash.\n  - value: the new value, or the REMOVE sentinel.\n- **MutationRequest**\n  - mutations: tuple[ConfigMutation, ...].\n  - actor: str.\n  - reason: str, non-empty.\n  - expected_file_sha256: str | None.\n  - confirm_live: bool, default False.\n- **OpenExposure**\n  - symbol.\n  - account_mode.\n  - scenario: str | None.\n  - sell_strategy: str | None.\n  - has_active_protection: bool.\n  - has_unresolved_orders: bool.\n- **ExposureSnapshot**\n  - positions: tuple[OpenExposure, ...].\n  - known: bool. False means the state is unknown.\n- **ConfigAuditEntry**\n  - occurred_at: tz-aware UTC.\n  - actor.\n  - reason.\n  - changed_paths.\n  - redacted_old_values and redacted_new_values: values whose path segment matches a secret-like name become '***'.\n  - file_sha256_before and file_sha256_after.\n  - live_confirmed: bool.\n- **MutationResult**\n  - changed_paths.\n  - file_sha256_before.\n  - file_sha256_after.\n  - audit_entry.\n- **ConfigAuditSink**: a Protocol with record(entry) -> None.\n\nAPI\n`apply_config_mutation(config_path, request, *, validate, exposure, audit, clock) -> MutationResult`, where validate is `Callable[[Mapping], object]` and raises on invalid. Steps:\n1. Read the file bytes and compute their sha256. If expected_file_sha256 is given and differs, raise ConcurrentConfigModificationError.\n2. Parse the YAML safely and deep-copy it. Apply the mutations.\n   - An unknown parent path raises MutationPathError.\n   - Any attempt to change schema_version raises MutationPathError.\n3. Reject secret-like keys or values introduced by the mutation with SecretMutationRefusedError. Secret-like keys match api_key, secret, password, token, key_id, or private_key.\n4. Run the safety rules below. If any refusal applies, raise UnsafeConfigMutationError, whose .reasons lists every refusal.\n5. Call validate(new_mapping) on the whole document. Wrap a raised exception in ConfigMutationValidationError, keeping the original.\n6. Write atomically:\n   - Use a NamedTemporaryFile in the same directory.\n   - Preserve the original file mode.\n   - flush + os.fsync, then os.replace, then fsync the directory.\n   - On any failure, the original file stays byte-identical and the temp file is removed.\n7. Call audit.record(entry).\n   - If audit raises, restore the original bytes atomically and raise ConfigAuditFailedError, so no unaudited change persists.\n8. Return MutationResult.\n\nA no-op request (every value already equal) writes nothing and returns empty changed_paths.\n\nSAFETY RULES (fail closed)\n- **Live enablement.** Setting execution.account_mode to live, or execution.live_trading_enabled to true, requires request.confirm_live=True. Otherwise raise LiveEnableRefusedError, a subclass of UnsafeConfigMutationError. Never enable live implicitly through any other path.\n- **Unknown exposure.** If exposure.known is False, refuse every mutation outside reporting.*.\n- **Account mode and broker changes.** Changing execution.account_mode or execution.broker is refused while any position, active protection, or unresolved order exists.\n- **Symbols with exposure.** For a symbol with an open position or active protection, refuse:\n  - removing it;\n  - setting enabled false;\n  - changing stop_policy.type;\n  - changing sell_strategy to a name that is not defined.\n- **Strategies in use.** Removing a strategies entry is refused when it is referenced by any symbol or by an open position's sell_strategy.\n- **Scenarios in use.** Removing a shadow scenario is refused when it has open positions.\n- **Protection settings.** Setting execution.stop_required or execution.block_new_entries_when_unprotected to false is refused while any position is open. It is always refused when the resulting account_mode is live.\n- **Allowed changes.** Changes to stop policy numeric parameters on a symbol with an open position are allowed. The entry's audit notes that the change applies forward only, and that the stop ratchet is enforced by the protection layer. Reporting.* changes are always allowed.\n\nExceptions: ConfigMutationError (base), MutationPathError, ConcurrentConfigModificationError, SecretMutationRefusedError, UnsafeConfigMutationError, LiveEnableRefusedError, ConfigMutationValidationError, ConfigAuditFailedError.\n\nThis module performs no engine messaging. d.4 wraps it in a durable control command.\n\nTESTS: tests/unit/test_config_mutations.py\nUse tmp_path YAML files, a fake validate callable, a list-backed fake audit sink, and a fixed clock. Cover:\n- A successful budget change rewrites the file atomically, returns the before/after sha256, and records one audit entry.\n- A stale expected_file_sha256 is refused.\n- A schema_version change is refused.\n- A secret-like key is refused.\n- Live enablement without confirm_live is refused; with confirm_live it is accepted and audited with live_confirmed True.\n- Removing or disabling a symbol with an open position is refused.\n- A stop_policy.type change with active protection is refused; a numeric trail change with an open position is allowed.\n- Removing a referenced strategy is refused.\n- Changing account_mode with an open position is refused.\n- Removing a scenario with open positions is refused.\n- stop_required false with an open position is refused.\n- Unknown exposure refuses a trade-relevant change but allows a reporting change.\n- When validate raises, the file is unchanged.\n- A monkeypatched os.replace failure leaves the original bytes and no temp files.\n- An audit sink failure restores the original bytes and raises ConfigAuditFailedError.\n- A no-op request writes nothing.\n\nDecision budget: make at most four design choices not covered here, and record them in the mutations.py module docstring.\n\nBefore editing, inspect:\n- pyproject.toml (read-only), for PyYAML availability and pytest settings.\n- mike_trade/domain/errors.py (read-only).\n- mike_trade/domain/accounts.py (read-only), for account mode naming.\nPhase: D\nAcceptance criteria:\n  - mike_trade/config/mutations.py defines ConfigMutation, MutationRequest, OpenExposure, ExposureSnapshot, ConfigAuditEntry, MutationResult, ConfigAuditSink, REMOVE, apply_config_mutation, and the exceptions listed in the description, and imports neither mike_trade.config.models nor mike_trade.config.loader\n  - Successful mutations are written via same-directory temp file + fsync + os.replace + directory fsync, preserving the file mode; any failure before or during replace leaves the original bytes unchanged and no temp files behind\n  - An audit sink failure restores the original file bytes and raises ConfigAuditFailedError, so no unaudited mutation persists\n  - A stale expected_file_sha256 raises ConcurrentConfigModificationError; a schema_version change raises MutationPathError; introducing a secret-like key raises SecretMutationRefusedError\n  - Enabling live (account_mode=live or live_trading_enabled=true) without confirm_live raises LiveEnableRefusedError; with confirm_live it succeeds and the audit entry has live_confirmed True\n  - Mutations that would orphan an open position or active protective stop (symbol removal or disable, stop_policy.type change, account_mode or broker change, referenced strategy or scenario removal, disabling stop_required) raise UnsafeConfigMutationError listing all reasons\n  - Unknown exposure refuses all non-reporting mutations, while reporting-only mutations still succeed\n  - tests/unit/test_config_mutations.py contains positive and negative tests for the behaviors above and passes with targeted pytest of that file only\nContext: AGENTS.md guidance:\n# AGENTS.md\n## Purpose\nThis repository is operated by an autonomous multi-agent system (abracapocus_2).\nAll agents must follow these rules when modifying the codebase.\n---\n## Core Principles\n- Minimal blast radius: only modify what is required for the task\n- Deterministic verification: all changes must be verifiable via code (tests, compile, scripts)\n- No architecture drift: do not introduce new frameworks or major design changes unless explicitly required\n- No unrelated refactors\n- All changes must be reproducible from a clean clone\n---\n## Project Structure\n- docs/ → design, plans, architecture constraints\n- plans/ → master plans\n- phases/ → phase definitions\n- tasks/ → executable task documents\n- backends/ → CLI backend adapters\n- agents/ → specialist agents\n- runtime/ → orchestration, routing, state\n...(truncated)\n\n## Task Contract Constraints\n\n{\n  \"allowed_symbols\": [\n    \"ConfigMutation\",\n    \"MutationRequest\",\n    \"REMOVE\",\n    \"OpenExposure\",\n    \"ExposureSnapshot\",\n    \"ConfigAuditEntry\",\n    \"ConfigAuditSink\",\n    \"MutationResult\",\n    \"apply_config_mutation\",\n    \"ConfigMutationError\",\n    \"MutationPathError\",\n    \"ConcurrentConfigModificationError\",\n    \"SecretMutationRefusedError\",\n    \"UnsafeConfigMutationError\",\n    \"LiveEnableRefusedError\",\n    \"ConfigMutationValidationError\",\n    \"ConfigAuditFailedError\"\n  ],\n  \"allowed_write_paths\": [\n    \"mike_trade/config/mutations.py\",\n    \"tests/unit/test_config_mutations.py\"\n  ],\n  \"forbidden_changes\": [\n    \"modify files outside allowed_write_paths\",\n    \"change PLAN_SKELETON.json or other planning artifacts\",\n    \"import mike_trade.config.models or mike_trade.config.loader\",\n    \"add mike_trade/config/__init__.py\",\n    \"write config files non-atomically or leave partial writes on failure\",\n    \"enable live trading without explicit confirm_live\",\n    \"build configuration history, diff, rollback, or preview features\",\n    \"access broker credentials or create broker orders\",\n    \"run broad test suites or backtests\"\n  ]\n}\nAGENTS.md:\n# AGENTS.md\n\n## Purpose\n\nThis repository is operated by an autonomous multi-agent system (abracapocus_2).\nAll agents must follow these rules when modifying the codebase.\n\n---\n\n## Core Principles\n\n- Minimal blast radius: only modify what is required for the task\n- Deterministic verification: all changes must be verifiable via code (tests, compile, scripts)\n- No architecture drift: do not introduce new frameworks or major design changes unless explicitly required\n- No unrelated refactors\n- All changes must be reproducible from a clean clone\n\n---\n\n## Project Structure\n\n- docs/ → design, plans, architecture constraints\n- plans/ → master plans\n- phases/ → phase definitions\n- tasks/ → executable task documents\n- backends/ → CLI backend adapters\n- agents/ → specialist agents\n- runtime/ → orchestration, routing, state\n- reports/ → execution reports (DO NOT MODIFY MANUALLY)\n- state/runtime_state.json → runtime state (DO NOT COMMIT)\n\n---\n\n## Task Execution Rules\n\n- Always operate from a task document when available\n- Respect:\n  - selected_backend\n  - verification_profile\n  - acceptance_criteria\n- If a task conflicts with architecture constraints or phase scope:\n  - STOP and report conflict\n\n---\n\n## Backend Rules\n\n- Backends must:\n  - execute commands deterministically\n  - capture stdout, stderr, exit_code\n  - not silently fail\n- Do not invent backend interfaces; use existing adapters\n- Codex CLI, Aider, Gemini, Claude Code should be invoked through backends only\n\n---\n\n## Verification Rules\n\n- Verification must be deterministic\n- Preferred checks:\n  - pytest\n  - python -m py_compile\n- Do not rely on model self-evaluation\n\n---\n\n## Execution Control Flow (PERMANENT ARCHITECTURAL RULE)\n\n**HEURISTIC INFERENCE MUST NEVER PARTICIPATE IN ABRACAPOCUS EXECUTION CONTROL FLOW.**\n\nAbracapocus must not determine execution success, failure, acceptance,\nrejection, blocking, retry eligibility, phase progression, or completion from\nheuristic inference. A heuristic is any conclusion that is *inferred* rather\nthan *directly established by an explicit executable contract or a concrete\nruntime fact*.\n\nRuntime status is derived ONLY from concrete, mechanically observable facts:\n\n1. The backend process exit code. A backend that exits `0` (with no hard\n   write-policy violation) is a successful execution.\n2. Objectively observed hard write-policy violations (changed paths outside the\n   declared allowed write paths).\n3. Explicit operator-authored commands (task/phase verification the plan\n   explicitly contains). Their raw results are reported, kept DISTINCT from\n   backend execution status.\n4. Objective orchestrator failures with direct evidence (backend could not\n   launch, required document could not be parsed, subprocess infrastructure\n   failed).\n\n**Verification results are observational and must not rewrite backend execution\nstatus.** A verifier returning non-zero must NEVER, by itself, turn a\nsuccessful backend execution into unverified, stop a phase, or trigger an\nautomatic rerun. Verification is the result of a command, not authority to\nrewrite history.\n\n**Execution control:** Task-local problems (non-zero exit, timeout,\nwrite-policy violation, frame failure, backend launch failure) produce\nacceptance status ``\"unverified\"`` with truthful evidence preserved. They\nMUST NOT stop sibling tasks, later phases, or the plan. Only operator\ncancellation (SIGINT/SIGTERM/dashboard cancel) may terminate a run\n(acceptance status ``\"interrupted\"``). Dependencies are ordering constraints,\nnot acceptance gates — any terminal attempt outcome satisfies a dependency\nedge. The status ``\"failed\"`` is banned from acceptance output.\n\nDo NOT reintroduce -- under any name, feature flag, \"advisory\" wrapper, or\ncompatibility mode -- context completeness/sufficiency scoring, change or\narchitecture assessment used as a gate, intent/scope matching, reconciliation\ngates, no-progress judgments, confidence/risk scores, model/LLM/reviewer\njudgments over status, shadow/adaptive/secondary-verification gates, or\nheuristic retry/failure-classification control flow. Failure classification may\nonly *summarize* an already-established concrete failure; it must never create\none. Retries are permitted only for explicitly defined mechanical backend\nfailures. Future agents must not add these systems back.\n\n---\n\n## Git Rules\n\n- Do not commit:\n  - runtime_state.json\n  - reports/\n  - logs/\n  - virtual environments\n- Do not modify .gitignore unless required by task\n- Do not create excessive commits; prefer grouped logical commits\n\n---\n\n## Allowed Changes\n\n- Implement task requirements\n- Fix failing verification\n- Update relevant tests\n- Improve documentation tied to the task\n\n---\n\n## Forbidden Changes\n\n- Changing architecture without explicit instruction\n- Adding dependencies without justification\n- Modifying unrelated files\n- Deleting important files\n- Bypassing verification\n\n---\n\n## Planning Rules\n\n- Plans are multi-phase\n- Completed sections are immutable\n- Remaining sections may be updated\n- Tasks must align with:\n  - project brief\n  - architecture constraints\n  - active phase\n\n---\n\n## Reporting\n\n- All executions must produce structured reports\n- Reports must include:\n  - changed files\n  - verification results\n  - assessment\n\n---\n\n## Behavior\n\n- Do not ask unnecessary questions\n- Do not stall execution\n- Do not perform broad scans unless required\n- Prefer direct action over analysis\n\n---\n\n## Priority Order\n\nThis ordering guides *implementation decisions* only. It does NOT make\nverification an acceptance authority: verification results are observational\n(see \"Execution Control Flow\"), and never override a concrete backend\nexecution result.\n\n1. Architecture constraints\n2. Task definition\n3. Verification results (observational signal, not acceptance authority)\n4. Plan guidance\n\nIf conflicts occur, follow this order.\n\nAGENTS metadata:\n{\"loaded\": true, \"path\": \"/home/mike/dev/mike/abracapocus/python/abracapocus_2/AGENTS.md\", \"rule_count\": 77, \"sha256_12\": \"3f9b549ba1ce\"}\n"
+      ],
+      "stdout": "Done. All 18 tests pass, ruff clean, only the two allowed paths touched.\n\n- **`mike_trade/config/mutations.py`** — standalone mutation module (no imports of `models`/`loader`): frozen dataclasses `ConfigMutation`, `MutationRequest`, `OpenExposure`, `ExposureSnapshot`, `ConfigAuditEntry`, `MutationResult`, `REMOVE` sentinel, `ConfigAuditSink` protocol, full exception hierarchy (`LiveEnableRefusedError` subclasses `UnsafeConfigMutationError` which carries `.reasons`; validation errors keep `.original`), and `apply_config_mutation` implementing the 8-step pipeline: sha check → safe parse/deep-copy/apply (unknown parent and any `schema_version` touch → `MutationPathError`) → secret refusal (case-insensitive substring match, incl. nested mapping values) → collected safety refusals → injected `validate` wrapped in `ConfigMutationValidationError` → atomic write (same-dir `NamedTemporaryFile`, mode preserved, flush+fsync, `os.replace`, directory fsync, temp cleanup) → `audit.record` with rollback to original bytes + `ConfigAuditFailedError` on sink failure. No-op requests skip validation/safety/write/record and return an unrecorded entry with empty `changed_paths`.\n- **`tests/unit/test_config_mutations.py`** — 18 tests with tmp-file YAML, fake validate/audit, fixed clock covering every required behavior, including mode preservation, temp-file cleanup on `os.replace` failure, and audit-failure rollback.\n\nModule docstring records the four design choices (no-op short-circuit, secret matching/rotation refusal + recursive redaction, `shadow_scenarios[name]` append semantics + forward-only audit note, `live_confirmed` echo + effective-change unknown-exposure rule + naive-clock-as-UTC).\n",
+      "stderr": "",
+      "exit_code": 0,
+      "duration_seconds": 203.30384421348572,
+      "model": "openrouter/meta/muse-spark-1.3-contributor",
+      "model_tags": [],
+      "working_directory": "/home/mike/dev/mike/stocks/python/mike_trade",
+      "changed_files": [
+        {
+          "path": "mike_trade/config/mutations.py",
+          "status": "untracked",
+          "code": "??"
+        },
+        {
+          "path": "tests/unit/test_config_mutations.py",
+          "status": "untracked",
+          "code": "??"
+        }
+      ],
+      "diff_summary": "git diff reported no changes",
+      "model_attempts": [
+        {
+          "backend": "pi_cli",
+          "model": "openrouter/meta/muse-spark-1.3-contributor",
+          "exit_code": 0,
+          "stdout": "Done. All 18 tests pass, ruff clean, only the two allowed paths touched.\n\n- **`mike_trade/config/mutations.py`** — standalone mutation module (no imports of `models`/`loader`): frozen dataclasses `ConfigMutation`, `MutationRequest`, `OpenExposure`, `ExposureSnapshot`, `ConfigAuditEntry`, `MutationResult`, `REMOVE` sentinel, `ConfigAuditSink` protocol, full exception hierarchy (`LiveEnableRefusedError` subclasses `UnsafeConfigMutationError` which carries `.reasons`; validation errors keep `.original`), and `apply_config_mutation` implementing the 8-step pipeline: sha check → safe parse/deep-copy/apply (unknown parent and any `schema_version` touch → `MutationPathError`) → secret refusal (case-insensitive substring match, incl. nested mapping values) → collected safety refusals → injected `validate` wrapped in `ConfigMutationValidationError` → atomic write (same-dir `NamedTemporaryFile`, mode preserved, flush+fsync, `os.replace`, directory fsync, temp cleanup) → `audit.record` with rollback to original bytes + `ConfigAuditFailedError` on sink failure. No-op requests skip validation/safety/write/record and return an unrecorded entry with empty `changed_paths`.\n- **`tests/unit/test_config_mutations.py`** — 18 tests with tmp-file YAML, fake validate/audit, fixed clock covering every required behavior, including mode preservation, temp-file cleanup on `os.replace` failure, and audit-failure rollback.\n\nModule docstring records the four design choices (no-op short-circuit, secret matching/rotation refusal + recursive redaction, `shadow_scenarios[name]` append semantics + forward-only audit note, `live_confirmed` echo + effective-change unknown-exposure rule + naive-clock-as-UTC).\n",
+          "stderr": "",
+          "duration_seconds": 203.30384421348572,
+          "changed_files": [
+            {
+              "path": "mike_trade/config/mutations.py",
+              "status": "untracked",
+              "code": "??"
+            },
+            {
+              "path": "tests/unit/test_config_mutations.py",
+              "status": "untracked",
+              "code": "??"
+            }
+          ],
+          "diff_summary": "git diff reported no changes",
+          "outcome_classification": "backend_completed_with_changes",
+          "backend_timeout": false,
+          "backend_verification_timeout": false,
+          "timeout_seconds": null
+        }
+      ],
+      "write_policy_violations": [],
+      "outcome_classification": "backend_completed_with_changes",
+      "backend_timeout": false,
+      "backend_verification_timeout": false,
+      "changed_files_at_timeout_exit": [],
+      "abracapocus_verification_ran_after_backend_timeout": false,
+      "verification_owner": "abracapocus",
+      "verification_result": "skipped"
+    }
+  ],
+  "review": {
+    "status": "approved",
+    "findings": [],
+    "summary": "d.3:Review complete",
+    "created_at": "2026-10-08T14:48:55.674685"
+  },
+  "verification": {
+    "status": "skipped",
+    "checks": [],
+    "created_at": "2026-10-08T14:48:55.674692",
+    "notes": "D:skipped",
+    "profile": "focused"
+  },
+  "metadata": {
+    "run_id": "11857557-65de-41d7-8e9b-c5fc839eb438",
+    "project_name": "mike_trade",
+    "plan_version": "task-d.3",
+    "task_id": "d.3",
+    "task_title": "Implement safe atomic operator configuration mutation rules",
+    "task_status": "completed",
+    "selected_backend": "pi_cli",
+    "verification_profile": "focused",
+    "backend_reason": "phase_based",
+    "frame_failures": [],
+    "agents_md": {
+      "loaded": true,
+      "path": "/home/mike/dev/mike/abracapocus/python/abracapocus_2/AGENTS.md",
+      "rule_count": 77,
+      "sha256_12": "3f9b549ba1ce"
+    },
+    "phase_results": [
+      {
+        "phase_name": "D",
+        "status": "passed",
+        "verification": "skipped",
+        "task_results": [
+          {
+            "task_id": "d.3",
+            "status": "passed",
+            "acceptance_status": "accepted",
+            "backend": "pi_cli",
+            "backend_outcome_classification": "backend_completed_with_changes",
+            "changed_files": [
+              {
+                "path": "mike_trade/config/mutations.py",
+                "status": "untracked",
+                "code": "??"
+              },
+              {
+                "path": "tests/unit/test_config_mutations.py",
+                "status": "untracked",
+                "code": "??"
+              }
+            ],
+            "backend_timeout": false,
+            "backend_elapsed_seconds": 203.30384421348572,
+            "backend_timeout_seconds": null,
+            "changed_files_at_timeout_exit": [],
+            "abracapocus_verification_ran_after_backend_timeout": false,
+            "verification_owner": "abracapocus",
+            "verification_result": "skipped",
+            "verification_status": "skipped",
+            "verification_checks": [],
+            "frame_failure": false,
+            "retry_attempts": []
+          }
+        ]
+      }
+    ]
+  }
+}
