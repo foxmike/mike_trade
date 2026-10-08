@@ -1,0 +1,142 @@
+{
+  "plan_summary": "Task run: Add partial fill manual external close and crash restart lifecycle tests",
+  "backend_executions": [
+    {
+      "backend": "pi_cli",
+      "command": [
+        "pi",
+        "-p",
+        "--provider",
+        "openrouter",
+        "--model",
+        "meta/muse-spark-1.3-contributor",
+        "Task: Add partial fill manual external close and crash restart lifecycle tests\nDescription: Add end-to-end lifecycle integration tests in tests/integration/test_position_cycle_restart.py and a verification audit document in docs/verification/phase_m_lifecycle.md. Together they exercise the cycle FSM (mike_trade/portfolio/cycles.py), the coordinator (mike_trade/portfolio/manager.py), reconciliation (mike_trade/execution/reconcile.py) and projections (mike_trade/portfolio/status.py) as a unit. This is a verification task: write only tests and the audit artifact, and change no production code.\n\nBefore editing, inspect: mike_trade/portfolio/cycles.py, mike_trade/portfolio/manager.py, mike_trade/execution/reconcile.py, mike_trade/portfolio/status.py, the persistence layer and the test fixtures for temporary SQLite databases, the fake broker/shadow adapters and the fake clock used in existing tests. Do not modify any of them.\n\nRequired scenarios. Use a temporary SQLite database, a fake broker port and a fake clock; no network and no credentials:\n1. Partial entry fill: a buy for N shares fills k < N, and the remaining quantity is then canceled. The cycle retains k, consumes exactly one entry slot, requires protection for exactly k, and never re-buys N-k.\n2. Partial exit fill: a full-quantity discretionary sell partially fills. Remaining quantity and protection quantity update, and no buy is possible until confirmed flat.\n3. Manual close bypasses the minimum hold: an operator close inside the minimum-hold window is accepted and closes the full remaining quantity.\n4. External/manual close detection: the broker position goes to zero without a locally initiated sell. After reconciliation the exit is audited as external/manual, not a strategy win, and the budget is released only once no linked orders remain.\n5. Crash restart mid-cycle: persist state while BUY_PENDING with a fill that occurred at the broker during downtime. Rebuild the coordinator from SQLite, run reconciliation, and assert that the missing fill is applied exactly once, entries stay blocked until protection is confirmed, and a duplicate BUY signal after restart creates no second entry.\n6. Crash restart with an unknown broker order or missing stop: the symbol stays RECONCILING and entries are blocked.\n7. External holdings: a pre-existing broker position appears as UNMANAGED in the status projection and is not adopted.\n8. Pause: with the operator pause active, fills and protection updates still apply and new entries are blocked.\n\ndocs/verification/phase_m_lifecycle.md must list each scenario, the test function that covers it, the invariant it proves, and the exact targeted pytest command used. It must state that no live or paper broker orders were placed. Record actual pass/fail results; do not claim results that were not observed. Any scenario that cannot pass because of a defect in production code must be marked as xfail with a reason and reported as an open defect in the doc, not fixed in production code.\nPhase: M\nAcceptance criteria:\n  - tests/integration/test_position_cycle_restart.py contains at least one test for each of these 8 scenarios: partial entry fill, partial exit fill, manual close bypassing minimum hold, external/manual close detection, crash restart with a missing fill, crash restart with an unknown order or missing stop, UNMANAGED external holdings, and pause semantics\n  - The crash-restart test rebuilds state from a temporary SQLite database (not in-memory objects carried over) and asserts the missing fill is applied exactly once\n  - The tests assert that no second entry is created after restart when a duplicate BUY signal arrives\n  - The tests assert that the external/manual close is audited as external/manual and not as a strategy exit or win\n  - The tests use only fake broker ports, a fake clock and a temporary database, with no network access and no credentials\n  - docs/verification/phase_m_lifecycle.md maps every scenario to its test name and invariant, records the exact targeted pytest command and observed results, and states that no live or paper orders were placed\n  - Any test marked xfail has an explicit reason that is also listed as an open defect in the verification doc\n  - No production source files are modified; only tests/integration/test_position_cycle_restart.py and docs/verification/phase_m_lifecycle.md change\nContext: AGENTS.md guidance:\n# AGENTS.md\n## Purpose\nThis repository is operated by an autonomous multi-agent system (abracapocus_2).\nAll agents must follow these rules when modifying the codebase.\n---\n## Core Principles\n- Minimal blast radius: only modify what is required for the task\n- Deterministic verification: all changes must be verifiable via code (tests, compile, scripts)\n- No architecture drift: do not introduce new frameworks or major design changes unless explicitly required\n- No unrelated refactors\n- All changes must be reproducible from a clean clone\n---\n## Project Structure\n- docs/ → design, plans, architecture constraints\n- plans/ → master plans\n- phases/ → phase definitions\n- tasks/ → executable task documents\n- backends/ → CLI backend adapters\n- agents/ → specialist agents\n- runtime/ → orchestration, routing, state\n...(truncated)\n\n## Task Contract Constraints\n\n{\n  \"allowed_write_paths\": [\n    \"tests/integration/test_position_cycle_restart.py\",\n    \"docs/verification/phase_m_lifecycle.md\"\n  ],\n  \"forbidden_changes\": [\n    \"modify files outside allowed_write_paths\",\n    \"modify production code under mike_trade/\",\n    \"change PLAN_SKELETON.json or other planning artifacts\",\n    \"create live or paper broker orders or access broker credentials\",\n    \"fabricate or claim verification results that were not observed\",\n    \"run broad full-suite tests or backtests\"\n  ]\n}\nAGENTS.md:\n# AGENTS.md\n\n## Purpose\n\nThis repository is operated by an autonomous multi-agent system (abracapocus_2).\nAll agents must follow these rules when modifying the codebase.\n\n---\n\n## Core Principles\n\n- Minimal blast radius: only modify what is required for the task\n- Deterministic verification: all changes must be verifiable via code (tests, compile, scripts)\n- No architecture drift: do not introduce new frameworks or major design changes unless explicitly required\n- No unrelated refactors\n- All changes must be reproducible from a clean clone\n\n---\n\n## Project Structure\n\n- docs/ → design, plans, architecture constraints\n- plans/ → master plans\n- phases/ → phase definitions\n- tasks/ → executable task documents\n- backends/ → CLI backend adapters\n- agents/ → specialist agents\n- runtime/ → orchestration, routing, state\n- reports/ → execution reports (DO NOT MODIFY MANUALLY)\n- state/runtime_state.json → runtime state (DO NOT COMMIT)\n\n---\n\n## Task Execution Rules\n\n- Always operate from a task document when available\n- Respect:\n  - selected_backend\n  - verification_profile\n  - acceptance_criteria\n- If a task conflicts with architecture constraints or phase scope:\n  - STOP and report conflict\n\n---\n\n## Backend Rules\n\n- Backends must:\n  - execute commands deterministically\n  - capture stdout, stderr, exit_code\n  - not silently fail\n- Do not invent backend interfaces; use existing adapters\n- Codex CLI, Aider, Gemini, Claude Code should be invoked through backends only\n\n---\n\n## Verification Rules\n\n- Verification must be deterministic\n- Preferred checks:\n  - pytest\n  - python -m py_compile\n- Do not rely on model self-evaluation\n\n---\n\n## Execution Control Flow (PERMANENT ARCHITECTURAL RULE)\n\n**HEURISTIC INFERENCE MUST NEVER PARTICIPATE IN ABRACAPOCUS EXECUTION CONTROL FLOW.**\n\nAbracapocus must not determine execution success, failure, acceptance,\nrejection, blocking, retry eligibility, phase progression, or completion from\nheuristic inference. A heuristic is any conclusion that is *inferred* rather\nthan *directly established by an explicit executable contract or a concrete\nruntime fact*.\n\nRuntime status is derived ONLY from concrete, mechanically observable facts:\n\n1. The backend process exit code. A backend that exits `0` (with no hard\n   write-policy violation) is a successful execution.\n2. Objectively observed hard write-policy violations (changed paths outside the\n   declared allowed write paths).\n3. Explicit operator-authored commands (task/phase verification the plan\n   explicitly contains). Their raw results are reported, kept DISTINCT from\n   backend execution status.\n4. Objective orchestrator failures with direct evidence (backend could not\n   launch, required document could not be parsed, subprocess infrastructure\n   failed).\n\n**Verification results are observational and must not rewrite backend execution\nstatus.** A verifier returning non-zero must NEVER, by itself, turn a\nsuccessful backend execution into unverified, stop a phase, or trigger an\nautomatic rerun. Verification is the result of a command, not authority to\nrewrite history.\n\n**Execution control:** Task-local problems (non-zero exit, timeout,\nwrite-policy violation, frame failure, backend launch failure) produce\nacceptance status ``\"unverified\"`` with truthful evidence preserved. They\nMUST NOT stop sibling tasks, later phases, or the plan. Only operator\ncancellation (SIGINT/SIGTERM/dashboard cancel) may terminate a run\n(acceptance status ``\"interrupted\"``). Dependencies are ordering constraints,\nnot acceptance gates — any terminal attempt outcome satisfies a dependency\nedge. The status ``\"failed\"`` is banned from acceptance output.\n\nDo NOT reintroduce -- under any name, feature flag, \"advisory\" wrapper, or\ncompatibility mode -- context completeness/sufficiency scoring, change or\narchitecture assessment used as a gate, intent/scope matching, reconciliation\ngates, no-progress judgments, confidence/risk scores, model/LLM/reviewer\njudgments over status, shadow/adaptive/secondary-verification gates, or\nheuristic retry/failure-classification control flow. Failure classification may\nonly *summarize* an already-established concrete failure; it must never create\none. Retries are permitted only for explicitly defined mechanical backend\nfailures. Future agents must not add these systems back.\n\n---\n\n## Git Rules\n\n- Do not commit:\n  - runtime_state.json\n  - reports/\n  - logs/\n  - virtual environments\n- Do not modify .gitignore unless required by task\n- Do not create excessive commits; prefer grouped logical commits\n\n---\n\n## Allowed Changes\n\n- Implement task requirements\n- Fix failing verification\n- Update relevant tests\n- Improve documentation tied to the task\n\n---\n\n## Forbidden Changes\n\n- Changing architecture without explicit instruction\n- Adding dependencies without justification\n- Modifying unrelated files\n- Deleting important files\n- Bypassing verification\n\n---\n\n## Planning Rules\n\n- Plans are multi-phase\n- Completed sections are immutable\n- Remaining sections may be updated\n- Tasks must align with:\n  - project brief\n  - architecture constraints\n  - active phase\n\n---\n\n## Reporting\n\n- All executions must produce structured reports\n- Reports must include:\n  - changed files\n  - verification results\n  - assessment\n\n---\n\n## Behavior\n\n- Do not ask unnecessary questions\n- Do not stall execution\n- Do not perform broad scans unless required\n- Prefer direct action over analysis\n\n---\n\n## Priority Order\n\nThis ordering guides *implementation decisions* only. It does NOT make\nverification an acceptance authority: verification results are observational\n(see \"Execution Control Flow\"), and never override a concrete backend\nexecution result.\n\n1. Architecture constraints\n2. Task definition\n3. Verification results (observational signal, not acceptance authority)\n4. Plan guidance\n\nIf conflicts occur, follow this order.\n\nAGENTS metadata:\n{\"loaded\": true, \"path\": \"/home/mike/dev/mike/abracapocus/python/abracapocus_2/AGENTS.md\", \"rule_count\": 77, \"sha256_12\": \"3f9b549ba1ce\"}\n"
+      ],
+      "stdout": "Done. All 8 lifecycle scenarios pass with no production changes.\n\n**Changed files (allowed paths only):**\n- `tests/integration/test_position_cycle_restart.py` — 8 tests, one per required scenario (partial entry fill, partial exit fill, manual close bypassing minimum hold, external/manual close detection, crash restart with missing fill, crash restart with unknown order/missing stop, UNMANAGED external holdings, pause semantics)\n- `docs/verification/phase_m_lifecycle.md` — scenario→test→invariant map, exact pytest command with observed `8 passed` output, and explicit statement that no live/paper orders were placed\n\n**Key verification points:**\n- Crash-restart test persists the `BUY_PENDING` cycle to a temp SQLite file, discards all in-memory objects, rebuilds the coordinator from the file, applies the downtime fill exactly once (`ACCEPTED` then `DUPLICATE`), and shows a duplicate BUY creates no second entry (zero reserves/submits)\n- External close is journaled as `ExternalManualExitDetected` with `strategy_exit=false`, `strategy_win=false`, zero `StrategyExit`/`StrategyWin` events, and the budget reservation released\n- No `xfail`s — no production defects found, so per the contract no files under `mike_trade/` were modified (`git status` confirms)\n\nTargeted command: `.venv/bin/python -m pytest tests/integration/test_position_cycle_restart.py -v` → **8 passed**.\n",
+      "stderr": "",
+      "exit_code": 0,
+      "duration_seconds": 135.5153124332428,
+      "model": "openrouter/meta/muse-spark-1.3-contributor",
+      "model_tags": [],
+      "working_directory": "/home/mike/dev/mike/stocks/python/mike_trade",
+      "changed_files": [
+        {
+          "path": "docs/verification/phase_m_lifecycle.md",
+          "status": "untracked",
+          "code": "??"
+        },
+        {
+          "path": "tests/integration/test_position_cycle_restart.py",
+          "status": "untracked",
+          "code": "??"
+        }
+      ],
+      "diff_summary": "git diff reported no changes",
+      "model_attempts": [
+        {
+          "backend": "pi_cli",
+          "model": "openrouter/meta/muse-spark-1.3-contributor",
+          "exit_code": 0,
+          "stdout": "Done. All 8 lifecycle scenarios pass with no production changes.\n\n**Changed files (allowed paths only):**\n- `tests/integration/test_position_cycle_restart.py` — 8 tests, one per required scenario (partial entry fill, partial exit fill, manual close bypassing minimum hold, external/manual close detection, crash restart with missing fill, crash restart with unknown order/missing stop, UNMANAGED external holdings, pause semantics)\n- `docs/verification/phase_m_lifecycle.md` — scenario→test→invariant map, exact pytest command with observed `8 passed` output, and explicit statement that no live/paper orders were placed\n\n**Key verification points:**\n- Crash-restart test persists the `BUY_PENDING` cycle to a temp SQLite file, discards all in-memory objects, rebuilds the coordinator from the file, applies the downtime fill exactly once (`ACCEPTED` then `DUPLICATE`), and shows a duplicate BUY creates no second entry (zero reserves/submits)\n- External close is journaled as `ExternalManualExitDetected` with `strategy_exit=false`, `strategy_win=false`, zero `StrategyExit`/`StrategyWin` events, and the budget reservation released\n- No `xfail`s — no production defects found, so per the contract no files under `mike_trade/` were modified (`git status` confirms)\n\nTargeted command: `.venv/bin/python -m pytest tests/integration/test_position_cycle_restart.py -v` → **8 passed**.\n",
+          "stderr": "",
+          "duration_seconds": 135.5153124332428,
+          "changed_files": [
+            {
+              "path": "docs/verification/phase_m_lifecycle.md",
+              "status": "untracked",
+              "code": "??"
+            },
+            {
+              "path": "tests/integration/test_position_cycle_restart.py",
+              "status": "untracked",
+              "code": "??"
+            }
+          ],
+          "diff_summary": "git diff reported no changes",
+          "outcome_classification": "backend_completed_with_changes",
+          "backend_timeout": false,
+          "backend_verification_timeout": false,
+          "timeout_seconds": null
+        }
+      ],
+      "write_policy_violations": [],
+      "outcome_classification": "backend_completed_with_changes",
+      "backend_timeout": false,
+      "backend_verification_timeout": false,
+      "changed_files_at_timeout_exit": [],
+      "abracapocus_verification_ran_after_backend_timeout": false,
+      "verification_owner": "abracapocus",
+      "verification_result": "skipped"
+    }
+  ],
+  "review": {
+    "status": "approved",
+    "findings": [],
+    "summary": "m.5:Review complete",
+    "created_at": "2026-10-08T19:44:18.074446"
+  },
+  "verification": {
+    "status": "skipped",
+    "checks": [],
+    "created_at": "2026-10-08T19:44:18.074453",
+    "notes": "M:skipped",
+    "profile": "focused"
+  },
+  "metadata": {
+    "run_id": "cd93007f-0e60-434f-96fc-de51117346b5",
+    "project_name": "mike_trade",
+    "plan_version": "task-m.5",
+    "task_id": "m.5",
+    "task_title": "Add partial fill manual external close and crash restart lifecycle tests",
+    "task_status": "completed",
+    "selected_backend": "pi_cli",
+    "verification_profile": "focused",
+    "backend_reason": "phase_based",
+    "frame_failures": [],
+    "agents_md": {
+      "loaded": true,
+      "path": "/home/mike/dev/mike/abracapocus/python/abracapocus_2/AGENTS.md",
+      "rule_count": 77,
+      "sha256_12": "3f9b549ba1ce"
+    },
+    "phase_results": [
+      {
+        "phase_name": "M",
+        "status": "passed",
+        "verification": "skipped",
+        "task_results": [
+          {
+            "task_id": "m.5",
+            "status": "passed",
+            "acceptance_status": "accepted",
+            "backend": "pi_cli",
+            "backend_outcome_classification": "backend_completed_with_changes",
+            "changed_files": [
+              {
+                "path": "docs/verification/phase_m_lifecycle.md",
+                "status": "untracked",
+                "code": "??"
+              },
+              {
+                "path": "tests/integration/test_position_cycle_restart.py",
+                "status": "untracked",
+                "code": "??"
+              }
+            ],
+            "backend_timeout": false,
+            "backend_elapsed_seconds": 135.5153124332428,
+            "backend_timeout_seconds": null,
+            "changed_files_at_timeout_exit": [],
+            "abracapocus_verification_ran_after_backend_timeout": false,
+            "verification_owner": "abracapocus",
+            "verification_result": "skipped",
+            "verification_status": "skipped",
+            "verification_checks": [],
+            "frame_failure": false,
+            "retry_attempts": []
+          }
+        ]
+      }
+    ]
+  }
+}
