@@ -1,0 +1,104 @@
+# Reference SHADOW-only configuration for the vwap_reference pair
+# (vwap_bounce BUY + vwap_breakdown SELL).
+#
+# Load with the normal application loader, e.g.:
+#   mike-trade config validate --config config/reference_vwap_shadow.yaml
+#
+# This file is structurally incapable of authorizing live orders:
+#   - execution.account_mode is fixed to shadow.
+#   - There are no credentials, secrets, endpoints, or authorization fields
+#     anywhere in this file. Credentials live only in environment variables.
+#   - Turning this file to live is rejected by the loader: live requires
+#     live_trading_enabled: true plus stop safeguards declared in a config
+#     file, which this file does not contain.
+#
+# This file makes no profitability claim and carries no confidence values.
+schema_version: 1
+service:
+  timezone: America/New_York
+market_data:
+  # Shared Alpaca Basic feed: IEX is a non-consolidated single-venue feed
+  # (provenance IEX, consolidated false in the provider catalog), not SIP.
+  provider: alpaca
+  feed: iex
+  mode: stream
+  max_bar_age_seconds: 90
+  warmup_bars: 60
+  # 1m completed-candle triggers: 1Min must stay first/present.
+  timeframes:
+    - 1Min
+research:
+  providers: []
+scheduler:
+  cadence_seconds: 5
+  max_workers: 4
+  queue_max: 100
+  evaluation_timeout_seconds: 10
+execution:
+  broker: alpaca
+  account_mode: shadow
+  fractional_enabled: false
+  entry_order_type: market
+  exit_order_type: market
+  regular_hours_only: true
+  entry_cutoff: "15:30"
+  end_of_day_close:
+    enabled: false
+    at: "15:55"
+  # Mandatory trailing protection: stops are required and unprotected
+  # entries are blocked; the symbol below uses a trailing stop policy.
+  stop_required: true
+  block_new_entries_when_unprotected: true
+  margin_enabled: false
+  short_selling_enabled: false
+risk:
+  total_application_budget: "10000.00"
+  max_open_positions: 1
+  daily_loss_limit: "300.00"
+  require_buying_power_check: true
+symbols:
+  # OPERATOR: edit this symbol block to follow a different symbol. Keep the
+  # budget below risk.total_application_budget and keep a trailing stop
+  # policy (trailing protection is mandatory for vwap_reference).
+  SPY:
+    enabled: true
+    budget: "3000.00"
+    planned_loss_cap: "30.00"
+    min_hold_seconds: 60
+    max_entry_cycles_per_session: 1
+    consecutive_loss_limit: 2
+    consecutive_loss_reset: session
+    consecutive_loss_scope: symbol
+    post_sale_cooldown_seconds: 300
+    buy_strategy: vwap_bounce_default
+    sell_strategy: vwap_breakdown_default
+    stop_policy:
+      type: native_trailing
+      trail_percent: "1.5"
+strategies:
+  # vwap_bounce_default BUY leg of vwap_reference: completed 1-minute
+  # regular-session bars only; prior close at or below prior VWAP and latest
+  # completed close above latest VWAP.
+  vwap_bounce_default:
+    plugin: vwap_bounce
+    side: buy
+    pair: vwap_reference
+    parameters: {}
+  # vwap_breakdown_default SELL leg of vwap_reference: completed 1-minute
+  # regular-session bars only; prior close at or above prior VWAP and latest
+  # completed close below latest VWAP. Full-position exit only.
+  vwap_breakdown_default:
+    plugin: vwap_breakdown
+    side: sell
+    pair: vwap_reference
+    parameters: {}
+shadow_scenarios:
+  - name: vwap_reference_shadow
+    starting_cash: "25000.00"
+    enabled: true
+    symbols:
+      - SPY
+reporting:
+  evidence_dir: evidence
+  evidence_retention_days: 90
+  log_retention_days: 30

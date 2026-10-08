@@ -1,0 +1,158 @@
+{
+  "plan_summary": "Task run: Build signal arbitration valid-vs-rejected decision and rearm policy",
+  "backend_executions": [
+    {
+      "backend": "claude_code_cli",
+      "command": [
+        "claude",
+        "-p",
+        "Task: Build signal arbitration valid-vs-rejected decision and rearm policy\nPhase: K\nDescription: Build deterministic, auditable exit-signal arbitration and restart-stable rearm/duplicate suppression.\n\nIn mike_trade/signals/decisions.py implement a pure arbitration function (for example arbitrate_exit_decisions). Inputs:\n- the candidate exit requests for one managed position on one evaluation tick: protective stop, manual close, hard risk, forced liquidation, and zero or more strategy SELL recommendations from enabled SELL rules\n- the position snapshot (confirmed remaining quantity, side, managed/unmanaged, entry fill time)\n- the minimum-hold configuration\n- an injected evaluation time\n\nArbitration rules:\n1. Use the ExitSource priority from mike_trade/strategies/sell/base.py. Stop/manual/risk/forced exits always outrank STRATEGY_SELL and bypass minimum hold. STRATEGY_SELL is subject to minimum hold.\n2. The default policy is first valid exit. Among simultaneous valid strategy SELLs, select deterministically by a documented stable tie-break: priority, then completed-bar timestamp, then strategy_id, then signal_id. There is no weighted/confidence voting.\n3. Every non-selected candidate is recorded as a rejected decision with an explicit reason, for example SUPERSEDED_BY_HIGHER_PRIORITY, MIN_HOLD_ACTIVE, DUPLICATE_SIGNAL, POSITION_FLAT, NOT_MANAGED, EXIT_ALREADY_PENDING, STRATEGY_DISABLED, or STALE_SIGNAL.\n4. When flat or unmanaged, no exit is selected and SELL never becomes a short or opposite-side order.\n5. When an exit (including a broker-held stop fill in progress) is already pending, a new overlapping strategy SELL is rejected, so overlapping sells cannot oversell.\n6. The selected decision targets 100% of the confirmed remaining quantity only.\n7. Output is an immutable ArbitrationResult containing the selected decision (or none) and the full list of DecisionRecord entries (valid and rejected). Each DecisionRecord includes: a deterministic decision_id, signal_id, source, strategy_id/version, symbol, position/cycle id, UTC timestamps, outcome (SELECTED/REJECTED), and reason codes, serializable for an append-only audit log.\n8. Arbitration never submits orders and never touches brokers. It returns an advisory decision only.\n\nIn mike_trade/signals/rearm.py implement the rearm/duplicate-suppression policy:\n- a RearmState keyed by (strategy_id, version, symbol, side) that holds the last emitted signal_id, the last triggering completed-bar timestamp, arm/disarm status, and opaque per-strategy persistent state (for example the rsi_reversal arm flag)\n- a pure check_and_record (or equivalent) that suppresses any already-seen signal_id or a bar not newer than the last triggered bar, and returns explicit DUPLICATE_SIGNAL / REPLAY_SUPPRESSED reasons\n- deterministic, versioned to_dict/from_dict serialization so state survives restart through the existing persistence layer. This module performs no DB/file I/O itself.\n- a rehydrated state suppresses the same replays as the original\n- a position-cycle reset hook, so a new entry cycle does not inherit stale exit suppression incorrectly while same-bar replays stay suppressed\n\nIn tests/unit/test_signal_arbitration.py, cover:\n- stop vs strategy SELL on the same tick (the stop wins, the strategy SELL is rejected with SUPERSEDED_BY_HIGHER_PRIORITY)\n- manual/risk/forced bypassing minimum hold while STRATEGY_SELL is blocked by it\n- two simultaneous strategy SELLs resolved identically across shuffled input orders\n- flat/unmanaged positions yielding no selection\n- a pending exit rejecting an overlapping sell\n- full-quantity selection after a partial fill\n- every rejected candidate being logged with a reason\n- deterministic decision IDs\n- rearm replay suppression across a simulated restart (serialize, deserialize, then replay the same bar: suppressed)\n- a later bar being accepted\n- cycle reset behavior\n- the absence of confidence fields\n\nBefore editing, inspect:\n- mike_trade/strategies/sell/base.py\n- tests/contracts/test_sell_strategy.py\n- mike_trade/strategies/base.py\n- mike_trade/domain/signals.py\n- mike_trade/domain/strategy_types.py\n- any existing mike_trade/signals/ package files, including an existing rearm.py referenced by phase j BUY strategies, which you must extend compatibly rather than break\n- the existing persistence event/audit types under mike_trade/persistence/, to align the record shape. Do not modify them.\n\nDecision budget: if mike_trade/signals/rearm.py already exposes an API used by BUY strategies, preserve its existing public names and semantics and add to them.\nContext: AGENTS.md guidance:\n# AGENTS.md\n## Purpose\nThis repository is operated by an autonomous multi-agent system (abracapocus_2).\nAll agents must follow these rules when modifying the codebase.\n---\n## Core Principles\n- Minimal blast radius: only modify what is required for the task\n- Deterministic verification: all changes must be verifiable via code (tests, compile, scripts)\n- No architecture drift: do not introduce new frameworks or major design changes unless explicitly required\n- No unrelated refactors\n- All changes must be reproducible from a clean clone\n---\n## Project Structure\n- docs/ → design, plans, architecture constraints\n- plans/ → master plans\n- phases/ → phase definitions\n- tasks/ → executable task documents\n- backends/ → CLI backend adapters\n- agents/ → specialist agents\n- runtime/ → orchestration, routing, state\n...(truncated)\n\n## Task Contract Constraints\n\n{\n  \"allowed_symbols\": [\n    \"arbitrate_exit_decisions\",\n    \"ArbitrationResult\",\n    \"DecisionRecord\",\n    \"DecisionOutcome\",\n    \"DecisionReason\",\n    \"RearmState\",\n    \"RearmPolicy\",\n    \"check_and_record\",\n    \"reset_cycle\"\n  ],\n  \"allowed_write_paths\": [\n    \"mike_trade/signals/decisions.py\",\n    \"mike_trade/signals/rearm.py\",\n    \"tests/unit/test_signal_arbitration.py\"\n  ],\n  \"forbidden_changes\": [\n    \"modify files outside allowed_write_paths\",\n    \"modify mike_trade/strategies/sell/base.py, strategy modules, or persistence modules\",\n    \"change PLAN_SKELETON.json or other planning artifacts\",\n    \"break existing public names in mike_trade/signals/rearm.py\",\n    \"add weighted/confidence voting, partial exits, auto re-buy, or short/opposite-side actions\",\n    \"submit orders or access brokers, network, files, or DB from arbitration/rearm\",\n    \"create live broker orders or run broad test suites/backtests\"\n  ]\n}\n\nAGENTS.md guidance:\n# AGENTS.md\n\n## Purpose\n\nThis repository is operated by an autonomous multi-agent system (abracapocus_2).\nAll agents must follow these rules when modifying the codebase.\n\n---\n\n## Core Principles\n\n- Minimal blast radius: only modify what is required for the task\n- Deterministic verification: all changes must be verifiable via code (tests, compile, scripts)\n- No architecture drift: do not introduce new frameworks or major design changes unless explicitly required\n- No unrelated refactors\n- All changes must be reproducible from a clean clone\n\n---\n\n## Project Structure\n\n- docs/ → design, plans, architecture constraints\n- plans/ → master plans\n- phases/ → phase definitions\n- tasks/ → executable task documents\n- backends/ → CLI backend adapters\n- agents/ → specialist agents\n- runtime/ → orchestration, routing, state\n- reports/ → execution reports (DO NOT MODIFY MANUALLY)\n- state/runtime_state.json → runtime state (DO NOT COMMIT)\n\n---\n\n## Task Execution Rules\n\n- Always operate from a task document when available\n- Respect:\n  - selected_backend\n  - verification_profile\n  - acceptance_criteria\n- If a task conflicts with architecture constraints or phase scope:\n  - STOP and report conflict\n\n---\n\n## Backend Rules\n\n- Backends must:\n  - execute commands deterministically\n  - capture stdout, stderr, exit_code\n  - not silently fail\n- Do not invent backend interfaces; use existing adapters\n- Codex CLI, Aider, Gemini, Claude Code should be invoked through backends only\n\n---\n\n## Verification Rules\n\n- Verification must be deterministic\n- Preferred checks:\n  - pytest\n  - python -m py_compile\n- Do not rely on model self-evaluation\n\n---\n\n## Execution Control Flow (PERMANENT ARCHITECTURAL RULE)\n\n**HEURISTIC INFERENCE MUST NEVER PARTICIPATE IN ABRACAPOCUS EXECUTION CONTROL FLOW.**\n\nAbracapocus must not determine execution success, failure, acceptance,\nrejection, blocking, retry eligibility, phase progression, or completion from\nheuristic inference. A heuristic is any conclusion that is *inferred* rather\nthan *directly established by an explicit executable contract or a concrete\nruntime fact*.\n\nRuntime status is derived ONLY from concrete, mechanically observable facts:\n\n1. The backend process exit code. A backend that exits `0` (with no hard\n   write-policy violation) is a successful execution.\n2. Objectively observed hard write-policy violations (changed paths outside the\n   declared allowed write paths).\n3. Explicit operator-authored commands (task/phase verification the plan\n   explicitly contains). Their raw results are reported, kept DISTINCT from\n   backend execution status.\n4. Objective orchestrator failures with direct evidence (backend could not\n   launch, required document could not be parsed, subprocess infrastructure\n   failed).\n\n**Verification results are observational and must not rewrite backend execution\nstatus.** A verifier returning non-zero must NEVER, by itself, turn a\nsuccessful backend execution into unverified, stop a phase, or trigger an\nautomatic rerun. Verification is the result of a command, not authority to\nrewrite history.\n\n**Execution control:** Task-local problems (non-zero exit, timeout,\nwrite-policy violation, frame failure, backend launch failure) produce\nacceptance status ``\"unverified\"`` with truthful evidence preserved. They\nMUST NOT stop sibling tasks, later phases, or the plan. Only operator\ncancellation (SIGINT/SIGTERM/dashboard cancel) may terminate a run\n(acceptance status ``\"interrupted\"``). Dependencies are ordering constraints,\nnot acceptance gates — any terminal attempt outcome satisfies a dependency\nedge. The status ``\"failed\"`` is banned from acceptance output.\n\nDo NOT reintroduce -- under any name, feature flag, \"advisory\" wrapper, or\ncompatibility mode -- context completeness/sufficiency scoring, change or\narchitecture assessment used as a gate, intent/scope matching, reconciliation\ngates, no-progress judgments, confidence/risk scores, model/LLM/reviewer\njudgments over status, shadow/adaptive/secondary-verification gates, or\nheuristic retry/failure-classification control flow. Failure classification may\nonly *summarize* an already-established concrete failure; it must never create\none. Retries are permitted only for explicitly defined mechanical backend\nfailures. Future agents must not add these systems back.\n\n---\n\n## Git Rules\n\n- Do not commit:\n  - runtime_state.json\n  - reports/\n  - logs/\n  - virtual environments\n- Do not modify .gitignore unless required by task\n- Do not create excessive commits; prefer grouped logical commits\n\n---\n\n## Allowed Changes\n\n- Implement task requirements\n- Fix failing verification\n- Update relevant tests\n- Improve documentation tied to the task\n\n---\n\n## Forbidden Changes\n\n- Changing architecture without explicit instruction\n- Adding dependencies without justification\n- Modifying unrelated files\n- Deleting important files\n- Bypassing verification\n\n---\n\n## Planning Rules\n\n- Plans are multi-phase\n- Completed sections are immutable\n- Remaining sections may be updated\n- Tasks must align with:\n  - project brief\n  - architecture constraints\n  - active phase\n\n---\n\n## Reporting\n\n- All executions must produce structured reports\n- Reports must include:\n  - changed files\n  - verification results\n  - assessment\n\n---\n\n## Behavior\n\n- Do not ask unnecessary questions\n- Do not stall execution\n- Do not perform broad scans unless required\n- Prefer direct action over analysis\n\n---\n\n## Priority Order\n\nThis ordering guides *implementation decisions* only. It does NOT make\nverification an acceptance authority: verification results are observational\n(see \"Execution Control Flow\"), and never override a concrete backend\nexecution result.\n\n1. Architecture constraints\n2. Task definition\n3. Verification results (observational signal, not acceptance authority)\n4. Plan guidance\n\nIf conflicts occur, follow this order.\n",
+        "--dangerously-skip-permissions",
+        "--output-format",
+        "text",
+        "--model",
+        "claude-sonnet-5-5"
+      ],
+      "stdout": "Exit arbitration and the rearm/duplicate-suppression policy are built. The 38 new tests pass, as do the router-ordering and sell-contract tests, and ruff is clean. I didn't run any broader suite. I wrote only the three allowed files and did not commit.\n\nThere was no existing `mike_trade/signals/rearm.py`, so there were no BUY-strategy names to preserve. The phase j BUY strategies only mention \"rearm\" in docstrings and keep their own latches. I created the module fresh.\n\nThe repo's `.venv` runs the tests (the PATH `python` is 3.11, and the repo needs 3.12 syntax).\n\n**Arbitration**\n- **Priority and tie-break:** `arbitrate_exit_decisions` uses the `ExitSource` priority from `strategies/sell/base.py`. Tie-break is priority, then bar time, then `strategy_id`, then `signal_id`. Input order never matters.\n- **Rejections:** every candidate gets a `DecisionRecord`. Rejected ones carry all applicable `DecisionReason` codes, not only the first.\n- **Full quantity:** the selected decision always takes the full `Position.quantity`.\n- **Minimum hold:** only strategy SELLs are subject to it. If the hold is positive and `entry_filled_at` is missing, it raises `ValueError`, the same as the sibling `evaluate_exit_eligibility`.\n- **Audit shape:** `ArbitrationResult` and `DecisionRecord` are frozen and have `to_dict()`. The decision ID is a SHA-256 of the identity fields, so it is deterministic. There are no confidence or weight fields.\n\n**Rearm**\n- **State and persistence:** `RearmState` is immutable and keyed by strategy, version, symbol and side. `to_dict`/`from_dict` carry a schema version, and `to_json` is canonical. There is no I/O, and opaque per-strategy state must be JSON-safe.\n- **Suppression:** `check_and_record` returns a `RearmCheck` and leaves the state unchanged when it suppresses. It returns `DUPLICATE_SIGNAL` for a seen signal id and `REPLAY_SUPPRESSED` for a bar that is not newer than the last one. It raises `ValueError` if `signal_id` doesn't match the state's key and bar time.\n- **Cycle reset:** `reset_cycle` rearms and sets the new cycle id but keeps the last-bar watermark and seen ids, so same-bar replays stay suppressed. Repeating the same reset after a restart does nothing.\n\n**Choices beyond the spec (change them if you disagree)**\n- **Pending exit:** it takes the source of the exit in flight (`pending_exit_source`), not a bool. Any candidate that isn't strictly higher priority gets `EXIT_ALREADY_PENDING`. So a pending stop blocks a manual close, but a protective stop can still supersede a pending strategy SELL. The execution layer would then have to cancel or replace the pending order.\n- **Extra reason codes:** I added `SUPERSEDED_BY_TIE_BREAK` for equal-priority losers, plus `NOT_LONG`, `SYMBOL_MISMATCH`, `CYCLE_MISMATCH`, `REPLAY_SUPPRESSED` and `REARM_REQUIRED`. `CYCLE_MISMATCH` rejects a recommendation from an earlier position cycle.\n- **`disarm_on_emit` (default off):** with it on, an accepted signal disarms the state until a cycle reset or `rearmed()`. It's off by default because rsi_reversal keeps its own armed flag.\n- **Extra public names:** `ExitCandidate`, `RearmCheck` and `DECISION_SCHEMA_VERSION` aren't on your allowed-symbols list. `ExitCandidate` is the input type, and `RearmCheck` is the return type of `check_and_record`.\n",
+      "stderr": "",
+      "exit_code": 0,
+      "duration_seconds": 213.9081130027771,
+      "model": "claude-sonnet-5-5",
+      "model_tags": [],
+      "working_directory": "/home/mike/dev/mike/stocks/python/mike_trade",
+      "changed_files": [
+        {
+          "path": "mike_trade/signals/decisions.py",
+          "status": "untracked",
+          "code": "??"
+        },
+        {
+          "path": "mike_trade/signals/rearm.py",
+          "status": "untracked",
+          "code": "??"
+        },
+        {
+          "path": "tests/unit/test_signal_arbitration.py",
+          "status": "untracked",
+          "code": "??"
+        }
+      ],
+      "diff_summary": "git diff reported no changes",
+      "model_attempts": [
+        {
+          "backend": "claude_code_cli",
+          "model": "claude-sonnet-5-5",
+          "exit_code": 0,
+          "stdout": "Exit arbitration and the rearm/duplicate-suppression policy are built. The 38 new tests pass, as do the router-ordering and sell-contract tests, and ruff is clean. I didn't run any broader suite. I wrote only the three allowed files and did not commit.\n\nThere was no existing `mike_trade/signals/rearm.py`, so there were no BUY-strategy names to preserve. The phase j BUY strategies only mention \"rearm\" in docstrings and keep their own latches. I created the module fresh.\n\nThe repo's `.venv` runs the tests (the PATH `python` is 3.11, and the repo needs 3.12 syntax).\n\n**Arbitration**\n- **Priority and tie-break:** `arbitrate_exit_decisions` uses the `ExitSource` priority from `strategies/sell/base.py`. Tie-break is priority, then bar time, then `strategy_id`, then `signal_id`. Input order never matters.\n- **Rejections:** every candidate gets a `DecisionRecord`. Rejected ones carry all applicable `DecisionReason` codes, not only the first.\n- **Full quantity:** the selected decision always takes the full `Position.quantity`.\n- **Minimum hold:** only strategy SELLs are subject to it. If the hold is positive and `entry_filled_at` is missing, it raises `ValueError`, the same as the sibling `evaluate_exit_eligibility`.\n- **Audit shape:** `ArbitrationResult` and `DecisionRecord` are frozen and have `to_dict()`. The decision ID is a SHA-256 of the identity fields, so it is deterministic. There are no confidence or weight fields.\n\n**Rearm**\n- **State and persistence:** `RearmState` is immutable and keyed by strategy, version, symbol and side. `to_dict`/`from_dict` carry a schema version, and `to_json` is canonical. There is no I/O, and opaque per-strategy state must be JSON-safe.\n- **Suppression:** `check_and_record` returns a `RearmCheck` and leaves the state unchanged when it suppresses. It returns `DUPLICATE_SIGNAL` for a seen signal id and `REPLAY_SUPPRESSED` for a bar that is not newer than the last one. It raises `ValueError` if `signal_id` doesn't match the state's key and bar time.\n- **Cycle reset:** `reset_cycle` rearms and sets the new cycle id but keeps the last-bar watermark and seen ids, so same-bar replays stay suppressed. Repeating the same reset after a restart does nothing.\n\n**Choices beyond the spec (change them if you disagree)**\n- **Pending exit:** it takes the source of the exit in flight (`pending_exit_source`), not a bool. Any candidate that isn't strictly higher priority gets `EXIT_ALREADY_PENDING`. So a pending stop blocks a manual close, but a protective stop can still supersede a pending strategy SELL. The execution layer would then have to cancel or replace the pending order.\n- **Extra reason codes:** I added `SUPERSEDED_BY_TIE_BREAK` for equal-priority losers, plus `NOT_LONG`, `SYMBOL_MISMATCH`, `CYCLE_MISMATCH`, `REPLAY_SUPPRESSED` and `REARM_REQUIRED`. `CYCLE_MISMATCH` rejects a recommendation from an earlier position cycle.\n- **`disarm_on_emit` (default off):** with it on, an accepted signal disarms the state until a cycle reset or `rearmed()`. It's off by default because rsi_reversal keeps its own armed flag.\n- **Extra public names:** `ExitCandidate`, `RearmCheck` and `DECISION_SCHEMA_VERSION` aren't on your allowed-symbols list. `ExitCandidate` is the input type, and `RearmCheck` is the return type of `check_and_record`.\n",
+          "stderr": "",
+          "duration_seconds": 213.9081130027771,
+          "changed_files": [
+            {
+              "path": "mike_trade/signals/decisions.py",
+              "status": "untracked",
+              "code": "??"
+            },
+            {
+              "path": "mike_trade/signals/rearm.py",
+              "status": "untracked",
+              "code": "??"
+            },
+            {
+              "path": "tests/unit/test_signal_arbitration.py",
+              "status": "untracked",
+              "code": "??"
+            }
+          ],
+          "diff_summary": "git diff reported no changes",
+          "outcome_classification": "backend_completed_with_changes",
+          "backend_timeout": false,
+          "backend_verification_timeout": false,
+          "timeout_seconds": null
+        }
+      ],
+      "write_policy_violations": [],
+      "outcome_classification": "backend_completed_with_changes",
+      "backend_timeout": false,
+      "backend_verification_timeout": false,
+      "changed_files_at_timeout_exit": [],
+      "abracapocus_verification_ran_after_backend_timeout": false,
+      "verification_owner": "abracapocus",
+      "verification_result": "skipped"
+    }
+  ],
+  "review": {
+    "status": "approved",
+    "findings": [],
+    "summary": "k.4:Review complete",
+    "created_at": "2026-10-08T18:47:15.585371"
+  },
+  "verification": {
+    "status": "skipped",
+    "checks": [],
+    "created_at": "2026-10-08T18:47:15.585379",
+    "notes": "K:skipped",
+    "profile": "focused"
+  },
+  "metadata": {
+    "run_id": "3d3a8f53-6bcb-43f2-842b-69616f6b2acf",
+    "project_name": "mike_trade",
+    "plan_version": "task-k.4",
+    "task_id": "k.4",
+    "task_title": "Build signal arbitration valid-vs-rejected decision and rearm policy",
+    "task_status": "completed",
+    "selected_backend": "claude_code_cli",
+    "verification_profile": "focused",
+    "backend_reason": "phase_based",
+    "frame_failures": [],
+    "agents_md": {
+      "loaded": true,
+      "path": "/home/mike/dev/mike/abracapocus/python/abracapocus_2/AGENTS.md",
+      "rule_count": 77,
+      "sha256_12": "3f9b549ba1ce"
+    },
+    "phase_results": [
+      {
+        "phase_name": "K",
+        "status": "passed",
+        "verification": "skipped",
+        "task_results": [
+          {
+            "task_id": "k.4",
+            "status": "passed",
+            "acceptance_status": "accepted",
+            "backend": "claude_code_cli",
+            "backend_outcome_classification": "backend_completed_with_changes",
+            "changed_files": [
+              {
+                "path": "mike_trade/signals/decisions.py",
+                "status": "untracked",
+                "code": "??"
+              },
+              {
+                "path": "mike_trade/signals/rearm.py",
+                "status": "untracked",
+                "code": "??"
+              },
+              {
+                "path": "tests/unit/test_signal_arbitration.py",
+                "status": "untracked",
+                "code": "??"
+              }
+            ],
+            "backend_timeout": false,
+            "backend_elapsed_seconds": 213.9081130027771,
+            "backend_timeout_seconds": null,
+            "changed_files_at_timeout_exit": [],
+            "abracapocus_verification_ran_after_backend_timeout": false,
+            "verification_owner": "abracapocus",
+            "verification_result": "skipped",
+            "verification_status": "skipped",
+            "verification_checks": [],
+            "frame_failure": false,
+            "retry_attempts": []
+          }
+        ]
+      }
+    ]
+  }
+}
