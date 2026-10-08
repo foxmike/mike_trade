@@ -1,0 +1,143 @@
+{
+  "plan_summary": "Task run: Implement deterministic priority and tie breaking in signal event router",
+  "backend_executions": [
+    {
+      "backend": "claude_code_cli",
+      "command": [
+        "claude",
+        "-p",
+        "Task: Implement deterministic priority and tie breaking in signal event router\nPhase: I\nDescription: Build the single ordered decision router in mike_trade/signals/router.py. Put the unit tests in tests/unit/test_router_ordering.py.\n\nRequired behavior:\n- One DecisionRouter receives everything headed for decisions:\n  - evaluation results from the i.2 EvaluationPool\n  - CRITICAL events from the i.2 queueing layer: fills, broker order updates, reconciliation, stop/protective events, safety exits, manual close/flatten\n  It emits them to one serialized consumer, the portfolio/order decision path. Exactly one consumer mutates account, portfolio or order state at a time. Use a single asyncio consumer or an asyncio.Lock, documented in code.\n- Deterministic priority (highest first):\n  1. fills and broker order updates\n  2. reconciliation and drift events\n  3. protective stop events and safety exits\n  4. manual close/flatten requests\n  5. SELL/exit strategy signals\n  6. BUY/entry strategy signals\n- Tie-breaking within the same priority is deterministic:\n  1. event time UTC\n  2. snapshot_version\n  3. symbol\n  4. strategy_id\n  5. a monotonic sequence number assigned on arrival\n  Identical input sets in any arrival order produce identical output order when timestamps and keys are equal. Arrival sequence is the final tie-breaker.\n- Revalidation before authorization: a strategy signal is forwarded as actionable only if all of these hold, using an injected clock and a freshness provider:\n  - its expiry has not passed\n  - its snapshot_version is still the latest for that symbol\n  - market data is fresh within the configured max age\n  Otherwise it is recorded as REJECTED with a reason code (EXPIRED, SUPERSEDED or STALE_DATA) and not forwarded.\n- ERROR, TIMEOUT, CANCELLED and STALE_DISCARDED results are recorded as non-actionable outcomes and are never routed as entries or exits.\n- Duplicate suppression: the same (strategy_id, side, symbol, bar key) signal is forwarded at most once.\n- Fills, broker updates, reconciliation, stop and safety events are never dropped, expired or rejected by freshness checks. They bypass discretionary revalidation.\n- The router itself never calls brokers, sizes orders or applies risk rules. It only orders, revalidates and hands off to an injected consumer callable or port.\n\nBefore editing, inspect:\n- mike_trade/scheduling/workers.py and mike_trade/scheduling/queueing.py (i.2) for result and CRITICAL event types\n- mike_trade/scheduling/scheduler.py and triggers.py (i.1) for DueEvaluation keys\n- mike_trade/signals/ (existing modules, if present) and mike_trade/domain/ for signal, side and expiry types\n- mike_trade/market_data/context.py (h.4) for freshness and snapshot version\nContext: AGENTS.md guidance:\n# AGENTS.md\n## Purpose\nThis repository is operated by an autonomous multi-agent system (abracapocus_2).\nAll agents must follow these rules when modifying the codebase.\n---\n## Core Principles\n- Minimal blast radius: only modify what is required for the task\n- Deterministic verification: all changes must be verifiable via code (tests, compile, scripts)\n- No architecture drift: do not introduce new frameworks or major design changes unless explicitly required\n- No unrelated refactors\n- All changes must be reproducible from a clean clone\n---\n## Project Structure\n- docs/ → design, plans, architecture constraints\n- plans/ → master plans\n- phases/ → phase definitions\n- tasks/ → executable task documents\n- backends/ → CLI backend adapters\n- agents/ → specialist agents\n- runtime/ → orchestration, routing, state\n...(truncated)\n\n## Task Contract Constraints\n\n{\n  \"allowed_write_paths\": [\n    \"mike_trade/signals/router.py\",\n    \"tests/unit/test_router_ordering.py\"\n  ],\n  \"forbidden_changes\": [\n    \"modify files outside allowed_write_paths\",\n    \"change PLAN_SKELETON.json or other planning artifacts\",\n    \"modify scheduling/scheduler.py, triggers.py, workers.py or queueing.py; adapt via their public APIs only\",\n    \"drop, expire or freshness-reject fills, broker updates, reconciliation, stop or safety events\",\n    \"route ERROR/TIMEOUT/CANCELLED/STALE_DISCARDED outcomes as BUY or SELL\",\n    \"call brokers, size orders or apply risk rules in the router\",\n    \"allow concurrent portfolio/account/order mutation\",\n    \"run broad test suites or backtests\"\n  ]\n}\n\nAGENTS.md guidance:\n# AGENTS.md\n\n## Purpose\n\nThis repository is operated by an autonomous multi-agent system (abracapocus_2).\nAll agents must follow these rules when modifying the codebase.\n\n---\n\n## Core Principles\n\n- Minimal blast radius: only modify what is required for the task\n- Deterministic verification: all changes must be verifiable via code (tests, compile, scripts)\n- No architecture drift: do not introduce new frameworks or major design changes unless explicitly required\n- No unrelated refactors\n- All changes must be reproducible from a clean clone\n\n---\n\n## Project Structure\n\n- docs/ → design, plans, architecture constraints\n- plans/ → master plans\n- phases/ → phase definitions\n- tasks/ → executable task documents\n- backends/ → CLI backend adapters\n- agents/ → specialist agents\n- runtime/ → orchestration, routing, state\n- reports/ → execution reports (DO NOT MODIFY MANUALLY)\n- state/runtime_state.json → runtime state (DO NOT COMMIT)\n\n---\n\n## Task Execution Rules\n\n- Always operate from a task document when available\n- Respect:\n  - selected_backend\n  - verification_profile\n  - acceptance_criteria\n- If a task conflicts with architecture constraints or phase scope:\n  - STOP and report conflict\n\n---\n\n## Backend Rules\n\n- Backends must:\n  - execute commands deterministically\n  - capture stdout, stderr, exit_code\n  - not silently fail\n- Do not invent backend interfaces; use existing adapters\n- Codex CLI, Aider, Gemini, Claude Code should be invoked through backends only\n\n---\n\n## Verification Rules\n\n- Verification must be deterministic\n- Preferred checks:\n  - pytest\n  - python -m py_compile\n- Do not rely on model self-evaluation\n\n---\n\n## Execution Control Flow (PERMANENT ARCHITECTURAL RULE)\n\n**HEURISTIC INFERENCE MUST NEVER PARTICIPATE IN ABRACAPOCUS EXECUTION CONTROL FLOW.**\n\nAbracapocus must not determine execution success, failure, acceptance,\nrejection, blocking, retry eligibility, phase progression, or completion from\nheuristic inference. A heuristic is any conclusion that is *inferred* rather\nthan *directly established by an explicit executable contract or a concrete\nruntime fact*.\n\nRuntime status is derived ONLY from concrete, mechanically observable facts:\n\n1. The backend process exit code. A backend that exits `0` (with no hard\n   write-policy violation) is a successful execution.\n2. Objectively observed hard write-policy violations (changed paths outside the\n   declared allowed write paths).\n3. Explicit operator-authored commands (task/phase verification the plan\n   explicitly contains). Their raw results are reported, kept DISTINCT from\n   backend execution status.\n4. Objective orchestrator failures with direct evidence (backend could not\n   launch, required document could not be parsed, subprocess infrastructure\n   failed).\n\n**Verification results are observational and must not rewrite backend execution\nstatus.** A verifier returning non-zero must NEVER, by itself, turn a\nsuccessful backend execution into unverified, stop a phase, or trigger an\nautomatic rerun. Verification is the result of a command, not authority to\nrewrite history.\n\n**Execution control:** Task-local problems (non-zero exit, timeout,\nwrite-policy violation, frame failure, backend launch failure) produce\nacceptance status ``\"unverified\"`` with truthful evidence preserved. They\nMUST NOT stop sibling tasks, later phases, or the plan. Only operator\ncancellation (SIGINT/SIGTERM/dashboard cancel) may terminate a run\n(acceptance status ``\"interrupted\"``). Dependencies are ordering constraints,\nnot acceptance gates — any terminal attempt outcome satisfies a dependency\nedge. The status ``\"failed\"`` is banned from acceptance output.\n\nDo NOT reintroduce -- under any name, feature flag, \"advisory\" wrapper, or\ncompatibility mode -- context completeness/sufficiency scoring, change or\narchitecture assessment used as a gate, intent/scope matching, reconciliation\ngates, no-progress judgments, confidence/risk scores, model/LLM/reviewer\njudgments over status, shadow/adaptive/secondary-verification gates, or\nheuristic retry/failure-classification control flow. Failure classification may\nonly *summarize* an already-established concrete failure; it must never create\none. Retries are permitted only for explicitly defined mechanical backend\nfailures. Future agents must not add these systems back.\n\n---\n\n## Git Rules\n\n- Do not commit:\n  - runtime_state.json\n  - reports/\n  - logs/\n  - virtual environments\n- Do not modify .gitignore unless required by task\n- Do not create excessive commits; prefer grouped logical commits\n\n---\n\n## Allowed Changes\n\n- Implement task requirements\n- Fix failing verification\n- Update relevant tests\n- Improve documentation tied to the task\n\n---\n\n## Forbidden Changes\n\n- Changing architecture without explicit instruction\n- Adding dependencies without justification\n- Modifying unrelated files\n- Deleting important files\n- Bypassing verification\n\n---\n\n## Planning Rules\n\n- Plans are multi-phase\n- Completed sections are immutable\n- Remaining sections may be updated\n- Tasks must align with:\n  - project brief\n  - architecture constraints\n  - active phase\n\n---\n\n## Reporting\n\n- All executions must produce structured reports\n- Reports must include:\n  - changed files\n  - verification results\n  - assessment\n\n---\n\n## Behavior\n\n- Do not ask unnecessary questions\n- Do not stall execution\n- Do not perform broad scans unless required\n- Prefer direct action over analysis\n\n---\n\n## Priority Order\n\nThis ordering guides *implementation decisions* only. It does NOT make\nverification an acceptance authority: verification results are observational\n(see \"Execution Control Flow\"), and never override a concrete backend\nexecution result.\n\n1. Architecture constraints\n2. Task definition\n3. Verification results (observational signal, not acceptance authority)\n4. Plan guidance\n\nIf conflicts occur, follow this order.\n",
+        "--dangerously-skip-permissions",
+        "--output-format",
+        "text",
+        "--model",
+        "claude-sonnet-5-5"
+      ],
+      "stdout": "I added `DecisionRouter` in `mike_trade/signals/router.py` and 38 unit tests in `tests/unit/test_router_ordering.py`. The 38 pass, as do the existing i.1 and i.2 test files (55 passed in total). Ruff and mypy are clean on the new files. I only touched the two allowed paths.\n\n**Ordering**\n- **Priority:** fills and broker updates come first, then reconciliation, then stop/protective and safety exits, then manual close/flatten, then SELL signals, then BUY signals. A permutation test checks every arrival order of the six classes.\n- **Tie-breaks:** event time, then snapshot version, then symbol, then strategy id, then arrival sequence.\n- **Event time:** for evaluation results it is `finished_at`. Critical events use the first timezone-aware timestamp attribute they carry, and a missing one sorts first, so no critical event is dropped for lacking a timestamp.\n- **Determinism:** shuffled inputs produce the same output order.\n\n**Single consumer**\n- `drain()` holds one `asyncio.Lock`, and `run()` is a single loop that only calls `drain()`.\n- A test calls `drain()` three times concurrently alongside `run()` and sees at most one consumer call active at a time.\n- If the consumer raises, the exception propagates. The failed item is not retried, and the rest stay queued.\n\n**Revalidation and outcomes**\n- **Order of checks:** at delivery time a signal is checked for `EXPIRED`, then `SUPERSEDED`, then `STALE_DATA`. A rejected signal is recorded and not forwarded.\n- **Critical events:** they skip all of that. Tests use expired, stale and superseded conditions and every critical event still goes through.\n- **Non-actionable results:** ERROR, TIMEOUT, CANCELLED, STALE_DISCARDED and NO_SIGNAL are recorded as `NON_ACTIONABLE` and never reach the consumer.\n- **Duplicates:** the same strategy, side, symbol and bar is forwarded once. A rejected signal does not use up the slot, so a later fresh copy can still go through.\n\n**Assumptions to check**\n- The domain `Signal` has no expiry field. The router reads `expires_at` (or `expiry`) from the signal object, and a signal without one never expires. Expiry is valid up to and including the expiry instant, and an unusable expiry value is treated as expired.\n- Missing market data counts as `STALE_DATA`. Data exactly at `max_data_age` counts as fresh, which matches `context.py`.\n- `EvaluationResult` doesn't carry a bar key, so duplicates are identified by `submit_evaluation(result, bar_key=due.bar_key)`. If that is omitted, the router uses the signal's `bar_time`, then the result's snapshot version. If none of those exist, nothing is suppressed.\n- `FreshnessProvider` is a two-method protocol: `latest_snapshot_version(symbol)` and `newest_data_ts(symbol)`. It is shaped to be backed by the h.4 `ContextBuilder`/`ContextFreshness.newest_data_ts`, and I haven't wired it to anything.\n\nThe router keeps the last 10,000 records and the last 10,000 forwarded-signal keys, both configurable. An old key can fall out of the duplicate window under very high volume.\n",
+      "stderr": "",
+      "exit_code": 0,
+      "duration_seconds": 216.12834787368774,
+      "model": "claude-sonnet-5-5",
+      "model_tags": [],
+      "working_directory": "/home/mike/dev/mike/stocks/python/mike_trade",
+      "changed_files": [
+        {
+          "path": "mike_trade/signals/router.py",
+          "status": "untracked",
+          "code": "??"
+        },
+        {
+          "path": "tests/unit/test_router_ordering.py",
+          "status": "untracked",
+          "code": "??"
+        }
+      ],
+      "diff_summary": "git diff reported no changes",
+      "model_attempts": [
+        {
+          "backend": "claude_code_cli",
+          "model": "claude-sonnet-5-5",
+          "exit_code": 0,
+          "stdout": "I added `DecisionRouter` in `mike_trade/signals/router.py` and 38 unit tests in `tests/unit/test_router_ordering.py`. The 38 pass, as do the existing i.1 and i.2 test files (55 passed in total). Ruff and mypy are clean on the new files. I only touched the two allowed paths.\n\n**Ordering**\n- **Priority:** fills and broker updates come first, then reconciliation, then stop/protective and safety exits, then manual close/flatten, then SELL signals, then BUY signals. A permutation test checks every arrival order of the six classes.\n- **Tie-breaks:** event time, then snapshot version, then symbol, then strategy id, then arrival sequence.\n- **Event time:** for evaluation results it is `finished_at`. Critical events use the first timezone-aware timestamp attribute they carry, and a missing one sorts first, so no critical event is dropped for lacking a timestamp.\n- **Determinism:** shuffled inputs produce the same output order.\n\n**Single consumer**\n- `drain()` holds one `asyncio.Lock`, and `run()` is a single loop that only calls `drain()`.\n- A test calls `drain()` three times concurrently alongside `run()` and sees at most one consumer call active at a time.\n- If the consumer raises, the exception propagates. The failed item is not retried, and the rest stay queued.\n\n**Revalidation and outcomes**\n- **Order of checks:** at delivery time a signal is checked for `EXPIRED`, then `SUPERSEDED`, then `STALE_DATA`. A rejected signal is recorded and not forwarded.\n- **Critical events:** they skip all of that. Tests use expired, stale and superseded conditions and every critical event still goes through.\n- **Non-actionable results:** ERROR, TIMEOUT, CANCELLED, STALE_DISCARDED and NO_SIGNAL are recorded as `NON_ACTIONABLE` and never reach the consumer.\n- **Duplicates:** the same strategy, side, symbol and bar is forwarded once. A rejected signal does not use up the slot, so a later fresh copy can still go through.\n\n**Assumptions to check**\n- The domain `Signal` has no expiry field. The router reads `expires_at` (or `expiry`) from the signal object, and a signal without one never expires. Expiry is valid up to and including the expiry instant, and an unusable expiry value is treated as expired.\n- Missing market data counts as `STALE_DATA`. Data exactly at `max_data_age` counts as fresh, which matches `context.py`.\n- `EvaluationResult` doesn't carry a bar key, so duplicates are identified by `submit_evaluation(result, bar_key=due.bar_key)`. If that is omitted, the router uses the signal's `bar_time`, then the result's snapshot version. If none of those exist, nothing is suppressed.\n- `FreshnessProvider` is a two-method protocol: `latest_snapshot_version(symbol)` and `newest_data_ts(symbol)`. It is shaped to be backed by the h.4 `ContextBuilder`/`ContextFreshness.newest_data_ts`, and I haven't wired it to anything.\n\nThe router keeps the last 10,000 records and the last 10,000 forwarded-signal keys, both configurable. An old key can fall out of the duplicate window under very high volume.\n",
+          "stderr": "",
+          "duration_seconds": 216.12834787368774,
+          "changed_files": [
+            {
+              "path": "mike_trade/signals/router.py",
+              "status": "untracked",
+              "code": "??"
+            },
+            {
+              "path": "tests/unit/test_router_ordering.py",
+              "status": "untracked",
+              "code": "??"
+            }
+          ],
+          "diff_summary": "git diff reported no changes",
+          "outcome_classification": "backend_completed_with_changes",
+          "backend_timeout": false,
+          "backend_verification_timeout": false,
+          "timeout_seconds": null
+        }
+      ],
+      "write_policy_violations": [],
+      "outcome_classification": "backend_completed_with_changes",
+      "backend_timeout": false,
+      "backend_verification_timeout": false,
+      "changed_files_at_timeout_exit": [],
+      "abracapocus_verification_ran_after_backend_timeout": false,
+      "verification_owner": "abracapocus",
+      "verification_result": "skipped"
+    }
+  ],
+  "review": {
+    "status": "approved",
+    "findings": [],
+    "summary": "i.3:Review complete",
+    "created_at": "2026-10-08T17:12:30.525701"
+  },
+  "verification": {
+    "status": "skipped",
+    "checks": [],
+    "created_at": "2026-10-08T17:12:30.525710",
+    "notes": "I:skipped",
+    "profile": "focused"
+  },
+  "metadata": {
+    "run_id": "396315c7-33ba-46d1-89e0-4892b38bf953",
+    "project_name": "mike_trade",
+    "plan_version": "task-i.3",
+    "task_id": "i.3",
+    "task_title": "Implement deterministic priority and tie breaking in signal event router",
+    "task_status": "completed",
+    "selected_backend": "claude_code_cli",
+    "verification_profile": "focused",
+    "backend_reason": "phase_based",
+    "frame_failures": [],
+    "agents_md": {
+      "loaded": true,
+      "path": "/home/mike/dev/mike/abracapocus/python/abracapocus_2/AGENTS.md",
+      "rule_count": 77,
+      "sha256_12": "3f9b549ba1ce"
+    },
+    "phase_results": [
+      {
+        "phase_name": "I",
+        "status": "passed",
+        "verification": "skipped",
+        "task_results": [
+          {
+            "task_id": "i.3",
+            "status": "passed",
+            "acceptance_status": "accepted",
+            "backend": "claude_code_cli",
+            "backend_outcome_classification": "backend_completed_with_changes",
+            "changed_files": [
+              {
+                "path": "mike_trade/signals/router.py",
+                "status": "untracked",
+                "code": "??"
+              },
+              {
+                "path": "tests/unit/test_router_ordering.py",
+                "status": "untracked",
+                "code": "??"
+              }
+            ],
+            "backend_timeout": false,
+            "backend_elapsed_seconds": 216.12834787368774,
+            "backend_timeout_seconds": null,
+            "changed_files_at_timeout_exit": [],
+            "abracapocus_verification_ran_after_backend_timeout": false,
+            "verification_owner": "abracapocus",
+            "verification_result": "skipped",
+            "verification_status": "skipped",
+            "verification_checks": [],
+            "frame_failure": false,
+            "retry_attempts": []
+          }
+        ]
+      }
+    ]
+  }
+}
