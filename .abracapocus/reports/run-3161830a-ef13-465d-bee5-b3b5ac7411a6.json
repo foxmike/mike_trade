@@ -1,0 +1,158 @@
+{
+  "plan_summary": "Task run: Implement durable idempotent control command inbox and control state",
+  "backend_executions": [
+    {
+      "backend": "claude_code_cli",
+      "command": [
+        "claude",
+        "-p",
+        "Task: Implement durable idempotent control command inbox and control state\nPhase: D\nDescription: Implement the durable, idempotent operator ControlCommand inbox and the derived control state. The CLI writes commands; the engine consumes them.\n\nBuild on phase c persistence without modifying it:\n- transaction.py: WriterSession, unit_of_work, ScopedWriter.\n- journal.py: append-only domain_events with UNIQUE (account_scope_id, idempotency_key).\n- repositories.py: OperatorCommandRepository.record_command (append-only operator_commands), EntryControlRepository.set_paused / set_kill_switch / load_eligibility_state.\n- d.3's mike_trade/config/mutations.py for config changes.\n\nIf a needed repository operation is missing, append journal events through the ScopedWriter inside the same unit_of_work. Never add migrations or edit persistence files.\n\nmike_trade/controls/commands.py\n- **ControlCommandType** (StrEnum), with a category on each member:\n  - STATE: PAUSE, RESUME, DISABLE_ENTRIES, ENABLE_ENTRIES.\n  - CONFIG: APPLY_CONFIG_MUTATION.\n  - EXECUTABLE: CLOSE_POSITION, CLOSE_ALL, FLATTEN, CANCEL_ORDER, ADOPT_POSITION, RECONCILE_NOW, RESET_ENTRY_LOCKOUT, CLEAR_COOLDOWN. Later phases implement these handlers; this phase only defines and gates them.\n- **loosens_risk property**: True for RESUME, ENABLE_ENTRIES, APPLY_CONFIG_MUTATION, and every EXECUTABLE type. False for PAUSE and DISABLE_ENTRIES.\n- **ControlCommand** (frozen dataclass)\n  - command_id: uuid4 str.\n  - idempotency_key: non-empty, <= 128 chars.\n  - account_scope_id.\n  - environment: LIVE, PAPER, or SHADOW.\n  - command_type.\n  - payload: JSON-serializable mapping. Decimals become strings.\n  - actor.\n  - reason.\n  - live_confirmed: bool.\n  - created_at: tz-aware UTC.\n  - expires_at: tz-aware UTC or None.\n  - payload_sha256: sha256 of canonical JSON.\n- **CommandStatus**: PENDING, APPLIED, REJECTED, EXPIRED.\n- **CommandOutcome**: command_id, status, detail, decided_at.\n- **Exceptions**: ControlCommandError (base), IdempotencyConflictError, LiveConfirmationRequiredError, EngineOfflineError, CommandExpiredError, UnknownCommandTypeError.\n\nmike_trade/controls/inbox.py\nControlInbox(writer_session_factory, clock, engine_liveness, executable_max_age_seconds=30). engine_liveness is a Protocol with is_engine_online(account_scope_id) -> bool, backed later by service_health heartbeat age.\n\n**submit(command) -> SubmitResult(command, status, duplicate: bool)**\n- An existing command with the same (account_scope_id, idempotency_key) and the same payload_sha256 and type returns the stored command with duplicate=True. Nothing is written.\n- The same key with a different payload or type raises IdempotencyConflictError.\n- If environment is LIVE, command_type.loosens_risk is true, and live_confirmed is False, raise LiveConfirmationRequiredError. Nothing executable is recorded. Record a CommandRejected audit event only if it can be done without creating a pending command.\n- EXECUTABLE commands while engine_liveness reports offline:\n  - Record them as REJECTED with detail 'engine offline'.\n  - Raise EngineOfflineError.\n  - Never leave them PENDING for later reconnection.\n- EXECUTABLE commands always get expires_at = created_at + executable_max_age_seconds.\n- STATE commands are recorded and also applied immediately to durable control state in the same unit_of_work, even when the engine is offline. The engine reads that state on startup.\n- CONFIG commands are recorded PENDING. If the engine is offline, they are applied directly via apply_config_mutation by the submitting process, then marked APPLIED or REJECTED.\n- Every submit writes, in one unit_of_work:\n  - operator_commands row(s);\n  - a 'ControlCommandReceived' journal event with idempotency_key 'control:<idempotency_key>';\n  - the status events.\n\n**process_pending(handlers: Mapping[ControlCommandType, Callable]) -> list[CommandOutcome]**\n- Engine-side. Iterates PENDING commands in created_at order.\n- An EXECUTABLE command whose expires_at has passed becomes EXPIRED. It is never executed.\n- Otherwise the handler is called, and its result is recorded as 'ControlCommandApplied' or 'ControlCommandRejected'. That journal event uses idempotency_key 'control-outcome:<command_id>', so each command gets exactly one terminal outcome.\n- A missing handler marks the command REJECTED ('unsupported').\n- A handler exception marks it REJECTED with the error class name and keeps processing.\n- Status is derived by folding append-only events. Never UPDATE or DELETE rows.\n\n**Reads**\n- get_status(account_scope_id, command_id).\n- list_recent(account_scope_id, limit<=200).\n- Both work without the engine.\n\n**ControlState**\n- A frozen dataclass: paused, entries_disabled, updated_at, last_command_id.\n- allows_new_entries is False when paused or entries_disabled.\n- allows_strategy_exits is False only when paused.\n- There is NO field or property that can block protective stops, fills, reconciliation, manual closes, or safety exits. The class docstring must state this.\n\n**load_control_state(read_conn_or_session, account_scope_id) -> ControlState**\n- If the state was never set, returns paused=False and entries_disabled=False.\n\n**Scope isolation**\n- Commands, state, and idempotency keys are per account_scope_id.\n- The same idempotency_key in a SHADOW scope and a PAPER scope are independent.\n- A command whose environment differs from its scope's environment is rejected.\n\nTESTS: tests/unit/test_control_idempotency.py\nUse tmp_path databases created with schema.initialize_database, register scopes via AccountScopeRepository, and use a fixed clock and a fake liveness. Cover:\n- A duplicate submit with the same key and payload returns duplicate=True, and row counts are unchanged.\n- The same key with a different payload raises IdempotencyConflictError.\n- PAUSE and DISABLE_ENTRIES apply immediately while offline, and load_control_state reflects them.\n- RESUME on a LIVE scope without live_confirmed raises LiveConfirmationRequiredError; with it, the command succeeds.\n- PAUSE on LIVE needs no confirmation.\n- CLOSE_ALL while offline raises EngineOfflineError, ends REJECTED, and is not returned by process_pending after liveness flips online.\n- An executable command past expires_at becomes EXPIRED and its handler is never called.\n- process_pending applies each command exactly once across two calls.\n- A raising handler yields REJECTED and later commands still process.\n- A missing handler yields REJECTED unsupported.\n- An APPLY_CONFIG_MUTATION refused by apply_config_mutation (unsafe orphaning change) ends REJECTED with the reasons in detail, and the config file is unchanged.\n- The same idempotency key in two scopes stays independent.\n- Attempted UPDATE/DELETE on operator_commands still abort (trigger intact).\n- ControlState exposes no exit-blocking attribute (introspection test).\n\nDecision budget: make at most five design choices not covered here, and record them in the inbox.py module docstring.\n\nBefore editing, inspect:\n- mike_trade/persistence/schema.py and mike_trade/persistence/migrations/0001_initial.sql (read-only), for operator_commands, entry_controls, and domain_events.\n- mike_trade/persistence/journal.py, mike_trade/persistence/transaction.py, and mike_trade/persistence/repositories.py (read-only).\n- mike_trade/config/mutations.py and mike_trade/config/loader.py (read-only).\n- mike_trade/domain/accounts.py and mike_trade/domain/errors.py (read-only).\nContext: AGENTS.md guidance:\n# AGENTS.md\n## Purpose\nThis repository is operated by an autonomous multi-agent system (abracapocus_2).\nAll agents must follow these rules when modifying the codebase.\n---\n## Core Principles\n- Minimal blast radius: only modify what is required for the task\n- Deterministic verification: all changes must be verifiable via code (tests, compile, scripts)\n- No architecture drift: do not introduce new frameworks or major design changes unless explicitly required\n- No unrelated refactors\n- All changes must be reproducible from a clean clone\n---\n## Project Structure\n- docs/ → design, plans, architecture constraints\n- plans/ → master plans\n- phases/ → phase definitions\n- tasks/ → executable task documents\n- backends/ → CLI backend adapters\n- agents/ → specialist agents\n- runtime/ → orchestration, routing, state\n...(truncated)\n\n## Task Contract Constraints\n\n{\n  \"allowed_symbols\": [\n    \"ControlCommandType\",\n    \"CommandCategory\",\n    \"ControlCommand\",\n    \"CommandStatus\",\n    \"CommandOutcome\",\n    \"SubmitResult\",\n    \"ControlCommandError\",\n    \"IdempotencyConflictError\",\n    \"LiveConfirmationRequiredError\",\n    \"EngineOfflineError\",\n    \"CommandExpiredError\",\n    \"UnknownCommandTypeError\",\n    \"EngineLiveness\",\n    \"ControlInbox\",\n    \"ControlState\",\n    \"load_control_state\"\n  ],\n  \"allowed_write_paths\": [\n    \"mike_trade/controls/commands.py\",\n    \"mike_trade/controls/inbox.py\",\n    \"tests/unit/test_control_idempotency.py\"\n  ],\n  \"forbidden_changes\": [\n    \"modify files outside allowed_write_paths\",\n    \"change PLAN_SKELETON.json or other planning artifacts\",\n    \"edit persistence modules, add migrations, or add mike_trade/controls/__init__.py\",\n    \"update or delete rows in append-only tables\",\n    \"queue an executable trade command for later execution when the engine is offline\",\n    \"provide any control that blocks protective stops, fills, reconciliation, manual closes, or safety exits\",\n    \"access broker credentials or create broker orders\",\n    \"run broad test suites or backtests\"\n  ]\n}\n\nAGENTS.md guidance:\n# AGENTS.md\n\n## Purpose\n\nThis repository is operated by an autonomous multi-agent system (abracapocus_2).\nAll agents must follow these rules when modifying the codebase.\n\n---\n\n## Core Principles\n\n- Minimal blast radius: only modify what is required for the task\n- Deterministic verification: all changes must be verifiable via code (tests, compile, scripts)\n- No architecture drift: do not introduce new frameworks or major design changes unless explicitly required\n- No unrelated refactors\n- All changes must be reproducible from a clean clone\n\n---\n\n## Project Structure\n\n- docs/ → design, plans, architecture constraints\n- plans/ → master plans\n- phases/ → phase definitions\n- tasks/ → executable task documents\n- backends/ → CLI backend adapters\n- agents/ → specialist agents\n- runtime/ → orchestration, routing, state\n- reports/ → execution reports (DO NOT MODIFY MANUALLY)\n- state/runtime_state.json → runtime state (DO NOT COMMIT)\n\n---\n\n## Task Execution Rules\n\n- Always operate from a task document when available\n- Respect:\n  - selected_backend\n  - verification_profile\n  - acceptance_criteria\n- If a task conflicts with architecture constraints or phase scope:\n  - STOP and report conflict\n\n---\n\n## Backend Rules\n\n- Backends must:\n  - execute commands deterministically\n  - capture stdout, stderr, exit_code\n  - not silently fail\n- Do not invent backend interfaces; use existing adapters\n- Codex CLI, Aider, Gemini, Claude Code should be invoked through backends only\n\n---\n\n## Verification Rules\n\n- Verification must be deterministic\n- Preferred checks:\n  - pytest\n  - python -m py_compile\n- Do not rely on model self-evaluation\n\n---\n\n## Execution Control Flow (PERMANENT ARCHITECTURAL RULE)\n\n**HEURISTIC INFERENCE MUST NEVER PARTICIPATE IN ABRACAPOCUS EXECUTION CONTROL FLOW.**\n\nAbracapocus must not determine execution success, failure, acceptance,\nrejection, blocking, retry eligibility, phase progression, or completion from\nheuristic inference. A heuristic is any conclusion that is *inferred* rather\nthan *directly established by an explicit executable contract or a concrete\nruntime fact*.\n\nRuntime status is derived ONLY from concrete, mechanically observable facts:\n\n1. The backend process exit code. A backend that exits `0` (with no hard\n   write-policy violation) is a successful execution.\n2. Objectively observed hard write-policy violations (changed paths outside the\n   declared allowed write paths).\n3. Explicit operator-authored commands (task/phase verification the plan\n   explicitly contains). Their raw results are reported, kept DISTINCT from\n   backend execution status.\n4. Objective orchestrator failures with direct evidence (backend could not\n   launch, required document could not be parsed, subprocess infrastructure\n   failed).\n\n**Verification results are observational and must not rewrite backend execution\nstatus.** A verifier returning non-zero must NEVER, by itself, turn a\nsuccessful backend execution into unverified, stop a phase, or trigger an\nautomatic rerun. Verification is the result of a command, not authority to\nrewrite history.\n\n**Execution control:** Task-local problems (non-zero exit, timeout,\nwrite-policy violation, frame failure, backend launch failure) produce\nacceptance status ``\"unverified\"`` with truthful evidence preserved. They\nMUST NOT stop sibling tasks, later phases, or the plan. Only operator\ncancellation (SIGINT/SIGTERM/dashboard cancel) may terminate a run\n(acceptance status ``\"interrupted\"``). Dependencies are ordering constraints,\nnot acceptance gates — any terminal attempt outcome satisfies a dependency\nedge. The status ``\"failed\"`` is banned from acceptance output.\n\nDo NOT reintroduce -- under any name, feature flag, \"advisory\" wrapper, or\ncompatibility mode -- context completeness/sufficiency scoring, change or\narchitecture assessment used as a gate, intent/scope matching, reconciliation\ngates, no-progress judgments, confidence/risk scores, model/LLM/reviewer\njudgments over status, shadow/adaptive/secondary-verification gates, or\nheuristic retry/failure-classification control flow. Failure classification may\nonly *summarize* an already-established concrete failure; it must never create\none. Retries are permitted only for explicitly defined mechanical backend\nfailures. Future agents must not add these systems back.\n\n---\n\n## Git Rules\n\n- Do not commit:\n  - runtime_state.json\n  - reports/\n  - logs/\n  - virtual environments\n- Do not modify .gitignore unless required by task\n- Do not create excessive commits; prefer grouped logical commits\n\n---\n\n## Allowed Changes\n\n- Implement task requirements\n- Fix failing verification\n- Update relevant tests\n- Improve documentation tied to the task\n\n---\n\n## Forbidden Changes\n\n- Changing architecture without explicit instruction\n- Adding dependencies without justification\n- Modifying unrelated files\n- Deleting important files\n- Bypassing verification\n\n---\n\n## Planning Rules\n\n- Plans are multi-phase\n- Completed sections are immutable\n- Remaining sections may be updated\n- Tasks must align with:\n  - project brief\n  - architecture constraints\n  - active phase\n\n---\n\n## Reporting\n\n- All executions must produce structured reports\n- Reports must include:\n  - changed files\n  - verification results\n  - assessment\n\n---\n\n## Behavior\n\n- Do not ask unnecessary questions\n- Do not stall execution\n- Do not perform broad scans unless required\n- Prefer direct action over analysis\n\n---\n\n## Priority Order\n\nThis ordering guides *implementation decisions* only. It does NOT make\nverification an acceptance authority: verification results are observational\n(see \"Execution Control Flow\"), and never override a concrete backend\nexecution result.\n\n1. Architecture constraints\n2. Task definition\n3. Verification results (observational signal, not acceptance authority)\n4. Plan guidance\n\nIf conflicts occur, follow this order.\n",
+        "--dangerously-skip-permissions",
+        "--output-format",
+        "text",
+        "--model",
+        "claude-sonnet-5-5"
+      ],
+      "stdout": "The control command inbox and derived control state are in place. All 54 tests in `tests/unit/test_control_idempotency.py` pass, and `ruff` is clean on the new files. I only ran that file, not the wider suite. `mypy` printed nothing for `mike_trade/controls`, but I didn't confirm it ran, so I'm not claiming it passed. Nothing under `mike_trade/persistence` or `mike_trade/config` was touched, and I didn't add `controls/__init__.py`.\n\n## Where it deviates from what you wrote\n- **Direct `operator_commands` insert:** I couldn't use `OperatorCommandRepository.record_command`. It opens its own unit of work, which `WriterSession` forbids nesting. It also takes the old `ControlCommandKind` enum, which has no `DISABLE_ENTRIES` or `APPLY_CONFIG_MUTATION`. So the inbox does a plain append-only INSERT inside its own unit of work. If you'd rather not allow that, it needs a phase c repository change.\n- **STATE commands:** these use `EntryControlRepository.set_paused` and `set_kill_switch` through a small `ScopedWriter` subclass whose `unit_of_work()` joins the open transaction. PAUSE and RESUME set `entry_controls.paused`. DISABLE_ENTRIES and ENABLE_ENTRIES set `kill_switch_enabled`. The engine's eligibility read already honours both.\n- **Extra optional argument:** `ControlInbox` takes `config_applier=` beyond the signature you gave. It is `apply_config_mutation` bound to its path, validator, exposure, audit sink and clock. `process_pending` also takes an optional `account_scope_id=` filter.\n- **Return types I chose:** `get_status` returns a `CommandOutcome`, or `None` for an unknown ID. `list_recent` returns `(command, outcome)` pairs, newest first.\n- **Test setup:** `SHADOW` and `PAPER` scopes need separate databases, because `db_identity` pins one environment per file. The cross-environment test uses two databases. A second test covers two scopes in one database.\n\n## The five design choices (also in the `inbox.py` docstring)\n1. **Storage and fold:** a command is an `operator_commands` row plus journal events (Received, then one terminal event). Status is derived by folding those events. Terminal payloads carry no timestamps, so repeated records are journal duplicates.\n2. **Retries:** a resubmitted key returns the stored status with `duplicate=True`, even if that status is REJECTED or EXPIRED. The LIVE confirmation check runs before the duplicate lookup. A refusal is audited as `CommandRejected` in a separate `control_audit` stream, so it can never become PENDING.\n3. **Executable expiry:** the effective `expires_at` is the earlier of the caller's value and `created_at + max_age`. An executable already expired at submit is recorded EXPIRED and raises `CommandExpiredError`.\n4. **CONFIG commands:** offline, the PENDING intent commits first, the applier runs, then the outcome commits in a second unit of work. A file write can't roll back with the database. That departs from your \"one unit_of_work per submit\" line for this path only. With no applier, an offline config command stays PENDING for the engine. The engine also falls back to the applier if it has no handler for it.\n5. **Handlers:** they run outside any session or unit of work. A crash between a handler and its outcome write leaves the command PENDING, so handlers should be idempotent on `command_id`. Executables stop being eligible once they expire.\n\n## Other notes\n- The repo's venv is Python 3.11, although `pyproject.toml` says `>=3.12`. The code only uses 3.11 features.\n- `load_control_state` uses SQLite's `json_extract` to find `last_command_id`. It worked in this environment.\n",
+      "stderr": "",
+      "exit_code": 0,
+      "duration_seconds": 459.6934733390808,
+      "model": "claude-sonnet-5-5",
+      "model_tags": [],
+      "working_directory": "/home/mike/dev/mike/stocks/python/mike_trade",
+      "changed_files": [
+        {
+          "path": "mike_trade/controls/commands.py",
+          "status": "untracked",
+          "code": "??"
+        },
+        {
+          "path": "mike_trade/controls/inbox.py",
+          "status": "untracked",
+          "code": "??"
+        },
+        {
+          "path": "tests/unit/test_control_idempotency.py",
+          "status": "untracked",
+          "code": "??"
+        }
+      ],
+      "diff_summary": "git diff reported no changes",
+      "model_attempts": [
+        {
+          "backend": "claude_code_cli",
+          "model": "claude-sonnet-5-5",
+          "exit_code": 0,
+          "stdout": "The control command inbox and derived control state are in place. All 54 tests in `tests/unit/test_control_idempotency.py` pass, and `ruff` is clean on the new files. I only ran that file, not the wider suite. `mypy` printed nothing for `mike_trade/controls`, but I didn't confirm it ran, so I'm not claiming it passed. Nothing under `mike_trade/persistence` or `mike_trade/config` was touched, and I didn't add `controls/__init__.py`.\n\n## Where it deviates from what you wrote\n- **Direct `operator_commands` insert:** I couldn't use `OperatorCommandRepository.record_command`. It opens its own unit of work, which `WriterSession` forbids nesting. It also takes the old `ControlCommandKind` enum, which has no `DISABLE_ENTRIES` or `APPLY_CONFIG_MUTATION`. So the inbox does a plain append-only INSERT inside its own unit of work. If you'd rather not allow that, it needs a phase c repository change.\n- **STATE commands:** these use `EntryControlRepository.set_paused` and `set_kill_switch` through a small `ScopedWriter` subclass whose `unit_of_work()` joins the open transaction. PAUSE and RESUME set `entry_controls.paused`. DISABLE_ENTRIES and ENABLE_ENTRIES set `kill_switch_enabled`. The engine's eligibility read already honours both.\n- **Extra optional argument:** `ControlInbox` takes `config_applier=` beyond the signature you gave. It is `apply_config_mutation` bound to its path, validator, exposure, audit sink and clock. `process_pending` also takes an optional `account_scope_id=` filter.\n- **Return types I chose:** `get_status` returns a `CommandOutcome`, or `None` for an unknown ID. `list_recent` returns `(command, outcome)` pairs, newest first.\n- **Test setup:** `SHADOW` and `PAPER` scopes need separate databases, because `db_identity` pins one environment per file. The cross-environment test uses two databases. A second test covers two scopes in one database.\n\n## The five design choices (also in the `inbox.py` docstring)\n1. **Storage and fold:** a command is an `operator_commands` row plus journal events (Received, then one terminal event). Status is derived by folding those events. Terminal payloads carry no timestamps, so repeated records are journal duplicates.\n2. **Retries:** a resubmitted key returns the stored status with `duplicate=True`, even if that status is REJECTED or EXPIRED. The LIVE confirmation check runs before the duplicate lookup. A refusal is audited as `CommandRejected` in a separate `control_audit` stream, so it can never become PENDING.\n3. **Executable expiry:** the effective `expires_at` is the earlier of the caller's value and `created_at + max_age`. An executable already expired at submit is recorded EXPIRED and raises `CommandExpiredError`.\n4. **CONFIG commands:** offline, the PENDING intent commits first, the applier runs, then the outcome commits in a second unit of work. A file write can't roll back with the database. That departs from your \"one unit_of_work per submit\" line for this path only. With no applier, an offline config command stays PENDING for the engine. The engine also falls back to the applier if it has no handler for it.\n5. **Handlers:** they run outside any session or unit of work. A crash between a handler and its outcome write leaves the command PENDING, so handlers should be idempotent on `command_id`. Executables stop being eligible once they expire.\n\n## Other notes\n- The repo's venv is Python 3.11, although `pyproject.toml` says `>=3.12`. The code only uses 3.11 features.\n- `load_control_state` uses SQLite's `json_extract` to find `last_command_id`. It worked in this environment.\n",
+          "stderr": "",
+          "duration_seconds": 459.6934733390808,
+          "changed_files": [
+            {
+              "path": "mike_trade/controls/commands.py",
+              "status": "untracked",
+              "code": "??"
+            },
+            {
+              "path": "mike_trade/controls/inbox.py",
+              "status": "untracked",
+              "code": "??"
+            },
+            {
+              "path": "tests/unit/test_control_idempotency.py",
+              "status": "untracked",
+              "code": "??"
+            }
+          ],
+          "diff_summary": "git diff reported no changes",
+          "outcome_classification": "backend_completed_with_changes",
+          "backend_timeout": false,
+          "backend_verification_timeout": false,
+          "timeout_seconds": null
+        }
+      ],
+      "write_policy_violations": [],
+      "outcome_classification": "backend_completed_with_changes",
+      "backend_timeout": false,
+      "backend_verification_timeout": false,
+      "changed_files_at_timeout_exit": [],
+      "abracapocus_verification_ran_after_backend_timeout": false,
+      "verification_owner": "abracapocus",
+      "verification_result": "skipped"
+    }
+  ],
+  "review": {
+    "status": "approved",
+    "findings": [],
+    "summary": "d.4:Review complete",
+    "created_at": "2026-10-08T14:56:35.923087"
+  },
+  "verification": {
+    "status": "skipped",
+    "checks": [],
+    "created_at": "2026-10-08T14:56:35.923097",
+    "notes": "D:skipped",
+    "profile": "focused"
+  },
+  "metadata": {
+    "run_id": "3161830a-ef13-465d-bee5-b3b5ac7411a6",
+    "project_name": "mike_trade",
+    "plan_version": "task-d.4",
+    "task_id": "d.4",
+    "task_title": "Implement durable idempotent control command inbox and control state",
+    "task_status": "completed",
+    "selected_backend": "claude_code_cli",
+    "verification_profile": "focused",
+    "backend_reason": "phase_based",
+    "frame_failures": [],
+    "agents_md": {
+      "loaded": true,
+      "path": "/home/mike/dev/mike/abracapocus/python/abracapocus_2/AGENTS.md",
+      "rule_count": 77,
+      "sha256_12": "3f9b549ba1ce"
+    },
+    "phase_results": [
+      {
+        "phase_name": "D",
+        "status": "passed",
+        "verification": "skipped",
+        "task_results": [
+          {
+            "task_id": "d.4",
+            "status": "passed",
+            "acceptance_status": "accepted",
+            "backend": "claude_code_cli",
+            "backend_outcome_classification": "backend_completed_with_changes",
+            "changed_files": [
+              {
+                "path": "mike_trade/controls/commands.py",
+                "status": "untracked",
+                "code": "??"
+              },
+              {
+                "path": "mike_trade/controls/inbox.py",
+                "status": "untracked",
+                "code": "??"
+              },
+              {
+                "path": "tests/unit/test_control_idempotency.py",
+                "status": "untracked",
+                "code": "??"
+              }
+            ],
+            "backend_timeout": false,
+            "backend_elapsed_seconds": 459.6934733390808,
+            "backend_timeout_seconds": null,
+            "changed_files_at_timeout_exit": [],
+            "abracapocus_verification_ran_after_backend_timeout": false,
+            "verification_owner": "abracapocus",
+            "verification_result": "skipped",
+            "verification_status": "skipped",
+            "verification_checks": [],
+            "frame_failure": false,
+            "retry_attempts": []
+          }
+        ]
+      }
+    ]
+  }
+}
