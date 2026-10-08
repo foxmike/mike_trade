@@ -1,0 +1,142 @@
+{
+  "plan_summary": "Task run: Implement deterministic domain serialization and roundtrip fixtures",
+  "backend_executions": [
+    {
+      "backend": "pi_cli",
+      "command": [
+        "pi",
+        "-p",
+        "--provider",
+        "openrouter",
+        "--model",
+        "meta/muse-spark-1.3-contributor",
+        "Task: Implement deterministic domain serialization and roundtrip fixtures\nDescription: Implement deterministic, lossless serialization for every domain contract produced by b.1–b.4. Use only the standard library (json, dataclasses, enum, decimal, datetime, types). No pydantic, and no Alpaca types.\n\nmike_trade/domain/serde.py:\n- A type registry mapping a stable type tag (e.g. 'Candle', 'Signal', 'PositionCycle') to each frozen dataclass from mike_trade.domain.instruments, market, signals, strategy_types, trading, protection, and accounts. Exclude Protocols. Add `register(cls, tag=None)` so later phases can add types.\n- `to_primitive(obj)` produces JSON-safe primitives:\n  - Decimal becomes a canonical string using str(Decimal), with no float conversion and with trailing digits and exponent preserved.\n  - datetime becomes an ISO-8601 UTC string with an explicit '+00:00'; naive datetimes raise.\n  - date and time become ISO strings.\n  - timedelta becomes total microseconds as an int or an ISO duration string, consistently.\n  - Enums become their member name.\n  - tuple and frozenset become lists; frozenset is sorted deterministically.\n  - Read-only mappings become dicts with sorted keys.\n  - Nested dataclasses become dicts carrying a '__type__' tag.\n- `from_primitive(data, expected_type=None)` reconstructs exact instances by running normal constructors, so domain invariants are re-validated on decode. It rejects unknown tags, unknown or missing fields, float values for Decimal fields, and naive datetime strings.\n- `dumps(obj) -> str` is canonical JSON: sort_keys=True, separators=(',', ':'), ensure_ascii=True. `loads(text)` is its inverse. A `content_hash(obj) -> str` returns the SHA-256 hex of dumps(obj), for idempotency and audit keys.\n\ntests/unit/test_domain_serde.py should build roundtrip fixtures (factory functions inside the test module) for at least: Instrument, MarketSession, TradingSessionPolicy, MarketEvent (IEX provenance), Candle, MarketContext, StrategyDefinition, StrategyInstance, Evaluation (SIGNAL and NO_SIGNAL), Signal, SignalDecision, OrderIntent, BrokerOrder, Fill, PositionCycle (with partial entry fills and a full exit), Position, BudgetPolicy, EntryEligibilityPolicy, EntryEligibilityState, ProtectionPolicy, TrailingStopState, AccountScope, AccountSnapshot, BrokerCapabilities, MarketDataCapabilities, HealthSnapshot, and ControlCommand. Tests must cover:\n- loads(dumps(x)) == x for every fixture\n- dumps output identical across two calls and independent of mapping insertion order\n- Decimal('1.10') and Decimal('1.1') preserved distinctly as written\n- a non-UTC aware datetime normalized to UTC on encode\n- negative cases: unknown __type__, an extra field, a float in a Decimal field, a naive datetime string, and a decoded payload that violates a domain invariant (e.g. a negative quantity or a dormant short action), each of which raises\n\nAdapt to the exact constructor signatures implemented in b.1–b.4. Do not modify those modules. If a contract cannot be roundtripped without changing it, record that in a skipped test with a precise reason and do not edit the source module.\n\nDecision budget: make at most three design choices not covered here, and record them in the serde.py module docstring.\n\nBefore editing, inspect:\n- mike_trade/domain/instruments.py and mike_trade/domain/market.py (from b.1)\n- mike_trade/domain/signals.py and mike_trade/domain/strategy_types.py (from b.2)\n- mike_trade/domain/trading.py and mike_trade/domain/protection.py (from b.3)\n- mike_trade/domain/accounts.py (from b.4)\n- tests/unit/test_market_values.py, tests/contracts/test_signal_contracts.py, and tests/contracts/test_trading_contracts.py (read-only) for existing fixture conventions\nPhase: B\nAcceptance criteria:\n  - mike_trade/domain/serde.py defines register, to_primitive, from_primitive, dumps, loads, and content_hash using only the standard library\n  - Every frozen dataclass contract in instruments, market, signals, strategy_types, trading, protection, and accounts is registered with a stable type tag\n  - For each fixture in tests/unit/test_domain_serde.py, loads(dumps(x)) == x and type(loads(dumps(x))) is type(x)\n  - dumps produces byte-identical output across repeated calls and for mappings built in different insertion orders, and content_hash is stable\n  - Decimal values are encoded as strings and never pass through float; Decimal('1.10') roundtrips with its exponent preserved\n  - Datetimes are encoded as ISO-8601 with +00:00; encoding a naive datetime raises\n  - Decoding an unknown __type__, an unexpected field, a float in a Decimal field, a naive datetime string, or an invariant-violating payload raises\n  - serde.py does not import alpaca, pydantic, mike_trade.brokers adapters, or mike_trade.strategies\n  - No file other than mike_trade/domain/serde.py and tests/unit/test_domain_serde.py is modified\n  - tests/unit/test_domain_serde.py passes with targeted pytest\nContext: AGENTS.md guidance:\n# AGENTS.md\n## Purpose\nThis repository is operated by an autonomous multi-agent system (abracapocus_2).\nAll agents must follow these rules when modifying the codebase.\n---\n## Core Principles\n- Minimal blast radius: only modify what is required for the task\n- Deterministic verification: all changes must be verifiable via code (tests, compile, scripts)\n- No architecture drift: do not introduce new frameworks or major design changes unless explicitly required\n- No unrelated refactors\n- All changes must be reproducible from a clean clone\n---\n## Project Structure\n- docs/ → design, plans, architecture constraints\n- plans/ → master plans\n- phases/ → phase definitions\n- tasks/ → executable task documents\n- backends/ → CLI backend adapters\n- agents/ → specialist agents\n- runtime/ → orchestration, routing, state\n...(truncated)\n\n## Task Contract Constraints\n\n{\n  \"allowed_symbols\": [\n    \"register\",\n    \"to_primitive\",\n    \"from_primitive\",\n    \"dumps\",\n    \"loads\",\n    \"content_hash\"\n  ],\n  \"allowed_write_paths\": [\n    \"mike_trade/domain/serde.py\",\n    \"tests/unit/test_domain_serde.py\"\n  ],\n  \"forbidden_changes\": [\n    \"modify files outside allowed_write_paths\",\n    \"change PLAN_SKELETON.json or other planning artifacts\",\n    \"edit domain contract modules created by b.1-b.4\",\n    \"convert Decimal values through float\",\n    \"add third-party serialization dependencies or edit pyproject.toml\",\n    \"import Alpaca SDK types\",\n    \"run broad test suites, backtests, or create broker orders\"\n  ]\n}\nAGENTS.md:\n# AGENTS.md\n\n## Purpose\n\nThis repository is operated by an autonomous multi-agent system (abracapocus_2).\nAll agents must follow these rules when modifying the codebase.\n\n---\n\n## Core Principles\n\n- Minimal blast radius: only modify what is required for the task\n- Deterministic verification: all changes must be verifiable via code (tests, compile, scripts)\n- No architecture drift: do not introduce new frameworks or major design changes unless explicitly required\n- No unrelated refactors\n- All changes must be reproducible from a clean clone\n\n---\n\n## Project Structure\n\n- docs/ → design, plans, architecture constraints\n- plans/ → master plans\n- phases/ → phase definitions\n- tasks/ → executable task documents\n- backends/ → CLI backend adapters\n- agents/ → specialist agents\n- runtime/ → orchestration, routing, state\n- reports/ → execution reports (DO NOT MODIFY MANUALLY)\n- state/runtime_state.json → runtime state (DO NOT COMMIT)\n\n---\n\n## Task Execution Rules\n\n- Always operate from a task document when available\n- Respect:\n  - selected_backend\n  - verification_profile\n  - acceptance_criteria\n- If a task conflicts with architecture constraints or phase scope:\n  - STOP and report conflict\n\n---\n\n## Backend Rules\n\n- Backends must:\n  - execute commands deterministically\n  - capture stdout, stderr, exit_code\n  - not silently fail\n- Do not invent backend interfaces; use existing adapters\n- Codex CLI, Aider, Gemini, Claude Code should be invoked through backends only\n\n---\n\n## Verification Rules\n\n- Verification must be deterministic\n- Preferred checks:\n  - pytest\n  - python -m py_compile\n- Do not rely on model self-evaluation\n\n---\n\n## Execution Control Flow (PERMANENT ARCHITECTURAL RULE)\n\n**HEURISTIC INFERENCE MUST NEVER PARTICIPATE IN ABRACAPOCUS EXECUTION CONTROL FLOW.**\n\nAbracapocus must not determine execution success, failure, acceptance,\nrejection, blocking, retry eligibility, phase progression, or completion from\nheuristic inference. A heuristic is any conclusion that is *inferred* rather\nthan *directly established by an explicit executable contract or a concrete\nruntime fact*.\n\nRuntime status is derived ONLY from concrete, mechanically observable facts:\n\n1. The backend process exit code. A backend that exits `0` (with no hard\n   write-policy violation) is a successful execution.\n2. Objectively observed hard write-policy violations (changed paths outside the\n   declared allowed write paths).\n3. Explicit operator-authored commands (task/phase verification the plan\n   explicitly contains). Their raw results are reported, kept DISTINCT from\n   backend execution status.\n4. Objective orchestrator failures with direct evidence (backend could not\n   launch, required document could not be parsed, subprocess infrastructure\n   failed).\n\n**Verification results are observational and must not rewrite backend execution\nstatus.** A verifier returning non-zero must NEVER, by itself, turn a\nsuccessful backend execution into unverified, stop a phase, or trigger an\nautomatic rerun. Verification is the result of a command, not authority to\nrewrite history.\n\n**Execution control:** Task-local problems (non-zero exit, timeout,\nwrite-policy violation, frame failure, backend launch failure) produce\nacceptance status ``\"unverified\"`` with truthful evidence preserved. They\nMUST NOT stop sibling tasks, later phases, or the plan. Only operator\ncancellation (SIGINT/SIGTERM/dashboard cancel) may terminate a run\n(acceptance status ``\"interrupted\"``). Dependencies are ordering constraints,\nnot acceptance gates — any terminal attempt outcome satisfies a dependency\nedge. The status ``\"failed\"`` is banned from acceptance output.\n\nDo NOT reintroduce -- under any name, feature flag, \"advisory\" wrapper, or\ncompatibility mode -- context completeness/sufficiency scoring, change or\narchitecture assessment used as a gate, intent/scope matching, reconciliation\ngates, no-progress judgments, confidence/risk scores, model/LLM/reviewer\njudgments over status, shadow/adaptive/secondary-verification gates, or\nheuristic retry/failure-classification control flow. Failure classification may\nonly *summarize* an already-established concrete failure; it must never create\none. Retries are permitted only for explicitly defined mechanical backend\nfailures. Future agents must not add these systems back.\n\n---\n\n## Git Rules\n\n- Do not commit:\n  - runtime_state.json\n  - reports/\n  - logs/\n  - virtual environments\n- Do not modify .gitignore unless required by task\n- Do not create excessive commits; prefer grouped logical commits\n\n---\n\n## Allowed Changes\n\n- Implement task requirements\n- Fix failing verification\n- Update relevant tests\n- Improve documentation tied to the task\n\n---\n\n## Forbidden Changes\n\n- Changing architecture without explicit instruction\n- Adding dependencies without justification\n- Modifying unrelated files\n- Deleting important files\n- Bypassing verification\n\n---\n\n## Planning Rules\n\n- Plans are multi-phase\n- Completed sections are immutable\n- Remaining sections may be updated\n- Tasks must align with:\n  - project brief\n  - architecture constraints\n  - active phase\n\n---\n\n## Reporting\n\n- All executions must produce structured reports\n- Reports must include:\n  - changed files\n  - verification results\n  - assessment\n\n---\n\n## Behavior\n\n- Do not ask unnecessary questions\n- Do not stall execution\n- Do not perform broad scans unless required\n- Prefer direct action over analysis\n\n---\n\n## Priority Order\n\nThis ordering guides *implementation decisions* only. It does NOT make\nverification an acceptance authority: verification results are observational\n(see \"Execution Control Flow\"), and never override a concrete backend\nexecution result.\n\n1. Architecture constraints\n2. Task definition\n3. Verification results (observational signal, not acceptance authority)\n4. Plan guidance\n\nIf conflicts occur, follow this order.\n\nAGENTS metadata:\n{\"loaded\": true, \"path\": \"/home/mike/dev/mike/abracapocus/python/abracapocus_2/AGENTS.md\", \"rule_count\": 77, \"sha256_12\": \"3f9b549ba1ce\"}\n"
+      ],
+      "stdout": "Done. All 44 tests pass with `python -m pytest tests/unit/test_domain_serde.py -q`.\n\n**What was built** (only the two allowed paths touched):\n- `mike_trade/domain/serde.py` — stdlib-only (`json`, `dataclasses`, `enum`, `decimal`, `datetime`, `types`, plus `hashlib`/`typing`/`collections.abc`) deterministic serializer exposing exactly `register`, `to_primitive`, `from_primitive`, `dumps`, `loads`, `content_hash`. All 30 frozen dataclasses across `instruments`, `market`, `signals`, `strategy_types`, `trading`, `protection`, and `accounts` are registered under stable class-name tags (verified: 30 registered, 0 missing; no Protocols exist in those modules).\n- `tests/unit/test_domain_serde.py` — factory functions for all 31 fixtures (including `Money`, `FeedProvenance`, `SignalProvenance`, both `Evaluation` variants, and a `PositionCycle` with two partial entry fills plus a full two-part exit), covering roundtrip equality + type identity, dump determinism/insertion-order independence, `Decimal('1.10')` vs `Decimal('1.1')` exponent preservation, non-UTC→UTC normalization, naive-datetime rejection, and all five negative cases (unknown tag, extra field, float-in-Decimal, naive datetime string, invariant violations via negative quantity and dormant `ENTER_SHORT`).\n\n**Key behaviors:** Decimals encode as `str(Decimal)` (exponent preserved, never via float); datetimes encode as UTC `+00:00` ISO strings with naive rejected on both encode and decode; timedeltas encode as integer total microseconds; enums as member names; mappings with sorted keys and enum keys by name; decode runs normal constructors so invariants re-validate, rejecting unknown/missing fields, floats for Decimal fields, and naive strings. No contract needed modification, so no skipped tests were required.\n",
+      "stderr": "",
+      "exit_code": 0,
+      "duration_seconds": 331.02337074279785,
+      "model": "openrouter/meta/muse-spark-1.3-contributor",
+      "model_tags": [],
+      "working_directory": "/home/mike/dev/mike/stocks/python/mike_trade",
+      "changed_files": [
+        {
+          "path": "mike_trade/domain/serde.py",
+          "status": "untracked",
+          "code": "??"
+        },
+        {
+          "path": "tests/unit/test_domain_serde.py",
+          "status": "untracked",
+          "code": "??"
+        }
+      ],
+      "diff_summary": "git diff reported no changes",
+      "model_attempts": [
+        {
+          "backend": "pi_cli",
+          "model": "openrouter/meta/muse-spark-1.3-contributor",
+          "exit_code": 0,
+          "stdout": "Done. All 44 tests pass with `python -m pytest tests/unit/test_domain_serde.py -q`.\n\n**What was built** (only the two allowed paths touched):\n- `mike_trade/domain/serde.py` — stdlib-only (`json`, `dataclasses`, `enum`, `decimal`, `datetime`, `types`, plus `hashlib`/`typing`/`collections.abc`) deterministic serializer exposing exactly `register`, `to_primitive`, `from_primitive`, `dumps`, `loads`, `content_hash`. All 30 frozen dataclasses across `instruments`, `market`, `signals`, `strategy_types`, `trading`, `protection`, and `accounts` are registered under stable class-name tags (verified: 30 registered, 0 missing; no Protocols exist in those modules).\n- `tests/unit/test_domain_serde.py` — factory functions for all 31 fixtures (including `Money`, `FeedProvenance`, `SignalProvenance`, both `Evaluation` variants, and a `PositionCycle` with two partial entry fills plus a full two-part exit), covering roundtrip equality + type identity, dump determinism/insertion-order independence, `Decimal('1.10')` vs `Decimal('1.1')` exponent preservation, non-UTC→UTC normalization, naive-datetime rejection, and all five negative cases (unknown tag, extra field, float-in-Decimal, naive datetime string, invariant violations via negative quantity and dormant `ENTER_SHORT`).\n\n**Key behaviors:** Decimals encode as `str(Decimal)` (exponent preserved, never via float); datetimes encode as UTC `+00:00` ISO strings with naive rejected on both encode and decode; timedeltas encode as integer total microseconds; enums as member names; mappings with sorted keys and enum keys by name; decode runs normal constructors so invariants re-validate, rejecting unknown/missing fields, floats for Decimal fields, and naive strings. No contract needed modification, so no skipped tests were required.\n",
+          "stderr": "",
+          "duration_seconds": 331.02337074279785,
+          "changed_files": [
+            {
+              "path": "mike_trade/domain/serde.py",
+              "status": "untracked",
+              "code": "??"
+            },
+            {
+              "path": "tests/unit/test_domain_serde.py",
+              "status": "untracked",
+              "code": "??"
+            }
+          ],
+          "diff_summary": "git diff reported no changes",
+          "outcome_classification": "backend_completed_with_changes",
+          "backend_timeout": false,
+          "backend_verification_timeout": false,
+          "timeout_seconds": null
+        }
+      ],
+      "write_policy_violations": [],
+      "outcome_classification": "backend_completed_with_changes",
+      "backend_timeout": false,
+      "backend_verification_timeout": false,
+      "changed_files_at_timeout_exit": [],
+      "abracapocus_verification_ran_after_backend_timeout": false,
+      "verification_owner": "abracapocus",
+      "verification_result": "skipped"
+    }
+  ],
+  "review": {
+    "status": "approved",
+    "findings": [],
+    "summary": "b.5:Review complete",
+    "created_at": "2026-10-08T14:13:31.572138"
+  },
+  "verification": {
+    "status": "skipped",
+    "checks": [],
+    "created_at": "2026-10-08T14:13:31.572147",
+    "notes": "B:skipped",
+    "profile": "focused"
+  },
+  "metadata": {
+    "run_id": "277b6664-2717-4795-a1da-feb06c53a316",
+    "project_name": "mike_trade",
+    "plan_version": "task-b.5",
+    "task_id": "b.5",
+    "task_title": "Implement deterministic domain serialization and roundtrip fixtures",
+    "task_status": "completed",
+    "selected_backend": "pi_cli",
+    "verification_profile": "focused",
+    "backend_reason": "phase_based",
+    "frame_failures": [],
+    "agents_md": {
+      "loaded": true,
+      "path": "/home/mike/dev/mike/abracapocus/python/abracapocus_2/AGENTS.md",
+      "rule_count": 77,
+      "sha256_12": "3f9b549ba1ce"
+    },
+    "phase_results": [
+      {
+        "phase_name": "B",
+        "status": "passed",
+        "verification": "skipped",
+        "task_results": [
+          {
+            "task_id": "b.5",
+            "status": "passed",
+            "acceptance_status": "accepted",
+            "backend": "pi_cli",
+            "backend_outcome_classification": "backend_completed_with_changes",
+            "changed_files": [
+              {
+                "path": "mike_trade/domain/serde.py",
+                "status": "untracked",
+                "code": "??"
+              },
+              {
+                "path": "tests/unit/test_domain_serde.py",
+                "status": "untracked",
+                "code": "??"
+              }
+            ],
+            "backend_timeout": false,
+            "backend_elapsed_seconds": 331.02337074279785,
+            "backend_timeout_seconds": null,
+            "changed_files_at_timeout_exit": [],
+            "abracapocus_verification_ran_after_backend_timeout": false,
+            "verification_owner": "abracapocus",
+            "verification_result": "skipped",
+            "verification_status": "skipped",
+            "verification_checks": [],
+            "frame_failure": false,
+            "retry_attempts": []
+          }
+        ]
+      }
+    ]
+  }
+}

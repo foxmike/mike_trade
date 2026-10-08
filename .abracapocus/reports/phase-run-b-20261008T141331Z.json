@@ -1,0 +1,95 @@
+{
+  "run_at": "2026-10-08T14:13:31.637898",
+  "phase_dir": "/home/mike/dev/mike/stocks/python/mike_trade/.abracapocus/plans/ACTIVE/MIKE_TRADE_COMPLETE_PRODUCT/b",
+  "status": "passed",
+  "counts": {
+    "passed": 5,
+    "failed": 0,
+    "blocked": 0,
+    "skipped": 0,
+    "unverified": 0
+  },
+  "tasks": [
+    {
+      "task_id": "b.1",
+      "task_file": "/home/mike/dev/mike/stocks/python/mike_trade/.abracapocus/plans/ACTIVE/MIKE_TRADE_COMPLETE_PRODUCT/b/task_b.1_define_assets_sessions_money_and_immutable_market_event_value_objects.json",
+      "status": "passed",
+      "acceptance_status": "accepted",
+      "task_verification": {
+        "status": "skipped",
+        "checks": [],
+        "owner": "abracapocus"
+      },
+      "run_id": "4fcc7136-025b-4910-b15b-d5d5441f263c",
+      "write_policy_violations": [],
+      "failure_classification": null,
+      "reviewer_summary": "b.1:Review complete"
+    },
+    {
+      "task_id": "b.2",
+      "task_file": "/home/mike/dev/mike/stocks/python/mike_trade/.abracapocus/plans/ACTIVE/MIKE_TRADE_COMPLETE_PRODUCT/b/task_b.2_define_strategy_specifications_evaluations_signals_and_provenance_contracts.json",
+      "status": "passed",
+      "acceptance_status": "accepted",
+      "task_verification": {
+        "status": "skipped",
+        "checks": [],
+        "owner": "abracapocus"
+      },
+      "run_id": "a9d566c5-eada-4ab5-99ef-ae22b2bdd50a",
+      "write_policy_violations": [],
+      "failure_classification": null,
+      "reviewer_summary": "b.2:Review complete"
+    },
+    {
+      "task_id": "b.3",
+      "task_file": "/home/mike/dev/mike/stocks/python/mike_trade/.abracapocus/plans/ACTIVE/MIKE_TRADE_COMPLETE_PRODUCT/b/task_b.3_define_order_position_fill_budget_and_protective_stop_contracts.json",
+      "status": "passed",
+      "acceptance_status": "accepted",
+      "task_verification": {
+        "status": "skipped",
+        "checks": [],
+        "owner": "abracapocus"
+      },
+      "run_id": "64f6edad-cdfb-4005-8f55-0b55db135979",
+      "write_policy_violations": [],
+      "failure_classification": null,
+      "reviewer_summary": "b.3:Review complete"
+    },
+    {
+      "task_id": "b.4",
+      "task_file": "/home/mike/dev/mike/stocks/python/mike_trade/.abracapocus/plans/ACTIVE/MIKE_TRADE_COMPLETE_PRODUCT/b/task_b.4_define_typed_provider_capability_and_account_snapshot_interfaces.json",
+      "status": "passed",
+      "acceptance_status": "accepted",
+      "task_verification": {
+        "status": "skipped",
+        "checks": [],
+        "owner": "abracapocus"
+      },
+      "run_id": "315f6d49-1156-4c51-aabc-f8320db2633d",
+      "write_policy_violations": [],
+      "failure_classification": null,
+      "reviewer_summary": "b.4:Review complete"
+    },
+    {
+      "task_id": "b.5",
+      "task_file": "/home/mike/dev/mike/stocks/python/mike_trade/.abracapocus/plans/ACTIVE/MIKE_TRADE_COMPLETE_PRODUCT/b/task_b.5_implement_deterministic_domain_serialization_and_roundtrip_fixtures.json",
+      "status": "passed",
+      "acceptance_status": "accepted",
+      "task_verification": {
+        "status": "skipped",
+        "checks": [],
+        "owner": "abracapocus"
+      },
+      "run_id": "277b6664-2717-4795-a1da-feb06c53a316",
+      "write_policy_violations": [],
+      "failure_classification": null,
+      "reviewer_summary": "b.5:Review complete"
+    }
+  ],
+  "phase_verification": {
+    "status": "warning",
+    "checks": [],
+    "notes": "phase verification complete",
+    "run_when": "all_tasks_pass"
+  }
+}
