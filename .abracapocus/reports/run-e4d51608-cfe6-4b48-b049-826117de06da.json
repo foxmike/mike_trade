@@ -1,0 +1,94 @@
+{
+  "plan_summary": "Task run: Implement versioned Python strategy interfaces registry and validated parameters",
+  "backend_executions": [
+    {
+      "backend": "claude_code_cli",
+      "command": [
+        "claude",
+        "-p",
+        "Task: Implement versioned Python strategy interfaces registry and validated parameters\nPhase: J\nDescription: Create the production Python strategy SDK base and an explicit trusted registry.\n\nIn mike_trade/strategies/base.py define:\n- An immutable, versioned StrategySpec dataclass (frozen) with these fields: strategy_id, semantic version (validated MAJOR.MINOR.PATCH), side (BUY or SELL), input requirements including reference symbols, required timeframes, warmup bar count, closed-bar-only and volume requirements, trigger kind and schedule (for example EDGE_ON_CLOSED_BAR), parameter schema, persistent state needs, methodology/source metadata, execution limitations, and the enumerated diagnostic reason codes the strategy may emit.\n- A ParameterSpec/ParameterSchema type that validates name, type (int, Decimal, bool, enum, time-of-day), default, inclusive min/max ranges, and allowed choices. Unknown parameters, missing required parameters, out-of-range values, and wrong types must be rejected with a typed validation error. Money and price parameters must use Decimal and must never use float.\n- Abstract BuyStrategy and SellStrategy base classes that both expose `spec` and a pure `evaluate(context, params, state)` method. The method takes an immutable MarketContext and returns a strategy evaluation result: either a signal carrying a deterministic signal_id, or a no-signal result with reason codes. Reason codes must include at least SIGNAL, NO_SIGNAL, INSUFFICIENT_DATA, STALE_DATA, and NOT_ELIGIBLE. Nothing returned may be a confidence score.\n- A deterministic signal-ID helper. It derives the ID from strategy_id, version, symbol, side, and the triggering completed bar's UTC timestamp, so the same bar always yields the same ID.\n- Strategies must receive no broker, no secrets, no filesystem handle, and no network or session client. The base classes must not import broker, adapter, persistence, or HTTP modules.\n\nIn mike_trade/strategies/registry.py implement an explicit trusted StrategyRegistry:\n- Strategy classes are registered explicitly by import, keyed by (strategy_id, version). Duplicate registration raises an error.\n- Lookup by id (latest version or a pinned version) and listing filtered by side.\n- Parameter validation is delegated to the spec schema.\n- There must be no dynamic code-eval, no entry-point or arbitrary path plugin loading, and no generic rules DSL.\n- The BUY and SELL registries are independent. Registering a BUY strategy must not require any SELL partner.\n\nIn tests/contracts/test_strategy_registry.py write contract tests for:\n- spec immutability and semver validation\n- parameter validation, both positive cases and negative cases (unknown, missing, out-of-range, wrong type, float rejected for Decimal parameters)\n- rejection of duplicate registration\n- lookup by id and version, and side filtering\n- signal-ID determinism\n- a static check that base.py and registry.py do not import broker, network, or filesystem modules\n\nBefore editing, inspect:\n- mike_trade/domain/strategy_types.py\n- mike_trade/domain/signals.py\n- mike_trade/domain/market.py\n- mike_trade/market_data/context.py\n- mike_trade/signals/rearm.py\n- mike_trade/strategies/sell/base.py, if it exists\n- any existing mike_trade/strategies/ package files\n\nReuse existing domain types and do not redefine them. Decision budget: if an existing domain type already covers a concept (signal, side, reason code), import it rather than creating a parallel type.\nContext: AGENTS.md guidance:\n# AGENTS.md\n## Purpose\nThis repository is operated by an autonomous multi-agent system (abracapocus_2).\nAll agents must follow these rules when modifying the codebase.\n---\n## Core Principles\n- Minimal blast radius: only modify what is required for the task\n- Deterministic verification: all changes must be verifiable via code (tests, compile, scripts)\n- No architecture drift: do not introduce new frameworks or major design changes unless explicitly required\n- No unrelated refactors\n- All changes must be reproducible from a clean clone\n---\n## Project Structure\n- docs/ → design, plans, architecture constraints\n- plans/ → master plans\n- phases/ → phase definitions\n- tasks/ → executable task documents\n- backends/ → CLI backend adapters\n- agents/ → specialist agents\n- runtime/ → orchestration, routing, state\n...(truncated)\n\n## Task Contract Constraints\n\n{\n  \"allowed_symbols\": [\n    \"StrategySpec\",\n    \"ParameterSpec\",\n    \"ParameterSchema\",\n    \"ParameterValidationError\",\n    \"BuyStrategy\",\n    \"SellStrategy\",\n    \"StrategyEvaluation\",\n    \"ReasonCode\",\n    \"make_signal_id\",\n    \"StrategyRegistry\"\n  ],\n  \"allowed_write_paths\": [\n    \"mike_trade/strategies/base.py\",\n    \"mike_trade/strategies/registry.py\",\n    \"tests/contracts/test_strategy_registry.py\"\n  ],\n  \"forbidden_changes\": [\n    \"modify files outside allowed_write_paths\",\n    \"change PLAN_SKELETON.json or other planning artifacts\",\n    \"add a generic rules DSL or arbitrary code-eval/dynamic plugin loader\",\n    \"give strategies broker, secrets, filesystem, or network access\",\n    \"add confidence scores or profitability claims\",\n    \"use float for money, price, or quantity values\",\n    \"create live broker orders or run broad test suites/backtests\"\n  ]\n}\n\nAGENTS.md guidance:\n# AGENTS.md\n\n## Purpose\n\nThis repository is operated by an autonomous multi-agent system (abracapocus_2).\nAll agents must follow these rules when modifying the codebase.\n\n---\n\n## Core Principles\n\n- Minimal blast radius: only modify what is required for the task\n- Deterministic verification: all changes must be verifiable via code (tests, compile, scripts)\n- No architecture drift: do not introduce new frameworks or major design changes unless explicitly required\n- No unrelated refactors\n- All changes must be reproducible from a clean clone\n\n---\n\n## Project Structure\n\n- docs/ → design, plans, architecture constraints\n- plans/ → master plans\n- phases/ → phase definitions\n- tasks/ → executable task documents\n- backends/ → CLI backend adapters\n- agents/ → specialist agents\n- runtime/ → orchestration, routing, state\n- reports/ → execution reports (DO NOT MODIFY MANUALLY)\n- state/runtime_state.json → runtime state (DO NOT COMMIT)\n\n---\n\n## Task Execution Rules\n\n- Always operate from a task document when available\n- Respect:\n  - selected_backend\n  - verification_profile\n  - acceptance_criteria\n- If a task conflicts with architecture constraints or phase scope:\n  - STOP and report conflict\n\n---\n\n## Backend Rules\n\n- Backends must:\n  - execute commands deterministically\n  - capture stdout, stderr, exit_code\n  - not silently fail\n- Do not invent backend interfaces; use existing adapters\n- Codex CLI, Aider, Gemini, Claude Code should be invoked through backends only\n\n---\n\n## Verification Rules\n\n- Verification must be deterministic\n- Preferred checks:\n  - pytest\n  - python -m py_compile\n- Do not rely on model self-evaluation\n\n---\n\n## Execution Control Flow (PERMANENT ARCHITECTURAL RULE)\n\n**HEURISTIC INFERENCE MUST NEVER PARTICIPATE IN ABRACAPOCUS EXECUTION CONTROL FLOW.**\n\nAbracapocus must not determine execution success, failure, acceptance,\nrejection, blocking, retry eligibility, phase progression, or completion from\nheuristic inference. A heuristic is any conclusion that is *inferred* rather\nthan *directly established by an explicit executable contract or a concrete\nruntime fact*.\n\nRuntime status is derived ONLY from concrete, mechanically observable facts:\n\n1. The backend process exit code. A backend that exits `0` (with no hard\n   write-policy violation) is a successful execution.\n2. Objectively observed hard write-policy violations (changed paths outside the\n   declared allowed write paths).\n3. Explicit operator-authored commands (task/phase verification the plan\n   explicitly contains). Their raw results are reported, kept DISTINCT from\n   backend execution status.\n4. Objective orchestrator failures with direct evidence (backend could not\n   launch, required document could not be parsed, subprocess infrastructure\n   failed).\n\n**Verification results are observational and must not rewrite backend execution\nstatus.** A verifier returning non-zero must NEVER, by itself, turn a\nsuccessful backend execution into unverified, stop a phase, or trigger an\nautomatic rerun. Verification is the result of a command, not authority to\nrewrite history.\n\n**Execution control:** Task-local problems (non-zero exit, timeout,\nwrite-policy violation, frame failure, backend launch failure) produce\nacceptance status ``\"unverified\"`` with truthful evidence preserved. They\nMUST NOT stop sibling tasks, later phases, or the plan. Only operator\ncancellation (SIGINT/SIGTERM/dashboard cancel) may terminate a run\n(acceptance status ``\"interrupted\"``). Dependencies are ordering constraints,\nnot acceptance gates — any terminal attempt outcome satisfies a dependency\nedge. The status ``\"failed\"`` is banned from acceptance output.\n\nDo NOT reintroduce -- under any name, feature flag, \"advisory\" wrapper, or\ncompatibility mode -- context completeness/sufficiency scoring, change or\narchitecture assessment used as a gate, intent/scope matching, reconciliation\ngates, no-progress judgments, confidence/risk scores, model/LLM/reviewer\njudgments over status, shadow/adaptive/secondary-verification gates, or\nheuristic retry/failure-classification control flow. Failure classification may\nonly *summarize* an already-established concrete failure; it must never create\none. Retries are permitted only for explicitly defined mechanical backend\nfailures. Future agents must not add these systems back.\n\n---\n\n## Git Rules\n\n- Do not commit:\n  - runtime_state.json\n  - reports/\n  - logs/\n  - virtual environments\n- Do not modify .gitignore unless required by task\n- Do not create excessive commits; prefer grouped logical commits\n\n---\n\n## Allowed Changes\n\n- Implement task requirements\n- Fix failing verification\n- Update relevant tests\n- Improve documentation tied to the task\n\n---\n\n## Forbidden Changes\n\n- Changing architecture without explicit instruction\n- Adding dependencies without justification\n- Modifying unrelated files\n- Deleting important files\n- Bypassing verification\n\n---\n\n## Planning Rules\n\n- Plans are multi-phase\n- Completed sections are immutable\n- Remaining sections may be updated\n- Tasks must align with:\n  - project brief\n  - architecture constraints\n  - active phase\n\n---\n\n## Reporting\n\n- All executions must produce structured reports\n- Reports must include:\n  - changed files\n  - verification results\n  - assessment\n\n---\n\n## Behavior\n\n- Do not ask unnecessary questions\n- Do not stall execution\n- Do not perform broad scans unless required\n- Prefer direct action over analysis\n\n---\n\n## Priority Order\n\nThis ordering guides *implementation decisions* only. It does NOT make\nverification an acceptance authority: verification results are observational\n(see \"Execution Control Flow\"), and never override a concrete backend\nexecution result.\n\n1. Architecture constraints\n2. Task definition\n3. Verification results (observational signal, not acceptance authority)\n4. Plan guidance\n\nIf conflicts occur, follow this order.\n",
+        "--dangerously-skip-permissions",
+        "--output-format",
+        "text",
+        "--model",
+        "claude-sonnet-5-5"
+      ],
+      "stdout": "",
+      "stderr": "task-run interrupted before verification completed",
+      "exit_code": 130,
+      "duration_seconds": 0.623972548999518,
+      "model": "claude-sonnet-5-5",
+      "model_tags": [],
+      "working_directory": "/home/mike/dev/mike/stocks/python/mike_trade",
+      "changed_files": [],
+      "diff_summary": "task-run interrupted",
+      "model_attempts": [],
+      "write_policy_violations": [],
+      "outcome_classification": "backend_failed_no_changes",
+      "backend_timeout": false,
+      "backend_verification_timeout": false,
+      "changed_files_at_timeout_exit": [],
+      "abracapocus_verification_ran_after_backend_timeout": false,
+      "verification_result": "interrupted"
+    }
+  ],
+  "review": {
+    "status": "skipped",
+    "findings": [],
+    "summary": "j.1:Task-run interrupted before review completed.",
+    "created_at": "2026-10-08T17:19:15.496078"
+  },
+  "verification": {
+    "status": "interrupted",
+    "checks": [],
+    "created_at": "2026-10-08T17:19:15.496085",
+    "notes": "J:interrupted",
+    "profile": "default"
+  },
+  "metadata": {
+    "run_id": "e4d51608-cfe6-4b48-b049-826117de06da",
+    "project_name": "mike_trade",
+    "plan_version": "task-j.1",
+    "task_id": "j.1",
+    "task_title": "Implement versioned Python strategy interfaces registry and validated parameters",
+    "task_status": "interrupted",
+    "selected_backend": "claude_code_cli",
+    "verification_profile": "focused",
+    "backend_reason": "phase_based",
+    "frame_failures": [],
+    "agents_md": {
+      "loaded": true,
+      "path": "/home/mike/dev/mike/abracapocus/python/abracapocus_2/AGENTS.md",
+      "rule_count": 77,
+      "sha256_12": "3f9b549ba1ce"
+    },
+    "phase_results": [
+      {
+        "phase_name": "J",
+        "status": "interrupted",
+        "verification": "interrupted",
+        "task_results": [
+          {
+            "task_id": "j.1",
+            "status": "interrupted",
+            "acceptance_status": "interrupted",
+            "backend": "claude_code_cli",
+            "backend_outcome_classification": "backend_failed_no_changes",
+            "changed_files": [],
+            "backend_timeout": false,
+            "backend_elapsed_seconds": 0.623972548999518,
+            "backend_timeout_seconds": null,
+            "changed_files_at_timeout_exit": [],
+            "abracapocus_verification_ran_after_backend_timeout": false,
+            "verification_owner": null,
+            "verification_result": "interrupted",
+            "verification_status": "interrupted",
+            "verification_checks": [],
+            "frame_failure": false,
+            "retry_attempts": []
+          }
+        ]
+      }
+    ]
+  }
+}

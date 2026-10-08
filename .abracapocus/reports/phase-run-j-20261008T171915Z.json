@@ -1,0 +1,60 @@
+{
+  "run_at": "2026-10-08T17:19:15.571744",
+  "phase_dir": "/home/mike/dev/mike/stocks/python/mike_trade/.abracapocus/plans/ACTIVE/MIKE_TRADE_COMPLETE_PRODUCT/j",
+  "status": "interrupted",
+  "counts": {
+    "passed": 0,
+    "failed": 0,
+    "blocked": 0,
+    "skipped": 4,
+    "unverified": 0,
+    "interrupted": 1
+  },
+  "tasks": [
+    {
+      "task_id": "j.1",
+      "task_file": "/home/mike/dev/mike/stocks/python/mike_trade/.abracapocus/plans/ACTIVE/MIKE_TRADE_COMPLETE_PRODUCT/j/task_j.1_implement_versioned_python_strategy_interfaces_registry_and_validated_parameters.json",
+      "status": "interrupted",
+      "acceptance_status": "interrupted",
+      "task_verification": {
+        "status": "interrupted",
+        "checks": [],
+        "owner": null
+      },
+      "run_id": "e4d51608-cfe6-4b48-b049-826117de06da",
+      "write_policy_violations": [],
+      "failure_classification": null,
+      "reviewer_summary": "j.1:Task-run interrupted before review completed."
+    },
+    {
+      "task_id": "j.2",
+      "task_file": "/home/mike/dev/mike/stocks/python/mike_trade/.abracapocus/plans/ACTIVE/MIKE_TRADE_COMPLETE_PRODUCT/j/task_j.2_implement_opening_range_breakout_buy_algorithm_with_warmup_constraints.json",
+      "status": "skipped",
+      "run_id": null
+    },
+    {
+      "task_id": "j.3",
+      "task_file": "/home/mike/dev/mike/stocks/python/mike_trade/.abracapocus/plans/ACTIVE/MIKE_TRADE_COMPLETE_PRODUCT/j/task_j.3_implement_momentum_breakout_buy_algorithm_and_explicit_no_signal_reasons.json",
+      "status": "skipped",
+      "run_id": null
+    },
+    {
+      "task_id": "j.4",
+      "task_file": "/home/mike/dev/mike/stocks/python/mike_trade/.abracapocus/plans/ACTIVE/MIKE_TRADE_COMPLETE_PRODUCT/j/task_j.4_implement_documented_vwap_bounce_reference_buy_with_completed_candle_crossing_tests.json",
+      "status": "skipped",
+      "run_id": null
+    },
+    {
+      "task_id": "j.5",
+      "task_file": "/home/mike/dev/mike/stocks/python/mike_trade/.abracapocus/plans/ACTIVE/MIKE_TRADE_COMPLETE_PRODUCT/j/task_j.5_document_real_buy_strategies_and_executable_vwap_reference_configuration_contract.json",
+      "status": "skipped",
+      "run_id": null
+    }
+  ],
+  "phase_verification": {
+    "status": "skipped",
+    "checks": [],
+    "notes": "phase verification deferred until all tasks pass",
+    "run_when": "all_tasks_pass"
+  }
+}

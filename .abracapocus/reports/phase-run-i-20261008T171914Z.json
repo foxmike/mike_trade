@@ -1,0 +1,95 @@
+{
+  "run_at": "2026-10-08T17:19:14.114956",
+  "phase_dir": "/home/mike/dev/mike/stocks/python/mike_trade/.abracapocus/plans/ACTIVE/MIKE_TRADE_COMPLETE_PRODUCT/i",
+  "status": "completed_with_warnings",
+  "counts": {
+    "passed": 3,
+    "failed": 0,
+    "blocked": 0,
+    "skipped": 0,
+    "unverified": 2
+  },
+  "tasks": [
+    {
+      "task_id": "i.1",
+      "task_file": "/home/mike/dev/mike/stocks/python/mike_trade/.abracapocus/plans/ACTIVE/MIKE_TRADE_COMPLETE_PRODUCT/i/task_i.1_implement_declarative_strategy_triggers_and_deterministic_due_scheduler.json",
+      "status": "passed",
+      "acceptance_status": "accepted",
+      "task_verification": {
+        "status": "skipped",
+        "checks": [],
+        "owner": "abracapocus"
+      },
+      "run_id": "64e27003-2751-489f-b008-90d0f24a617e",
+      "write_policy_violations": [],
+      "failure_classification": null,
+      "reviewer_summary": "i.1:Review complete"
+    },
+    {
+      "task_id": "i.2",
+      "task_file": "/home/mike/dev/mike/stocks/python/mike_trade/.abracapocus/plans/ACTIVE/MIKE_TRADE_COMPLETE_PRODUCT/i/task_i.2_implement_bounded_evaluation_pool_event_backlog_and_snapshot_cancellation.json",
+      "status": "unverified",
+      "acceptance_status": "unverified",
+      "task_verification": {
+        "status": "skipped",
+        "checks": [],
+        "owner": "abracapocus"
+      },
+      "run_id": "8ef7e6d8-8669-41ef-b13f-722d022c90ec",
+      "write_policy_violations": [],
+      "failure_classification": null,
+      "reviewer_summary": "i.2:Review complete"
+    },
+    {
+      "task_id": "i.3",
+      "task_file": "/home/mike/dev/mike/stocks/python/mike_trade/.abracapocus/plans/ACTIVE/MIKE_TRADE_COMPLETE_PRODUCT/i/task_i.3_implement_deterministic_priority_and_tie_breaking_in_signal_event_router.json",
+      "status": "passed",
+      "acceptance_status": "accepted",
+      "task_verification": {
+        "status": "skipped",
+        "checks": [],
+        "owner": "abracapocus"
+      },
+      "run_id": "396315c7-33ba-46d1-89e0-4892b38bf953",
+      "write_policy_violations": [],
+      "failure_classification": null,
+      "reviewer_summary": "i.3:Review complete"
+    },
+    {
+      "task_id": "i.4",
+      "task_file": "/home/mike/dev/mike/stocks/python/mike_trade/.abracapocus/plans/ACTIVE/MIKE_TRADE_COMPLETE_PRODUCT/i/task_i.4_implement_engine_runner_heartbeat_graceful_drain_and_health_lifecycle.json",
+      "status": "unverified",
+      "acceptance_status": "unverified",
+      "task_verification": {
+        "status": "skipped",
+        "checks": [],
+        "owner": "abracapocus"
+      },
+      "run_id": "3a7931da-aef8-47fc-a8c8-5c10f3a0bfcd",
+      "write_policy_violations": [],
+      "failure_classification": null,
+      "reviewer_summary": "i.4:Review complete"
+    },
+    {
+      "task_id": "i.5",
+      "task_file": "/home/mike/dev/mike/stocks/python/mike_trade/.abracapocus/plans/ACTIVE/MIKE_TRADE_COMPLETE_PRODUCT/i/task_i.5_add_concurrency_fixture_proving_10_stocks_share_one_broker_data_feed.json",
+      "status": "passed",
+      "acceptance_status": "accepted",
+      "task_verification": {
+        "status": "skipped",
+        "checks": [],
+        "owner": "abracapocus"
+      },
+      "run_id": "be8b29eb-40d3-4e1c-9b88-b85a2e45d3d8",
+      "write_policy_violations": [],
+      "failure_classification": null,
+      "reviewer_summary": "i.5:Review complete"
+    }
+  ],
+  "phase_verification": {
+    "status": "skipped",
+    "checks": [],
+    "notes": "phase verification deferred until all tasks pass",
+    "run_when": "all_tasks_pass"
+  }
+}

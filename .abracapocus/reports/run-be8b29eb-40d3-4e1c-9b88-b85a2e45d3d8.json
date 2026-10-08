@@ -1,0 +1,142 @@
+{
+  "plan_summary": "Task run: Add concurrency fixture proving 10 stocks share one broker-data feed",
+  "backend_executions": [
+    {
+      "backend": "pi_cli",
+      "command": [
+        "pi",
+        "-p",
+        "--provider",
+        "openrouter",
+        "--model",
+        "meta/muse-spark-1.3-contributor",
+        "Task: Add concurrency fixture proving 10 stocks share one broker-data feed\nDescription: Add an integration test in tests/integration/test_scheduler_fanout.py and a verification record in docs/verification/phase_i_scheduler.md. Together they prove that 10 watched symbols and multiple strategies share one market-data service and one provider stream, not duplicate streams. This is a verification task: it writes a real test and an audit artifact only, and changes no production modules.\n\nTest requirements:\n- Build a deterministic, in-process fake market-data provider that implements the existing market-data provider port. It counts connect/subscribe/stream-open calls and replays scripted trades, quotes and 1-minute bars for 10 symbols (for example AAPL, MSFT, NVDA, AMZN, GOOGL, META, TSLA, AMD, JPM, SPY) over a fixed simulated session window. Use a fake clock. Use no network, no credentials and no Alpaca endpoints.\n- Wire the real phase-i components through their public APIs: the shared market-data service/cache, the i.1 scheduler, the i.2 queueing and EvaluationPool, the i.3 DecisionRouter and the i.4 Engine.\n- Register at least three strategies per symbol across BUY and SELL sides with mixed triggers, for example CANDLE_CLOSED(1m), CANDLE_CLOSED(5m) and QUOTE_CHANGE. Use the real vwap_bounce/vwap_breakdown pair if it is already registered; otherwise use small test-local strategy classes that read only the provided context.\n- Inject a strategy that raises, and a slow strategy that exceeds the timeout.\n- Assertions:\n  - The provider stream is opened exactly once for all 10 symbols: one connection, with subscriptions covering all symbols. No strategy opens a data connection.\n  - The number of evaluation-pool threads never exceeds the configured bound, and is independent of symbol and strategy count.\n  - Closed-bar strategies evaluate exactly once per closed bar per (symbol, strategy, side).\n  - A burst of market-data snapshots is coalesced with no obsolete snapshot becoming an actionable signal.\n  - Scripted fills and stop events injected mid-burst are all delivered to the serialized consumer.\n  - The consumer never runs re-entrantly.\n  - The raising and slow strategies yield ERROR and TIMEOUT outcomes and never a BUY.\n  - Running the scenario twice yields an identical ordered decision log.\n- The test must complete in under 60 seconds on a developer machine.\n\nDocumentation requirements (docs/verification/phase_i_scheduler.md):\n- Describe the scenario, the components exercised and each assertion.\n- Give the exact pytest command used to run it.\n- Record the observed results: stream-open count, max pool concurrency, evaluation counts, coalesced counts and critical-event delivery counts.\n- State that this proves shared-feed fan-out and scheduler correctness only. It makes no claim of strategy profitability and involves no broker or paper/live access.\n\nBefore editing, inspect:\n- mike_trade/scheduling/scheduler.py, triggers.py, workers.py and queueing.py (i.1, i.2)\n- mike_trade/signals/router.py (i.3), mike_trade/engine.py and mike_trade/observability/health.py (i.4)\n- mike_trade/market_data/ (service, cache and ports, if present) for the shared market-data service and the provider port to fake\n- mike_trade/strategies/ (registry, base and reference vwap strategies, if present)\n- tests/conftest.py and tests/integration/ (if present) for existing fixtures and markers\nPhase: I\nAcceptance criteria:\n  - tests/integration/test_scheduler_fanout.py exists and wires the real scheduler, queueing/EvaluationPool, DecisionRouter and Engine with a fake provider for 10 distinct symbols and at least three strategies per symbol across BUY and SELL sides.\n  - The test asserts the fake provider's stream-open/connect count equals 1 for all 10 symbols, and that no strategy opens a data connection.\n  - The test asserts the max observed evaluation-pool concurrency (thread high-water mark) is at most the configured bound and less than symbols × strategies.\n  - The test asserts closed-bar strategies evaluate exactly once per closed bar per (symbol, strategy, side) despite repeated control ticks.\n  - The test asserts that every scripted fill and stop event injected during a market-data burst reaches the serialized consumer exactly once, and that the consumer records zero overlapping invocations.\n  - The test asserts the raising strategy yields ERROR, the slow strategy yields TIMEOUT, and neither produces a BUY.\n  - The test asserts two runs of the scenario produce an identical ordered decision log.\n  - The test uses no network, no broker credentials and no Alpaca endpoints, and completes in under 60 seconds.\n  - docs/verification/phase_i_scheduler.md exists, lists the exact pytest command and the recorded observed counts, and explicitly disclaims any profitability or broker-integration claim.\nContext: AGENTS.md guidance:\n# AGENTS.md\n## Purpose\nThis repository is operated by an autonomous multi-agent system (abracapocus_2).\nAll agents must follow these rules when modifying the codebase.\n---\n## Core Principles\n- Minimal blast radius: only modify what is required for the task\n- Deterministic verification: all changes must be verifiable via code (tests, compile, scripts)\n- No architecture drift: do not introduce new frameworks or major design changes unless explicitly required\n- No unrelated refactors\n- All changes must be reproducible from a clean clone\n---\n## Project Structure\n- docs/ → design, plans, architecture constraints\n- plans/ → master plans\n- phases/ → phase definitions\n- tasks/ → executable task documents\n- backends/ → CLI backend adapters\n- agents/ → specialist agents\n- runtime/ → orchestration, routing, state\n...(truncated)\n\n## Task Contract Constraints\n\n{\n  \"allowed_write_paths\": [\n    \"tests/integration/test_scheduler_fanout.py\",\n    \"docs/verification/phase_i_scheduler.md\"\n  ],\n  \"forbidden_changes\": [\n    \"modify files outside allowed_write_paths\",\n    \"change PLAN_SKELETON.json or other planning artifacts\",\n    \"modify any production module under mike_trade/; if a defect is found, record it in the verification doc instead\",\n    \"access the network, Alpaca endpoints or any broker credentials\",\n    \"claim strategy profitability\",\n    \"run broad test suites or backtests\"\n  ]\n}\nAGENTS.md:\n# AGENTS.md\n\n## Purpose\n\nThis repository is operated by an autonomous multi-agent system (abracapocus_2).\nAll agents must follow these rules when modifying the codebase.\n\n---\n\n## Core Principles\n\n- Minimal blast radius: only modify what is required for the task\n- Deterministic verification: all changes must be verifiable via code (tests, compile, scripts)\n- No architecture drift: do not introduce new frameworks or major design changes unless explicitly required\n- No unrelated refactors\n- All changes must be reproducible from a clean clone\n\n---\n\n## Project Structure\n\n- docs/ → design, plans, architecture constraints\n- plans/ → master plans\n- phases/ → phase definitions\n- tasks/ → executable task documents\n- backends/ → CLI backend adapters\n- agents/ → specialist agents\n- runtime/ → orchestration, routing, state\n- reports/ → execution reports (DO NOT MODIFY MANUALLY)\n- state/runtime_state.json → runtime state (DO NOT COMMIT)\n\n---\n\n## Task Execution Rules\n\n- Always operate from a task document when available\n- Respect:\n  - selected_backend\n  - verification_profile\n  - acceptance_criteria\n- If a task conflicts with architecture constraints or phase scope:\n  - STOP and report conflict\n\n---\n\n## Backend Rules\n\n- Backends must:\n  - execute commands deterministically\n  - capture stdout, stderr, exit_code\n  - not silently fail\n- Do not invent backend interfaces; use existing adapters\n- Codex CLI, Aider, Gemini, Claude Code should be invoked through backends only\n\n---\n\n## Verification Rules\n\n- Verification must be deterministic\n- Preferred checks:\n  - pytest\n  - python -m py_compile\n- Do not rely on model self-evaluation\n\n---\n\n## Execution Control Flow (PERMANENT ARCHITECTURAL RULE)\n\n**HEURISTIC INFERENCE MUST NEVER PARTICIPATE IN ABRACAPOCUS EXECUTION CONTROL FLOW.**\n\nAbracapocus must not determine execution success, failure, acceptance,\nrejection, blocking, retry eligibility, phase progression, or completion from\nheuristic inference. A heuristic is any conclusion that is *inferred* rather\nthan *directly established by an explicit executable contract or a concrete\nruntime fact*.\n\nRuntime status is derived ONLY from concrete, mechanically observable facts:\n\n1. The backend process exit code. A backend that exits `0` (with no hard\n   write-policy violation) is a successful execution.\n2. Objectively observed hard write-policy violations (changed paths outside the\n   declared allowed write paths).\n3. Explicit operator-authored commands (task/phase verification the plan\n   explicitly contains). Their raw results are reported, kept DISTINCT from\n   backend execution status.\n4. Objective orchestrator failures with direct evidence (backend could not\n   launch, required document could not be parsed, subprocess infrastructure\n   failed).\n\n**Verification results are observational and must not rewrite backend execution\nstatus.** A verifier returning non-zero must NEVER, by itself, turn a\nsuccessful backend execution into unverified, stop a phase, or trigger an\nautomatic rerun. Verification is the result of a command, not authority to\nrewrite history.\n\n**Execution control:** Task-local problems (non-zero exit, timeout,\nwrite-policy violation, frame failure, backend launch failure) produce\nacceptance status ``\"unverified\"`` with truthful evidence preserved. They\nMUST NOT stop sibling tasks, later phases, or the plan. Only operator\ncancellation (SIGINT/SIGTERM/dashboard cancel) may terminate a run\n(acceptance status ``\"interrupted\"``). Dependencies are ordering constraints,\nnot acceptance gates — any terminal attempt outcome satisfies a dependency\nedge. The status ``\"failed\"`` is banned from acceptance output.\n\nDo NOT reintroduce -- under any name, feature flag, \"advisory\" wrapper, or\ncompatibility mode -- context completeness/sufficiency scoring, change or\narchitecture assessment used as a gate, intent/scope matching, reconciliation\ngates, no-progress judgments, confidence/risk scores, model/LLM/reviewer\njudgments over status, shadow/adaptive/secondary-verification gates, or\nheuristic retry/failure-classification control flow. Failure classification may\nonly *summarize* an already-established concrete failure; it must never create\none. Retries are permitted only for explicitly defined mechanical backend\nfailures. Future agents must not add these systems back.\n\n---\n\n## Git Rules\n\n- Do not commit:\n  - runtime_state.json\n  - reports/\n  - logs/\n  - virtual environments\n- Do not modify .gitignore unless required by task\n- Do not create excessive commits; prefer grouped logical commits\n\n---\n\n## Allowed Changes\n\n- Implement task requirements\n- Fix failing verification\n- Update relevant tests\n- Improve documentation tied to the task\n\n---\n\n## Forbidden Changes\n\n- Changing architecture without explicit instruction\n- Adding dependencies without justification\n- Modifying unrelated files\n- Deleting important files\n- Bypassing verification\n\n---\n\n## Planning Rules\n\n- Plans are multi-phase\n- Completed sections are immutable\n- Remaining sections may be updated\n- Tasks must align with:\n  - project brief\n  - architecture constraints\n  - active phase\n\n---\n\n## Reporting\n\n- All executions must produce structured reports\n- Reports must include:\n  - changed files\n  - verification results\n  - assessment\n\n---\n\n## Behavior\n\n- Do not ask unnecessary questions\n- Do not stall execution\n- Do not perform broad scans unless required\n- Prefer direct action over analysis\n\n---\n\n## Priority Order\n\nThis ordering guides *implementation decisions* only. It does NOT make\nverification an acceptance authority: verification results are observational\n(see \"Execution Control Flow\"), and never override a concrete backend\nexecution result.\n\n1. Architecture constraints\n2. Task definition\n3. Verification results (observational signal, not acceptance authority)\n4. Plan guidance\n\nIf conflicts occur, follow this order.\n\nAGENTS metadata:\n{\"loaded\": true, \"path\": \"/home/mike/dev/mike/abracapocus/python/abracapocus_2/AGENTS.md\", \"rule_count\": 77, \"sha256_12\": \"3f9b549ba1ce\"}\n"
+      ],
+      "stdout": "Done. The fan-out proof passes in ~2s (limit: 60s).\n\n**Created (only allowed paths):**\n- `tests/integration/test_scheduler_fanout.py` — one comprehensive async test running the full scenario twice through real components: fake in-process provider → `MarketDataService`/`MarketDataCache` → `StrategyScheduler` (32 registrations: 3/symbol across BUY/SELL + raising + slow probes) → `EventBacklog` + `EvaluationPool` (4 workers) → `DecisionRouter` → serialized consumer. No network, credentials, or Alpaca endpoints.\n- `docs/verification/phase_i_scheduler.md` — scenario, component wiring, per-assertion rationale, exact pytest command, observed counts, scope notes, and the no-profitability/no-broker disclaimer.\n\n**Observed (identical both runs):** stream-open count 1 covering all 30 pairs; pool high-water 4 (bound 4, ≪320); 30×1m + 10×5m dues with zero repeats/duplicates/control-tick extras; burst coalesced 9→latest v10, stale re-put refused, obsolete due CANCELLED; 5/5 fills+stops delivered first with consumer peak 1; ERROR/TIMEOUT isolated, never BUY; 40/20/2/2 outcome split; identical 69-record decision logs.\n\n**Recorded without production change:** no `engine.py`/`health.py`, strategy registry, or vwap pair exist in-repo, so i.4 is proven at the router's serialized-consumer contract and strategies are test-local, per the task's fallback.\n",
+      "stderr": "",
+      "exit_code": 0,
+      "duration_seconds": 398.7239828109741,
+      "model": "openrouter/meta/muse-spark-1.3-contributor",
+      "model_tags": [],
+      "working_directory": "/home/mike/dev/mike/stocks/python/mike_trade",
+      "changed_files": [
+        {
+          "path": "docs/verification/phase_i_scheduler.md",
+          "status": "untracked",
+          "code": "??"
+        },
+        {
+          "path": "tests/integration/test_scheduler_fanout.py",
+          "status": "untracked",
+          "code": "??"
+        }
+      ],
+      "diff_summary": "git diff reported no changes",
+      "model_attempts": [
+        {
+          "backend": "pi_cli",
+          "model": "openrouter/meta/muse-spark-1.3-contributor",
+          "exit_code": 0,
+          "stdout": "Done. The fan-out proof passes in ~2s (limit: 60s).\n\n**Created (only allowed paths):**\n- `tests/integration/test_scheduler_fanout.py` — one comprehensive async test running the full scenario twice through real components: fake in-process provider → `MarketDataService`/`MarketDataCache` → `StrategyScheduler` (32 registrations: 3/symbol across BUY/SELL + raising + slow probes) → `EventBacklog` + `EvaluationPool` (4 workers) → `DecisionRouter` → serialized consumer. No network, credentials, or Alpaca endpoints.\n- `docs/verification/phase_i_scheduler.md` — scenario, component wiring, per-assertion rationale, exact pytest command, observed counts, scope notes, and the no-profitability/no-broker disclaimer.\n\n**Observed (identical both runs):** stream-open count 1 covering all 30 pairs; pool high-water 4 (bound 4, ≪320); 30×1m + 10×5m dues with zero repeats/duplicates/control-tick extras; burst coalesced 9→latest v10, stale re-put refused, obsolete due CANCELLED; 5/5 fills+stops delivered first with consumer peak 1; ERROR/TIMEOUT isolated, never BUY; 40/20/2/2 outcome split; identical 69-record decision logs.\n\n**Recorded without production change:** no `engine.py`/`health.py`, strategy registry, or vwap pair exist in-repo, so i.4 is proven at the router's serialized-consumer contract and strategies are test-local, per the task's fallback.\n",
+          "stderr": "",
+          "duration_seconds": 398.7239828109741,
+          "changed_files": [
+            {
+              "path": "docs/verification/phase_i_scheduler.md",
+              "status": "untracked",
+              "code": "??"
+            },
+            {
+              "path": "tests/integration/test_scheduler_fanout.py",
+              "status": "untracked",
+              "code": "??"
+            }
+          ],
+          "diff_summary": "git diff reported no changes",
+          "outcome_classification": "backend_completed_with_changes",
+          "backend_timeout": false,
+          "backend_verification_timeout": false,
+          "timeout_seconds": null
+        }
+      ],
+      "write_policy_violations": [],
+      "outcome_classification": "backend_completed_with_changes",
+      "backend_timeout": false,
+      "backend_verification_timeout": false,
+      "changed_files_at_timeout_exit": [],
+      "abracapocus_verification_ran_after_backend_timeout": false,
+      "verification_owner": "abracapocus",
+      "verification_result": "skipped"
+    }
+  ],
+  "review": {
+    "status": "approved",
+    "findings": [],
+    "summary": "i.5:Review complete",
+    "created_at": "2026-10-08T17:19:14.060498"
+  },
+  "verification": {
+    "status": "skipped",
+    "checks": [],
+    "created_at": "2026-10-08T17:19:14.060506",
+    "notes": "I:skipped",
+    "profile": "focused"
+  },
+  "metadata": {
+    "run_id": "be8b29eb-40d3-4e1c-9b88-b85a2e45d3d8",
+    "project_name": "mike_trade",
+    "plan_version": "task-i.5",
+    "task_id": "i.5",
+    "task_title": "Add concurrency fixture proving 10 stocks share one broker-data feed",
+    "task_status": "completed",
+    "selected_backend": "pi_cli",
+    "verification_profile": "focused",
+    "backend_reason": "phase_based",
+    "frame_failures": [],
+    "agents_md": {
+      "loaded": true,
+      "path": "/home/mike/dev/mike/abracapocus/python/abracapocus_2/AGENTS.md",
+      "rule_count": 77,
+      "sha256_12": "3f9b549ba1ce"
+    },
+    "phase_results": [
+      {
+        "phase_name": "I",
+        "status": "passed",
+        "verification": "skipped",
+        "task_results": [
+          {
+            "task_id": "i.5",
+            "status": "passed",
+            "acceptance_status": "accepted",
+            "backend": "pi_cli",
+            "backend_outcome_classification": "backend_completed_with_changes",
+            "changed_files": [
+              {
+                "path": "docs/verification/phase_i_scheduler.md",
+                "status": "untracked",
+                "code": "??"
+              },
+              {
+                "path": "tests/integration/test_scheduler_fanout.py",
+                "status": "untracked",
+                "code": "??"
+              }
+            ],
+            "backend_timeout": false,
+            "backend_elapsed_seconds": 398.7239828109741,
+            "backend_timeout_seconds": null,
+            "changed_files_at_timeout_exit": [],
+            "abracapocus_verification_ran_after_backend_timeout": false,
+            "verification_owner": "abracapocus",
+            "verification_result": "skipped",
+            "verification_status": "skipped",
+            "verification_checks": [],
+            "frame_failure": false,
+            "retry_attempts": []
+          }
+        ]
+      }
+    ]
+  }
+}

@@ -1,0 +1,91 @@
+{
+  "run_id": "e4d51608-cfe6-4b48-b049-826117de06da",
+  "task": {
+    "task_id": "j.1",
+    "title": "Implement versioned Python strategy interfaces registry and validated parameters",
+    "description": "Create the production Python strategy SDK base and an explicit trusted registry.\n\nIn mike_trade/strategies/base.py define:\n- An immutable, versioned StrategySpec dataclass (frozen) with these fields: strategy_id, semantic version (validated MAJOR.MINOR.PATCH), side (BUY or SELL), input requirements including reference symbols, required timeframes, warmup bar count, closed-bar-only and volume requirements, trigger kind and schedule (for example EDGE_ON_CLOSED_BAR), parameter schema, persistent state needs, methodology/source metadata, execution limitations, and the enumerated diagnostic reason codes the strategy may emit.\n- A ParameterSpec/ParameterSchema type that validates name, type (int, Decimal, bool, enum, time-of-day), default, inclusive min/max ranges, and allowed choices. Unknown parameters, missing required parameters, out-of-range values, and wrong types must be rejected with a typed validation error. Money and price parameters must use Decimal and must never use float.\n- Abstract BuyStrategy and SellStrategy base classes that both expose `spec` and a pure `evaluate(context, params, state)` method. The method takes an immutable MarketContext and returns a strategy evaluation result: either a signal carrying a deterministic signal_id, or a no-signal result with reason codes. Reason codes must include at least SIGNAL, NO_SIGNAL, INSUFFICIENT_DATA, STALE_DATA, and NOT_ELIGIBLE. Nothing returned may be a confidence score.\n- A deterministic signal-ID helper. It derives the ID from strategy_id, version, symbol, side, and the triggering completed bar's UTC timestamp, so the same bar always yields the same ID.\n- Strategies must receive no broker, no secrets, no filesystem handle, and no network or session client. The base classes must not import broker, adapter, persistence, or HTTP modules.\n\nIn mike_trade/strategies/registry.py implement an explicit trusted StrategyRegistry:\n- Strategy classes are registered explicitly by import, keyed by (strategy_id, version). Duplicate registration raises an error.\n- Lookup by id (latest version or a pinned version) and listing filtered by side.\n- Parameter validation is delegated to the spec schema.\n- There must be no dynamic code-eval, no entry-point or arbitrary path plugin loading, and no generic rules DSL.\n- The BUY and SELL registries are independent. Registering a BUY strategy must not require any SELL partner.\n\nIn tests/contracts/test_strategy_registry.py write contract tests for:\n- spec immutability and semver validation\n- parameter validation, both positive cases and negative cases (unknown, missing, out-of-range, wrong type, float rejected for Decimal parameters)\n- rejection of duplicate registration\n- lookup by id and version, and side filtering\n- signal-ID determinism\n- a static check that base.py and registry.py do not import broker, network, or filesystem modules\n\nBefore editing, inspect:\n- mike_trade/domain/strategy_types.py\n- mike_trade/domain/signals.py\n- mike_trade/domain/market.py\n- mike_trade/market_data/context.py\n- mike_trade/signals/rearm.py\n- mike_trade/strategies/sell/base.py, if it exists\n- any existing mike_trade/strategies/ package files\n\nReuse existing domain types and do not redefine them. Decision budget: if an existing domain type already covers a concept (signal, side, reason code), import it rather than creating a parallel type.",
+    "phase": "J",
+    "dependencies": [],
+    "exclusivity_category": null,
+    "max_in_category": null,
+    "status": "interrupted",
+    "acceptance_criteria": [
+      "mike_trade/strategies/base.py defines frozen StrategySpec, parameter schema types, abstract BuyStrategy and SellStrategy with a spec and a pure evaluate(context, params, state) method, and a deterministic signal-ID helper.",
+      "StrategySpec carries id, semantic version, side, input requirements/reference symbols, timeframes, warmup, trigger kind/schedule, parameter schema with ranges, persistent state needs, methodology/source metadata, execution limitations, and diagnostic reason codes.",
+      "Parameter validation rejects unknown, missing-required, out-of-range, and wrong-type values with a typed error, and money/price parameters are Decimal (float rejected).",
+      "StrategyRegistry registers classes explicitly, rejects duplicate (id, version), supports lookup by id/version and listing by side, and contains no eval/exec/importlib-path/entry-point plugin loading or rules DSL.",
+      "A BUY strategy can be registered and looked up without any SELL strategy being registered.",
+      "Evaluation results expose reason codes including NO_SIGNAL, INSUFFICIENT_DATA, and STALE_DATA, and contain no confidence/probability score field.",
+      "Identical inputs produce identical signal IDs, and different completed-bar timestamps produce different signal IDs.",
+      "tests/contracts/test_strategy_registry.py contains positive and negative tests for all of the above, and they pass when run in isolation.",
+      "base.py and registry.py import no broker, adapter, persistence, HTTP/network, or secrets modules."
+    ],
+    "created_at": "2026-10-08T17:19:14.641699",
+    "selected_backend": "claude_code_cli",
+    "model": "claude-sonnet-5-5",
+    "provider": null,
+    "task_timeout_seconds": 1500.0,
+    "verification_profile": "focused",
+    "verification_commands": [],
+    "allowed_write_paths": [
+      "mike_trade/strategies/base.py",
+      "mike_trade/strategies/registry.py",
+      "tests/contracts/test_strategy_registry.py"
+    ],
+    "forbidden_changes": [
+      "modify files outside allowed_write_paths",
+      "change PLAN_SKELETON.json or other planning artifacts",
+      "add a generic rules DSL or arbitrary code-eval/dynamic plugin loader",
+      "give strategies broker, secrets, filesystem, or network access",
+      "add confidence scores or profitability claims",
+      "use float for money, price, or quantity values",
+      "create live broker orders or run broad test suites/backtests"
+    ],
+    "allowed_symbols": [
+      "StrategySpec",
+      "ParameterSpec",
+      "ParameterSchema",
+      "ParameterValidationError",
+      "BuyStrategy",
+      "SellStrategy",
+      "StrategyEvaluation",
+      "ReasonCode",
+      "make_signal_id",
+      "StrategyRegistry"
+    ],
+    "decision_budget": null,
+    "forbidden_patterns_override": null
+  },
+  "phase": "J",
+  "status": "blocked",
+  "reason": "task_run_interrupted",
+  "attempts": [
+    {
+      "attempt_number": 1,
+      "tier": 0,
+      "backend": "claude_code_cli",
+      "model": "claude-sonnet-5-5",
+      "exit_code": 130,
+      "changed_files": [],
+      "diff_summary": "task-run interrupted",
+      "stdout": "",
+      "stderr": "task-run interrupted before verification completed",
+      "write_policy_violations": [],
+      "verification": {
+        "status": "interrupted",
+        "checks": [],
+        "created_at": "2026-10-08T17:19:15.493757",
+        "notes": "task-run interrupted before verification completed",
+        "profile": "default"
+      }
+    }
+  ],
+  "verification": {
+    "status": "interrupted",
+    "checks": [],
+    "created_at": "2026-10-08T17:19:15.493757",
+    "notes": "task-run interrupted before verification completed",
+    "profile": "default"
+  },
+  "created_at": "2026-10-08T17:19:15.493818"
+}

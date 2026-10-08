@@ -123,6 +123,19 @@ async def test_exception_is_isolated_and_non_signal_outcomes_have_no_signal() ->
     timeout = await pool.submit(due(2), lambda: time.sleep(0.2), timeout=0.01)
     assert timeout.outcome is EvaluationOutcome.TIMEOUT
     assert timeout.signal is None
+    await pool.shutdown()
+
+
+async def test_hung_strategy_produces_timeout_within_bound() -> None:
+    pool = EvaluationPool(max_workers=1, evaluation_timeout=0.05)
+    started = time.monotonic()
+    result = await pool.submit(due(1), lambda: time.sleep(5), timeout=0.02)
+    elapsed = time.monotonic() - started
+    assert result.outcome is EvaluationOutcome.TIMEOUT
+    assert result.signal is None
+    assert "timeout" in (result.error_detail or "").lower()
+    assert elapsed < 5
+    assert result.started_at.tzinfo is not None and result.finished_at.tzinfo is not None
     await pool.shutdown(timeout=0.01)
 
 
