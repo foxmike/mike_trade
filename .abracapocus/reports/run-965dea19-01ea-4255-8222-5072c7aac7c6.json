@@ -1,0 +1,157 @@
+{
+  "plan_summary": "Task run: Implement engine runner heartbeat graceful drain and health lifecycle",
+  "backend_executions": [
+    {
+      "backend": "pi_cli",
+      "command": [
+        "pi",
+        "-p",
+        "--provider",
+        "openrouter",
+        "--model",
+        "meta/muse-spark-1.3-contributor",
+        "Task: Implement engine runner heartbeat graceful drain and health lifecycle\nDescription: Build the engine runner in mike_trade/engine.py and the health model in mike_trade/observability/health.py. Put the unit tests in tests/unit/test_engine_lifecycle.py.\n\nHealth (health.py):\n- An EngineState enum: STARTING, RECONCILING, RUNNING, PAUSED, DEGRADED, DRAINING, STOPPED.\n- An immutable HealthSnapshot carrying:\n  - engine state, mode (BACKTEST, SHADOW, PAPER or LIVE) and account/scenario id\n  - heartbeat_at UTC and a monotonic sequence\n  - entries_allowed flag and entry_block_reasons\n  - per-component status: market data feed freshness, scheduler, evaluation pool depth and backpressure counters, router backlog, reconciliation status, protective-stop status\n  - last error summary\n- A pure function classify_liveness(snapshot, now, max_heartbeat_age) returns ONLINE, STALE or OFFLINE purely from heartbeat age. The dashboard can reuse it to decide OFFLINE independently, without engine cooperation.\n- Health is published through an injected HealthSink port, for example the existing persistence/projection writer. health.py must not open its own database connection.\n\nEngine (engine.py):\n- The Engine composes, by dependency injection: clock, market-data service, i.1 scheduler, i.2 queueing and EvaluationPool, i.3 DecisionRouter, the reconciliation service and the health sink. It constructs no broker or provider clients directly.\n- One asyncio event loop runs the scheduler, the stream consumers and the router.\n- Startup runs in this order:\n  1. enter RECONCILING with entries blocked\n  2. call the injected reconciliation step for broker account, positions, orders, fills, stops, budgets and strategy state\n  3. if it succeeds cleanly, transition to RUNNING with entries allowed\n  4. if drift or failure occurs, stay or move to DEGRADED/RECONCILING with entries blocked and the reason recorded\n- Heartbeat: a periodic task publishes a HealthSnapshot at a configured interval, using the injected clock.\n- pause() and resume() move between RUNNING and PAUSED. In PAUSED, new entries are blocked while fills, stops, reconciliation, manual closes and safety exits still flow.\n- DEGRADED is entered automatically when market data is stale or unknown, the router or pool reports backpressure overflow, or reconciliation reports drift. New entries are blocked. Exits, stops and fills continue.\n- Graceful drain/shutdown (stop()):\n  1. transition to DRAINING and block new entries immediately\n  2. stop accepting new discretionary evaluations\n  3. let CRITICAL events and in-flight router work finish within a bound\n  4. flush durable state through the injected persistence/health sink\n  5. shut the evaluation pool down\n  6. publish a final STOPPED heartbeat\n  Shutdown must never place liquidating orders, never cancel valid broker-held protective stops, and never call any broker close/cancel API.\n- Strategy or worker failures surface as DEGRADED health detail, never as BUY.\n\nBefore editing, inspect:\n- mike_trade/scheduling/scheduler.py, triggers.py, workers.py and queueing.py (i.1, i.2) and mike_trade/signals/router.py (i.3)\n- mike_trade/market_data/ (service/cache/quality modules, if present) for the shared market-data service and freshness\n- mike_trade/reconciliation/ and mike_trade/persistence/ (if present) for reconciliation and durable-write ports\n- mike_trade/domain/ and mike_trade/config/ (if present) for mode, account and settings types\nPhase: I\nAcceptance criteria:\n  - A test confirms startup enters RECONCILING with entries_allowed=False, and transitions to RUNNING with entries_allowed=True only after the injected reconciliation reports clean.\n  - A test confirms that when reconciliation reports drift, the engine stays blocked for entries (RECONCILING or DEGRADED) and records the drift reason in entry_block_reasons.\n  - A test using a fake clock confirms heartbeats publish at the configured interval with monotonically increasing sequence and UTC timestamps.\n  - Tests confirm classify_liveness returns ONLINE, STALE and OFFLINE at the documented heartbeat-age thresholds, and that it is a pure function of snapshot, now and threshold.\n  - A test confirms that in PAUSED and in DEGRADED (stale market data), a BUY signal is not forwarded for authorization, while a fill, a stop event and a manual close are still processed.\n  - A test confirms stop() transitions through DRAINING to STOPPED, blocks entries immediately, processes already-queued CRITICAL events, flushes the persistence sink, and shuts down the evaluation pool within the bound.\n  - A test with a recording fake broker port confirms that shutdown makes zero order-submit, order-cancel, close-position or flatten calls, and leaves existing protective stop orders untouched.\n  - A test confirms that a strategy exception during operation surfaces as DEGRADED/error health detail and never produces a BUY.\n  - engine.py constructs no broker or provider client directly. All collaborators are injected, and tests use only fakes with no credentials or network.\nContext: AGENTS.md guidance:\n# AGENTS.md\n## Purpose\nThis repository is operated by an autonomous multi-agent system (abracapocus_2).\nAll agents must follow these rules when modifying the codebase.\n---\n## Core Principles\n- Minimal blast radius: only modify what is required for the task\n- Deterministic verification: all changes must be verifiable via code (tests, compile, scripts)\n- No architecture drift: do not introduce new frameworks or major design changes unless explicitly required\n- No unrelated refactors\n- All changes must be reproducible from a clean clone\n---\n## Project Structure\n- docs/ → design, plans, architecture constraints\n- plans/ → master plans\n- phases/ → phase definitions\n- tasks/ → executable task documents\n- backends/ → CLI backend adapters\n- agents/ → specialist agents\n- runtime/ → orchestration, routing, state\n...(truncated)\n\n## Task Contract Constraints\n\n{\n  \"allowed_write_paths\": [\n    \"mike_trade/engine.py\",\n    \"mike_trade/observability/health.py\",\n    \"tests/unit/test_engine_lifecycle.py\"\n  ],\n  \"forbidden_changes\": [\n    \"modify files outside allowed_write_paths\",\n    \"change PLAN_SKELETON.json or other planning artifacts\",\n    \"modify scheduler.py, triggers.py, workers.py, queueing.py or signals/router.py (adapt via their public APIs only)\",\n    \"liquidate positions, cancel protective broker orders or call broker close/cancel APIs during shutdown or drain\",\n    \"allow new entries before startup reconciliation completes cleanly or while PAUSED/DEGRADED/DRAINING\",\n    \"construct broker or provider clients directly inside the engine\",\n    \"access live broker credentials or the network in tests\",\n    \"run broad test suites or backtests\"\n  ]\n}\nAGENTS.md:\n# AGENTS.md\n\n## Purpose\n\nThis repository is operated by an autonomous multi-agent system (abracapocus_2).\nAll agents must follow these rules when modifying the codebase.\n\n---\n\n## Core Principles\n\n- Minimal blast radius: only modify what is required for the task\n- Deterministic verification: all changes must be verifiable via code (tests, compile, scripts)\n- No architecture drift: do not introduce new frameworks or major design changes unless explicitly required\n- No unrelated refactors\n- All changes must be reproducible from a clean clone\n\n---\n\n## Project Structure\n\n- docs/ → design, plans, architecture constraints\n- plans/ → master plans\n- phases/ → phase definitions\n- tasks/ → executable task documents\n- backends/ → CLI backend adapters\n- agents/ → specialist agents\n- runtime/ → orchestration, routing, state\n- reports/ → execution reports (DO NOT MODIFY MANUALLY)\n- state/runtime_state.json → runtime state (DO NOT COMMIT)\n\n---\n\n## Task Execution Rules\n\n- Always operate from a task document when available\n- Respect:\n  - selected_backend\n  - verification_profile\n  - acceptance_criteria\n- If a task conflicts with architecture constraints or phase scope:\n  - STOP and report conflict\n\n---\n\n## Backend Rules\n\n- Backends must:\n  - execute commands deterministically\n  - capture stdout, stderr, exit_code\n  - not silently fail\n- Do not invent backend interfaces; use existing adapters\n- Codex CLI, Aider, Gemini, Claude Code should be invoked through backends only\n\n---\n\n## Verification Rules\n\n- Verification must be deterministic\n- Preferred checks:\n  - pytest\n  - python -m py_compile\n- Do not rely on model self-evaluation\n\n---\n\n## Execution Control Flow (PERMANENT ARCHITECTURAL RULE)\n\n**HEURISTIC INFERENCE MUST NEVER PARTICIPATE IN ABRACAPOCUS EXECUTION CONTROL FLOW.**\n\nAbracapocus must not determine execution success, failure, acceptance,\nrejection, blocking, retry eligibility, phase progression, or completion from\nheuristic inference. A heuristic is any conclusion that is *inferred* rather\nthan *directly established by an explicit executable contract or a concrete\nruntime fact*.\n\nRuntime status is derived ONLY from concrete, mechanically observable facts:\n\n1. The backend process exit code. A backend that exits `0` (with no hard\n   write-policy violation) is a successful execution.\n2. Objectively observed hard write-policy violations (changed paths outside the\n   declared allowed write paths).\n3. Explicit operator-authored commands (task/phase verification the plan\n   explicitly contains). Their raw results are reported, kept DISTINCT from\n   backend execution status.\n4. Objective orchestrator failures with direct evidence (backend could not\n   launch, required document could not be parsed, subprocess infrastructure\n   failed).\n\n**Verification results are observational and must not rewrite backend execution\nstatus.** A verifier returning non-zero must NEVER, by itself, turn a\nsuccessful backend execution into unverified, stop a phase, or trigger an\nautomatic rerun. Verification is the result of a command, not authority to\nrewrite history.\n\n**Execution control:** Task-local problems (non-zero exit, timeout,\nwrite-policy violation, frame failure, backend launch failure) produce\nacceptance status ``\"unverified\"`` with truthful evidence preserved. They\nMUST NOT stop sibling tasks, later phases, or the plan. Only operator\ncancellation (SIGINT/SIGTERM/dashboard cancel) may terminate a run\n(acceptance status ``\"interrupted\"``). Dependencies are ordering constraints,\nnot acceptance gates — any terminal attempt outcome satisfies a dependency\nedge. The status ``\"failed\"`` is banned from acceptance output.\n\nDo NOT reintroduce -- under any name, feature flag, \"advisory\" wrapper, or\ncompatibility mode -- context completeness/sufficiency scoring, change or\narchitecture assessment used as a gate, intent/scope matching, reconciliation\ngates, no-progress judgments, confidence/risk scores, model/LLM/reviewer\njudgments over status, shadow/adaptive/secondary-verification gates, or\nheuristic retry/failure-classification control flow. Failure classification may\nonly *summarize* an already-established concrete failure; it must never create\none. Retries are permitted only for explicitly defined mechanical backend\nfailures. Future agents must not add these systems back.\n\n---\n\n## Git Rules\n\n- Do not commit:\n  - runtime_state.json\n  - reports/\n  - logs/\n  - virtual environments\n- Do not modify .gitignore unless required by task\n- Do not create excessive commits; prefer grouped logical commits\n\n---\n\n## Allowed Changes\n\n- Implement task requirements\n- Fix failing verification\n- Update relevant tests\n- Improve documentation tied to the task\n\n---\n\n## Forbidden Changes\n\n- Changing architecture without explicit instruction\n- Adding dependencies without justification\n- Modifying unrelated files\n- Deleting important files\n- Bypassing verification\n\n---\n\n## Planning Rules\n\n- Plans are multi-phase\n- Completed sections are immutable\n- Remaining sections may be updated\n- Tasks must align with:\n  - project brief\n  - architecture constraints\n  - active phase\n\n---\n\n## Reporting\n\n- All executions must produce structured reports\n- Reports must include:\n  - changed files\n  - verification results\n  - assessment\n\n---\n\n## Behavior\n\n- Do not ask unnecessary questions\n- Do not stall execution\n- Do not perform broad scans unless required\n- Prefer direct action over analysis\n\n---\n\n## Priority Order\n\nThis ordering guides *implementation decisions* only. It does NOT make\nverification an acceptance authority: verification results are observational\n(see \"Execution Control Flow\"), and never override a concrete backend\nexecution result.\n\n1. Architecture constraints\n2. Task definition\n3. Verification results (observational signal, not acceptance authority)\n4. Plan guidance\n\nIf conflicts occur, follow this order.\n\nAGENTS metadata:\n{\"loaded\": true, \"path\": \"/home/mike/dev/mike/abracapocus/python/abracapocus_2/AGENTS.md\", \"rule_count\": 77, \"sha256_12\": \"3f9b549ba1ce\"}\n"
+      ],
+      "stdout": "Done. All 15 tests pass, ruff is clean, and only the three allowed paths were created.\n\n## What was built\n\n**`mike_trade/observability/health.py`** (new)\n- `EngineState`: STARTING, RECONCILING, RUNNING, PAUSED, DEGRADED, DRAINING, STOPPED\n- `EngineMode` (BACKTEST/SHADOW/PAPER/LIVE) and `Liveness` (ONLINE/STALE/OFFLINE)\n- Immutable frozen `HealthSnapshot`: state, mode, account scope id, UTC `heartbeat_at`, monotonic `sequence`, `entries_allowed` + `entry_block_reasons`, feed freshness, scheduler status, pool depth/backpressure/overflow, router backlog, reconciliation status, protective-stop status, last error\n- Pure `classify_liveness(snapshot, now, max_heartbeat_age)`: ONLINE at/under threshold, STALE up to 2× threshold, OFFLINE beyond (or missing snapshot) — no I/O, dashboard-reusable\n- `HealthSink` protocol port; the module opens no DB connection\n\n**`mike_trade/engine.py`** (new)\n- `Engine` composed purely by injection (clock, market-data, scheduler, backlog, pool, router, reconciliation, health sink, optional persistence sink). No broker attribute, no broker/provider imports or call sites\n- Startup: RECONCILING blocked → injected reconciliation step → clean gives RUNNING allowed; drift/failure gives DEGRADED with reasons recorded\n- Heartbeat task on the calling event loop at the configured interval using the injected clock; `publish_heartbeat()` also callable directly\n- `pause()`/`resume()` between RUNNING and PAUSED; auto-DEGRADED from RUNNING on stale/unknown feed, pool backpressure/overflow, or drifted reconciliation\n- `handle_evaluation_result()`: BUY forwarded only when entries allowed; SELL exits always flow; ERROR/TIMEOUT/etc. become DEGRADED detail, never BUY. `handle_critical_event()` always forwards fills/stops/manual-closes\n- `stop()`: DRAINING (entries blocked immediately, no new discretionary evaluations) → bounded router drain → durable flush → pool shutdown → router stop → final STOPPED heartbeat. Holds no broker reference, so zero order/cancel/close/flatten calls by construction\n\n**`tests/unit/test_engine_lifecycle.py`** (new, fakes only — no credentials/network)\n- Covers every acceptance bullet: startup gating, drift blocking with reason, fake-clock heartbeat monotonicity/UTC, liveness thresholds + purity, PAUSED/DEGRADED BUY-blocking with exits+critical flowing, DRAINING→STOPPED drain/flush/pool-shutdown bound, zero-broker-call shutdown with stops untouched, strategy-error→DEGRADED-never-BUY, and a structural no-broker-construction check\n\n## Verification\n- `.venv/bin/python -m pytest tests/unit/test_engine_lifecycle.py -q` → **15 passed**\n- `ruff check` on all three files → clean; `py_compile` → ok\n- `git status` confirms no files outside the allowed write paths were touched\n",
+      "stderr": "",
+      "exit_code": 0,
+      "duration_seconds": 341.9773886203766,
+      "model": "openrouter/meta/muse-spark-1.3-contributor",
+      "model_tags": [],
+      "working_directory": "/home/mike/dev/mike/stocks/python/mike_trade",
+      "changed_files": [
+        {
+          "path": "mike_trade/engine.py",
+          "status": "untracked",
+          "code": "??"
+        },
+        {
+          "path": "mike_trade/observability/health.py",
+          "status": "untracked",
+          "code": "??"
+        },
+        {
+          "path": "tests/unit/test_engine_lifecycle.py",
+          "status": "untracked",
+          "code": "??"
+        }
+      ],
+      "diff_summary": "git diff reported no changes",
+      "model_attempts": [
+        {
+          "backend": "pi_cli",
+          "model": "openrouter/meta/muse-spark-1.3-contributor",
+          "exit_code": 0,
+          "stdout": "Done. All 15 tests pass, ruff is clean, and only the three allowed paths were created.\n\n## What was built\n\n**`mike_trade/observability/health.py`** (new)\n- `EngineState`: STARTING, RECONCILING, RUNNING, PAUSED, DEGRADED, DRAINING, STOPPED\n- `EngineMode` (BACKTEST/SHADOW/PAPER/LIVE) and `Liveness` (ONLINE/STALE/OFFLINE)\n- Immutable frozen `HealthSnapshot`: state, mode, account scope id, UTC `heartbeat_at`, monotonic `sequence`, `entries_allowed` + `entry_block_reasons`, feed freshness, scheduler status, pool depth/backpressure/overflow, router backlog, reconciliation status, protective-stop status, last error\n- Pure `classify_liveness(snapshot, now, max_heartbeat_age)`: ONLINE at/under threshold, STALE up to 2× threshold, OFFLINE beyond (or missing snapshot) — no I/O, dashboard-reusable\n- `HealthSink` protocol port; the module opens no DB connection\n\n**`mike_trade/engine.py`** (new)\n- `Engine` composed purely by injection (clock, market-data, scheduler, backlog, pool, router, reconciliation, health sink, optional persistence sink). No broker attribute, no broker/provider imports or call sites\n- Startup: RECONCILING blocked → injected reconciliation step → clean gives RUNNING allowed; drift/failure gives DEGRADED with reasons recorded\n- Heartbeat task on the calling event loop at the configured interval using the injected clock; `publish_heartbeat()` also callable directly\n- `pause()`/`resume()` between RUNNING and PAUSED; auto-DEGRADED from RUNNING on stale/unknown feed, pool backpressure/overflow, or drifted reconciliation\n- `handle_evaluation_result()`: BUY forwarded only when entries allowed; SELL exits always flow; ERROR/TIMEOUT/etc. become DEGRADED detail, never BUY. `handle_critical_event()` always forwards fills/stops/manual-closes\n- `stop()`: DRAINING (entries blocked immediately, no new discretionary evaluations) → bounded router drain → durable flush → pool shutdown → router stop → final STOPPED heartbeat. Holds no broker reference, so zero order/cancel/close/flatten calls by construction\n\n**`tests/unit/test_engine_lifecycle.py`** (new, fakes only — no credentials/network)\n- Covers every acceptance bullet: startup gating, drift blocking with reason, fake-clock heartbeat monotonicity/UTC, liveness thresholds + purity, PAUSED/DEGRADED BUY-blocking with exits+critical flowing, DRAINING→STOPPED drain/flush/pool-shutdown bound, zero-broker-call shutdown with stops untouched, strategy-error→DEGRADED-never-BUY, and a structural no-broker-construction check\n\n## Verification\n- `.venv/bin/python -m pytest tests/unit/test_engine_lifecycle.py -q` → **15 passed**\n- `ruff check` on all three files → clean; `py_compile` → ok\n- `git status` confirms no files outside the allowed write paths were touched\n",
+          "stderr": "",
+          "duration_seconds": 341.9773886203766,
+          "changed_files": [
+            {
+              "path": "mike_trade/engine.py",
+              "status": "untracked",
+              "code": "??"
+            },
+            {
+              "path": "mike_trade/observability/health.py",
+              "status": "untracked",
+              "code": "??"
+            },
+            {
+              "path": "tests/unit/test_engine_lifecycle.py",
+              "status": "untracked",
+              "code": "??"
+            }
+          ],
+          "diff_summary": "git diff reported no changes",
+          "outcome_classification": "backend_completed_with_changes",
+          "backend_timeout": false,
+          "backend_verification_timeout": false,
+          "timeout_seconds": null
+        }
+      ],
+      "write_policy_violations": [],
+      "outcome_classification": "backend_completed_with_changes",
+      "backend_timeout": false,
+      "backend_verification_timeout": false,
+      "changed_files_at_timeout_exit": [],
+      "abracapocus_verification_ran_after_backend_timeout": false,
+      "verification_owner": "abracapocus",
+      "verification_result": "skipped"
+    }
+  ],
+  "review": {
+    "status": "approved",
+    "findings": [],
+    "summary": "i.4:Review complete",
+    "created_at": "2026-10-08T17:52:35.979777"
+  },
+  "verification": {
+    "status": "skipped",
+    "checks": [],
+    "created_at": "2026-10-08T17:52:35.979785",
+    "notes": "I:skipped",
+    "profile": "focused"
+  },
+  "metadata": {
+    "run_id": "965dea19-01ea-4255-8222-5072c7aac7c6",
+    "project_name": "mike_trade",
+    "plan_version": "task-i.4",
+    "task_id": "i.4",
+    "task_title": "Implement engine runner heartbeat graceful drain and health lifecycle",
+    "task_status": "completed",
+    "selected_backend": "pi_cli",
+    "verification_profile": "focused",
+    "backend_reason": "phase_based",
+    "frame_failures": [],
+    "agents_md": {
+      "loaded": true,
+      "path": "/home/mike/dev/mike/abracapocus/python/abracapocus_2/AGENTS.md",
+      "rule_count": 77,
+      "sha256_12": "3f9b549ba1ce"
+    },
+    "phase_results": [
+      {
+        "phase_name": "I",
+        "status": "passed",
+        "verification": "skipped",
+        "task_results": [
+          {
+            "task_id": "i.4",
+            "status": "passed",
+            "acceptance_status": "accepted",
+            "backend": "pi_cli",
+            "backend_outcome_classification": "backend_completed_with_changes",
+            "changed_files": [
+              {
+                "path": "mike_trade/engine.py",
+                "status": "untracked",
+                "code": "??"
+              },
+              {
+                "path": "mike_trade/observability/health.py",
+                "status": "untracked",
+                "code": "??"
+              },
+              {
+                "path": "tests/unit/test_engine_lifecycle.py",
+                "status": "untracked",
+                "code": "??"
+              }
+            ],
+            "backend_timeout": false,
+            "backend_elapsed_seconds": 341.9773886203766,
+            "backend_timeout_seconds": null,
+            "changed_files_at_timeout_exit": [],
+            "abracapocus_verification_ran_after_backend_timeout": false,
+            "verification_owner": "abracapocus",
+            "verification_result": "skipped",
+            "verification_status": "skipped",
+            "verification_checks": [],
+            "frame_failure": false,
+            "retry_attempts": []
+          }
+        ]
+      }
+    ]
+  }
+}
