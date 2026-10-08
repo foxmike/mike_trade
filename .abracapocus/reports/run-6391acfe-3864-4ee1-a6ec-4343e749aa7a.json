@@ -1,0 +1,142 @@
+{
+  "plan_summary": "Task run: Add stepped trail parity faults and stop never moves down regression tests",
+  "backend_executions": [
+    {
+      "backend": "pi_cli",
+      "command": [
+        "pi",
+        "-p",
+        "--provider",
+        "openrouter",
+        "--model",
+        "meta/muse-spark-1.3-contributor",
+        "Task: Add stepped trail parity faults and stop never moves down regression tests\nDescription: Create end-to-end-in-process lifecycle and fault regression tests for stepped trailing protection in tests/integration/test_stepped_trailing_lifecycle.py, and a verification audit document at docs/verification/phase_o_stepped_stops.md. This is a verification task: write real tests and a real audit artifact, and do not modify production code.\n\nBefore editing, inspect: mike_trade/risk/trailing.py (o.1), mike_trade/execution/replace.py and mike_trade/brokers/alpaca/replacement.py (o.2), mike_trade/execution/close_coordinator.py (o.3), mike_trade/risk/trailing_state.py (o.4), and their tests (tests/unit/test_stepped_trailing.py, tests/contracts/test_stop_replacement.py, tests/integration/test_stop_close_races.py, tests/unit/test_trailing_state_restart.py) to reuse fakes and fixtures without editing them.\n\nWrite integration tests that wire the ratchet (o.1), replacement coordinator with the in-memory fake port (o.2), close coordinator (o.3), and trailing state store on temporary SQLite (o.4) together, and cover:\n1. Canonical lifecycle: entry 100, distance 2, step 1. After a confirmed positive fill, the initial broker-confirmed stop is 98. High 100.80 -> no replace request. High 101 -> intent persisted, then confirmed at 99. High 103.20 -> single replace to 101 (multi-step jump). A decline leaves 101 and produces no replace request.\n2. Stop-never-moves-down regression: a randomized or parameterized price path (seeded and deterministic) asserts that the confirmed stop series is non-decreasing and that no broker replace call ever carries a price <= the prior confirmed stop after rounding.\n3. Parity: for the same price path, the pure ratchet candidate sequence and the persisted/confirmed stop sequence agree whenever all replacements confirm.\n4. Faults: replace rejected (last verified stop retained, TRAIL_UPDATE_UNCONFIRMED, entries blocked); replace unknown followed by lookup-based reconciliation; stop fill during replace; partial stop fill during replace (remaining quantity protected correctly); discretionary close racing a pending replace (no short, no duplicate sell); no duplicate pending replacements under rapid highs; orphan stop detection after flat.\n5. Restart: persist mid-cycle with an outstanding intent, reload, and assert that advancement stays blocked until reconciliation, then resumes from the persisted watermark/anchor.\n6. Engine offline: mark stale. The last confirmed stop remains and the status reports TRAIL_STALE. New highs while stale do not advance or submit replacements.\n7. Protection begins only after a confirmed positive fill, and protected quantity equals actual remaining filled quantity.\n\nWrite docs/verification/phase_o_stepped_stops.md as an audit artifact with these contents: a table mapping each phase-o requirement (monotone ratchet, canonical example, rounding-before-compare, broker-confirmed effectiveness, intent-before-submit, no duplicate pending, unknown/rejected handling, fill-during-replace, close race/no-short, orphan detection, restart, offline TRAIL_STALE, fail-closed capability) to the specific test function names that prove it; the exact targeted pytest commands used; their observed pass/fail results; and an explicit statement of limitations. Those limitations must say that fakes are not broker integration evidence, that Alpaca paper verification is credential-gated and not performed here, and that no profitability claim is made.\n\nIf a test exposes a production defect, do not fix production code. Mark the test with an explicit xfail(strict=True) carrying a reason, and record the defect in the audit document.\nPhase: O\nAcceptance criteria:\n  - tests/integration/test_stepped_trailing_lifecycle.py exists and exercises the o.1 ratchet, the o.2 replacement coordinator (fake port), the o.3 close coordinator, and the o.4 state store together.\n  - The canonical lifecycle test asserts that the confirmed stops are exactly Decimal 98, 99, 101, and that the stop remains 101 after a decline, with exactly two replace requests (to 99 and to 101) and none for high 100.80 or the decline.\n  - A seeded deterministic regression test asserts a non-decreasing confirmed stop series and that no replace request price is <= the prior confirmed stop after rounding.\n  - Fault tests cover rejected replace, unknown replace with reconciliation, full and partial stop fill during replace, discretionary close racing a pending replace (no negative position), duplicate-pending suppression, and orphan stop after flat.\n  - A restart test proves that advancement is blocked with an outstanding intent after reload and resumes from the persisted watermark/anchor after reconciliation.\n  - An offline/stale test proves that TRAIL_STALE is reported, the last confirmed stop is retained, and no replacement is submitted while stale.\n  - docs/verification/phase_o_stepped_stops.md contains a requirement-to-test mapping table naming concrete test functions, the targeted commands run with observed results, and explicit limitations (fakes are not broker integration; Alpaca paper verification is credential-gated and pending; no profitability claim).\n  - No production files under mike_trade/ are modified by this task.\n  - tests/integration/test_stepped_trailing_lifecycle.py passes when run alone with pytest, or any failing case is marked xfail(strict=True) with a reason and documented as a defect in the audit file.\nContext: AGENTS.md guidance:\n# AGENTS.md\n## Purpose\nThis repository is operated by an autonomous multi-agent system (abracapocus_2).\nAll agents must follow these rules when modifying the codebase.\n---\n## Core Principles\n- Minimal blast radius: only modify what is required for the task\n- Deterministic verification: all changes must be verifiable via code (tests, compile, scripts)\n- No architecture drift: do not introduce new frameworks or major design changes unless explicitly required\n- No unrelated refactors\n- All changes must be reproducible from a clean clone\n---\n## Project Structure\n- docs/ → design, plans, architecture constraints\n- plans/ → master plans\n- phases/ → phase definitions\n- tasks/ → executable task documents\n- backends/ → CLI backend adapters\n- agents/ → specialist agents\n- runtime/ → orchestration, routing, state\n...(truncated)\n\n## Task Contract Constraints\n\n{\n  \"allowed_write_paths\": [\n    \"tests/integration/test_stepped_trailing_lifecycle.py\",\n    \"docs/verification/phase_o_stepped_stops.md\"\n  ],\n  \"forbidden_changes\": [\n    \"modify files outside allowed_write_paths\",\n    \"modify any production module under mike_trade/ or any test file written by o.1-o.4\",\n    \"change PLAN_SKELETON.json or other planning artifacts\",\n    \"claim broker integration or profitability based on fakes\",\n    \"access broker credentials, create live or paper orders, or run broad test suites/backtests\"\n  ]\n}\nAGENTS.md:\n# AGENTS.md\n\n## Purpose\n\nThis repository is operated by an autonomous multi-agent system (abracapocus_2).\nAll agents must follow these rules when modifying the codebase.\n\n---\n\n## Core Principles\n\n- Minimal blast radius: only modify what is required for the task\n- Deterministic verification: all changes must be verifiable via code (tests, compile, scripts)\n- No architecture drift: do not introduce new frameworks or major design changes unless explicitly required\n- No unrelated refactors\n- All changes must be reproducible from a clean clone\n\n---\n\n## Project Structure\n\n- docs/ → design, plans, architecture constraints\n- plans/ → master plans\n- phases/ → phase definitions\n- tasks/ → executable task documents\n- backends/ → CLI backend adapters\n- agents/ → specialist agents\n- runtime/ → orchestration, routing, state\n- reports/ → execution reports (DO NOT MODIFY MANUALLY)\n- state/runtime_state.json → runtime state (DO NOT COMMIT)\n\n---\n\n## Task Execution Rules\n\n- Always operate from a task document when available\n- Respect:\n  - selected_backend\n  - verification_profile\n  - acceptance_criteria\n- If a task conflicts with architecture constraints or phase scope:\n  - STOP and report conflict\n\n---\n\n## Backend Rules\n\n- Backends must:\n  - execute commands deterministically\n  - capture stdout, stderr, exit_code\n  - not silently fail\n- Do not invent backend interfaces; use existing adapters\n- Codex CLI, Aider, Gemini, Claude Code should be invoked through backends only\n\n---\n\n## Verification Rules\n\n- Verification must be deterministic\n- Preferred checks:\n  - pytest\n  - python -m py_compile\n- Do not rely on model self-evaluation\n\n---\n\n## Execution Control Flow (PERMANENT ARCHITECTURAL RULE)\n\n**HEURISTIC INFERENCE MUST NEVER PARTICIPATE IN ABRACAPOCUS EXECUTION CONTROL FLOW.**\n\nAbracapocus must not determine execution success, failure, acceptance,\nrejection, blocking, retry eligibility, phase progression, or completion from\nheuristic inference. A heuristic is any conclusion that is *inferred* rather\nthan *directly established by an explicit executable contract or a concrete\nruntime fact*.\n\nRuntime status is derived ONLY from concrete, mechanically observable facts:\n\n1. The backend process exit code. A backend that exits `0` (with no hard\n   write-policy violation) is a successful execution.\n2. Objectively observed hard write-policy violations (changed paths outside the\n   declared allowed write paths).\n3. Explicit operator-authored commands (task/phase verification the plan\n   explicitly contains). Their raw results are reported, kept DISTINCT from\n   backend execution status.\n4. Objective orchestrator failures with direct evidence (backend could not\n   launch, required document could not be parsed, subprocess infrastructure\n   failed).\n\n**Verification results are observational and must not rewrite backend execution\nstatus.** A verifier returning non-zero must NEVER, by itself, turn a\nsuccessful backend execution into unverified, stop a phase, or trigger an\nautomatic rerun. Verification is the result of a command, not authority to\nrewrite history.\n\n**Execution control:** Task-local problems (non-zero exit, timeout,\nwrite-policy violation, frame failure, backend launch failure) produce\nacceptance status ``\"unverified\"`` with truthful evidence preserved. They\nMUST NOT stop sibling tasks, later phases, or the plan. Only operator\ncancellation (SIGINT/SIGTERM/dashboard cancel) may terminate a run\n(acceptance status ``\"interrupted\"``). Dependencies are ordering constraints,\nnot acceptance gates — any terminal attempt outcome satisfies a dependency\nedge. The status ``\"failed\"`` is banned from acceptance output.\n\nDo NOT reintroduce -- under any name, feature flag, \"advisory\" wrapper, or\ncompatibility mode -- context completeness/sufficiency scoring, change or\narchitecture assessment used as a gate, intent/scope matching, reconciliation\ngates, no-progress judgments, confidence/risk scores, model/LLM/reviewer\njudgments over status, shadow/adaptive/secondary-verification gates, or\nheuristic retry/failure-classification control flow. Failure classification may\nonly *summarize* an already-established concrete failure; it must never create\none. Retries are permitted only for explicitly defined mechanical backend\nfailures. Future agents must not add these systems back.\n\n---\n\n## Git Rules\n\n- Do not commit:\n  - runtime_state.json\n  - reports/\n  - logs/\n  - virtual environments\n- Do not modify .gitignore unless required by task\n- Do not create excessive commits; prefer grouped logical commits\n\n---\n\n## Allowed Changes\n\n- Implement task requirements\n- Fix failing verification\n- Update relevant tests\n- Improve documentation tied to the task\n\n---\n\n## Forbidden Changes\n\n- Changing architecture without explicit instruction\n- Adding dependencies without justification\n- Modifying unrelated files\n- Deleting important files\n- Bypassing verification\n\n---\n\n## Planning Rules\n\n- Plans are multi-phase\n- Completed sections are immutable\n- Remaining sections may be updated\n- Tasks must align with:\n  - project brief\n  - architecture constraints\n  - active phase\n\n---\n\n## Reporting\n\n- All executions must produce structured reports\n- Reports must include:\n  - changed files\n  - verification results\n  - assessment\n\n---\n\n## Behavior\n\n- Do not ask unnecessary questions\n- Do not stall execution\n- Do not perform broad scans unless required\n- Prefer direct action over analysis\n\n---\n\n## Priority Order\n\nThis ordering guides *implementation decisions* only. It does NOT make\nverification an acceptance authority: verification results are observational\n(see \"Execution Control Flow\"), and never override a concrete backend\nexecution result.\n\n1. Architecture constraints\n2. Task definition\n3. Verification results (observational signal, not acceptance authority)\n4. Plan guidance\n\nIf conflicts occur, follow this order.\n\nAGENTS metadata:\n{\"loaded\": true, \"path\": \"/home/mike/dev/mike/abracapocus/python/abracapocus_2/AGENTS.md\", \"rule_count\": 77, \"sha256_12\": \"3f9b549ba1ce\"}\n"
+      ],
+      "stdout": "Done. Phase-O verification suite complete with no production changes.\n\n**Files written (only allowed paths):**\n- `tests/integration/test_stepped_trailing_lifecycle.py` — 15 tests wiring the o.1 ratchet, o.2 replacement coordinator (in-memory fake port), o.3 close coordinator, and o.4 SQLite state store together\n- `docs/verification/phase_o_stepped_stops.md` — audit artifact with requirement→test table, commands, results, and limitations\n\n**Results:** `python3.12 -m pytest tests/integration/test_stepped_trailing_lifecycle.py -q` → **15 passed** (0 failed, 0 xfail). No production defect exposed, so no `xfail(strict=True)` was needed. `git diff --name-only -- mike_trade` is empty.\n\n**Coverage highlights:**\n- Canonical: confirmed stops exactly 98→99→101, two replaces (99, 101), none for 100.80 or the decline, stop stays 101\n- Seeded (`Random(20261008)`, 80 highs) non-decreasing series + rounded replace price always > prior confirmed\n- Parity: persisted candidates match pure ratchet; confirmed tracks `[98,99,99,101,101,102]`\n- Faults: rejected (retain 98, `TRAIL_UPDATE_UNCONFIRMED`, entries blocked), unknown→lookup reconcile→resume, full (10/0) and partial (3.5/6.5) fill with zero replace calls, close-vs-pending race (1 exit, no short), coalescing (1 broker call), orphan stop after flat\n- Restart: blocked post-reload until `reconcile`, resumes from watermark 103.20/anchor 103 to candidate 102\n- Offline: `TRAIL_STALE`, retains 99, no advance/submit on high 110; protection only after positive fill\n",
+      "stderr": "",
+      "exit_code": 0,
+      "duration_seconds": 286.9701783657074,
+      "model": "openrouter/meta/muse-spark-1.3-contributor",
+      "model_tags": [],
+      "working_directory": "/home/mike/dev/mike/stocks/python/mike_trade",
+      "changed_files": [
+        {
+          "path": "docs/verification/phase_o_stepped_stops.md",
+          "status": "untracked",
+          "code": "??"
+        },
+        {
+          "path": "tests/integration/test_stepped_trailing_lifecycle.py",
+          "status": "untracked",
+          "code": "??"
+        }
+      ],
+      "diff_summary": "git diff reported no changes",
+      "model_attempts": [
+        {
+          "backend": "pi_cli",
+          "model": "openrouter/meta/muse-spark-1.3-contributor",
+          "exit_code": 0,
+          "stdout": "Done. Phase-O verification suite complete with no production changes.\n\n**Files written (only allowed paths):**\n- `tests/integration/test_stepped_trailing_lifecycle.py` — 15 tests wiring the o.1 ratchet, o.2 replacement coordinator (in-memory fake port), o.3 close coordinator, and o.4 SQLite state store together\n- `docs/verification/phase_o_stepped_stops.md` — audit artifact with requirement→test table, commands, results, and limitations\n\n**Results:** `python3.12 -m pytest tests/integration/test_stepped_trailing_lifecycle.py -q` → **15 passed** (0 failed, 0 xfail). No production defect exposed, so no `xfail(strict=True)` was needed. `git diff --name-only -- mike_trade` is empty.\n\n**Coverage highlights:**\n- Canonical: confirmed stops exactly 98→99→101, two replaces (99, 101), none for 100.80 or the decline, stop stays 101\n- Seeded (`Random(20261008)`, 80 highs) non-decreasing series + rounded replace price always > prior confirmed\n- Parity: persisted candidates match pure ratchet; confirmed tracks `[98,99,99,101,101,102]`\n- Faults: rejected (retain 98, `TRAIL_UPDATE_UNCONFIRMED`, entries blocked), unknown→lookup reconcile→resume, full (10/0) and partial (3.5/6.5) fill with zero replace calls, close-vs-pending race (1 exit, no short), coalescing (1 broker call), orphan stop after flat\n- Restart: blocked post-reload until `reconcile`, resumes from watermark 103.20/anchor 103 to candidate 102\n- Offline: `TRAIL_STALE`, retains 99, no advance/submit on high 110; protection only after positive fill\n",
+          "stderr": "",
+          "duration_seconds": 286.9701783657074,
+          "changed_files": [
+            {
+              "path": "docs/verification/phase_o_stepped_stops.md",
+              "status": "untracked",
+              "code": "??"
+            },
+            {
+              "path": "tests/integration/test_stepped_trailing_lifecycle.py",
+              "status": "untracked",
+              "code": "??"
+            }
+          ],
+          "diff_summary": "git diff reported no changes",
+          "outcome_classification": "backend_completed_with_changes",
+          "backend_timeout": false,
+          "backend_verification_timeout": false,
+          "timeout_seconds": null
+        }
+      ],
+      "write_policy_violations": [],
+      "outcome_classification": "backend_completed_with_changes",
+      "backend_timeout": false,
+      "backend_verification_timeout": false,
+      "changed_files_at_timeout_exit": [],
+      "abracapocus_verification_ran_after_backend_timeout": false,
+      "verification_owner": "abracapocus",
+      "verification_result": "skipped"
+    }
+  ],
+  "review": {
+    "status": "approved",
+    "findings": [],
+    "summary": "o.5:Review complete",
+    "created_at": "2026-10-08T20:23:49.727054"
+  },
+  "verification": {
+    "status": "skipped",
+    "checks": [],
+    "created_at": "2026-10-08T20:23:49.727061",
+    "notes": "O:skipped",
+    "profile": "focused"
+  },
+  "metadata": {
+    "run_id": "6391acfe-3864-4ee1-a6ec-4343e749aa7a",
+    "project_name": "mike_trade",
+    "plan_version": "task-o.5",
+    "task_id": "o.5",
+    "task_title": "Add stepped trail parity faults and stop never moves down regression tests",
+    "task_status": "completed",
+    "selected_backend": "pi_cli",
+    "verification_profile": "focused",
+    "backend_reason": "phase_based",
+    "frame_failures": [],
+    "agents_md": {
+      "loaded": true,
+      "path": "/home/mike/dev/mike/abracapocus/python/abracapocus_2/AGENTS.md",
+      "rule_count": 77,
+      "sha256_12": "3f9b549ba1ce"
+    },
+    "phase_results": [
+      {
+        "phase_name": "O",
+        "status": "passed",
+        "verification": "skipped",
+        "task_results": [
+          {
+            "task_id": "o.5",
+            "status": "passed",
+            "acceptance_status": "accepted",
+            "backend": "pi_cli",
+            "backend_outcome_classification": "backend_completed_with_changes",
+            "changed_files": [
+              {
+                "path": "docs/verification/phase_o_stepped_stops.md",
+                "status": "untracked",
+                "code": "??"
+              },
+              {
+                "path": "tests/integration/test_stepped_trailing_lifecycle.py",
+                "status": "untracked",
+                "code": "??"
+              }
+            ],
+            "backend_timeout": false,
+            "backend_elapsed_seconds": 286.9701783657074,
+            "backend_timeout_seconds": null,
+            "changed_files_at_timeout_exit": [],
+            "abracapocus_verification_ran_after_backend_timeout": false,
+            "verification_owner": "abracapocus",
+            "verification_result": "skipped",
+            "verification_status": "skipped",
+            "verification_checks": [],
+            "frame_failure": false,
+            "retry_attempts": []
+          }
+        ]
+      }
+    ]
+  }
+}
