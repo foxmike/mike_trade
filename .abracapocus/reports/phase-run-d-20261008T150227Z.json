@@ -1,0 +1,95 @@
+{
+  "run_at": "2026-10-08T15:02:27.726624",
+  "phase_dir": "/home/mike/dev/mike/stocks/python/mike_trade/.abracapocus/plans/ACTIVE/MIKE_TRADE_COMPLETE_PRODUCT/d",
+  "status": "passed",
+  "counts": {
+    "passed": 5,
+    "failed": 0,
+    "blocked": 0,
+    "skipped": 0,
+    "unverified": 0
+  },
+  "tasks": [
+    {
+      "task_id": "d.1",
+      "task_file": "/home/mike/dev/mike/stocks/python/mike_trade/.abracapocus/plans/ACTIVE/MIKE_TRADE_COMPLETE_PRODUCT/d/task_d.1_implement_versioned_yaml_settings_schema_with_strict_defaults_and_validation.json",
+      "status": "passed",
+      "acceptance_status": "accepted",
+      "task_verification": {
+        "status": "skipped",
+        "checks": [],
+        "owner": "abracapocus"
+      },
+      "run_id": "1cd5867b-b4ce-4989-91d9-ef0375a5022e",
+      "write_policy_violations": [],
+      "failure_classification": null,
+      "reviewer_summary": "d.1:Review complete"
+    },
+    {
+      "task_id": "d.2",
+      "task_file": "/home/mike/dev/mike/stocks/python/mike_trade/.abracapocus/plans/ACTIVE/MIKE_TRADE_COMPLETE_PRODUCT/d/task_d.2_create_full_reference_config_for_live_paper_shadow_stock_and_stop_policies.json",
+      "status": "passed",
+      "acceptance_status": "accepted",
+      "task_verification": {
+        "status": "skipped",
+        "checks": [],
+        "owner": "abracapocus"
+      },
+      "run_id": "7b522907-aeec-4c53-b253-4975a45a65f5",
+      "write_policy_violations": [],
+      "failure_classification": null,
+      "reviewer_summary": "d.2:Review complete"
+    },
+    {
+      "task_id": "d.3",
+      "task_file": "/home/mike/dev/mike/stocks/python/mike_trade/.abracapocus/plans/ACTIVE/MIKE_TRADE_COMPLETE_PRODUCT/d/task_d.3_implement_safe_atomic_operator_configuration_mutation_rules.json",
+      "status": "passed",
+      "acceptance_status": "accepted",
+      "task_verification": {
+        "status": "skipped",
+        "checks": [],
+        "owner": "abracapocus"
+      },
+      "run_id": "11857557-65de-41d7-8e9b-c5fc839eb438",
+      "write_policy_violations": [],
+      "failure_classification": null,
+      "reviewer_summary": "d.3:Review complete"
+    },
+    {
+      "task_id": "d.4",
+      "task_file": "/home/mike/dev/mike/stocks/python/mike_trade/.abracapocus/plans/ACTIVE/MIKE_TRADE_COMPLETE_PRODUCT/d/task_d.4_implement_durable_idempotent_control_command_inbox_and_control_state.json",
+      "status": "passed",
+      "acceptance_status": "accepted",
+      "task_verification": {
+        "status": "skipped",
+        "checks": [],
+        "owner": "abracapocus"
+      },
+      "run_id": "3161830a-ef13-465d-bee5-b3b5ac7411a6",
+      "write_policy_violations": [],
+      "failure_classification": null,
+      "reviewer_summary": "d.4:Review complete"
+    },
+    {
+      "task_id": "d.5",
+      "task_file": "/home/mike/dev/mike/stocks/python/mike_trade/.abracapocus/plans/ACTIVE/MIKE_TRADE_COMPLETE_PRODUCT/d/task_d.5_expose_redacted_effective_config_and_non_mutating_configuration_cli.json",
+      "status": "passed",
+      "acceptance_status": "accepted",
+      "task_verification": {
+        "status": "skipped",
+        "checks": [],
+        "owner": "abracapocus"
+      },
+      "run_id": "de0ac4eb-65cc-4d29-b9d7-be0b3c99b49e",
+      "write_policy_violations": [],
+      "failure_classification": null,
+      "reviewer_summary": "d.5:Review complete"
+    }
+  ],
+  "phase_verification": {
+    "status": "warning",
+    "checks": [],
+    "notes": "phase verification complete",
+    "run_when": "all_tasks_pass"
+  }
+}
