@@ -1,0 +1,158 @@
+{
+  "plan_summary": "Task run: Implement durable shadow accounts cash holdings and exact cycle accounting",
+  "backend_executions": [
+    {
+      "backend": "claude_code_cli",
+      "command": [
+        "claude",
+        "-p",
+        "Task: Implement durable shadow accounts cash holdings and exact cycle accounting\nPhase: P\nDescription: Implement the durable local SHADOW account model and its append-only ledger. SHADOW mode never calls Alpaca order submission or any live/paper broker endpoint.\n\nmike_trade/brokers/shadow/account.py must provide a ShadowAccount that implements the existing broker/account port. Each named scenario gets an independent account_id and scenario_id with a mode tag of SHADOW. Starting cash is set exactly once at creation; later attempts to set it again are rejected. All later cash changes go through explicit, audited adjustment records that carry a reason and actor. The account tracks cash, holdings (positions with Decimal quantity, including fractional quantities where configured, average cost and the originating BUY strategy), open orders, fills, realized P&L, unrealized P&L marked to a supplied quote, and equity. It also tracks per-scenario budgets (per-symbol and total) and these eligibility counters: filled entry cycles per symbol per exchange session (America/New_York session date), consecutive losing trades per symbol and optionally per originating buy strategy, and post-sale cooldown expiry timestamps. Position cycles are one intentional long entry followed by one complete exit. Broker-style partial fills accumulate correctly. Averaging down, pyramiding and planned partial exits are rejected. A sell may never exceed the held quantity, so no short position can result. Cash may not go negative unless margin is explicitly enabled by configuration (default disabled). Every value derived from fills, fees or slippage is labeled estimated=True and broker_confirmed=False.\n\nmike_trade/brokers/shadow/ledger.py must provide an append-only, idempotent (by event id) SQLite-backed shadow ledger that uses the project's existing persistence/writer conventions. It has no UPDATE/DELETE of trade-affecting events. Account state (cash, positions, counters, cooldowns) is rebuilt by replaying ledger events. Each record carries the simulator version, assumptions and feed provenance (for example IEX) when supplied. Restarting from the same database must reproduce identical cash, positions, P&L and counters, and must never reset the balance or positions. Ledgers are keyed by account_id/scenario_id and must refuse to read or write rows for another mode (PAPER/LIVE) or another scenario.\n\nAll money, quantities, fees and budgets use Decimal (floats are rejected). Event times are timezone-aware UTC.\n\nBefore editing, inspect:\n- the existing broker port/protocol and order/fill/position domain types under mike_trade/ (for example mike_trade/brokers/ and the domain/ports modules from earlier phases)\n- existing Decimal money/quantity helpers and clock/time utilities\n- existing SQLite WAL persistence, migration and single-writer modules\n- existing risk/eligibility types for entry limits, loss-streak lockouts and cooldowns, so they can be reused rather than duplicated\n\nWrite tests/unit/test_shadow_account.py covering both positive and negative cases.\nContext: AGENTS.md guidance:\n# AGENTS.md\n## Purpose\nThis repository is operated by an autonomous multi-agent system (abracapocus_2).\nAll agents must follow these rules when modifying the codebase.\n---\n## Core Principles\n- Minimal blast radius: only modify what is required for the task\n- Deterministic verification: all changes must be verifiable via code (tests, compile, scripts)\n- No architecture drift: do not introduce new frameworks or major design changes unless explicitly required\n- No unrelated refactors\n- All changes must be reproducible from a clean clone\n---\n## Project Structure\n- docs/ → design, plans, architecture constraints\n- plans/ → master plans\n- phases/ → phase definitions\n- tasks/ → executable task documents\n- backends/ → CLI backend adapters\n- agents/ → specialist agents\n- runtime/ → orchestration, routing, state\n...(truncated)\n\n## Task Contract Constraints\n\n{\n  \"allowed_symbols\": [\n    \"ShadowAccount\",\n    \"ShadowLedger\",\n    \"ShadowLedgerEvent\",\n    \"ShadowPosition\",\n    \"ShadowAccountState\"\n  ],\n  \"allowed_write_paths\": [\n    \"mike_trade/brokers/shadow/account.py\",\n    \"mike_trade/brokers/shadow/ledger.py\",\n    \"tests/unit/test_shadow_account.py\"\n  ],\n  \"forbidden_changes\": [\n    \"modify files outside allowed_write_paths\",\n    \"change PLAN_SKELETON.json or other planning artifacts\",\n    \"import or call any Alpaca trading client, paper/live endpoint, or broker credential\",\n    \"use float for money, quantity, fee, or budget values\",\n    \"UPDATE or DELETE trade-affecting ledger rows\",\n    \"create live broker orders or run broad test suites/backtests\"\n  ]\n}\n\nAGENTS.md guidance:\n# AGENTS.md\n\n## Purpose\n\nThis repository is operated by an autonomous multi-agent system (abracapocus_2).\nAll agents must follow these rules when modifying the codebase.\n\n---\n\n## Core Principles\n\n- Minimal blast radius: only modify what is required for the task\n- Deterministic verification: all changes must be verifiable via code (tests, compile, scripts)\n- No architecture drift: do not introduce new frameworks or major design changes unless explicitly required\n- No unrelated refactors\n- All changes must be reproducible from a clean clone\n\n---\n\n## Project Structure\n\n- docs/ → design, plans, architecture constraints\n- plans/ → master plans\n- phases/ → phase definitions\n- tasks/ → executable task documents\n- backends/ → CLI backend adapters\n- agents/ → specialist agents\n- runtime/ → orchestration, routing, state\n- reports/ → execution reports (DO NOT MODIFY MANUALLY)\n- state/runtime_state.json → runtime state (DO NOT COMMIT)\n\n---\n\n## Task Execution Rules\n\n- Always operate from a task document when available\n- Respect:\n  - selected_backend\n  - verification_profile\n  - acceptance_criteria\n- If a task conflicts with architecture constraints or phase scope:\n  - STOP and report conflict\n\n---\n\n## Backend Rules\n\n- Backends must:\n  - execute commands deterministically\n  - capture stdout, stderr, exit_code\n  - not silently fail\n- Do not invent backend interfaces; use existing adapters\n- Codex CLI, Aider, Gemini, Claude Code should be invoked through backends only\n\n---\n\n## Verification Rules\n\n- Verification must be deterministic\n- Preferred checks:\n  - pytest\n  - python -m py_compile\n- Do not rely on model self-evaluation\n\n---\n\n## Execution Control Flow (PERMANENT ARCHITECTURAL RULE)\n\n**HEURISTIC INFERENCE MUST NEVER PARTICIPATE IN ABRACAPOCUS EXECUTION CONTROL FLOW.**\n\nAbracapocus must not determine execution success, failure, acceptance,\nrejection, blocking, retry eligibility, phase progression, or completion from\nheuristic inference. A heuristic is any conclusion that is *inferred* rather\nthan *directly established by an explicit executable contract or a concrete\nruntime fact*.\n\nRuntime status is derived ONLY from concrete, mechanically observable facts:\n\n1. The backend process exit code. A backend that exits `0` (with no hard\n   write-policy violation) is a successful execution.\n2. Objectively observed hard write-policy violations (changed paths outside the\n   declared allowed write paths).\n3. Explicit operator-authored commands (task/phase verification the plan\n   explicitly contains). Their raw results are reported, kept DISTINCT from\n   backend execution status.\n4. Objective orchestrator failures with direct evidence (backend could not\n   launch, required document could not be parsed, subprocess infrastructure\n   failed).\n\n**Verification results are observational and must not rewrite backend execution\nstatus.** A verifier returning non-zero must NEVER, by itself, turn a\nsuccessful backend execution into unverified, stop a phase, or trigger an\nautomatic rerun. Verification is the result of a command, not authority to\nrewrite history.\n\n**Execution control:** Task-local problems (non-zero exit, timeout,\nwrite-policy violation, frame failure, backend launch failure) produce\nacceptance status ``\"unverified\"`` with truthful evidence preserved. They\nMUST NOT stop sibling tasks, later phases, or the plan. Only operator\ncancellation (SIGINT/SIGTERM/dashboard cancel) may terminate a run\n(acceptance status ``\"interrupted\"``). Dependencies are ordering constraints,\nnot acceptance gates — any terminal attempt outcome satisfies a dependency\nedge. The status ``\"failed\"`` is banned from acceptance output.\n\nDo NOT reintroduce -- under any name, feature flag, \"advisory\" wrapper, or\ncompatibility mode -- context completeness/sufficiency scoring, change or\narchitecture assessment used as a gate, intent/scope matching, reconciliation\ngates, no-progress judgments, confidence/risk scores, model/LLM/reviewer\njudgments over status, shadow/adaptive/secondary-verification gates, or\nheuristic retry/failure-classification control flow. Failure classification may\nonly *summarize* an already-established concrete failure; it must never create\none. Retries are permitted only for explicitly defined mechanical backend\nfailures. Future agents must not add these systems back.\n\n---\n\n## Git Rules\n\n- Do not commit:\n  - runtime_state.json\n  - reports/\n  - logs/\n  - virtual environments\n- Do not modify .gitignore unless required by task\n- Do not create excessive commits; prefer grouped logical commits\n\n---\n\n## Allowed Changes\n\n- Implement task requirements\n- Fix failing verification\n- Update relevant tests\n- Improve documentation tied to the task\n\n---\n\n## Forbidden Changes\n\n- Changing architecture without explicit instruction\n- Adding dependencies without justification\n- Modifying unrelated files\n- Deleting important files\n- Bypassing verification\n\n---\n\n## Planning Rules\n\n- Plans are multi-phase\n- Completed sections are immutable\n- Remaining sections may be updated\n- Tasks must align with:\n  - project brief\n  - architecture constraints\n  - active phase\n\n---\n\n## Reporting\n\n- All executions must produce structured reports\n- Reports must include:\n  - changed files\n  - verification results\n  - assessment\n\n---\n\n## Behavior\n\n- Do not ask unnecessary questions\n- Do not stall execution\n- Do not perform broad scans unless required\n- Prefer direct action over analysis\n\n---\n\n## Priority Order\n\nThis ordering guides *implementation decisions* only. It does NOT make\nverification an acceptance authority: verification results are observational\n(see \"Execution Control Flow\"), and never override a concrete backend\nexecution result.\n\n1. Architecture constraints\n2. Task definition\n3. Verification results (observational signal, not acceptance authority)\n4. Plan guidance\n\nIf conflicts occur, follow this order.\n",
+        "--dangerously-skip-permissions",
+        "--output-format",
+        "text",
+        "--model",
+        "claude-sonnet-5-5"
+      ],
+      "stdout": "I added the durable SHADOW account, its append-only ledger and `tests/unit/test_shadow_account.py`. All 48 new tests pass, as do the existing repositories and entry-eligibility suites, and `ruff` and `mypy --strict` are clean on the new files. I didn't run the broader suite, per the task contract, and I didn't commit anything.\n\n## What it does\n- **Ledger:** `ledger.py` stores events in the existing `domain_events` table through `ScopedWriter` and `DomainEventJournal`. The table's UPDATE/DELETE triggers already make it append-only. `ShadowLedger.append` is the only mutation.\n- **Account:** `account.py` replays ledger events to rebuild its state (cash, positions, P&L, counters), so a restart reproduces them and can't reset the balance.\n- **Rules:** the rules on cycles, cash, budgets and eligibility are enforced by one validator that runs both on live operations and on replay.\n- **Rejections:** I reused the domain errors with stable `code` values, such as `averaging_down`, `pyramiding`, `partial_exit`, `oversell`, `cash_negative` and `starting_cash_already_set`.\n- **Isolation:** the ledger refuses any non-SHADOW scope, database or event. It also refuses to read a stored row whose mode, account or scenario doesn't match, or that lacks the `estimated=True` / `broker_confirmed=False` labels.\n- **Alpaca:** neither module imports it, and a test checks this.\n- **Exact P&L:** a cycle's realized P&L matches the existing `PositionCycle.realized_pnl`. The closing exit fill recomputes it from exact sums, so no Decimal division residue is left.\n\n## Decisions to review\n- **`ShadowAccountState` changes:** it is a plain, non-frozen dataclass, so its fields (cash, positions, counters) are mutable. `account.state` returns a deep copy, so callers can't mutate the account through it.\n- **Quotes aren't persisted:** they come from `update_quote()` and are not ledger facts. A position with no quote is valued at cost.\n- **Notional orders are rejected.** Fractional quantities need `allow_fractional=True` at creation.\n- **Extra arguments:** `submit_order(..., strategy_key=)` and the `at=` argument on `replace_order` and `cancel_order` are additions to the port signatures.\n- **`apply_fill`:** the account has no fill simulator yet, so a later phase will need to call `apply_fill(fill, slippage=, feed=)` to record executions.\n- **Loss lockouts:** after the threshold of losing trades, a symbol stays locked until an audited `clear_lockout()`. That mirrors how the existing repositories treat lockouts, which stay until cleared.\n- **Pyright:** it flags `mike_trade.brokers.shadow` as unresolved, because `mike_trade/brokers` has no `__init__.py`. That is also true of the existing `alpaca` package, and I couldn't add one within the allowed write paths. Pytest imports it fine.\n",
+      "stderr": "",
+      "exit_code": 0,
+      "duration_seconds": 1057.7932977676392,
+      "model": "claude-sonnet-5-5",
+      "model_tags": [],
+      "working_directory": "/home/mike/dev/mike/stocks/python/mike_trade",
+      "changed_files": [
+        {
+          "path": "mike_trade/brokers/shadow/account.py",
+          "status": "untracked",
+          "code": "??"
+        },
+        {
+          "path": "mike_trade/brokers/shadow/ledger.py",
+          "status": "untracked",
+          "code": "??"
+        },
+        {
+          "path": "tests/unit/test_shadow_account.py",
+          "status": "untracked",
+          "code": "??"
+        }
+      ],
+      "diff_summary": "git diff reported no changes",
+      "model_attempts": [
+        {
+          "backend": "claude_code_cli",
+          "model": "claude-sonnet-5-5",
+          "exit_code": 0,
+          "stdout": "I added the durable SHADOW account, its append-only ledger and `tests/unit/test_shadow_account.py`. All 48 new tests pass, as do the existing repositories and entry-eligibility suites, and `ruff` and `mypy --strict` are clean on the new files. I didn't run the broader suite, per the task contract, and I didn't commit anything.\n\n## What it does\n- **Ledger:** `ledger.py` stores events in the existing `domain_events` table through `ScopedWriter` and `DomainEventJournal`. The table's UPDATE/DELETE triggers already make it append-only. `ShadowLedger.append` is the only mutation.\n- **Account:** `account.py` replays ledger events to rebuild its state (cash, positions, P&L, counters), so a restart reproduces them and can't reset the balance.\n- **Rules:** the rules on cycles, cash, budgets and eligibility are enforced by one validator that runs both on live operations and on replay.\n- **Rejections:** I reused the domain errors with stable `code` values, such as `averaging_down`, `pyramiding`, `partial_exit`, `oversell`, `cash_negative` and `starting_cash_already_set`.\n- **Isolation:** the ledger refuses any non-SHADOW scope, database or event. It also refuses to read a stored row whose mode, account or scenario doesn't match, or that lacks the `estimated=True` / `broker_confirmed=False` labels.\n- **Alpaca:** neither module imports it, and a test checks this.\n- **Exact P&L:** a cycle's realized P&L matches the existing `PositionCycle.realized_pnl`. The closing exit fill recomputes it from exact sums, so no Decimal division residue is left.\n\n## Decisions to review\n- **`ShadowAccountState` changes:** it is a plain, non-frozen dataclass, so its fields (cash, positions, counters) are mutable. `account.state` returns a deep copy, so callers can't mutate the account through it.\n- **Quotes aren't persisted:** they come from `update_quote()` and are not ledger facts. A position with no quote is valued at cost.\n- **Notional orders are rejected.** Fractional quantities need `allow_fractional=True` at creation.\n- **Extra arguments:** `submit_order(..., strategy_key=)` and the `at=` argument on `replace_order` and `cancel_order` are additions to the port signatures.\n- **`apply_fill`:** the account has no fill simulator yet, so a later phase will need to call `apply_fill(fill, slippage=, feed=)` to record executions.\n- **Loss lockouts:** after the threshold of losing trades, a symbol stays locked until an audited `clear_lockout()`. That mirrors how the existing repositories treat lockouts, which stay until cleared.\n- **Pyright:** it flags `mike_trade.brokers.shadow` as unresolved, because `mike_trade/brokers` has no `__init__.py`. That is also true of the existing `alpaca` package, and I couldn't add one within the allowed write paths. Pytest imports it fine.\n",
+          "stderr": "",
+          "duration_seconds": 1057.7932977676392,
+          "changed_files": [
+            {
+              "path": "mike_trade/brokers/shadow/account.py",
+              "status": "untracked",
+              "code": "??"
+            },
+            {
+              "path": "mike_trade/brokers/shadow/ledger.py",
+              "status": "untracked",
+              "code": "??"
+            },
+            {
+              "path": "tests/unit/test_shadow_account.py",
+              "status": "untracked",
+              "code": "??"
+            }
+          ],
+          "diff_summary": "git diff reported no changes",
+          "outcome_classification": "backend_completed_with_changes",
+          "backend_timeout": false,
+          "backend_verification_timeout": false,
+          "timeout_seconds": null
+        }
+      ],
+      "write_policy_violations": [],
+      "outcome_classification": "backend_completed_with_changes",
+      "backend_timeout": false,
+      "backend_verification_timeout": false,
+      "changed_files_at_timeout_exit": [],
+      "abracapocus_verification_ran_after_backend_timeout": false,
+      "verification_owner": "abracapocus",
+      "verification_result": "skipped"
+    }
+  ],
+  "review": {
+    "status": "approved",
+    "findings": [],
+    "summary": "p.1:Review complete",
+    "created_at": "2026-10-08T21:51:18.601985"
+  },
+  "verification": {
+    "status": "skipped",
+    "checks": [],
+    "created_at": "2026-10-08T21:51:18.601991",
+    "notes": "P:skipped",
+    "profile": "focused"
+  },
+  "metadata": {
+    "run_id": "d9f0c925-c8f2-4d74-bebc-993af542c9ad",
+    "project_name": "mike_trade",
+    "plan_version": "task-p.1",
+    "task_id": "p.1",
+    "task_title": "Implement durable shadow accounts cash holdings and exact cycle accounting",
+    "task_status": "completed",
+    "selected_backend": "claude_code_cli",
+    "verification_profile": "focused",
+    "backend_reason": "phase_based",
+    "frame_failures": [],
+    "agents_md": {
+      "loaded": true,
+      "path": "/home/mike/dev/mike/abracapocus/python/abracapocus_2/AGENTS.md",
+      "rule_count": 77,
+      "sha256_12": "3f9b549ba1ce"
+    },
+    "phase_results": [
+      {
+        "phase_name": "P",
+        "status": "passed",
+        "verification": "skipped",
+        "task_results": [
+          {
+            "task_id": "p.1",
+            "status": "passed",
+            "acceptance_status": "accepted",
+            "backend": "claude_code_cli",
+            "backend_outcome_classification": "backend_completed_with_changes",
+            "changed_files": [
+              {
+                "path": "mike_trade/brokers/shadow/account.py",
+                "status": "untracked",
+                "code": "??"
+              },
+              {
+                "path": "mike_trade/brokers/shadow/ledger.py",
+                "status": "untracked",
+                "code": "??"
+              },
+              {
+                "path": "tests/unit/test_shadow_account.py",
+                "status": "untracked",
+                "code": "??"
+              }
+            ],
+            "backend_timeout": false,
+            "backend_elapsed_seconds": 1057.7932977676392,
+            "backend_timeout_seconds": null,
+            "changed_files_at_timeout_exit": [],
+            "abracapocus_verification_ran_after_backend_timeout": false,
+            "verification_owner": "abracapocus",
+            "verification_result": "skipped",
+            "verification_status": "skipped",
+            "verification_checks": [],
+            "frame_failure": false,
+            "retry_attempts": []
+          }
+        ]
+      }
+    ]
+  }
+}
