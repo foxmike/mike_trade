@@ -55,6 +55,10 @@ batch with Ctrl-C; completed run artifacts remain in `research/`. See
 [`HISTORICAL_RESEARCH.md`](HISTORICAL_RESEARCH.md) for job specifications.
 
 The R730 uses `compose.r730.yaml` through its local `COMPOSE_FILE` setting.
-That overlay assigns trading services to the inactive `trading` profile, so
-plain Compose startup on that host cannot start a trading engine. Research
-commands explicitly select `mike-trade-research` and use `--no-deps`.
+Its local `COMPOSE_PROFILES=trading` enables the existing engine and API for
+manual `make up`, `make stop`, and `make start` operation. Both services use
+`state/r730/` for the R730-only SHADOW journal and runtime files. The dashboard
+publishes only `127.0.0.1:8765` on the R730; open
+<http://127.0.0.1:8765/> on that machine. Neither service starts at boot.
+Research commands explicitly select `mike-trade-research` with `--no-deps`,
+so they can run while trading services are active or stopped.

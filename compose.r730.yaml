@@ -1,7 +1,12 @@
-# Selected by COMPOSE_FILE on the R730. Explicit research runs remain available;
-# a plain `docker compose up` cannot start trading services there.
+# Selected by COMPOSE_FILE on the R730. Its local COMPOSE_PROFILES setting
+# enables SHADOW services for manual Makefile operation. Research remains an
+# explicit, independent job service.
 services:
   mike-trade-engine:
     profiles: ["trading"]
+    volumes:
+      - ./state/r730:/app/state
   mike-trade-api:
     profiles: ["trading"]
+    volumes:
+      - ./state/r730:/app/state

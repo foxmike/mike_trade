@@ -160,12 +160,13 @@ checkout, copy files only if the server does not already have them:
 ```sh
 rsync -a --ignore-existing --chmod=F600 .env mike@192.168.254.147:/home/mike/dev/mike/stocks/python/mike_trade/.env
 rsync -a --ignore-existing config/mike_trade.yaml mike@192.168.254.147:/home/mike/dev/mike/stocks/python/mike_trade/config/mike_trade.yaml
-ssh mike@192.168.254.147 'cd /home/mike/dev/mike/stocks/python/mike_trade || exit; if ! grep -q "^COMPOSE_FILE=" .env; then printf "\nCOMPOSE_FILE=compose.yaml:compose.r730.yaml\n" >> .env; fi; chmod 600 .env'
+ssh mike@192.168.254.147 'cd /home/mike/dev/mike/stocks/python/mike_trade || exit; if ! grep -q "^COMPOSE_FILE=" .env; then printf "\nCOMPOSE_FILE=compose.yaml:compose.r730.yaml\n" >> .env; fi; if ! grep -q "^COMPOSE_PROFILES=" .env; then printf "COMPOSE_PROFILES=trading\n" >> .env; fi; chmod 600 .env'
 ```
 
 For later configuration changes, transfer an incoming copy with `rsync` and
 review it against the server settings before replacing them. Keep the server's
-`COMPOSE_FILE` setting. Credentials stay in `.env` and are never committed.
+`COMPOSE_FILE` and `COMPOSE_PROFILES=trading` settings. Credentials stay in
+`.env` and are never committed.
 
 From DEV, `make research-sync-r730` uses rsync over SSH to copy new Parquet
 snapshots, manifests, the initial DuckDB catalog, and research artifacts. It
@@ -179,12 +180,14 @@ on the R730 to backfill its persistent catalog from new manifests:
 docker compose run --rm --no-deps mike-trade-research research-data list
 ```
 
-The R730 `.env` and `config/mike_trade.yaml` are copied directly from DEV
-over SSH during initial deployment. Its local `.env` additionally selects
-`COMPOSE_FILE=compose.yaml:compose.r730.yaml`; preserve this line when
-refreshing credentials. The overlay puts engine/API services behind the
-inactive `trading` profile, and the research service has no trading journal
-mount or broker order credentials. Do not use `make up` for research.
+The R730 `.env` and `config/mike_trade.yaml` were copied directly from DEV
+over SSH during initial deployment. Its local `.env` selects
+`COMPOSE_FILE=compose.yaml:compose.r730.yaml` and `COMPOSE_PROFILES=trading`;
+preserve these lines when refreshing credentials. The R730 engine and API use
+their own `state/r730/` directory and `r730_shadow` scenario. Research jobs
+remain independent of these services: the research container has no trading
+journal mount or broker order credentials and is run explicitly with
+`--no-deps`. Use `make up` only when starting the SHADOW engine and dashboard.
 
 Run a foreground batch and inspect results with:
 
@@ -203,5 +206,5 @@ Progress and completion counts print to the terminal. Ctrl-C cancels queued
 work and waits for active workers to finish; completed per-run results remain
 available. The research container exits when the command finishes. To stop a
 running foreground job gracefully, press Ctrl-C in its terminal; `make stop`
-is for persistent Compose services and is not needed for research jobs. Use
+stops the engine and dashboard and is not needed for research jobs. Use
 `docker ps` afterward to confirm the research container has exited.
