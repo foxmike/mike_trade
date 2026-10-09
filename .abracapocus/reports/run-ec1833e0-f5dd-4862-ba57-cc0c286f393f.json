@@ -1,0 +1,142 @@
+{
+  "plan_summary": "Task run: Verify production dashboard offline stale isolation and read-only behavior",
+  "backend_executions": [
+    {
+      "backend": "pi_cli",
+      "command": [
+        "pi",
+        "-p",
+        "--provider",
+        "openrouter",
+        "--model",
+        "meta/muse-spark-1.3-contributor",
+        "Task: Verify production dashboard offline stale isolation and read-only behavior\nDescription: Add acceptance tests and a verification record proving the dashboard behaviors required by this phase. This task writes only tests and documentation. It must not modify production code. Report any defects it finds in the verification document rather than silently patching them.\n\nBefore editing, inspect: mike_trade/dashboard/server.py, mike_trade/dashboard/api.py and tests/integration/test_dashboard_api.py (r.1) for the app factory, the injected clock and the seeding approach; the persistence writers and migration runner from earlier phases; and dashboard/frontend (r.2-r.4) for the build script and output directory.\n\nWrite tests/integration/test_dashboard_offline.py. Use a temporary migrated SQLite DB seeded through the persistence layer (not through the dashboard) and an injected controllable clock. Cover:\n(1) Engine killed: start a short-lived subprocess (or thread) that writes heartbeats, kill it, and advance the clock past the threshold. /api/live still returns 200, and status returns engine_state OFFLINE within the configured threshold, with last-known values returned and marked fresh=false/stale_reason.\n(2) Feed dead while the engine is alive: heartbeat fresh, feed age beyond threshold. Expect DEGRADED and entries_allowed=false with a reason.\n(3) Broker disconnected: positions, balances, stop status and native HWM are fresh=false and never reported fresh.\n(4) Partial fill plus protective order: entry for 10 shares, 6 filled, protective stop confirmed for 6. The watchlist/symbol detail report confirmed quantity '6' and protected quantity '6' as exact Decimal strings with full coverage. A variant with the stop at 4 reports under-coverage.\n(5) Trailing display: one position with native broker trailing (broker HWM) and one with stepped trailing (local anchor). They are differentiated, and desired vs confirmed stop values are distinct when an update is pending.\n(6) Symbol budget, entry cutoff, loss-streak lockout and cooldown reasons appear in watchlist rows.\n\nWrite tests/integration/test_dashboard_readonly.py:\n(1) Enumerate app.routes and assert that only GET/HEAD methods are registered.\n(2) POST/PUT/PATCH/DELETE against every /api route returns 405.\n(3) Hitting every endpoint leaves the DB file's content hash unchanged and creates no new rows in any table.\n(4) The dashboard package imports no broker or market-data adapter modules (AST or sys.modules check).\n(5) Scenario/mode isolation: seed a PAPER account and two SHADOW scenarios with distinct cash/positions. Each account endpoint returns only its own values, no response contains another account's identifiers or balances, and an unknown account returns 404.\n(6) Static serving: from a temporary dist containing index.html plus a hashed asset, GET / returns index.html and an unknown non-/api path falls back to it. If the real dashboard/frontend/dist exists, its index.html references hashed /assets/ files and contains no '/@vite/client'.\n(7) The default bind host is loopback.\n\nWrite docs/verification/phase_r_dashboard.md:\n- Each phase requirement mapped to its test name(s).\n- The exact targeted commands actually run (the two new test files plus test_dashboard_api.py, npm ci and npm run build in dashboard/frontend) with their observed pass/fail output summaries and the produced dist asset listing.\n- Deployment notes: compiled assets served by FastAPI, no Vite dev server, loopback default, remote exposure only behind private auth/TLS/VPN/reverse proxy.\n- Any defects or gaps found.\n\nDo not claim results that were not observed. Do not run broad suites, backtests, live brokers or trading.\nPhase: R\nAcceptance criteria:\n  - tests/integration/test_dashboard_offline.py contains tests for engine-killed OFFLINE with /api/live reachable and stale last-known values, feed-dead DEGRADED with no new entries, broker-disconnected non-fresh positions, exact partial-fill protection coverage (6 of 10 filled, stop 6 full; stop 4 under-covered), native HWM vs stepped anchor with desired vs confirmed stop, and visible budget/cutoff/lockout/cooldown reasons\n  - tests/integration/test_dashboard_readonly.py asserts GET/HEAD-only routes, 405 for every write method on every /api route, an unchanged DB content hash after exercising all endpoints, no broker/market-data adapter imports, per-account isolation across PAPER and two SHADOW scenarios with no foreign identifiers or balances, 404 for an unknown account, compiled static serving with SPA fallback and no Vite dev-client reference, and a loopback default bind\n  - Tests use an injected clock and a temporary seeded SQLite DB, and need no network, broker credentials or running engine\n  - docs/verification/phase_r_dashboard.md maps each phase behavior requirement to specific test names and records the exact targeted commands run, observed results and production build output listing\n  - docs/verification/phase_r_dashboard.md documents loopback default binding and that remote exposure requires private auth/TLS/VPN/reverse proxy, and lists any discovered defects without claiming unobserved passes\n  - No production source files are modified by this task\nContext: AGENTS.md guidance:\n# AGENTS.md\n## Purpose\nThis repository is operated by an autonomous multi-agent system (abracapocus_2).\nAll agents must follow these rules when modifying the codebase.\n---\n## Core Principles\n- Minimal blast radius: only modify what is required for the task\n- Deterministic verification: all changes must be verifiable via code (tests, compile, scripts)\n- No architecture drift: do not introduce new frameworks or major design changes unless explicitly required\n- No unrelated refactors\n- All changes must be reproducible from a clean clone\n---\n## Project Structure\n- docs/ → design, plans, architecture constraints\n- plans/ → master plans\n- phases/ → phase definitions\n- tasks/ → executable task documents\n- backends/ → CLI backend adapters\n- agents/ → specialist agents\n- runtime/ → orchestration, routing, state\n...(truncated)\n\n## Task Contract Constraints\n\n{\n  \"allowed_write_paths\": [\n    \"tests/integration/test_dashboard_offline.py\",\n    \"tests/integration/test_dashboard_readonly.py\",\n    \"docs/verification/phase_r_dashboard.md\"\n  ],\n  \"forbidden_changes\": [\n    \"modify files outside allowed_write_paths\",\n    \"modify production dashboard backend or frontend source\",\n    \"change PLAN_SKELETON.json or planning artifacts\",\n    \"access live broker credentials, create broker orders or start trading\",\n    \"add dashboard write endpoints\",\n    \"run broad test suites, backtests or paid data acquisition\",\n    \"claim verification results that were not actually observed\"\n  ]\n}\nAGENTS.md:\n# AGENTS.md\n\n## Purpose\n\nThis repository is operated by an autonomous multi-agent system (abracapocus_2).\nAll agents must follow these rules when modifying the codebase.\n\n---\n\n## Core Principles\n\n- Minimal blast radius: only modify what is required for the task\n- Deterministic verification: all changes must be verifiable via code (tests, compile, scripts)\n- No architecture drift: do not introduce new frameworks or major design changes unless explicitly required\n- No unrelated refactors\n- All changes must be reproducible from a clean clone\n\n---\n\n## Project Structure\n\n- docs/ → design, plans, architecture constraints\n- plans/ → master plans\n- phases/ → phase definitions\n- tasks/ → executable task documents\n- backends/ → CLI backend adapters\n- agents/ → specialist agents\n- runtime/ → orchestration, routing, state\n- reports/ → execution reports (DO NOT MODIFY MANUALLY)\n- state/runtime_state.json → runtime state (DO NOT COMMIT)\n\n---\n\n## Task Execution Rules\n\n- Always operate from a task document when available\n- Respect:\n  - selected_backend\n  - verification_profile\n  - acceptance_criteria\n- If a task conflicts with architecture constraints or phase scope:\n  - STOP and report conflict\n\n---\n\n## Backend Rules\n\n- Backends must:\n  - execute commands deterministically\n  - capture stdout, stderr, exit_code\n  - not silently fail\n- Do not invent backend interfaces; use existing adapters\n- Codex CLI, Aider, Gemini, Claude Code should be invoked through backends only\n\n---\n\n## Verification Rules\n\n- Verification must be deterministic\n- Preferred checks:\n  - pytest\n  - python -m py_compile\n- Do not rely on model self-evaluation\n\n---\n\n## Execution Control Flow (PERMANENT ARCHITECTURAL RULE)\n\n**HEURISTIC INFERENCE MUST NEVER PARTICIPATE IN ABRACAPOCUS EXECUTION CONTROL FLOW.**\n\nAbracapocus must not determine execution success, failure, acceptance,\nrejection, blocking, retry eligibility, phase progression, or completion from\nheuristic inference. A heuristic is any conclusion that is *inferred* rather\nthan *directly established by an explicit executable contract or a concrete\nruntime fact*.\n\nRuntime status is derived ONLY from concrete, mechanically observable facts:\n\n1. The backend process exit code. A backend that exits `0` (with no hard\n   write-policy violation) is a successful execution.\n2. Objectively observed hard write-policy violations (changed paths outside the\n   declared allowed write paths).\n3. Explicit operator-authored commands (task/phase verification the plan\n   explicitly contains). Their raw results are reported, kept DISTINCT from\n   backend execution status.\n4. Objective orchestrator failures with direct evidence (backend could not\n   launch, required document could not be parsed, subprocess infrastructure\n   failed).\n\n**Verification results are observational and must not rewrite backend execution\nstatus.** A verifier returning non-zero must NEVER, by itself, turn a\nsuccessful backend execution into unverified, stop a phase, or trigger an\nautomatic rerun. Verification is the result of a command, not authority to\nrewrite history.\n\n**Execution control:** Task-local problems (non-zero exit, timeout,\nwrite-policy violation, frame failure, backend launch failure) produce\nacceptance status ``\"unverified\"`` with truthful evidence preserved. They\nMUST NOT stop sibling tasks, later phases, or the plan. Only operator\ncancellation (SIGINT/SIGTERM/dashboard cancel) may terminate a run\n(acceptance status ``\"interrupted\"``). Dependencies are ordering constraints,\nnot acceptance gates — any terminal attempt outcome satisfies a dependency\nedge. The status ``\"failed\"`` is banned from acceptance output.\n\nDo NOT reintroduce -- under any name, feature flag, \"advisory\" wrapper, or\ncompatibility mode -- context completeness/sufficiency scoring, change or\narchitecture assessment used as a gate, intent/scope matching, reconciliation\ngates, no-progress judgments, confidence/risk scores, model/LLM/reviewer\njudgments over status, shadow/adaptive/secondary-verification gates, or\nheuristic retry/failure-classification control flow. Failure classification may\nonly *summarize* an already-established concrete failure; it must never create\none. Retries are permitted only for explicitly defined mechanical backend\nfailures. Future agents must not add these systems back.\n\n---\n\n## Git Rules\n\n- Do not commit:\n  - runtime_state.json\n  - reports/\n  - logs/\n  - virtual environments\n- Do not modify .gitignore unless required by task\n- Do not create excessive commits; prefer grouped logical commits\n\n---\n\n## Allowed Changes\n\n- Implement task requirements\n- Fix failing verification\n- Update relevant tests\n- Improve documentation tied to the task\n\n---\n\n## Forbidden Changes\n\n- Changing architecture without explicit instruction\n- Adding dependencies without justification\n- Modifying unrelated files\n- Deleting important files\n- Bypassing verification\n\n---\n\n## Planning Rules\n\n- Plans are multi-phase\n- Completed sections are immutable\n- Remaining sections may be updated\n- Tasks must align with:\n  - project brief\n  - architecture constraints\n  - active phase\n\n---\n\n## Reporting\n\n- All executions must produce structured reports\n- Reports must include:\n  - changed files\n  - verification results\n  - assessment\n\n---\n\n## Behavior\n\n- Do not ask unnecessary questions\n- Do not stall execution\n- Do not perform broad scans unless required\n- Prefer direct action over analysis\n\n---\n\n## Priority Order\n\nThis ordering guides *implementation decisions* only. It does NOT make\nverification an acceptance authority: verification results are observational\n(see \"Execution Control Flow\"), and never override a concrete backend\nexecution result.\n\n1. Architecture constraints\n2. Task definition\n3. Verification results (observational signal, not acceptance authority)\n4. Plan guidance\n\nIf conflicts occur, follow this order.\n\nAGENTS metadata:\n{\"loaded\": true, \"path\": \"/home/mike/dev/mike/abracapocus/python/abracapocus_2/AGENTS.md\", \"rule_count\": 77, \"sha256_12\": \"3f9b549ba1ce\"}\n"
+      ],
+      "stdout": "81 passed, 1 skipped, and only the two allowed test files are new. Writing the verification record:\n",
+      "stderr": "",
+      "exit_code": 0,
+      "duration_seconds": 609.0096552371979,
+      "model": "openrouter/meta/muse-spark-1.3-contributor",
+      "model_tags": [],
+      "working_directory": "/home/mike/dev/mike/stocks/python/mike_trade",
+      "changed_files": [
+        {
+          "path": "tests/integration/test_dashboard_offline.py",
+          "status": "untracked",
+          "code": "??"
+        },
+        {
+          "path": "tests/integration/test_dashboard_readonly.py",
+          "status": "untracked",
+          "code": "??"
+        }
+      ],
+      "diff_summary": "git diff reported no changes",
+      "model_attempts": [
+        {
+          "backend": "pi_cli",
+          "model": "openrouter/meta/muse-spark-1.3-contributor",
+          "exit_code": 0,
+          "stdout": "81 passed, 1 skipped, and only the two allowed test files are new. Writing the verification record:\n",
+          "stderr": "",
+          "duration_seconds": 609.0096552371979,
+          "changed_files": [
+            {
+              "path": "tests/integration/test_dashboard_offline.py",
+              "status": "untracked",
+              "code": "??"
+            },
+            {
+              "path": "tests/integration/test_dashboard_readonly.py",
+              "status": "untracked",
+              "code": "??"
+            }
+          ],
+          "diff_summary": "git diff reported no changes",
+          "outcome_classification": "backend_completed_with_changes",
+          "backend_timeout": false,
+          "backend_verification_timeout": false,
+          "timeout_seconds": null
+        }
+      ],
+      "write_policy_violations": [],
+      "outcome_classification": "backend_completed_with_changes",
+      "backend_timeout": false,
+      "backend_verification_timeout": false,
+      "changed_files_at_timeout_exit": [],
+      "abracapocus_verification_ran_after_backend_timeout": false,
+      "verification_owner": "abracapocus",
+      "verification_result": "skipped"
+    }
+  ],
+  "review": {
+    "status": "approved",
+    "findings": [],
+    "summary": "r.5:Review complete",
+    "created_at": "2026-10-09T00:45:14.050560"
+  },
+  "verification": {
+    "status": "skipped",
+    "checks": [],
+    "created_at": "2026-10-09T00:45:14.050568",
+    "notes": "R:skipped",
+    "profile": "focused"
+  },
+  "metadata": {
+    "run_id": "ec1833e0-f5dd-4862-ba57-cc0c286f393f",
+    "project_name": "mike_trade",
+    "plan_version": "task-r.5",
+    "task_id": "r.5",
+    "task_title": "Verify production dashboard offline stale isolation and read-only behavior",
+    "task_status": "completed",
+    "selected_backend": "pi_cli",
+    "verification_profile": "focused",
+    "backend_reason": "phase_based",
+    "frame_failures": [],
+    "agents_md": {
+      "loaded": true,
+      "path": "/home/mike/dev/mike/abracapocus/python/abracapocus_2/AGENTS.md",
+      "rule_count": 77,
+      "sha256_12": "3f9b549ba1ce"
+    },
+    "phase_results": [
+      {
+        "phase_name": "R",
+        "status": "passed",
+        "verification": "skipped",
+        "task_results": [
+          {
+            "task_id": "r.5",
+            "status": "passed",
+            "acceptance_status": "accepted",
+            "backend": "pi_cli",
+            "backend_outcome_classification": "backend_completed_with_changes",
+            "changed_files": [
+              {
+                "path": "tests/integration/test_dashboard_offline.py",
+                "status": "untracked",
+                "code": "??"
+              },
+              {
+                "path": "tests/integration/test_dashboard_readonly.py",
+                "status": "untracked",
+                "code": "??"
+              }
+            ],
+            "backend_timeout": false,
+            "backend_elapsed_seconds": 609.0096552371979,
+            "backend_timeout_seconds": null,
+            "changed_files_at_timeout_exit": [],
+            "abracapocus_verification_ran_after_backend_timeout": false,
+            "verification_owner": "abracapocus",
+            "verification_result": "skipped",
+            "verification_status": "skipped",
+            "verification_checks": [],
+            "frame_failure": false,
+            "retry_attempts": []
+          }
+        ]
+      }
+    ]
+  }
+}

@@ -1,0 +1,95 @@
+{
+  "run_at": "2026-10-09T00:45:14.103552",
+  "phase_dir": "/home/mike/dev/mike/stocks/python/mike_trade/.abracapocus/plans/ACTIVE/MIKE_TRADE_COMPLETE_PRODUCT/r",
+  "status": "passed",
+  "counts": {
+    "passed": 5,
+    "failed": 0,
+    "blocked": 0,
+    "skipped": 0,
+    "unverified": 0
+  },
+  "tasks": [
+    {
+      "task_id": "r.1",
+      "task_file": "/home/mike/dev/mike/stocks/python/mike_trade/.abracapocus/plans/ACTIVE/MIKE_TRADE_COMPLETE_PRODUCT/r/task_r.1_implement_read_only_fastapi_server_and_typed_api_endpoints.json",
+      "status": "passed",
+      "acceptance_status": "accepted",
+      "task_verification": {
+        "status": "skipped",
+        "checks": [],
+        "owner": "abracapocus"
+      },
+      "run_id": "48e06f20-ba10-4e91-9eb3-6f86801cb58b",
+      "write_policy_violations": [],
+      "failure_classification": null,
+      "reviewer_summary": "r.1:Review complete"
+    },
+    {
+      "task_id": "r.2",
+      "task_file": "/home/mike/dev/mike/stocks/python/mike_trade/.abracapocus/plans/ACTIVE/MIKE_TRADE_COMPLETE_PRODUCT/r/task_r.2_build_production_react_typescript_vite_dashboard_application_and_asset_pipeline.json",
+      "status": "passed",
+      "acceptance_status": "accepted",
+      "task_verification": {
+        "status": "skipped",
+        "checks": [],
+        "owner": "abracapocus"
+      },
+      "run_id": "c8734334-6f2d-4951-9ddb-30017a63c196",
+      "write_policy_violations": [],
+      "failure_classification": null,
+      "reviewer_summary": "r.2:Review complete"
+    },
+    {
+      "task_id": "r.3",
+      "task_file": "/home/mike/dev/mike/stocks/python/mike_trade/.abracapocus/plans/ACTIVE/MIKE_TRADE_COMPLETE_PRODUCT/r/task_r.3_build_react_account_status_offline_health_and_stock_watchlist_views.json",
+      "status": "passed",
+      "acceptance_status": "accepted",
+      "task_verification": {
+        "status": "skipped",
+        "checks": [],
+        "owner": "abracapocus"
+      },
+      "run_id": "0bf37637-fe2b-40d2-9548-ff0a34457e92",
+      "write_policy_violations": [],
+      "failure_classification": null,
+      "reviewer_summary": "r.3:Review complete"
+    },
+    {
+      "task_id": "r.4",
+      "task_file": "/home/mike/dev/mike/stocks/python/mike_trade/.abracapocus/plans/ACTIVE/MIKE_TRADE_COMPLETE_PRODUCT/r/task_r.4_build_react_symbol_detail_account_scenario_order_and_protection_views.json",
+      "status": "passed",
+      "acceptance_status": "accepted",
+      "task_verification": {
+        "status": "skipped",
+        "checks": [],
+        "owner": "abracapocus"
+      },
+      "run_id": "5aa49d99-803a-4c69-a5e6-3cd5e6973afd",
+      "write_policy_violations": [],
+      "failure_classification": null,
+      "reviewer_summary": "r.4:Review complete"
+    },
+    {
+      "task_id": "r.5",
+      "task_file": "/home/mike/dev/mike/stocks/python/mike_trade/.abracapocus/plans/ACTIVE/MIKE_TRADE_COMPLETE_PRODUCT/r/task_r.5_verify_production_dashboard_offline_stale_isolation_and_read_only_behavior.json",
+      "status": "passed",
+      "acceptance_status": "accepted",
+      "task_verification": {
+        "status": "skipped",
+        "checks": [],
+        "owner": "abracapocus"
+      },
+      "run_id": "ec1833e0-f5dd-4862-ba57-cc0c286f393f",
+      "write_policy_violations": [],
+      "failure_classification": null,
+      "reviewer_summary": "r.5:Review complete"
+    }
+  ],
+  "phase_verification": {
+    "status": "warning",
+    "checks": [],
+    "notes": "phase verification complete",
+    "run_when": "all_tasks_pass"
+  }
+}
