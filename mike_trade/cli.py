@@ -1,159 +1,181 @@
-"""Command-line interface entry point for mike_trade.
+"""Provider-neutral operator CLI.
 
-Read-only operator surface: ``version`` and ``doctor``. No subcommand here
-performs network or broker calls, and no default resolves to LIVE.
-
-Any future live-mutating command must require an explicit live confirmation
-flag (see the root parser description).
+Exit codes are stable: ``0`` ok, ``2`` usage, ``3`` refused by a safety or
+confirmation guard, ``4`` engine offline or unreachable for an action that
+needs it, and ``5`` unhealthy or check failed. Commands are scoped by account
+and optional shadow scenario. LIVE mutations require ``--confirm-live YES`` or
+``CONFIRM_LIVE=YES``. Output is redacted and Decimal values are JSON strings.
 """
+
+from __future__ import annotations
 
 import argparse
 import importlib
+import json
 import os
 import sys
-from pathlib import Path
+from decimal import Decimal
+from typing import Any
 
-import mike_trade
-from mike_trade.app import AppSettings
-from mike_trade.domain.errors import ConfigurationError, MikeTradeError
-from mike_trade.observability.logging import configure_logging, get_logger
-from mike_trade.runtime import ExecutionMode
+from mike_trade.observability.logging import configure_logging
 
-# (pip distribution name, importable module name) for required runtime deps.
-REQUIRED_DEPENDENCIES: tuple[tuple[str, str], ...] = (
-    ("fastapi", "fastapi"),
-    ("uvicorn", "uvicorn"),
-    ("pydantic", "pydantic"),
-    ("pydantic-settings", "pydantic_settings"),
-    ("httpx", "httpx"),
-    ("alpaca-py", "alpaca"),
+EXIT_OK = 0
+EXIT_USAGE = 2
+EXIT_REFUSED = 3
+EXIT_ENGINE_OFFLINE = 4
+EXIT_UNHEALTHY = 5
+
+CANONICAL_COMMANDS = (
+    "doctor", "config-show", "providers", "provider-check", "broker-check", "data-check",
+    "strategies", "strategy-info", "strategy-check", "strategy-enable", "strategy-disable", "strategy-set",
+    "symbols", "symbols-add", "symbols-remove", "symbols-enable", "symbols-disable",
+    "start", "stop", "restart", "status",
+    "dashboard", "dashboard-start", "dashboard-stop", "dashboard-health",
+    "shadow-start", "shadow-stop", "shadow-list", "shadow-create", "shadow-reset",
+    "paper-start", "paper-stop", "paper-status",
+    "live-preflight", "live-enable", "live-start", "live-disable",
+    "pause", "resume", "pause-symbol", "resume-symbol", "entries-disable", "entries-enable",
+    "close", "close-all", "flatten",
+    "trail-status", "trail-history", "trail-policy-show", "trail-policy-set", "trail-reconcile",
+    "entry-limits", "entry-limits-reset", "cooldown-status",
+    "stop-status", "stops-audit",
+    "positions", "orders", "balance", "budget", "reconcile",
+    "signals", "evaluations", "events", "logs", "health",
+    "report", "report-daily", "report-symbol", "report-strategy", "report-pairs", "report-shadow", "report-comparison", "report-export",
+    "backtest", "backtest-status", "backtest-report", "backtest-list",
+    "cache-status", "cache-refresh",
+    "db-check", "db-backup", "db-restore-dry-run",
+    "service-install", "service-uninstall", "service-status",
 )
 
-# Credential environment variables are reported as PRESENT/ABSENT only.
-# Their values are never printed, logged, or committed.
-CREDENTIAL_ENV_VARS: tuple[str, ...] = (
-    "APCA_API_KEY_ID",
-    "APCA_API_SECRET_KEY",
-)
+HISTORY_COMMANDS = frozenset({"signals", "evaluations", "events", "logs", "health"})
+POSITION_COMMANDS = frozenset({
+    "positions", "orders", "balance", "budget", "reconcile", "close", "close-all", "flatten",
+    "stop-status", "stops-audit", "trail-status", "trail-history", "trail-policy-show",
+    "trail-policy-set", "trail-reconcile", "entry-limits", "entry-limits-reset", "cooldown-status",
+})
+LIVE_CONFIRM_COMMANDS = frozenset({
+    "close", "close-all", "flatten", "live-enable", "live-start", "entry-limits-reset",
+    "trail-policy-set", "trail-reconcile", "strategy-enable", "strategy-disable", "strategy-set",
+    "symbols-add", "symbols-remove", "symbols-enable", "symbols-disable", "resume", "resume-symbol", "entries-enable",
+})
 
 
-def _resolve_default_mode() -> ExecutionMode:
-    """Resolves the default execution mode; never LIVE.
-
-    Raises:
-        ConfigurationError: If the resolved default mode is LIVE.
-    """
-    mode = AppSettings().mode
-    if mode == ExecutionMode.LIVE:
-        raise ConfigurationError(
-            "Default execution mode must never resolve to LIVE.",
-            code="DOCTOR_DEFAULT_MODE_LIVE",
-            context={"mode": mode.value},
-        )
-    return mode
+def require_live_confirmation(args: argparse.Namespace, *, command: str | None = None) -> bool:
+    """Refuse guarded LIVE changes unless explicit CLI or environment approval exists."""
+    account = str(getattr(args, "account", "")).upper()
+    if (account == "LIVE" or account.startswith("LIVE:")) or getattr(args, "environment", "") == "LIVE":
+        confirmed = getattr(args, "confirm_live", None) == "YES" or os.environ.get("CONFIRM_LIVE") == "YES"
+        if not confirmed:
+            label = command or getattr(args, "subcommand", "this command")
+            print(f"Refused: {label} on a LIVE account requires --confirm-live YES or CONFIRM_LIVE=YES.", file=sys.stderr)
+            return False
+    return True
 
 
-def run_doctor() -> int:
-    """Performs local, read-only system diagnostic checks.
+def _global_options(parser: argparse.ArgumentParser, *, defaults: bool) -> None:
+    default = None if defaults else argparse.SUPPRESS
+    parser.add_argument("--account", default=default, help="Account scope (safe default: SHADOW)")
+    parser.add_argument("--scenario", default=default, help="Shadow scenario")
+    parser.add_argument("--format", choices=("table", "json"), default="table" if defaults else argparse.SUPPRESS)
+    parser.add_argument("--confirm-live", choices=("YES",), default=default, metavar="YES")
 
-    Makes no network or broker calls. Returns 0 when all required checks
-    pass, nonzero otherwise.
-    """
-    logger = get_logger("mike_trade.cli.doctor")
-    logger.info("Executing operator doctor diagnostics")
 
-    checks_passed = True
+def build_parser() -> argparse.ArgumentParser:
+    parser = argparse.ArgumentParser(prog="mike-trade", description="Provider-neutral mike_trade operator commands")
+    _global_options(parser, defaults=True)
+    subs = parser.add_subparsers(dest="subcommand", required=True)
+    for name in CANONICAL_COMMANDS:
+        command = subs.add_parser(name)
+        _global_options(command, defaults=False)
+        if name in {"close", "pause-symbol", "resume-symbol", "strategy-info", "strategy-check", "strategy-enable", "strategy-disable", "strategy-set", "symbols-add", "symbols-remove", "symbols-enable", "symbols-disable", "report-symbol", "report-strategy", "backtest-report"}:
+            command.add_argument("symbol_or_name", nargs="?", help="Symbol or strategy identifier")
+        if name in {"close", "pause-symbol", "resume-symbol", "strategy-info", "strategy-check", "strategy-enable", "strategy-disable", "strategy-set", "symbols-add", "symbols-remove", "symbols-enable", "symbols-disable", "report-symbol", "report-strategy", "backtest-report"}:
+            command.add_argument("value", nargs="?", help="Optional value or configuration")
+        if name in {"trail-policy-set", "shadow-create", "backtest", "report-export", "db-backup", "db-restore-dry-run"}:
+            command.add_argument("value", nargs="?", help="Policy, scenario, dataset, or path")
+        if name == "report-export":
+            command.add_argument("--output", dest="output_path")
+        if name in {"backtest", "report", "report-daily", "report-symbol", "report-strategy", "report-pairs", "report-shadow", "report-comparison"}:
+            command.add_argument("--period", default="all")
+        command.add_argument("--reason", default="operator request")
+    return parser
 
-    # 1. Python version check (required).
-    py_ver = sys.version_info
-    py_ver_str = f"{py_ver.major}.{py_ver.minor}.{py_ver.micro}"
-    if py_ver >= (3, 12):
-        print(f"[PASS] Python version: {py_ver_str} (>= 3.12)")
+
+def _json_safe(value: Any, key: str = "") -> Any:
+    if isinstance(value, Decimal):
+        return str(value)
+    if isinstance(value, dict):
+        return {str(k): ("***" if _secret_key(str(k)) else _json_safe(v, str(k))) for k, v in value.items()}
+    if isinstance(value, (list, tuple)):
+        return [_json_safe(v, key) for v in value]
+    if hasattr(value, "__dataclass_fields__"):
+        from dataclasses import asdict
+        return _json_safe(asdict(value), key)
+    return value
+
+
+def _secret_key(key: str) -> bool:
+    low = key.lower()
+    return any(part in low for part in ("secret", "password", "token", "api_key", "key_id")) or low in {"account", "scope", "account_id", "account_scope_id"}
+
+
+def render(value: Any, output_format: str = "table") -> None:
+    value = _json_safe(value)
+    if output_format == "json":
+        print(json.dumps(value, sort_keys=True, default=str))
+    elif isinstance(value, dict):
+        if not value:
+            print("(no data)")
+        else:
+            width = max(map(len, map(str, value.keys())))
+            for key, item in value.items():
+                print(f"{str(key):<{width}}  {item}")
+    elif isinstance(value, list):
+        for item in value:
+            print(item)
     else:
-        print(f"[FAIL] Python version: {py_ver_str} (requires >= 3.12)")
-        checks_passed = False
+        print(value)
 
-    # 2. Package import check (required; this module already imports it).
-    print(f"[PASS] mike_trade importable: version {mike_trade.__version__}")
 
-    # 3. Required dependency import checks (required; imports only, no calls).
-    for dist_name, module_name in REQUIRED_DEPENDENCIES:
-        try:
-            importlib.import_module(module_name)
-            print(f"[PASS] Dependency '{dist_name}' resolvable (import '{module_name}')")
-        except ImportError:
-            print(f"[FAIL] Dependency '{dist_name}' not resolvable (import '{module_name}')")
-            checks_passed = False
-
-    # 4. State directory: resolvable path (required) and gitignored (required).
-    state_path = Path("state").resolve()
-    print(f"[PASS] State directory path resolvable: {state_path}")
-    gitignore_path = Path(".gitignore")
-    gitignored = False
-    if gitignore_path.exists():
-        lines = {
-            line.strip().rstrip("/")
-            for line in gitignore_path.read_text().splitlines()
-            if line.strip() and not line.strip().startswith("#")
-        }
-        gitignored = "state" in lines
-    if gitignored:
-        print("[PASS] State directory 'state/' is gitignored")
-    else:
-        print("[FAIL] State directory 'state/' is not gitignored")
-        checks_passed = False
-
-    # 5. Credential environment variables: presence only, never values.
-    # Informational only; absence does not fail the doctor.
-    for var_name in CREDENTIAL_ENV_VARS:
-        status = "PRESENT" if os.environ.get(var_name) else "ABSENT"
-        print(f"[PASS] Credential '{var_name}': {status}")
-
-    # 6. Resolved default mode must not be LIVE (required).
-    try:
-        mode = _resolve_default_mode()
-        print(f"[PASS] Resolved default mode: {mode.value} (never LIVE)")
-    except MikeTradeError as exc:
-        print(f"[FAIL] Resolved default mode is LIVE: {exc.message}")
-        checks_passed = False
-
-    return 0 if checks_passed else 1
+def _history(name: str, args: argparse.Namespace) -> int:
+    # Deliberately lazy: task s.5 owns the implementation and tests may replace it.
+    module = importlib.import_module("mike_trade.controls.history_commands")
+    return int(module.run_history_command(name, args))
 
 
 def main(argv: list[str] | None = None) -> int:
-    """CLI entry point for the operator surface."""
     configure_logging(level="INFO")
-
-    parser = argparse.ArgumentParser(
-        prog="mike-trade",
-        description=(
-            "mike_trade operator CLI for the single-engine trading application. "
-            "Any future live-mutating command requires an explicit live "
-            "confirmation flag (e.g. --confirm-live) in addition to "
-            "live-mode selection; nothing here places orders or contacts "
-            "a broker."
-        ),
-    )
-    subparsers = parser.add_subparsers(dest="subcommand", help="Available subcommands")
-
-    subparsers.add_parser("version", help="Print application version")
-    subparsers.add_parser("doctor", help="Run local read-only diagnostic checks")
-
-    args = parser.parse_args(argv)
-
+    parser = build_parser()
     try:
-        if args.subcommand == "version":
-            print(mike_trade.__version__)
-            return 0
-        if args.subcommand == "doctor":
-            return run_doctor()
-    except MikeTradeError as exc:
-        print(f"[FAIL] {exc.message}", file=sys.stderr)
-        return 2
-
-    parser.print_help()
-    return 0
+        args = parser.parse_args(argv)
+    except SystemExit as exc:
+        return EXIT_OK if exc.code == 0 else EXIT_USAGE
+    args.account = args.account or os.environ.get("MIKE_TRADE_ACCOUNT", "SHADOW:default")
+    if args.scenario is None and ":" in args.account and args.account.count(":") > 1:
+        args.scenario = args.account.split(":", 2)[2]
+    name = args.subcommand
+    if name in LIVE_CONFIRM_COMMANDS and not require_live_confirmation(args, command=name):
+        return EXIT_REFUSED
+    if name in HISTORY_COMMANDS:
+        try:
+            return _history(name, args)
+        except (ImportError, AttributeError) as exc:
+            print(f"History command unavailable: {exc}", file=sys.stderr)
+            return EXIT_UNHEALTHY
+    try:
+        module_name = "mike_trade.controls.position_commands" if name in POSITION_COMMANDS else "mike_trade.controls.cli_commands"
+        module = importlib.import_module(module_name)
+        return int(module.run_operator_command(name, args))
+    except Exception as exc:
+        from mike_trade.controls.cli_commands import OperatorCommandError
+        from mike_trade.controls.position_commands import PositionCommandError
+        if isinstance(exc, (OperatorCommandError, PositionCommandError)):
+            print(str(exc), file=sys.stderr)
+            return exc.exit_code
+        print(f"Command failed: {exc}", file=sys.stderr)
+        return EXIT_UNHEALTHY
 
 
 if __name__ == "__main__":
-    sys.exit(main())
+    raise SystemExit(main())
