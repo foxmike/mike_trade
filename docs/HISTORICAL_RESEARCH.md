@@ -143,7 +143,9 @@ different result fails closed rather than overwriting the artifact.
 
 The R730 checkout is `/home/mike/dev/mike/stocks/python/mike_trade` on
 `mike@192.168.254.147`. DEV remains the source of code and historical data.
-Commit and push code on DEV, then update the R730 manually:
+The R730 uses the same private GitHub repository as DEV. Its SSH key can read
+the repository; no GitHub token is stored in the checkout. For future code
+updates, commit and push on DEV, then update the R730 manually:
 
 ```sh
 ssh mike@192.168.254.147
@@ -151,6 +153,19 @@ cd /home/mike/dev/mike/stocks/python/mike_trade
 git pull --ff-only origin main
 make research-build
 ```
+
+The initial configuration was transferred directly over SSH. For a fresh
+checkout, copy files only if the server does not already have them:
+
+```sh
+rsync -a --ignore-existing --chmod=F600 .env mike@192.168.254.147:/home/mike/dev/mike/stocks/python/mike_trade/.env
+rsync -a --ignore-existing config/mike_trade.yaml mike@192.168.254.147:/home/mike/dev/mike/stocks/python/mike_trade/config/mike_trade.yaml
+ssh mike@192.168.254.147 'cd /home/mike/dev/mike/stocks/python/mike_trade || exit; if ! grep -q "^COMPOSE_FILE=" .env; then printf "\nCOMPOSE_FILE=compose.yaml:compose.r730.yaml\n" >> .env; fi; chmod 600 .env'
+```
+
+For later configuration changes, transfer an incoming copy with `rsync` and
+review it against the server settings before replacing them. Keep the server's
+`COMPOSE_FILE` setting. Credentials stay in `.env` and are never committed.
 
 From DEV, `make research-sync-r730` uses rsync over SSH to copy new Parquet
 snapshots, manifests, the initial DuckDB catalog, and research artifacts. It
@@ -186,4 +201,7 @@ free -h
 
 Progress and completion counts print to the terminal. Ctrl-C cancels queued
 work and waits for active workers to finish; completed per-run results remain
-available.
+available. The research container exits when the command finishes. To stop a
+running foreground job gracefully, press Ctrl-C in its terminal; `make stop`
+is for persistent Compose services and is not needed for research jobs. Use
+`docker ps` afterward to confirm the research container has exited.
