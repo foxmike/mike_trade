@@ -138,3 +138,52 @@ otherwise it acquires only uncovered leading/trailing ranges for that symbol.
 It never downloads per strategy. An identical complete backtest rerun in the
 same result directory verifies the content-addressed ledger and reuses it; a
 different result fails closed rather than overwriting the artifact.
+
+## R730 research server
+
+The R730 checkout is `/home/mike/dev/mike/stocks/python/mike_trade` on
+`mike@192.168.254.147`. DEV remains the source of code and historical data.
+Commit and push code on DEV, then update the R730 manually:
+
+```sh
+ssh mike@192.168.254.147
+cd /home/mike/dev/mike/stocks/python/mike_trade
+git pull --ff-only origin main
+make research-build
+```
+
+From DEV, `make research-sync-r730` uses rsync over SSH to copy new Parquet
+snapshots, manifests, the initial DuckDB catalog, and research artifacts. It
+does not delete or overwrite existing server files. It holds the source
+catalog lock while transferring and excludes disposable validation runs.
+Run `make research-sync-r730 RESEARCH_SSH='ssh -S /path/to/socket'` when using
+an authenticated SSH control socket. After later transfers, run the following
+on the R730 to backfill its persistent catalog from new manifests:
+
+```sh
+docker compose run --rm --no-deps mike-trade-research research-data list
+```
+
+The R730 `.env` and `config/mike_trade.yaml` are copied directly from DEV
+over SSH during initial deployment. Its local `.env` additionally selects
+`COMPOSE_FILE=compose.yaml:compose.r730.yaml`; preserve this line when
+refreshing credentials. The overlay puts engine/API services behind the
+inactive `trading` profile, and the research service has no trading journal
+mount or broker order credentials. Do not use `make up` for research.
+
+Run a foreground batch and inspect results with:
+
+```sh
+make research-six START=2026-07-09T00:00:00Z END=2026-10-09T00:00:00Z WORKERS=auto
+make research-batch JOBS=research/jobs.json WORKERS=18
+make research-results
+docker compose run --rm --no-deps mike-trade-research research-results --results /app/research/parallel-bench/auto
+docker ps --filter label=com.docker.compose.service=mike-trade-research
+docker stats --no-stream
+lscpu
+free -h
+```
+
+Progress and completion counts print to the terminal. Ctrl-C cancels queued
+work and waits for active workers to finish; completed per-run results remain
+available.

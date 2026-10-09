@@ -401,13 +401,19 @@ report-export: ## Export the trade report (VALUE=dataset, OUT=file path)
 
 # --- backtests ---
 
-.PHONY: backtest backtest-status backtest-report backtest-list research-build research-data research-six research-backtest research-batch research-results
+.PHONY: backtest backtest-status backtest-report backtest-list research-build research-data research-six research-backtest research-batch research-results research-sync-r730
 
 WORKERS ?= auto
 JOBS ?=
+RESEARCH_REMOTE ?= mike@192.168.254.147
+RESEARCH_REMOTE_ROOT ?= /home/mike/dev/mike/stocks/python/mike_trade
+RESEARCH_SSH ?= ssh
 
 research-build: ## Build only the manually invoked research image
 	docker compose build mike-trade-research
+
+research-sync-r730: ## Incrementally copy immutable research data/results from DEV to the R730
+	flock -s research/data/.catalog-write.lock rsync -a --ignore-existing --exclude='/failure-check/' --exclude='/duplicate-write-check/' --exclude='/final-parallel-check/' -e "$(RESEARCH_SSH)" research/ "$(RESEARCH_REMOTE):$(RESEARCH_REMOTE_ROOT)/research/"
 
 backtest: ## Run a backtest (VALUE=dataset or manifest reference)
 	CONFIRM_LIVE=$(CONFIRM_LIVE) $(CLI) backtest $(BASE_FLAGS) $(VALUE)

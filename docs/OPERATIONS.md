@@ -382,8 +382,11 @@ Backtests run from manifests or datasets referenced by `VALUE` and never
 touch broker credentials.
 
 Historical Parquet/DuckDB research uses the separate Docker Compose research
-commands. Use `make research-six WORKERS=auto` for the baseline batch or
+commands. `make research-build` builds only the research image. Use
+`make research-six START=... END=... WORKERS=auto` for the baseline batch or
 `make research-batch JOBS=research/jobs.json WORKERS=4` for a general batch.
+Run `make research-sync-r730` on DEV to copy new immutable research data and
+results to the R730 over SSH.
 Worker selection respects CPU affinity/quota and available memory; detailed
 experiment schema, progress, artifact, and reproducibility behavior is in
 [Historical Research](HISTORICAL_RESEARCH.md).
