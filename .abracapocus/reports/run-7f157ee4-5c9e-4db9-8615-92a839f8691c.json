@@ -1,0 +1,157 @@
+{
+  "plan_summary": "Task run: Prepare optional local systemd service templates without deployment or additional authentication",
+  "backend_executions": [
+    {
+      "backend": "pi_cli",
+      "command": [
+        "pi",
+        "-p",
+        "--provider",
+        "openrouter",
+        "--model",
+        "meta/muse-spark-1.3-contributor",
+        "Task: Prepare optional local systemd service templates without deployment or additional authentication\nDescription: Prepare simple, OPTIONAL systemd service templates and lightweight service-management helpers for mike_trade. The application is being developed and tested on the DEV desktop. DO NOT deploy, install, enable, start, or configure services on the Dell R730 or DEV as part of this task. The R730 is only a future target; operator will develop a separate scripted deployment after the trading application is proven ready. The implementation should remain efficient and compatible with an Ubuntu R730, but this task produces source files only.\n\nContext: This is a single-operator trading experiment in a private home LAN, not a public multi-user trading service. Prioritize ease of use, operational reliability, quick intervention, and simple maintenance. Do not introduce a new identity, authentication, token, confirmation, or secrets-management system.\n\nBefore editing, inspect:\n- mike_trade/controls/service_manager.py, if present\n- mike_trade/controls/ for existing lifecycle and emergency-stop behavior\n- existing settings/configuration and .env loading conventions\n- mike_trade/dashboard/ and its FastAPI production entrypoint\n- Makefile and existing deployment artifacts\n\nImplementation requirements:\n1. deploy/systemd/mike-trade-engine.service: create a straightforward TEMPLATE for a possible later Ubuntu deployment, not an installed service. Use the existing Linux operator account via a documented User= or a user-level systemd arrangement; do NOT create an extra login or dedicated service account. Reuse the application's existing environment/config loading (the operator's normal .env); do NOT require separate /etc/mike-trade/{shadow,paper,live}.env files, root ownership, permissions ceremonies, external secret stores, or new tokens. Do not embed actual credentials in the unit. Resolve the installed repo path, venv path, working directory, and mode through straightforward documented substitutions appropriate for a future deployment. Include Restart=on-failure, a bounded restart policy, and a reasonable TimeoutStopSec for graceful shutdown. A normal stop must allow SIGTERM/drain, and must not close positions or cancel broker-held protective stops. Avoid an elaborate systemd sandbox or filesystem permissions framework.\n2. deploy/systemd/mike-trade-dashboard.service: create a separate optional TEMPLATE running FastAPI with the compiled React build, not a Vite development server. The dashboard must remain reachable if the engine fails or is stopped, so do not add Requires=/BindsTo=/PartOf= on the engine. Reuse existing configuration. Do not add dashboard login, passwords, tokens, role-based access, session handling, or identity infrastructure. Default to localhost, configurable for the operator's private LAN. Keep the dashboard read-only through the existing application architecture, not through additional logins.\n3. mike_trade/controls/service_manager.py: implement minimal, maintainable start/stop/restart/status/enable/disable helpers if existing CLI/Make targets require them. No duplicate service orchestration framework, install wizard, privilege broker, permission validator, token management, or per-command LIVE confirmation flag. Use normal OS permissions for systemctl. Starting, restarting, enabling, stopping, or checking services must not prompt for or require any new application-level token, password, CONFIRM_LIVE variable, or --confirm-live flag. Service-manager controls must remain easy to invoke. If systemd units are not yet installed, return a clear, ordinary 'not installed' result; do not install them automatically.\n4. Retain existing trading-engine controls: config-based mode selection, account isolation, single-instance database lock enforced by the engine, order/risk limits, and existing broker credentials. This task must not weaken or bypass trading safety checks already implemented elsewhere. Crucially, 'stop engine' and 'disable new entries' must never require interactive confirmation, and must not implicitly flatten positions, liquidate, or cancel broker-held protective stops.\n5. Never print or log actual API secrets. No new secret storage, additional API keys, authentication keys, login workflows, confirmation tokens, sudo requirements beyond ordinary systemd behavior, or repetitive prompts.\n6. No deployment actions: do not call systemctl, write to /etc/systemd or ~/.config/systemd, enable lingering, change Linux users/groups/permissions, connect to the R730, transfer application files, or start an engine or dashboard. Work only in allowed repository source paths. The later deployment will be handled by a separate operator-approved script.\n7. Prefer clear, small implementations over abstraction-heavy security or service-management frameworks. Keep changes limited to the three allowed paths and avoid broad tests.\nPhase: T\nAcceptance criteria:\n  - Both deploy/systemd/mike-trade-engine.service and deploy/systemd/mike-trade-dashboard.service exist as clearly documented optional future-use templates, each with [Unit], [Service], and [Install] sections.\n  - Neither service is installed, enabled, started, or deployed to DEV or the R730 by this task. No systemctl commands or host configuration changes are executed.\n  - No new Linux account, login, credential file layout, authentication mechanism, authorization token, confirmation flag, or password is required by either service template or service_manager.py.\n  - The engine template uses existing application configuration/.env conventions, does not embed real credentials, and includes graceful SIGTERM shutdown, TimeoutStopSec, and Restart=on-failure.\n  - The dashboard remains independent of engine service lifecycle, serves the compiled React frontend through FastAPI, is read-only, and adds no dashboard authentication or broker credential requirement.\n  - Service manager provides straightforward operations, if needed, without extra LIVE-mode start/restart/enable confirmation or application-level tokens. Stop and status have no confirmation requirements.\n  - No stop operation invokes liquidation, position flattening, order cancellation, or cancellation of broker-held protective stops.\n  - Any pre-existing engine-level mode controls, instance lock, and trading risk/order limits remain intact; this task does not add or bypass those controls.\n  - The code and comments clearly distinguish future deployment templates from current DEV execution.\nContext: AGENTS.md guidance:\n# AGENTS.md\n## Purpose\nThis repository is operated by an autonomous multi-agent system (abracapocus_2).\nAll agents must follow these rules when modifying the codebase.\n---\n## Core Principles\n- Minimal blast radius: only modify what is required for the task\n- Deterministic verification: all changes must be verifiable via code (tests, compile, scripts)\n- No architecture drift: do not introduce new frameworks or major design changes unless explicitly required\n- No unrelated refactors\n- All changes must be reproducible from a clean clone\n---\n## Project Structure\n- docs/ → design, plans, architecture constraints\n- plans/ → master plans\n- phases/ → phase definitions\n- tasks/ → executable task documents\n- backends/ → CLI backend adapters\n- agents/ → specialist agents\n- runtime/ → orchestration, routing, state\n...(truncated)\n\n## Task Contract Constraints\n\n{\n  \"allowed_write_paths\": [\n    \"deploy/systemd/mike-trade-engine.service\",\n    \"deploy/systemd/mike-trade-dashboard.service\",\n    \"mike_trade/controls/service_manager.py\"\n  ],\n  \"forbidden_changes\": [\n    \"modify files outside allowed_write_paths\",\n    \"change PLAN_SKELETON.json or any planning artifacts under .abracapocus/\",\n    \"create new user accounts, passwords, tokens, CONFIRM_LIVE checks, --confirm-live flags, or additional authentication for routine service operations\",\n    \"require extra root-owned or per-mode external env files, elaborate permission validation, or mandatory secret-manager integration\",\n    \"introduce unnecessary systemd sandboxing directives or multi-user service infrastructure\",\n    \"install, start, enable, stop, or modify real services on DEV or the Dell R730\",\n    \"run real systemctl, SSH to the R730, write outside the repository, or perform deployment of any kind\",\n    \"commit or embed actual credentials, tokens, or account identifiers\",\n    \"remove or bypass existing engine-level trading risk limits, mode isolation, or order safety controls\",\n    \"add stop hooks that liquidate positions or cancel broker-held protective stops\",\n    \"make the dashboard unit depend on the engine unit lifecycle\",\n    \"invoke live broker endpoints or broad test suites\"\n  ]\n}\nAGENTS.md:\n# AGENTS.md\n\n## Purpose\n\nThis repository is operated by an autonomous multi-agent system (abracapocus_2).\nAll agents must follow these rules when modifying the codebase.\n\n---\n\n## Core Principles\n\n- Minimal blast radius: only modify what is required for the task\n- Deterministic verification: all changes must be verifiable via code (tests, compile, scripts)\n- No architecture drift: do not introduce new frameworks or major design changes unless explicitly required\n- No unrelated refactors\n- All changes must be reproducible from a clean clone\n\n---\n\n## Project Structure\n\n- docs/ → design, plans, architecture constraints\n- plans/ → master plans\n- phases/ → phase definitions\n- tasks/ → executable task documents\n- backends/ → CLI backend adapters\n- agents/ → specialist agents\n- runtime/ → orchestration, routing, state\n- reports/ → execution reports (DO NOT MODIFY MANUALLY)\n- state/runtime_state.json → runtime state (DO NOT COMMIT)\n\n---\n\n## Task Execution Rules\n\n- Always operate from a task document when available\n- Respect:\n  - selected_backend\n  - verification_profile\n  - acceptance_criteria\n- If a task conflicts with architecture constraints or phase scope:\n  - STOP and report conflict\n\n---\n\n## Backend Rules\n\n- Backends must:\n  - execute commands deterministically\n  - capture stdout, stderr, exit_code\n  - not silently fail\n- Do not invent backend interfaces; use existing adapters\n- Codex CLI, Aider, Gemini, Claude Code should be invoked through backends only\n\n---\n\n## Verification Rules\n\n- Verification must be deterministic\n- Preferred checks:\n  - pytest\n  - python -m py_compile\n- Do not rely on model self-evaluation\n\n---\n\n## Execution Control Flow (PERMANENT ARCHITECTURAL RULE)\n\n**HEURISTIC INFERENCE MUST NEVER PARTICIPATE IN ABRACAPOCUS EXECUTION CONTROL FLOW.**\n\nAbracapocus must not determine execution success, failure, acceptance,\nrejection, blocking, retry eligibility, phase progression, or completion from\nheuristic inference. A heuristic is any conclusion that is *inferred* rather\nthan *directly established by an explicit executable contract or a concrete\nruntime fact*.\n\nRuntime status is derived ONLY from concrete, mechanically observable facts:\n\n1. The backend process exit code. A backend that exits `0` (with no hard\n   write-policy violation) is a successful execution.\n2. Objectively observed hard write-policy violations (changed paths outside the\n   declared allowed write paths).\n3. Explicit operator-authored commands (task/phase verification the plan\n   explicitly contains). Their raw results are reported, kept DISTINCT from\n   backend execution status.\n4. Objective orchestrator failures with direct evidence (backend could not\n   launch, required document could not be parsed, subprocess infrastructure\n   failed).\n\n**Verification results are observational and must not rewrite backend execution\nstatus.** A verifier returning non-zero must NEVER, by itself, turn a\nsuccessful backend execution into unverified, stop a phase, or trigger an\nautomatic rerun. Verification is the result of a command, not authority to\nrewrite history.\n\n**Execution control:** Task-local problems (non-zero exit, timeout,\nwrite-policy violation, frame failure, backend launch failure) produce\nacceptance status ``\"unverified\"`` with truthful evidence preserved. They\nMUST NOT stop sibling tasks, later phases, or the plan. Only operator\ncancellation (SIGINT/SIGTERM/dashboard cancel) may terminate a run\n(acceptance status ``\"interrupted\"``). Dependencies are ordering constraints,\nnot acceptance gates — any terminal attempt outcome satisfies a dependency\nedge. The status ``\"failed\"`` is banned from acceptance output.\n\nDo NOT reintroduce -- under any name, feature flag, \"advisory\" wrapper, or\ncompatibility mode -- context completeness/sufficiency scoring, change or\narchitecture assessment used as a gate, intent/scope matching, reconciliation\ngates, no-progress judgments, confidence/risk scores, model/LLM/reviewer\njudgments over status, shadow/adaptive/secondary-verification gates, or\nheuristic retry/failure-classification control flow. Failure classification may\nonly *summarize* an already-established concrete failure; it must never create\none. Retries are permitted only for explicitly defined mechanical backend\nfailures. Future agents must not add these systems back.\n\n---\n\n## Git Rules\n\n- Do not commit:\n  - runtime_state.json\n  - reports/\n  - logs/\n  - virtual environments\n- Do not modify .gitignore unless required by task\n- Do not create excessive commits; prefer grouped logical commits\n\n---\n\n## Allowed Changes\n\n- Implement task requirements\n- Fix failing verification\n- Update relevant tests\n- Improve documentation tied to the task\n\n---\n\n## Forbidden Changes\n\n- Changing architecture without explicit instruction\n- Adding dependencies without justification\n- Modifying unrelated files\n- Deleting important files\n- Bypassing verification\n\n---\n\n## Planning Rules\n\n- Plans are multi-phase\n- Completed sections are immutable\n- Remaining sections may be updated\n- Tasks must align with:\n  - project brief\n  - architecture constraints\n  - active phase\n\n---\n\n## Reporting\n\n- All executions must produce structured reports\n- Reports must include:\n  - changed files\n  - verification results\n  - assessment\n\n---\n\n## Behavior\n\n- Do not ask unnecessary questions\n- Do not stall execution\n- Do not perform broad scans unless required\n- Prefer direct action over analysis\n\n---\n\n## Priority Order\n\nThis ordering guides *implementation decisions* only. It does NOT make\nverification an acceptance authority: verification results are observational\n(see \"Execution Control Flow\"), and never override a concrete backend\nexecution result.\n\n1. Architecture constraints\n2. Task definition\n3. Verification results (observational signal, not acceptance authority)\n4. Plan guidance\n\nIf conflicts occur, follow this order.\n\nAGENTS metadata:\n{\"loaded\": true, \"path\": \"/home/mike/dev/mike/abracapocus/python/abracapocus_2/AGENTS.md\", \"rule_count\": 77, \"sha256_12\": \"3f9b549ba1ce\"}\n"
+      ],
+      "stdout": "Done. All work stayed within the three allowed paths; no services installed, enabled, started, or configured, and no `systemctl`, SSH, user/permission, or host change was executed.\n\n**Created files**\n\n1. **`deploy/systemd/mike-trade-engine.service`** — optional future-use template\n   - `[Unit]` / `[Service]` / `[Install]` present; `After=network-online.target`, bounded restart (`Restart=on-failure`, `RestartSec=10`, `StartLimitIntervalSec=300` / `StartLimitBurst=5`).\n   - Graceful stop: `KillSignal=SIGTERM`, `TimeoutStopSec=90`; header documents that stop drains and never flattens positions or cancels broker-held protective stops.\n   - Reuses the operator's normal `.env` via `EnvironmentFile=-__ENV_FILE__` plus existing `MIKE_TRADE_*` conventions; explicit comment forbids separate `/etc/mike-trade/{shadow,paper,live}.env` layouts and new secret stores. No credentials embedded — only `__OPERATOR_USER__` / `__REPO_DIR__` / `__VENV_DIR__` / `__ENV_FILE__` / `__ACCOUNT__` substitution tokens.\n   - `User=__OPERATOR_USER__` (existing account; no new login/service account), with a documented user-level alternative. `ExecStart` reuses the normal CLI path. No sandbox directives.\n\n2. **`deploy/systemd/mike-trade-dashboard.service`** — optional future-use template\n   - `[Unit]` / `[Service]` / `[Install]` present; **no lifecycle binding to the engine unit** (only `After=network.target`).\n   - `ExecStart=__VENV_DIR__/bin/python -m mike_trade.dashboard.server` — the FastAPI production entrypoint serving the compiled React build, never a dev server. `Restart=on-failure`, `TimeoutStopSec=30`.\n   - Defaults to localhost via existing `DashboardSettings`/`MIKE_TRADE_DASHBOARD_BIND` conventions; LAN use documented as private opt-in. Read-only by architecture; no login, roles, sessions, or identity additions. No broker credentials needed.\n\n3. **`mike_trade/controls/service_manager.py`** — minimal stdlib-only helpers (`start/stop/restart/status/enable/disable/is_active/is_enabled`) returning a `ServiceResult` dataclass\n   - Plain `systemctl` calls under normal OS permissions; no tokens, passwords, `CONFIRM_LIVE`-style variables, or confirm flags in signatures or logic. `stop`/`status` need no confirmation and issue no trading commands (no broker access, so no liquidation/flatten/cancel possible).\n   - Missing unit files yield a clear `installed=False` / \"not installed\" result; nothing is ever installed automatically. Secrets never captured or rendered. Runner is injectable so behavior is testable without invoking `systemctl`.\n\n**Verification (deterministic, no live endpoints, no broad suites)**\n- `py_compile` on `service_manager.py`: OK.\n- Section/directive checks on both units (`[Unit]/[Service]/[Install]`, `Restart=on-failure`, `TimeoutStopSec`, `User=`, `EnvironmentFile`, `ExecStart`): OK.\n- Strict literal scan for forbidden tokens (vite, unit bindings, sandboxing, confirm-live variants, passwords/tokens, per-mode env layouts): none found.\n- Behavior check with a fake runner (real `systemctl` never invoked): stop/status/restart/enable/disable OK; missing unit → clean \"not installed\"; no auto-install.\n- `git status` confirms only the three allowed paths changed (`deploy/` holds exactly the two unit files).\n",
+      "stderr": "",
+      "exit_code": 0,
+      "duration_seconds": 220.4980342388153,
+      "model": "openrouter/meta/muse-spark-1.3-contributor",
+      "model_tags": [],
+      "working_directory": "/home/mike/dev/mike/stocks/python/mike_trade",
+      "changed_files": [
+        {
+          "path": "deploy/systemd/mike-trade-dashboard.service",
+          "status": "untracked",
+          "code": "??"
+        },
+        {
+          "path": "deploy/systemd/mike-trade-engine.service",
+          "status": "untracked",
+          "code": "??"
+        },
+        {
+          "path": "mike_trade/controls/service_manager.py",
+          "status": "untracked",
+          "code": "??"
+        }
+      ],
+      "diff_summary": "git diff reported no changes",
+      "model_attempts": [
+        {
+          "backend": "pi_cli",
+          "model": "openrouter/meta/muse-spark-1.3-contributor",
+          "exit_code": 0,
+          "stdout": "Done. All work stayed within the three allowed paths; no services installed, enabled, started, or configured, and no `systemctl`, SSH, user/permission, or host change was executed.\n\n**Created files**\n\n1. **`deploy/systemd/mike-trade-engine.service`** — optional future-use template\n   - `[Unit]` / `[Service]` / `[Install]` present; `After=network-online.target`, bounded restart (`Restart=on-failure`, `RestartSec=10`, `StartLimitIntervalSec=300` / `StartLimitBurst=5`).\n   - Graceful stop: `KillSignal=SIGTERM`, `TimeoutStopSec=90`; header documents that stop drains and never flattens positions or cancels broker-held protective stops.\n   - Reuses the operator's normal `.env` via `EnvironmentFile=-__ENV_FILE__` plus existing `MIKE_TRADE_*` conventions; explicit comment forbids separate `/etc/mike-trade/{shadow,paper,live}.env` layouts and new secret stores. No credentials embedded — only `__OPERATOR_USER__` / `__REPO_DIR__` / `__VENV_DIR__` / `__ENV_FILE__` / `__ACCOUNT__` substitution tokens.\n   - `User=__OPERATOR_USER__` (existing account; no new login/service account), with a documented user-level alternative. `ExecStart` reuses the normal CLI path. No sandbox directives.\n\n2. **`deploy/systemd/mike-trade-dashboard.service`** — optional future-use template\n   - `[Unit]` / `[Service]` / `[Install]` present; **no lifecycle binding to the engine unit** (only `After=network.target`).\n   - `ExecStart=__VENV_DIR__/bin/python -m mike_trade.dashboard.server` — the FastAPI production entrypoint serving the compiled React build, never a dev server. `Restart=on-failure`, `TimeoutStopSec=30`.\n   - Defaults to localhost via existing `DashboardSettings`/`MIKE_TRADE_DASHBOARD_BIND` conventions; LAN use documented as private opt-in. Read-only by architecture; no login, roles, sessions, or identity additions. No broker credentials needed.\n\n3. **`mike_trade/controls/service_manager.py`** — minimal stdlib-only helpers (`start/stop/restart/status/enable/disable/is_active/is_enabled`) returning a `ServiceResult` dataclass\n   - Plain `systemctl` calls under normal OS permissions; no tokens, passwords, `CONFIRM_LIVE`-style variables, or confirm flags in signatures or logic. `stop`/`status` need no confirmation and issue no trading commands (no broker access, so no liquidation/flatten/cancel possible).\n   - Missing unit files yield a clear `installed=False` / \"not installed\" result; nothing is ever installed automatically. Secrets never captured or rendered. Runner is injectable so behavior is testable without invoking `systemctl`.\n\n**Verification (deterministic, no live endpoints, no broad suites)**\n- `py_compile` on `service_manager.py`: OK.\n- Section/directive checks on both units (`[Unit]/[Service]/[Install]`, `Restart=on-failure`, `TimeoutStopSec`, `User=`, `EnvironmentFile`, `ExecStart`): OK.\n- Strict literal scan for forbidden tokens (vite, unit bindings, sandboxing, confirm-live variants, passwords/tokens, per-mode env layouts): none found.\n- Behavior check with a fake runner (real `systemctl` never invoked): stop/status/restart/enable/disable OK; missing unit → clean \"not installed\"; no auto-install.\n- `git status` confirms only the three allowed paths changed (`deploy/` holds exactly the two unit files).\n",
+          "stderr": "",
+          "duration_seconds": 220.4980342388153,
+          "changed_files": [
+            {
+              "path": "deploy/systemd/mike-trade-dashboard.service",
+              "status": "untracked",
+              "code": "??"
+            },
+            {
+              "path": "deploy/systemd/mike-trade-engine.service",
+              "status": "untracked",
+              "code": "??"
+            },
+            {
+              "path": "mike_trade/controls/service_manager.py",
+              "status": "untracked",
+              "code": "??"
+            }
+          ],
+          "diff_summary": "git diff reported no changes",
+          "outcome_classification": "backend_completed_with_changes",
+          "backend_timeout": false,
+          "backend_verification_timeout": false,
+          "timeout_seconds": null
+        }
+      ],
+      "write_policy_violations": [],
+      "outcome_classification": "backend_completed_with_changes",
+      "backend_timeout": false,
+      "backend_verification_timeout": false,
+      "changed_files_at_timeout_exit": [],
+      "abracapocus_verification_ran_after_backend_timeout": false,
+      "verification_owner": "abracapocus",
+      "verification_result": "skipped"
+    }
+  ],
+  "review": {
+    "status": "approved",
+    "findings": [],
+    "summary": "t.1:Review complete",
+    "created_at": "2026-10-09T01:42:23.533397"
+  },
+  "verification": {
+    "status": "skipped",
+    "checks": [],
+    "created_at": "2026-10-09T01:42:23.533404",
+    "notes": "T:skipped",
+    "profile": "focused"
+  },
+  "metadata": {
+    "run_id": "7f157ee4-5c9e-4db9-8615-92a839f8691c",
+    "project_name": "mike_trade",
+    "plan_version": "task-t.1",
+    "task_id": "t.1",
+    "task_title": "Prepare optional local systemd service templates without deployment or additional authentication",
+    "task_status": "completed",
+    "selected_backend": "pi_cli",
+    "verification_profile": "focused",
+    "backend_reason": "phase_based",
+    "frame_failures": [],
+    "agents_md": {
+      "loaded": true,
+      "path": "/home/mike/dev/mike/abracapocus/python/abracapocus_2/AGENTS.md",
+      "rule_count": 77,
+      "sha256_12": "3f9b549ba1ce"
+    },
+    "phase_results": [
+      {
+        "phase_name": "T",
+        "status": "passed",
+        "verification": "skipped",
+        "task_results": [
+          {
+            "task_id": "t.1",
+            "status": "passed",
+            "acceptance_status": "accepted",
+            "backend": "pi_cli",
+            "backend_outcome_classification": "backend_completed_with_changes",
+            "changed_files": [
+              {
+                "path": "deploy/systemd/mike-trade-dashboard.service",
+                "status": "untracked",
+                "code": "??"
+              },
+              {
+                "path": "deploy/systemd/mike-trade-engine.service",
+                "status": "untracked",
+                "code": "??"
+              },
+              {
+                "path": "mike_trade/controls/service_manager.py",
+                "status": "untracked",
+                "code": "??"
+              }
+            ],
+            "backend_timeout": false,
+            "backend_elapsed_seconds": 220.4980342388153,
+            "backend_timeout_seconds": null,
+            "changed_files_at_timeout_exit": [],
+            "abracapocus_verification_ran_after_backend_timeout": false,
+            "verification_owner": "abracapocus",
+            "verification_result": "skipped",
+            "verification_status": "skipped",
+            "verification_checks": [],
+            "frame_failure": false,
+            "retry_attempts": []
+          }
+        ]
+      }
+    ]
+  }
+}
