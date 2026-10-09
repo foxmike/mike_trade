@@ -1,0 +1,157 @@
+{
+  "plan_summary": "Task run: Build React account status OFFLINE health and stock watchlist views",
+  "backend_executions": [
+    {
+      "backend": "pi_cli",
+      "command": [
+        "pi",
+        "-p",
+        "--provider",
+        "openrouter",
+        "--model",
+        "meta/muse-spark-1.3-contributor",
+        "Task: Build React account status OFFLINE health and stock watchlist views\nDescription: Build the top-level React App shell, the global status header/banner, the account KPI ribbon, the health summary and the stock watchlist.\n\nBefore editing, inspect: mike_trade/dashboard/api.py (r.1) for the exact endpoint paths and response fields; dashboard/frontend/src/main.tsx, vite.config.ts and tsconfig.json (r.2); and the CLI/Makefile command names to display as operator guidance.\n\nShared contract with r.4 (r.4 runs concurrently, so do not create r.4's files):\n- dashboard/frontend/src/api/client.ts exports typed functions listAccounts(), getStatus(accountId), getKpis(accountId), getWatchlist(accountId), getHealth(accountId), getSymbolDetail(accountId, symbol), getAccountDetail(accountId), plus the matching response TypeScript types and an ApiError class.\n- dashboard/frontend/src/components/SymbolDetails.tsx exports a default component with props { accountId: string; symbol: string; onClose: () => void }.\n- dashboard/frontend/src/components/AccountDetail.tsx exports AccountSelector with props { selectedAccountId: string | null; onSelect: (accountId: string) => void } and a default AccountDetail component with props { accountId: string }.\nImport only these names.\n\nImplement dashboard/frontend/src/App.tsx:\n(1) Holds selectedAccountId and selectedSymbol state. Switching accounts discards all previously fetched account-scoped state before rendering new data, so values from different accounts/modes/scenarios are never rendered together.\n(2) Polls status/kpis/watchlist/health on a bounded interval with AbortController cancellation on account switch.\n(3) The global header shows the selected account/scenario and a prominent mode badge (LIVE/PAPER/SHADOW, with LIVE visually distinct); engine state RUNNING/PAUSED/DEGRADED/OFFLINE/RECONCILING; a live heartbeat age; broker and data connectivity/freshness; market OPEN/CLOSED/HALTED; exchange clock (America/New_York); next entry cutoff; entries-allowed reasons.\n(4) Heartbeat age keeps ticking client-side between polls from last_heartbeat_at relative to server_time offset. The UI shows OFFLINE once that age exceeds the threshold even if the next poll has not arrived. If the dashboard API itself is unreachable, it shows a distinct DASHBOARD API UNREACHABLE banner.\n(5) A STALE watermark overlays last-known values whenever engine_state is OFFLINE or a value has fresh=false.\n(6) The KPI ribbon shows cash, buying power, equity, total budget, reserved pending buys, deployed capital, open positions, pending orders, daily realized/unrealized P&L, lifetime P&L, unresolved protection/data/reconciliation error counts and provenance/as-of. Decimal strings are displayed as-is, without float arithmetic.\n(7) A health panel shows feed age/reconnects/subscriptions, broker status/rate errors, scheduler lag, persistence/backup state, last reconciliation and actionable errors with the CLI/Make command text.\n\nImplement dashboard/frontend/src/components/Watchlist.tsx:\n- A table of up to 10 symbol rows with every watchlist field from the API: price/bid/ask, data age and stale flag; composite phase; active BUY/SELL strategies; next due trigger/last evaluation; last signal with accepted/rejected reason; confirmed qty/cost basis/purchase time; budget/commitment/planned loss; daily entry count/cap; loss streak/lockout/reset mode; cooldown/next eligible; minimum-hold remaining; entry cutoff; protection mode/status/price/quantity; native broker HWM labeled 'broker HWM' vs stepped local anchor labeled 'stepped anchor'; desired vs confirmed stop; last protection update; realized/unrealized/lifetime P&L.\n- Shows a coverage warning when protection quantity differs from confirmed quantity.\n- Clicking a row calls onSelectSymbol.\n\nImplement dashboard/frontend/src/styles.css: restrained operational styling with clear state colors for OFFLINE/DEGRADED/STALE/LIVE, readable tables and a responsive layout. No charts.\n\nNo element may submit orders or change configuration. Where an action is relevant, render the CLI/Make command text in a <code> element.\nPhase: R\nAcceptance criteria:\n  - App.tsx renders a header with mode badge, engine state, ticking heartbeat age, broker/data freshness, market state, exchange clock, next entry cutoff and a STALE watermark when engine_state is OFFLINE or values have fresh=false\n  - The client-side heartbeat age turns the header OFFLINE once the age exceeds the API-provided threshold without waiting for a new engine flag; an unreachable dashboard API shows a distinct unreachable banner\n  - Account switching clears previously loaded account-scoped KPI, watchlist and health state and aborts in-flight requests before showing the newly selected account\n  - The KPI ribbon displays all listed account KPIs with provenance/as-of, rendering Decimal strings without parseFloat/Number arithmetic on money values\n  - Watchlist.tsx renders up to 10 rows with every listed per-symbol field, separately labels broker HWM vs stepped anchor and desired vs confirmed stop, and flags protection quantity that differs from confirmed quantity\n  - Budget, entry cutoff, lockout, cooldown and minimum-hold reasons are visible per symbol row\n  - No button, form or fetch call in these files uses a non-GET method; operator actions are shown only as CLI/Make command text\n  - Only App.tsx, Watchlist.tsx and styles.css are written; imports from r.4 files match the shared contract names exactly\nContext: AGENTS.md guidance:\n# AGENTS.md\n## Purpose\nThis repository is operated by an autonomous multi-agent system (abracapocus_2).\nAll agents must follow these rules when modifying the codebase.\n---\n## Core Principles\n- Minimal blast radius: only modify what is required for the task\n- Deterministic verification: all changes must be verifiable via code (tests, compile, scripts)\n- No architecture drift: do not introduce new frameworks or major design changes unless explicitly required\n- No unrelated refactors\n- All changes must be reproducible from a clean clone\n---\n## Project Structure\n- docs/ → design, plans, architecture constraints\n- plans/ → master plans\n- phases/ → phase definitions\n- tasks/ → executable task documents\n- backends/ → CLI backend adapters\n- agents/ → specialist agents\n- runtime/ → orchestration, routing, state\n...(truncated)\n\n## Task Contract Constraints\n\n{\n  \"allowed_symbols\": [\n    \"App\",\n    \"Watchlist\"\n  ],\n  \"allowed_write_paths\": [\n    \"dashboard/frontend/src/App.tsx\",\n    \"dashboard/frontend/src/components/Watchlist.tsx\",\n    \"dashboard/frontend/src/styles.css\"\n  ],\n  \"forbidden_changes\": [\n    \"modify files outside allowed_write_paths\",\n    \"create or edit api/client.ts, SymbolDetails.tsx or AccountDetail.tsx (owned by r.4)\",\n    \"change PLAN_SKELETON.json or planning artifacts\",\n    \"add UI controls that place orders or mutate configuration\",\n    \"issue non-GET HTTP requests\",\n    \"merge or sum balances/positions across accounts, modes or scenarios\",\n    \"add charting-terminal features or chart libraries\",\n    \"run broad test suites or backtests\"\n  ]\n}\nAGENTS.md:\n# AGENTS.md\n\n## Purpose\n\nThis repository is operated by an autonomous multi-agent system (abracapocus_2).\nAll agents must follow these rules when modifying the codebase.\n\n---\n\n## Core Principles\n\n- Minimal blast radius: only modify what is required for the task\n- Deterministic verification: all changes must be verifiable via code (tests, compile, scripts)\n- No architecture drift: do not introduce new frameworks or major design changes unless explicitly required\n- No unrelated refactors\n- All changes must be reproducible from a clean clone\n\n---\n\n## Project Structure\n\n- docs/ → design, plans, architecture constraints\n- plans/ → master plans\n- phases/ → phase definitions\n- tasks/ → executable task documents\n- backends/ → CLI backend adapters\n- agents/ → specialist agents\n- runtime/ → orchestration, routing, state\n- reports/ → execution reports (DO NOT MODIFY MANUALLY)\n- state/runtime_state.json → runtime state (DO NOT COMMIT)\n\n---\n\n## Task Execution Rules\n\n- Always operate from a task document when available\n- Respect:\n  - selected_backend\n  - verification_profile\n  - acceptance_criteria\n- If a task conflicts with architecture constraints or phase scope:\n  - STOP and report conflict\n\n---\n\n## Backend Rules\n\n- Backends must:\n  - execute commands deterministically\n  - capture stdout, stderr, exit_code\n  - not silently fail\n- Do not invent backend interfaces; use existing adapters\n- Codex CLI, Aider, Gemini, Claude Code should be invoked through backends only\n\n---\n\n## Verification Rules\n\n- Verification must be deterministic\n- Preferred checks:\n  - pytest\n  - python -m py_compile\n- Do not rely on model self-evaluation\n\n---\n\n## Execution Control Flow (PERMANENT ARCHITECTURAL RULE)\n\n**HEURISTIC INFERENCE MUST NEVER PARTICIPATE IN ABRACAPOCUS EXECUTION CONTROL FLOW.**\n\nAbracapocus must not determine execution success, failure, acceptance,\nrejection, blocking, retry eligibility, phase progression, or completion from\nheuristic inference. A heuristic is any conclusion that is *inferred* rather\nthan *directly established by an explicit executable contract or a concrete\nruntime fact*.\n\nRuntime status is derived ONLY from concrete, mechanically observable facts:\n\n1. The backend process exit code. A backend that exits `0` (with no hard\n   write-policy violation) is a successful execution.\n2. Objectively observed hard write-policy violations (changed paths outside the\n   declared allowed write paths).\n3. Explicit operator-authored commands (task/phase verification the plan\n   explicitly contains). Their raw results are reported, kept DISTINCT from\n   backend execution status.\n4. Objective orchestrator failures with direct evidence (backend could not\n   launch, required document could not be parsed, subprocess infrastructure\n   failed).\n\n**Verification results are observational and must not rewrite backend execution\nstatus.** A verifier returning non-zero must NEVER, by itself, turn a\nsuccessful backend execution into unverified, stop a phase, or trigger an\nautomatic rerun. Verification is the result of a command, not authority to\nrewrite history.\n\n**Execution control:** Task-local problems (non-zero exit, timeout,\nwrite-policy violation, frame failure, backend launch failure) produce\nacceptance status ``\"unverified\"`` with truthful evidence preserved. They\nMUST NOT stop sibling tasks, later phases, or the plan. Only operator\ncancellation (SIGINT/SIGTERM/dashboard cancel) may terminate a run\n(acceptance status ``\"interrupted\"``). Dependencies are ordering constraints,\nnot acceptance gates — any terminal attempt outcome satisfies a dependency\nedge. The status ``\"failed\"`` is banned from acceptance output.\n\nDo NOT reintroduce -- under any name, feature flag, \"advisory\" wrapper, or\ncompatibility mode -- context completeness/sufficiency scoring, change or\narchitecture assessment used as a gate, intent/scope matching, reconciliation\ngates, no-progress judgments, confidence/risk scores, model/LLM/reviewer\njudgments over status, shadow/adaptive/secondary-verification gates, or\nheuristic retry/failure-classification control flow. Failure classification may\nonly *summarize* an already-established concrete failure; it must never create\none. Retries are permitted only for explicitly defined mechanical backend\nfailures. Future agents must not add these systems back.\n\n---\n\n## Git Rules\n\n- Do not commit:\n  - runtime_state.json\n  - reports/\n  - logs/\n  - virtual environments\n- Do not modify .gitignore unless required by task\n- Do not create excessive commits; prefer grouped logical commits\n\n---\n\n## Allowed Changes\n\n- Implement task requirements\n- Fix failing verification\n- Update relevant tests\n- Improve documentation tied to the task\n\n---\n\n## Forbidden Changes\n\n- Changing architecture without explicit instruction\n- Adding dependencies without justification\n- Modifying unrelated files\n- Deleting important files\n- Bypassing verification\n\n---\n\n## Planning Rules\n\n- Plans are multi-phase\n- Completed sections are immutable\n- Remaining sections may be updated\n- Tasks must align with:\n  - project brief\n  - architecture constraints\n  - active phase\n\n---\n\n## Reporting\n\n- All executions must produce structured reports\n- Reports must include:\n  - changed files\n  - verification results\n  - assessment\n\n---\n\n## Behavior\n\n- Do not ask unnecessary questions\n- Do not stall execution\n- Do not perform broad scans unless required\n- Prefer direct action over analysis\n\n---\n\n## Priority Order\n\nThis ordering guides *implementation decisions* only. It does NOT make\nverification an acceptance authority: verification results are observational\n(see \"Execution Control Flow\"), and never override a concrete backend\nexecution result.\n\n1. Architecture constraints\n2. Task definition\n3. Verification results (observational signal, not acceptance authority)\n4. Plan guidance\n\nIf conflicts occur, follow this order.\n\nAGENTS metadata:\n{\"loaded\": true, \"path\": \"/home/mike/dev/mike/abracapocus/python/abracapocus_2/AGENTS.md\", \"rule_count\": 77, \"sha256_12\": \"3f9b549ba1ce\"}\n"
+      ],
+      "stdout": "Done. Wrote exactly the three allowed files (harness-owned `.abracapocus/` entries were already there, untouched by me):\n\n**`dashboard/frontend/src/App.tsx`**\n- Holds `selectedAccountId` + `selectedSymbol`; account switch aborts in-flight polls (`AbortController` + generation counter) and nulls all account-scoped state before new data renders — no cross-account/mode/scenario mixing.\n- Bounded 5s polling of `getStatus`/`getKpis`/`getWatchlist`/`getHealth` (GET only, via r.4 client contract names).\n- Header: account/scenario, LIVE/PAPER/SHADOW badge (LIVE visually distinct), engine state, heartbeat age ticking client-side every 1s from `heartbeat_age_seconds` + elapsed-since-poll, promoted to OFFLINE past 60s (mirrors `DashboardSettings.heartbeat_offline_seconds`) without waiting for a poll; distinct `DASHBOARD API UNREACHABLE` banner when `ApiError` has no HTTP status / network `TypeError`.\n- STALE watermark when engine is OFFLINE or values have `fresh=false`; per-card STALE flags on the KPI ribbon.\n- KPI ribbon renders all 15 listed KPIs with as-of/provenance; Decimal strings displayed as-is — no `parseFloat`/`Number`/non-GET anywhere (verified by grep).\n- Health panel: feed age/reconnects/subscriptions, broker link/rate errors, scheduler lag, persistence/backup, last reconciliation, actionable errors each with their `command` in `<code>`, plus `make doctor` / `mike-trade doctor` guidance.\n\n**`dashboard/frontend/src/components/Watchlist.tsx`**\n- Table capped at 10 rows with every watchlist field: price/bid/ask + feed, data age/stale, composite phase, BUY/SELL strategies, next trigger/last evaluation/last signal (with ACCEPTED/REJECTED + reason), qty/cost/purchase time, budget/commitment/planned loss, entry count/cap, streak/lockout/reset, cooldown/next-eligible, min-hold remaining, entry cutoff, protection mode/status/price/quantity + last update, **broker HWM** vs **stepped anchor** and **desired vs confirmed stop** as separate labeled fields, realized/unrealized/lifetime P&L.\n- Coverage-gap warning when protection quantity ≠ confirmed quantity (string compare, no float math); row/button click calls `onSelectSymbol`.\n\n**`dashboard/frontend/src/styles.css`** — restrained ops styling, distinct OFFLINE/DEGRADED/STALE/LIVE colors, readable sticky-header tables, responsive breakpoint. No charts.\n\nVerification: `tsc --noEmit` passes clean (checked in `/tmp` against contract-shaped stubs, since r.4 owns the real files — no r.4 files created or edited in the repo).\n",
+      "stderr": "",
+      "exit_code": 0,
+      "duration_seconds": 230.206885099411,
+      "model": "openrouter/meta/muse-spark-1.3-contributor",
+      "model_tags": [],
+      "working_directory": "/home/mike/dev/mike/stocks/python/mike_trade",
+      "changed_files": [
+        {
+          "path": "dashboard/frontend/src/App.tsx",
+          "status": "untracked",
+          "code": "??"
+        },
+        {
+          "path": "dashboard/frontend/src/components/Watchlist.tsx",
+          "status": "untracked",
+          "code": "??"
+        },
+        {
+          "path": "dashboard/frontend/src/styles.css",
+          "status": "untracked",
+          "code": "??"
+        }
+      ],
+      "diff_summary": "git diff reported no changes",
+      "model_attempts": [
+        {
+          "backend": "pi_cli",
+          "model": "openrouter/meta/muse-spark-1.3-contributor",
+          "exit_code": 0,
+          "stdout": "Done. Wrote exactly the three allowed files (harness-owned `.abracapocus/` entries were already there, untouched by me):\n\n**`dashboard/frontend/src/App.tsx`**\n- Holds `selectedAccountId` + `selectedSymbol`; account switch aborts in-flight polls (`AbortController` + generation counter) and nulls all account-scoped state before new data renders — no cross-account/mode/scenario mixing.\n- Bounded 5s polling of `getStatus`/`getKpis`/`getWatchlist`/`getHealth` (GET only, via r.4 client contract names).\n- Header: account/scenario, LIVE/PAPER/SHADOW badge (LIVE visually distinct), engine state, heartbeat age ticking client-side every 1s from `heartbeat_age_seconds` + elapsed-since-poll, promoted to OFFLINE past 60s (mirrors `DashboardSettings.heartbeat_offline_seconds`) without waiting for a poll; distinct `DASHBOARD API UNREACHABLE` banner when `ApiError` has no HTTP status / network `TypeError`.\n- STALE watermark when engine is OFFLINE or values have `fresh=false`; per-card STALE flags on the KPI ribbon.\n- KPI ribbon renders all 15 listed KPIs with as-of/provenance; Decimal strings displayed as-is — no `parseFloat`/`Number`/non-GET anywhere (verified by grep).\n- Health panel: feed age/reconnects/subscriptions, broker link/rate errors, scheduler lag, persistence/backup, last reconciliation, actionable errors each with their `command` in `<code>`, plus `make doctor` / `mike-trade doctor` guidance.\n\n**`dashboard/frontend/src/components/Watchlist.tsx`**\n- Table capped at 10 rows with every watchlist field: price/bid/ask + feed, data age/stale, composite phase, BUY/SELL strategies, next trigger/last evaluation/last signal (with ACCEPTED/REJECTED + reason), qty/cost/purchase time, budget/commitment/planned loss, entry count/cap, streak/lockout/reset, cooldown/next-eligible, min-hold remaining, entry cutoff, protection mode/status/price/quantity + last update, **broker HWM** vs **stepped anchor** and **desired vs confirmed stop** as separate labeled fields, realized/unrealized/lifetime P&L.\n- Coverage-gap warning when protection quantity ≠ confirmed quantity (string compare, no float math); row/button click calls `onSelectSymbol`.\n\n**`dashboard/frontend/src/styles.css`** — restrained ops styling, distinct OFFLINE/DEGRADED/STALE/LIVE colors, readable sticky-header tables, responsive breakpoint. No charts.\n\nVerification: `tsc --noEmit` passes clean (checked in `/tmp` against contract-shaped stubs, since r.4 owns the real files — no r.4 files created or edited in the repo).\n",
+          "stderr": "",
+          "duration_seconds": 230.206885099411,
+          "changed_files": [
+            {
+              "path": "dashboard/frontend/src/App.tsx",
+              "status": "untracked",
+              "code": "??"
+            },
+            {
+              "path": "dashboard/frontend/src/components/Watchlist.tsx",
+              "status": "untracked",
+              "code": "??"
+            },
+            {
+              "path": "dashboard/frontend/src/styles.css",
+              "status": "untracked",
+              "code": "??"
+            }
+          ],
+          "diff_summary": "git diff reported no changes",
+          "outcome_classification": "backend_completed_with_changes",
+          "backend_timeout": false,
+          "backend_verification_timeout": false,
+          "timeout_seconds": null
+        }
+      ],
+      "write_policy_violations": [],
+      "outcome_classification": "backend_completed_with_changes",
+      "backend_timeout": false,
+      "backend_verification_timeout": false,
+      "changed_files_at_timeout_exit": [],
+      "abracapocus_verification_ran_after_backend_timeout": false,
+      "verification_owner": "abracapocus",
+      "verification_result": "skipped"
+    }
+  ],
+  "review": {
+    "status": "approved",
+    "findings": [],
+    "summary": "r.3:Review complete",
+    "created_at": "2026-10-09T00:32:13.028811"
+  },
+  "verification": {
+    "status": "skipped",
+    "checks": [],
+    "created_at": "2026-10-09T00:32:13.028818",
+    "notes": "R:skipped",
+    "profile": "focused"
+  },
+  "metadata": {
+    "run_id": "0bf37637-fe2b-40d2-9548-ff0a34457e92",
+    "project_name": "mike_trade",
+    "plan_version": "task-r.3",
+    "task_id": "r.3",
+    "task_title": "Build React account status OFFLINE health and stock watchlist views",
+    "task_status": "completed",
+    "selected_backend": "pi_cli",
+    "verification_profile": "focused",
+    "backend_reason": "phase_based",
+    "frame_failures": [],
+    "agents_md": {
+      "loaded": true,
+      "path": "/home/mike/dev/mike/abracapocus/python/abracapocus_2/AGENTS.md",
+      "rule_count": 77,
+      "sha256_12": "3f9b549ba1ce"
+    },
+    "phase_results": [
+      {
+        "phase_name": "R",
+        "status": "passed",
+        "verification": "skipped",
+        "task_results": [
+          {
+            "task_id": "r.3",
+            "status": "passed",
+            "acceptance_status": "accepted",
+            "backend": "pi_cli",
+            "backend_outcome_classification": "backend_completed_with_changes",
+            "changed_files": [
+              {
+                "path": "dashboard/frontend/src/App.tsx",
+                "status": "untracked",
+                "code": "??"
+              },
+              {
+                "path": "dashboard/frontend/src/components/Watchlist.tsx",
+                "status": "untracked",
+                "code": "??"
+              },
+              {
+                "path": "dashboard/frontend/src/styles.css",
+                "status": "untracked",
+                "code": "??"
+              }
+            ],
+            "backend_timeout": false,
+            "backend_elapsed_seconds": 230.206885099411,
+            "backend_timeout_seconds": null,
+            "changed_files_at_timeout_exit": [],
+            "abracapocus_verification_ran_after_backend_timeout": false,
+            "verification_owner": "abracapocus",
+            "verification_result": "skipped",
+            "verification_status": "skipped",
+            "verification_checks": [],
+            "frame_failure": false,
+            "retry_attempts": []
+          }
+        ]
+      }
+    ]
+  }
+}
