@@ -1,0 +1,158 @@
+{
+  "plan_summary": "Task run: Implement read-only FastAPI server and typed API endpoints",
+  "backend_executions": [
+    {
+      "backend": "claude_code_cli",
+      "command": [
+        "claude",
+        "-p",
+        "Task: Implement read-only FastAPI server and typed API endpoints\nPhase: R\nDescription: Implement the dashboard as a separate, read-only FastAPI service process that stays independent of the trading engine process.\n\nBefore editing, inspect: the persistence package from earlier phases (SQLite WAL schema, migrations, read projections, the engine heartbeat record, and the feed/broker connectivity and freshness records); the configuration package (dashboard bind host/port, heartbeat/staleness thresholds, data paths, mode/account/scenario definitions); domain types for modes (LIVE/PAPER/SHADOW), Decimal money/quantity types, positions, orders, protective/trailing state, eligibility/lockout/cooldown state; the clock port and the America/New_York session calendar; and the existing CLI/Makefile command names, so the UI can show the matching operator command text. Reuse the existing projection readers and domain types. Do not duplicate business logic.\n\nImplement mike_trade/dashboard/api.py:\n(1) Pydantic response models for every endpoint. Money, quantity, price, P&L and budget fields are Decimal values serialized as JSON strings, never floats. All timestamps are timezone-aware UTC ISO-8601, and an exchange-local presentation field is included where useful.\n(2) A read service over read projections. It opens SQLite strictly read-only (file: URI with mode=ro and PRAGMA query_only=ON) and never runs migrations, writes, or broker/data-provider calls.\n(3) GET-only routes:\n- GET /api/live: dashboard liveness. It must not touch the DB.\n- GET /api/accounts: lists account_id, mode, scenario name, label.\n- GET /api/accounts/{account_id}/status: mode; engine_state RUNNING/PAUSED/DEGRADED/OFFLINE/RECONCILING; last_heartbeat_at; heartbeat_age_seconds; broker and data connectivity with as-of and freshness; market OPEN/CLOSED/HALTED; exchange clock; next entry cutoff; entries_allowed with reasons; is_stale watermark flag; server_time.\n- GET /api/accounts/{account_id}/kpis: cash; buying power; equity; configured total budget; reserved pending buys; deployed capital; open position count; pending order count; daily realized/unrealized P&L; lifetime P&L; unresolved protection/data/reconciliation error counts; provenance and as_of per value.\n- GET /api/accounts/{account_id}/watchlist: up to 10 symbol rows. Each row has every per-symbol field required by the phase goal: price/bid/ask/data age/stale; composite phase; active BUY/SELL strategies; next due trigger and last evaluation; last signal with accepted/rejected reason; confirmed qty/cost basis/purchase time; per-symbol budget/commitment/planned loss; daily entry count/cap; loss streak/lockout/reset mode; cooldown/next eligible time; minimum-hold remaining; entry cutoff; protection mode/status/price/quantity; native broker HWM vs stepped anchor; desired vs confirmed stop; last protection update; realized/unrealized/lifetime P&L.\n- GET /api/accounts/{account_id}/symbols/{symbol}: evaluation/signal timeline including NO_SIGNAL summaries; evidence and feed provenance (IEX); broker order tree; protective/trailing history with proposed vs confirmed changes; last 20 managed cycles with realized P&L, holding duration, slippage and policy decision reasons.\n- GET /api/accounts/{account_id}/detail: broker truth positions/balances; external/UNMANAGED holdings; cash/equity provenance; orders; fees/corporate activity; reconciliation drift.\n- GET /api/accounts/{account_id}/health: feed age, reconnects, subscription count; broker status and rate-limit errors; scheduler lag; persistence/backup state; last reconciliation timestamp; actionable errors, each with the CLI/Make command text to resolve it.\n(4) The dashboard computes OFFLINE itself from heartbeat age against the configured threshold, using an injected clock. It never depends on an engine-written offline flag. When OFFLINE or when an authoritative source is stale or disconnected, every affected value carries fresh=false plus a stale_reason. Broker positions, native HWM, stop status and balances are never reported fresh when the broker link is stale or disconnected. Feed stale with a fresh heartbeat yields DEGRADED with entries_allowed=false.\n(5) Every query is scoped by account_id. There is no cross-account or cross-mode aggregation, and an unknown account_id returns 404.\n\nImplement mike_trade/dashboard/server.py:\n(a) An app factory, create_app(settings, clock, db_path, static_dir), that mounts the API router.\n(b) It serves production-built frontend assets from dashboard/frontend/dist (index.html plus hashed assets, with SPA fallback for non-/api paths). It never proxies to or requires a Vite dev server. If dist is missing, UI routes return a clear 503 message while /api keeps working.\n(c) It rejects every non-GET/HEAD method with 405 and registers no write routes.\n(d) It runs under uvicorn as its own process entry point (python -m mike_trade.dashboard.server). It defaults to binding 127.0.0.1. Binding a non-loopback address requires an explicit config opt-in and logs a warning that remote exposure must go behind private auth/TLS/VPN/reverse proxy.\n(e) Startup does not require the engine to be running or the DB to have a recent heartbeat.\n\nWrite tests/integration/test_dashboard_api.py with FastAPI TestClient against a temporary migrated SQLite DB seeded through the existing persistence writers and an injected fixed clock. Cover the response shape of each endpoint, Decimal-as-string serialization, the 404 for an unknown account, the heartbeat-age OFFLINE computation, the 405 for POST, and static index serving from a temporary dist dir. Bounded decision budget: if a needed projection field does not exist, expose it as null with stale_reason='unavailable' rather than adding writes or schema changes outside allowed paths.\nContext: AGENTS.md guidance:\n# AGENTS.md\n## Purpose\nThis repository is operated by an autonomous multi-agent system (abracapocus_2).\nAll agents must follow these rules when modifying the codebase.\n---\n## Core Principles\n- Minimal blast radius: only modify what is required for the task\n- Deterministic verification: all changes must be verifiable via code (tests, compile, scripts)\n- No architecture drift: do not introduce new frameworks or major design changes unless explicitly required\n- No unrelated refactors\n- All changes must be reproducible from a clean clone\n---\n## Project Structure\n- docs/ → design, plans, architecture constraints\n- plans/ → master plans\n- phases/ → phase definitions\n- tasks/ → executable task documents\n- backends/ → CLI backend adapters\n- agents/ → specialist agents\n- runtime/ → orchestration, routing, state\n...(truncated)\n\n## Task Contract Constraints\n\n{\n  \"allowed_symbols\": [\n    \"create_app\",\n    \"DashboardReadService\",\n    \"compute_engine_state\"\n  ],\n  \"allowed_write_paths\": [\n    \"mike_trade/dashboard/server.py\",\n    \"mike_trade/dashboard/api.py\",\n    \"tests/integration/test_dashboard_api.py\"\n  ],\n  \"forbidden_changes\": [\n    \"modify files outside allowed_write_paths\",\n    \"change PLAN_SKELETON.json or planning artifacts\",\n    \"add any dashboard write, order, configuration-mutation or control endpoint\",\n    \"open the database read-write or run migrations from the dashboard\",\n    \"import or call broker, market-data or research adapters from the dashboard\",\n    \"access live broker credentials or create live broker orders\",\n    \"aggregate balances or positions across accounts, modes or scenarios\",\n    \"run broad test suites or backtests\"\n  ]\n}\n\nAGENTS.md guidance:\n# AGENTS.md\n\n## Purpose\n\nThis repository is operated by an autonomous multi-agent system (abracapocus_2).\nAll agents must follow these rules when modifying the codebase.\n\n---\n\n## Core Principles\n\n- Minimal blast radius: only modify what is required for the task\n- Deterministic verification: all changes must be verifiable via code (tests, compile, scripts)\n- No architecture drift: do not introduce new frameworks or major design changes unless explicitly required\n- No unrelated refactors\n- All changes must be reproducible from a clean clone\n\n---\n\n## Project Structure\n\n- docs/ → design, plans, architecture constraints\n- plans/ → master plans\n- phases/ → phase definitions\n- tasks/ → executable task documents\n- backends/ → CLI backend adapters\n- agents/ → specialist agents\n- runtime/ → orchestration, routing, state\n- reports/ → execution reports (DO NOT MODIFY MANUALLY)\n- state/runtime_state.json → runtime state (DO NOT COMMIT)\n\n---\n\n## Task Execution Rules\n\n- Always operate from a task document when available\n- Respect:\n  - selected_backend\n  - verification_profile\n  - acceptance_criteria\n- If a task conflicts with architecture constraints or phase scope:\n  - STOP and report conflict\n\n---\n\n## Backend Rules\n\n- Backends must:\n  - execute commands deterministically\n  - capture stdout, stderr, exit_code\n  - not silently fail\n- Do not invent backend interfaces; use existing adapters\n- Codex CLI, Aider, Gemini, Claude Code should be invoked through backends only\n\n---\n\n## Verification Rules\n\n- Verification must be deterministic\n- Preferred checks:\n  - pytest\n  - python -m py_compile\n- Do not rely on model self-evaluation\n\n---\n\n## Execution Control Flow (PERMANENT ARCHITECTURAL RULE)\n\n**HEURISTIC INFERENCE MUST NEVER PARTICIPATE IN ABRACAPOCUS EXECUTION CONTROL FLOW.**\n\nAbracapocus must not determine execution success, failure, acceptance,\nrejection, blocking, retry eligibility, phase progression, or completion from\nheuristic inference. A heuristic is any conclusion that is *inferred* rather\nthan *directly established by an explicit executable contract or a concrete\nruntime fact*.\n\nRuntime status is derived ONLY from concrete, mechanically observable facts:\n\n1. The backend process exit code. A backend that exits `0` (with no hard\n   write-policy violation) is a successful execution.\n2. Objectively observed hard write-policy violations (changed paths outside the\n   declared allowed write paths).\n3. Explicit operator-authored commands (task/phase verification the plan\n   explicitly contains). Their raw results are reported, kept DISTINCT from\n   backend execution status.\n4. Objective orchestrator failures with direct evidence (backend could not\n   launch, required document could not be parsed, subprocess infrastructure\n   failed).\n\n**Verification results are observational and must not rewrite backend execution\nstatus.** A verifier returning non-zero must NEVER, by itself, turn a\nsuccessful backend execution into unverified, stop a phase, or trigger an\nautomatic rerun. Verification is the result of a command, not authority to\nrewrite history.\n\n**Execution control:** Task-local problems (non-zero exit, timeout,\nwrite-policy violation, frame failure, backend launch failure) produce\nacceptance status ``\"unverified\"`` with truthful evidence preserved. They\nMUST NOT stop sibling tasks, later phases, or the plan. Only operator\ncancellation (SIGINT/SIGTERM/dashboard cancel) may terminate a run\n(acceptance status ``\"interrupted\"``). Dependencies are ordering constraints,\nnot acceptance gates — any terminal attempt outcome satisfies a dependency\nedge. The status ``\"failed\"`` is banned from acceptance output.\n\nDo NOT reintroduce -- under any name, feature flag, \"advisory\" wrapper, or\ncompatibility mode -- context completeness/sufficiency scoring, change or\narchitecture assessment used as a gate, intent/scope matching, reconciliation\ngates, no-progress judgments, confidence/risk scores, model/LLM/reviewer\njudgments over status, shadow/adaptive/secondary-verification gates, or\nheuristic retry/failure-classification control flow. Failure classification may\nonly *summarize* an already-established concrete failure; it must never create\none. Retries are permitted only for explicitly defined mechanical backend\nfailures. Future agents must not add these systems back.\n\n---\n\n## Git Rules\n\n- Do not commit:\n  - runtime_state.json\n  - reports/\n  - logs/\n  - virtual environments\n- Do not modify .gitignore unless required by task\n- Do not create excessive commits; prefer grouped logical commits\n\n---\n\n## Allowed Changes\n\n- Implement task requirements\n- Fix failing verification\n- Update relevant tests\n- Improve documentation tied to the task\n\n---\n\n## Forbidden Changes\n\n- Changing architecture without explicit instruction\n- Adding dependencies without justification\n- Modifying unrelated files\n- Deleting important files\n- Bypassing verification\n\n---\n\n## Planning Rules\n\n- Plans are multi-phase\n- Completed sections are immutable\n- Remaining sections may be updated\n- Tasks must align with:\n  - project brief\n  - architecture constraints\n  - active phase\n\n---\n\n## Reporting\n\n- All executions must produce structured reports\n- Reports must include:\n  - changed files\n  - verification results\n  - assessment\n\n---\n\n## Behavior\n\n- Do not ask unnecessary questions\n- Do not stall execution\n- Do not perform broad scans unless required\n- Prefer direct action over analysis\n\n---\n\n## Priority Order\n\nThis ordering guides *implementation decisions* only. It does NOT make\nverification an acceptance authority: verification results are observational\n(see \"Execution Control Flow\"), and never override a concrete backend\nexecution result.\n\n1. Architecture constraints\n2. Task definition\n3. Verification results (observational signal, not acceptance authority)\n4. Plan guidance\n\nIf conflicts occur, follow this order.\n",
+        "--dangerously-skip-permissions",
+        "--output-format",
+        "text",
+        "--model",
+        "claude-sonnet-5-5"
+      ],
+      "stdout": "The dashboard API and server are in place and `tests/integration/test_dashboard_api.py` passes (60 tests). I ran only that file, as the contract requires. I did not commit anything.\n\n`ruff`, `mypy` and `py_compile` are clean on the new files. I also started `python -m mike_trade.dashboard.server` on a throwaway port with no database: `/api/live` returned 200, `/` returned 503 (no frontend build), and a POST returned 405. A `0.0.0.0` bind without the opt-in exits with code 2.\n\n## What was added\n- **`mike_trade/dashboard/api.py`**: the response models, settings, `DashboardReadService`, `compute_engine_state`, and the GET-only router.\n- **`mike_trade/dashboard/server.py`**: `create_app`, static hosting with SPA fallback, the 405 middleware, the bind policy and the uvicorn entry point.\n- **`tests/integration/test_dashboard_api.py`**: the shape of every endpoint plus the cases below, run against a migrated temp DB seeded through the existing repositories and an injected clock.\n\nCovered cases:\n- Decimals serialize as strings.\n- Unknown accounts return 404 on every account route.\n- OFFLINE is computed from heartbeat age. 60s is still RUNNING, 61s is OFFLINE, and an engine-written OFFLINE status is ignored.\n- A stale feed with a fresh heartbeat gives DEGRADED with entries blocked.\n- A disconnected broker marks broker-sourced values `fresh=false` while the engine stays RUNNING.\n- POST, PUT, PATCH, DELETE and OPTIONS return 405.\n- The DB is unchanged after requests.\n- Static index, asset and SPA fallback are served from a temp dist, and a missing dist gives 503 on UI routes while `/api` keeps working.\n\nThe tests caught one real bug: `DashboardSettings.from_env` read class attributes on a slots dataclass. It is fixed.\n\n## Gaps and assumptions to check\n- **No config loader exists.** I defined `DashboardSettings` with the example-YAML defaults, built from the env keys `MIKE_TRADE_DASHBOARD_BIND`, `MIKE_TRADE_DATA_DIR`, `MIKE_TRADE_DASHBOARD_ALLOW_NON_LOOPBACK`, `MIKE_TRADE_BACKUP_DIR` and `MIKE_TRADE_DB_PATH`. Of these, `MIKE_TRADE_DASHBOARD_ALLOW_NON_LOOPBACK` and `MIKE_TRADE_DB_PATH` are my additions. The non-loopback opt-in is an env flag rather than a config-file key because no loader exists. Per-symbol budgets and the total budget come from the latest `run_configs` row when settings don't supply them.\n- **Operator commands** are all `make doctor`. It is the only recipe that exists. `OPERATOR_COMMANDS` is the single table to update when more recipes land.\n- **Engine health conventions are my own.** Nothing writes engine, broker or feed rows into `service_health`, so I assumed components `engine`, `broker`, `feed` and `scheduler`. I also assumed `details_json` keys such as `state`, `connected`, `reconnects`, `subscriptions`, `rate_limit_errors`, `lag_seconds`, `last_error` and `market_status`. The engine-side writer needs to match these. Missing rows show as `null` with `stale_reason='unavailable'`.\n- **Other fields are also `null` with `unavailable`:** bid, ask and next due trigger (nothing persists them), config-derived values when unconfigured, and daily unrealized P&L when a managed position has no mark.\n- **SHADOW/BACKTEST accounts** have no broker link, so broker-sourced values there follow engine liveness.\n- **Order status:** the repository doesn't move a broker order to FILLED when fills are applied, so `pending_order_count` counts such orders as open until a broker status update arrives.\n- **Per-symbol lifetime P&L** uses the 500 most recent closed cycles.\n- **Market bars** are read as `1m` or `1Min`, because the projection and the example YAML disagree on the label.\n\nI added no `__init__.py` under `mike_trade/dashboard/`, matching the sibling packages and the allowed write paths.\n",
+      "stderr": "",
+      "exit_code": 0,
+      "duration_seconds": 616.2693672180176,
+      "model": "claude-sonnet-5-5",
+      "model_tags": [],
+      "working_directory": "/home/mike/dev/mike/stocks/python/mike_trade",
+      "changed_files": [
+        {
+          "path": "mike_trade/dashboard/api.py",
+          "status": "untracked",
+          "code": "??"
+        },
+        {
+          "path": "mike_trade/dashboard/server.py",
+          "status": "untracked",
+          "code": "??"
+        },
+        {
+          "path": "tests/integration/test_dashboard_api.py",
+          "status": "untracked",
+          "code": "??"
+        }
+      ],
+      "diff_summary": "git diff reported no changes",
+      "model_attempts": [
+        {
+          "backend": "claude_code_cli",
+          "model": "claude-sonnet-5-5",
+          "exit_code": 0,
+          "stdout": "The dashboard API and server are in place and `tests/integration/test_dashboard_api.py` passes (60 tests). I ran only that file, as the contract requires. I did not commit anything.\n\n`ruff`, `mypy` and `py_compile` are clean on the new files. I also started `python -m mike_trade.dashboard.server` on a throwaway port with no database: `/api/live` returned 200, `/` returned 503 (no frontend build), and a POST returned 405. A `0.0.0.0` bind without the opt-in exits with code 2.\n\n## What was added\n- **`mike_trade/dashboard/api.py`**: the response models, settings, `DashboardReadService`, `compute_engine_state`, and the GET-only router.\n- **`mike_trade/dashboard/server.py`**: `create_app`, static hosting with SPA fallback, the 405 middleware, the bind policy and the uvicorn entry point.\n- **`tests/integration/test_dashboard_api.py`**: the shape of every endpoint plus the cases below, run against a migrated temp DB seeded through the existing repositories and an injected clock.\n\nCovered cases:\n- Decimals serialize as strings.\n- Unknown accounts return 404 on every account route.\n- OFFLINE is computed from heartbeat age. 60s is still RUNNING, 61s is OFFLINE, and an engine-written OFFLINE status is ignored.\n- A stale feed with a fresh heartbeat gives DEGRADED with entries blocked.\n- A disconnected broker marks broker-sourced values `fresh=false` while the engine stays RUNNING.\n- POST, PUT, PATCH, DELETE and OPTIONS return 405.\n- The DB is unchanged after requests.\n- Static index, asset and SPA fallback are served from a temp dist, and a missing dist gives 503 on UI routes while `/api` keeps working.\n\nThe tests caught one real bug: `DashboardSettings.from_env` read class attributes on a slots dataclass. It is fixed.\n\n## Gaps and assumptions to check\n- **No config loader exists.** I defined `DashboardSettings` with the example-YAML defaults, built from the env keys `MIKE_TRADE_DASHBOARD_BIND`, `MIKE_TRADE_DATA_DIR`, `MIKE_TRADE_DASHBOARD_ALLOW_NON_LOOPBACK`, `MIKE_TRADE_BACKUP_DIR` and `MIKE_TRADE_DB_PATH`. Of these, `MIKE_TRADE_DASHBOARD_ALLOW_NON_LOOPBACK` and `MIKE_TRADE_DB_PATH` are my additions. The non-loopback opt-in is an env flag rather than a config-file key because no loader exists. Per-symbol budgets and the total budget come from the latest `run_configs` row when settings don't supply them.\n- **Operator commands** are all `make doctor`. It is the only recipe that exists. `OPERATOR_COMMANDS` is the single table to update when more recipes land.\n- **Engine health conventions are my own.** Nothing writes engine, broker or feed rows into `service_health`, so I assumed components `engine`, `broker`, `feed` and `scheduler`. I also assumed `details_json` keys such as `state`, `connected`, `reconnects`, `subscriptions`, `rate_limit_errors`, `lag_seconds`, `last_error` and `market_status`. The engine-side writer needs to match these. Missing rows show as `null` with `stale_reason='unavailable'`.\n- **Other fields are also `null` with `unavailable`:** bid, ask and next due trigger (nothing persists them), config-derived values when unconfigured, and daily unrealized P&L when a managed position has no mark.\n- **SHADOW/BACKTEST accounts** have no broker link, so broker-sourced values there follow engine liveness.\n- **Order status:** the repository doesn't move a broker order to FILLED when fills are applied, so `pending_order_count` counts such orders as open until a broker status update arrives.\n- **Per-symbol lifetime P&L** uses the 500 most recent closed cycles.\n- **Market bars** are read as `1m` or `1Min`, because the projection and the example YAML disagree on the label.\n\nI added no `__init__.py` under `mike_trade/dashboard/`, matching the sibling packages and the allowed write paths.\n",
+          "stderr": "",
+          "duration_seconds": 616.2693672180176,
+          "changed_files": [
+            {
+              "path": "mike_trade/dashboard/api.py",
+              "status": "untracked",
+              "code": "??"
+            },
+            {
+              "path": "mike_trade/dashboard/server.py",
+              "status": "untracked",
+              "code": "??"
+            },
+            {
+              "path": "tests/integration/test_dashboard_api.py",
+              "status": "untracked",
+              "code": "??"
+            }
+          ],
+          "diff_summary": "git diff reported no changes",
+          "outcome_classification": "backend_completed_with_changes",
+          "backend_timeout": false,
+          "backend_verification_timeout": false,
+          "timeout_seconds": null
+        }
+      ],
+      "write_policy_violations": [],
+      "outcome_classification": "backend_completed_with_changes",
+      "backend_timeout": false,
+      "backend_verification_timeout": false,
+      "changed_files_at_timeout_exit": [],
+      "abracapocus_verification_ran_after_backend_timeout": false,
+      "verification_owner": "abracapocus",
+      "verification_result": "skipped"
+    }
+  ],
+  "review": {
+    "status": "approved",
+    "findings": [],
+    "summary": "r.1:Review complete",
+    "created_at": "2026-10-09T00:24:49.534471"
+  },
+  "verification": {
+    "status": "skipped",
+    "checks": [],
+    "created_at": "2026-10-09T00:24:49.534483",
+    "notes": "R:skipped",
+    "profile": "focused"
+  },
+  "metadata": {
+    "run_id": "48e06f20-ba10-4e91-9eb3-6f86801cb58b",
+    "project_name": "mike_trade",
+    "plan_version": "task-r.1",
+    "task_id": "r.1",
+    "task_title": "Implement read-only FastAPI server and typed API endpoints",
+    "task_status": "completed",
+    "selected_backend": "claude_code_cli",
+    "verification_profile": "focused",
+    "backend_reason": "phase_based",
+    "frame_failures": [],
+    "agents_md": {
+      "loaded": true,
+      "path": "/home/mike/dev/mike/abracapocus/python/abracapocus_2/AGENTS.md",
+      "rule_count": 77,
+      "sha256_12": "3f9b549ba1ce"
+    },
+    "phase_results": [
+      {
+        "phase_name": "R",
+        "status": "passed",
+        "verification": "skipped",
+        "task_results": [
+          {
+            "task_id": "r.1",
+            "status": "passed",
+            "acceptance_status": "accepted",
+            "backend": "claude_code_cli",
+            "backend_outcome_classification": "backend_completed_with_changes",
+            "changed_files": [
+              {
+                "path": "mike_trade/dashboard/api.py",
+                "status": "untracked",
+                "code": "??"
+              },
+              {
+                "path": "mike_trade/dashboard/server.py",
+                "status": "untracked",
+                "code": "??"
+              },
+              {
+                "path": "tests/integration/test_dashboard_api.py",
+                "status": "untracked",
+                "code": "??"
+              }
+            ],
+            "backend_timeout": false,
+            "backend_elapsed_seconds": 616.2693672180176,
+            "backend_timeout_seconds": null,
+            "changed_files_at_timeout_exit": [],
+            "abracapocus_verification_ran_after_backend_timeout": false,
+            "verification_owner": "abracapocus",
+            "verification_result": "skipped",
+            "verification_status": "skipped",
+            "verification_checks": [],
+            "frame_failure": false,
+            "retry_attempts": []
+          }
+        ]
+      }
+    ]
+  }
+}
