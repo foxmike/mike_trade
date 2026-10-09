@@ -172,6 +172,14 @@ execution/broker capability.
    independently registered BUY/SELL plugins against the shared context;
    duplicate signals on the same bar are suppressed; evaluations never block
    the feed.
+   Each symbol owns independent BUY and SELL strategy collections (any number
+   per side, SELL optional). All strategies of a symbol receive the same
+   immutable `MarketContext`; flat symbols run entry arbitration and held
+   symbols run exit arbitration (`signals/decisions.py`, pure functions shared
+   by the SHADOW lifecycle and the historical `BacktestRunner`). Protective
+   stops are a third, independent mechanism: they are armed after the
+   confirmed fill, evaluated before any SELL strategy, and work with an empty
+   SELL collection.
 5. **Serialized mutations through a single writer.** Signal routing, budget
    reservation, and per-account+symbol order serialization funnel into one
    authoritative SQLite writer / execution coordinator. Account/portfolio/order

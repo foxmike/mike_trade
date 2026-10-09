@@ -216,6 +216,20 @@ def _is_secret_name(name: str) -> bool:
     return any(token in lowered for token in SECRET_TOKENS)
 
 
+def _strategy_refs(symbol_cfg: object, side: str) -> tuple[str, ...]:
+    """Strategy names a raw symbol entry references on one side (either spelling)."""
+    if not isinstance(symbol_cfg, Mapping):
+        return ()
+    names: list[str] = []
+    single = symbol_cfg.get(f"{side}_strategy")
+    if isinstance(single, str):
+        names.append(single)
+    plural = symbol_cfg.get(f"{side}_strategies")
+    if isinstance(plural, (list, tuple)):
+        names.extend(n for n in plural if isinstance(n, str))
+    return tuple(names)
+
+
 def _parse_path(path: str) -> tuple[tuple[str, str | None], ...]:
     if not isinstance(path, str) or not path.strip():
         raise MutationPathError(f"invalid mutation path: {path!r}")
@@ -490,16 +504,16 @@ def _collect_safety_reasons(
             reasons.append(
                 f"changing stop_policy.type for symbol {symbol!r} with active exposure is refused"
             )
-        sell_path = f"symbols.{symbol}.sell_strategy"
-        if sell_path in changed:
-            new_sell = None
-            if isinstance(new_symbols, Mapping) and isinstance(new_symbols.get(symbol), Mapping):
-                new_sell = new_symbols[symbol].get("sell_strategy")
-            if new_sell is not None and new_sell not in strategy_names:
-                reasons.append(
-                    f"changing sell_strategy for symbol {symbol!r} to undefined "
-                    f"strategy {new_sell!r} is refused"
-                )
+        if f"symbols.{symbol}.sell_strategy" in changed or (
+            f"symbols.{symbol}.sell_strategies" in changed
+        ):
+            new_cfg = new_symbols.get(symbol) if isinstance(new_symbols, Mapping) else None
+            for new_sell in _strategy_refs(new_cfg, "sell"):
+                if new_sell not in strategy_names:
+                    reasons.append(
+                        f"changing sell strategies for symbol {symbol!r} to undefined "
+                        f"strategy {new_sell!r} is refused"
+                    )
 
     # Strategies in use.
     removed_strategies = [
@@ -511,21 +525,11 @@ def _collect_safety_reasons(
     ]
     if removed_strategies:
         referenced: set[str] = set()
-        if isinstance(new_symbols, Mapping):
-            for cfg in new_symbols.values():
-                if isinstance(cfg, Mapping):
-                    for key in ("buy_strategy", "sell_strategy"):
-                        value = cfg.get(key)
-                        if isinstance(value, str):
-                            referenced.add(value)
-        old_symbols = old_doc.get("symbols", {})
-        if isinstance(old_symbols, Mapping):
-            for cfg in old_symbols.values():
-                if isinstance(cfg, Mapping):
-                    for key in ("buy_strategy", "sell_strategy"):
-                        value = cfg.get(key)
-                        if isinstance(value, str):
-                            referenced.add(value)
+        for document_symbols in (new_symbols, old_doc.get("symbols", {})):
+            if isinstance(document_symbols, Mapping):
+                for cfg in document_symbols.values():
+                    for side in ("buy", "sell"):
+                        referenced.update(_strategy_refs(cfg, side))
         for position in positions:
             if position.sell_strategy is not None:
                 referenced.add(position.sell_strategy)

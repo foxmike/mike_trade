@@ -302,6 +302,7 @@ class Runtime:
             "reconciliation_status": self.reconciliation_status,
         }
         await _call_optional(self.persistence, ("heartbeat", "publish_heartbeat"), details)
+        await _call_optional(self.broker, ("refresh_balance_snapshots",))
         feed_details = await _call_optional(self.market_data, ("health_details",))
         if isinstance(feed_details, Mapping):
             await _call_optional(

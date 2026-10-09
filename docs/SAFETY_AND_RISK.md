@@ -109,6 +109,21 @@ LIVE execution additionally requires PAPER-demonstrated combinations (see
   (broker-native trailing stop), `TRAILING_STEPPED` (engine-stepped
   trailing stop re-anchored through replace operations). `FIXED` rejects
   trailing distances; `TRAILING_NATIVE` rejects fixed distances.
+- **Configured per symbol:** `symbols.<TICKER>.stop_policy` selects `fixed`
+  (`stop_percent` or `stop_amount`), `native_trailing` (`trail_percent` or
+  `trail_amount`) or `stepped_trailing` (`initial_stop_percent`,
+  `step_trigger_percent`, `step_percent`, taken on the entry price). The SHADOW
+  lifecycle and the historical backtester both translate it through
+  `mike_trade/risk/stop_config.py`. PAPER/LIVE composition still wires one
+  shared `native_trailing` percentage and refuses every other policy at
+  start-up (`UNSUPPORTED_STOP_POLICY`). One mode applies for the life of a
+  position: an initial fixed stop that later converts to a trailing stop is not
+  a supported mode (use `stepped_trailing`, which starts at a fixed distance
+  below entry and only ratchets after the activation gain).
+- **Independent of SELL strategies:** the stop is evaluated before any SELL
+  strategy on every cycle and protects a symbol whose SELL collection is empty
+  or whose strategy exits are held off by the minimum hold. It is cancelled
+  only to make way for the single arbitrated discretionary exit.
 - **Post-fill start:** protective coverage is placed only after a confirmed
   entry fill, anchored to the confirmed average fill price (or the
   configured fixed reference). There is no protective order before there

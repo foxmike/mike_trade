@@ -54,14 +54,30 @@ Example JSON batch file:
 }
 ```
 
-The current research worker supports the registered `vwap_reference` lifecycle
-focuses `vwap_bounce` and `vwap_breakdown`; symbols, date ranges, snapshot IDs,
-seeds, strategy parameter mappings, capital, and execution assumptions are
-job-specific. Omitted values use the documented $10,000 capital, 5 bps
-slippage, and zero-fee defaults. Parameters override the selected lifecycle defaults and are included in the immutable backtest
-configuration hash. Extend the worker's existing lifecycle integration when
-adding a new research strategy family; the process coordinator itself has no
-fixed symbol or experiment list.
+Without further fields a job runs the registered `vwap_reference` lifecycle:
+`strategy` (`vwap_bounce` or `vwap_breakdown`) is only the recorded **focus
+label** — both the `vwap_bounce` BUY and `vwap_breakdown` SELL legs always
+execute, so the two labels of one symbol produce identical trades (they differ
+only in run identity). Results report `strategy_is_label: true`, `legs`, the
+`protective_stop` and an `exit_reasons` histogram. Symbols, date ranges,
+snapshot IDs, seeds, strategy parameter mappings, capital and execution
+assumptions are job-specific; omitted values use the documented $10,000
+capital, 5 bps slippage and zero-fee defaults, and parameters override the
+lifecycle defaults and enter the immutable backtest configuration hash.
+
+To research an explicit collection, add `buy_strategies` and/or
+`sell_strategies` (any registered ids, SELL optional) and optionally a
+`protective_stop` in the operator `stop_policy` shape; `strategy` is then a
+free label:
+
+```json
+{"symbol": "IBM", "strategy": "ibm_collection", "start": "2026-07-09T00:00:00Z",
+ "end": "2026-10-09T00:00:00Z",
+ "buy_strategies": ["vwap_bounce", "momentum_breakout"],
+ "sell_strategies": ["vwap_breakdown", "momentum_reversal"],
+ "protective_stop": {"type": "stepped_trailing", "initial_stop_percent": "1.5",
+                     "step_trigger_percent": "1.0", "step_percent": "0.5"}}
+```
 
 ```sh
 # Baseline batch, automatic resource-aware worker count
@@ -107,10 +123,9 @@ cycle per session, and exits observe the 60-second minimum hold. Costs are other
 assumption. Results are descriptive baselines, not evidence of profitability.
 
 The two VWAP strategies are separate registered lifecycle legs: `vwap_bounce`
-is the BUY entry and `vwap_breakdown` is the SELL exit. Each requested
-strategy/symbol experiment uses the production `vwap_reference` pair so exits
-have actual positions to manage. The selected strategy is recorded as the
-experiment focus; both legs execute as the lifecycle requires.
+is the BUY entry and `vwap_breakdown` is the SELL exit. Each default experiment
+uses the production `vwap_reference` pair so exits have actual positions to
+manage; the selected strategy is recorded as the experiment focus only.
 
 ## Commands
 
@@ -228,3 +243,55 @@ available. The research container exits when the command finishes. To stop a
 running foreground job gracefully, press Ctrl-C in its terminal; `make stop`
 stops the engine and dashboard and is not needed for research jobs. Use
 `docker ps` afterward to confirm the research container has exited.
+
+## Lifecycle semantics (generation 2)
+
+`BacktestRunner` follows the same lifecycle policy as the SHADOW engine and
+calls the same pure functions rather than a private copy:
+
+- Each symbol has its own BUY and SELL collections
+  (`BacktestRequest.symbol_strategies` / `symbol_strategy_params`; the global
+  `strategy_ids` is the default). Every strategy keeps independent parameters
+  and persisted-style state keyed by `(symbol, strategy_id)`; all strategies of
+  a symbol read one shared completed-bar context of the last 500 bars
+  (`context_history_bars`, parity with the engine's `max_history=500`; a
+  smaller value is faster but only valid for strategies that need fewer bars —
+  `opening_range_breakout` needs the opening range still in view).
+  Strategies that need a timeframe the replay feed does not supply (for
+  example the 5-minute `rsi_reversal`) fail the run instead of never firing.
+- One position per symbol. BUY strategies are evaluated only while the symbol
+  is flat with no entry order working; `arbitrate_entry_decisions` selects at
+  most one. Entry cutoff and the per-session entry-cycle cap then gate the
+  selected entry (counted per filled cycle).
+- SELL strategies are evaluated while a position is held;
+  `arbitrate_exit_decisions` applies the minimum hold to strategy exits only,
+  refuses a second exit while one is working, and selects one full-remainder
+  exit. Rejected candidates are kept in `BacktestResult.decisions`.
+- The protective stop is armed after the confirmed entry fill from the
+  confirmed average price, as a GTC order (it survives sessions): `fixed`
+  (percent or amount), `native_trailing` (percent or amount) or
+  `stepped_trailing` (engine-ratcheted through order replacement). A stop never
+  moves down. It is cancelled only to make way for a selected strategy exit and
+  re-armed if that exit lapses unfilled. `protective_trailing_percent` remains
+  an alias for a native trailing percent.
+- Every fill records `purpose`, originating `strategy` and, for exits,
+  `exit_reason` (`PROTECTIVE_STOP` or `STRATEGY_SELL`); trade records and cycles
+  carry `entry_strategy`, `exit_strategy` and `exit_reason`.
+- Fills are bar-only: a signal on a completed bar becomes executable at the
+  next bar open with the configured adverse slippage; protective stops fill
+  intrabar at the stop price (or at the open when it gaps through). Positions
+  are not liquidated at session end (end-of-day close is disabled by default,
+  as in the engine).
+
+Runs carry `lifecycle_semantics: "2"` in their configuration hash, so they never
+alias an earlier artifact. Generation-1 results remain valid and comparable
+for the VWAP reference lifecycle: a rerun of NVDA `vwap_bounce` for
+2026-07-09..2026-10-09 reproduced the stored ledger fill-for-fill (63 trades,
+62 `STRATEGY_SELL` and 1 `PROTECTIVE_STOP` exit). Runs are slower than before
+because every strategy validates the 500-bar window.
+
+Known limits: a plugin may appear once per symbol and side; the backtester
+sizes entries through the supplied `intent_factory` (the research worker uses
+`min($3,000 budget, $30 planned loss / initial stop distance)`), whereas the
+SHADOW engine sizes by the per-symbol budget alone; quotes, bid/ask spread and
+partial fills beyond the bar-volume participation cap are not modelled.

@@ -94,6 +94,13 @@ risk:
   max_open_positions: 3
   daily_loss_limit: "300.00"
   require_buying_power_check: true
+# Strategy collections: a symbol may list any number of BUY and SELL strategies
+# (names from `strategies:` below) instead of the single-name spelling used
+# here, e.g.
+#     buy_strategies: [vwap_bounce_default, momentum_default]
+#     sell_strategies: [vwap_breakdown_default]   # may be [] (stop_policy still applies)
+# `buy_strategy: x` is shorthand for `buy_strategies: [x]`; use one spelling per
+# side. A plugin may appear once per symbol and side.
 symbols:
   SPY:
     enabled: true

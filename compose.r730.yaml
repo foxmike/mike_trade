@@ -8,5 +8,10 @@ services:
       - ./state/r730:/app/state
   mike-trade-api:
     profiles: ["trading"]
+    environment:
+      MIKE_TRADE_BACKUP_DIR: /app/backups/operational
+      MIKE_TRADE_BACKUP_STATUS_FILE: /app/backup-status/backup-status.json
     volumes:
       - ./state/r730:/app/state
+      - /run/media/mike/SAS_DRIVE_1/mike_trade:/app/backups:ro
+      - /home/mike/.local/state/mike_trade:/app/backup-status:ro

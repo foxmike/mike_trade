@@ -275,7 +275,7 @@ async def test_reference_pair_full_cycle_exact_once_and_protected(
         assert blocked is not None and blocked[0] == "POST_SALE_COOLDOWN"
         clock.value += timedelta(minutes=6)
         assert shadow.account.state.entry_block("SPY", "vwap_bounce", clock.value) is None
-        assert shadow.states[("buy", "SPY")]["eligibility"] == "WATCHING_BUY"
+        assert shadow.states[("buy", "vwap_bounce", "SPY")]["eligibility"] == "WATCHING_BUY"
     finally:
         await runtime.stop()
 

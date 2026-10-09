@@ -69,6 +69,7 @@ from mike_trade.market_data.context import (
 from mike_trade.observability.logging import configure_logging, get_logger
 from mike_trade.persistence.maintenance import check_integrity, checkpoint
 from mike_trade.persistence.repositories import (
+    CashEquityRepository,
     RunConfigRepository,
     ServiceHealthRepository,
     StrategyStateRepository,
@@ -78,6 +79,7 @@ from mike_trade.persistence.transaction import WriterSession
 from mike_trade.portfolio.budgets import BudgetPolicy
 from mike_trade.portfolio.reservations import ReservationLedger
 from mike_trade.risk.protection import ProtectionCoordinator
+from mike_trade.risk.stop_config import protection_policy_for_entry
 from mike_trade.risk.stop_policy import (
     ProtectionMode as RiskProtectionMode,
 )
@@ -105,10 +107,22 @@ from mike_trade.runtime import (
 from mike_trade.scheduling import calendar as exchange_calendar
 from mike_trade.scheduling.scheduler import StrategyScheduler
 from mike_trade.scheduling.triggers import CANDLE_CLOSED
+from mike_trade.signals.decisions import (
+    EntryCandidate,
+    ExitCandidate,
+    arbitrate_entry_decisions,
+    arbitrate_exit_decisions,
+)
+from mike_trade.strategies.base import StrategyEvaluation
+from mike_trade.strategies.buy.momentum_breakout import MomentumBreakoutBuy
+from mike_trade.strategies.buy.opening_range_breakout import OpeningRangeBreakoutBuy
 from mike_trade.strategies.buy.vwap_bounce import VwapBounceBuy
 from mike_trade.strategies.indicators.core import VWAPCalculator
 from mike_trade.strategies.presets.pairs import resolve_pair_preset
 from mike_trade.strategies.registry import StrategyRegistry
+from mike_trade.strategies.sell.base import ExitSource
+from mike_trade.strategies.sell.momentum_reversal import MomentumReversalSell
+from mike_trade.strategies.sell.rsi_reversal import RsiReversalSell
 from mike_trade.strategies.sell.vwap_breakdown import VwapBreakdownSell
 
 __all__ = [
@@ -117,6 +131,8 @@ __all__ = [
     "SQLitePersistence",
     "ProductionMarketData",
     "AlpacaProductionMarketData",
+    "StrategyAssignment",
+    "SymbolStrategySettings",
     "VwapReferenceLifecycle",
     "build_runtime",
     "load_app_settings",
@@ -147,6 +163,40 @@ class ShadowScenarioSettings:
 
 
 @dataclass(frozen=True, slots=True)
+class StrategyAssignment:
+    """One configured strategy instance: a registered plugin plus its parameters."""
+
+    name: str
+    plugin: str
+    parameters: Mapping[str, object] = field(default_factory=dict)
+
+    def __post_init__(self) -> None:
+        if not self.name.strip() or not self.plugin.strip():
+            raise ValueError("strategy name and plugin must be non-empty")
+        object.__setattr__(self, "parameters", dict(self.parameters))
+
+
+@dataclass(frozen=True, slots=True)
+class SymbolStrategySettings:
+    """One symbol's independent BUY and SELL strategy collections.
+
+    Both collections are arbitrary-length. ``sells`` may be empty: the symbol
+    is then protected by its stop policy alone.
+    """
+
+    symbol: str
+    buys: tuple[StrategyAssignment, ...]
+    sells: tuple[StrategyAssignment, ...] = ()
+
+    def __post_init__(self) -> None:
+        object.__setattr__(self, "symbol", self.symbol.strip().upper())
+        object.__setattr__(self, "buys", tuple(self.buys))
+        object.__setattr__(self, "sells", tuple(self.sells))
+        if not self.buys:
+            raise ValueError(f"{self.symbol}: at least one BUY strategy is required")
+
+
+@dataclass(frozen=True, slots=True)
 class AppSettings:
     """Non-secret application composition inputs."""
 
@@ -171,6 +221,14 @@ class AppSettings:
     heartbeat_interval_seconds: float = 5.0
     backtest_start: datetime = datetime(2024, 1, 2, 14, 30, tzinfo=UTC)
     auto_eod_liquidation: bool = False
+    #: Per-symbol strategy collections; symbols without an entry run the
+    #: production ``vwap_reference`` pair.
+    symbol_strategies: tuple[SymbolStrategySettings, ...] = ()
+    #: Per-symbol normalized ``stop_policy`` (fixed / native_trailing /
+    #: stepped_trailing); symbols without an entry use ``stop_trail_percent``.
+    symbol_stop_policies: Mapping[str, Mapping[str, object]] = field(
+        default_factory=dict, compare=False
+    )
     credential_environment: Mapping[str, str] | None = field(
         default=None, repr=False, compare=False
     )
@@ -752,10 +810,42 @@ def load_app_settings(
     cutoff_from_close = (16 * 60) - (cutoff_hour * 60 + cutoff_minute)
     if cutoff_from_close < 0:
         raise ConfigurationError("entry cutoff must not be after 16:00 ET")
-    stop_values = {item["stop_policy"]["trail_percent"] for item in selected}
-    if len(stop_values) != 1:
-        raise ConfigurationError("runtime requires one shared trailing-stop percentage")
     mode = ExecutionMode(str(execution["account_mode"]).upper())
+    stop_policies = {name: dict(symbol_map[name]["stop_policy"]) for name in symbols}
+    trail_values = {
+        policy.get("trail_percent")
+        for policy in stop_policies.values()
+        if policy["type"] == "native_trailing"
+    }
+    if mode is not ExecutionMode.SHADOW and (
+        {policy["type"] for policy in stop_policies.values()} != {"native_trailing"}
+        or len(trail_values) != 1
+        or None in trail_values
+    ):
+        raise ConfigurationError(
+            "PAPER/LIVE runtime requires one shared native_trailing trail_percent; fixed, "
+            "amount-based and stepped stop policies are only wired for SHADOW",
+            code="UNSUPPORTED_STOP_POLICY",
+        )
+    strategy_map = cast(Mapping[str, Mapping[str, Any]], effective["strategies"])
+
+    def assignments(names: Sequence[str]) -> tuple[StrategyAssignment, ...]:
+        return tuple(
+            StrategyAssignment(
+                name, str(strategy_map[name]["plugin"]),
+                cast(Mapping[str, object], strategy_map[name]["parameters"]),
+            )
+            for name in names
+        )
+
+    symbol_strategies = tuple(
+        SymbolStrategySettings(
+            name,
+            assignments(symbol_map[name]["buy_strategies"]),
+            assignments(symbol_map[name]["sell_strategies"]),
+        )
+        for name in symbols
+    )
     data_dir = Path(str(service["data_dir"]))
     db_path = source.get("MIKE_TRADE_DB_PATH") or data_dir / f"{mode.value.lower()}.sqlite3"
     return AppSettings(
@@ -768,7 +858,13 @@ def load_app_settings(
         total_budget=cast(Decimal, risk["total_application_budget"]),
         per_symbol_budget=cast(Decimal, one_value("budget")),
         entry_cutoff_minutes=cutoff_from_close,
-        stop_trail_percent=cast(Decimal, next(iter(stop_values))),
+        stop_trail_percent=(
+            cast(Decimal, next(iter(trail_values)))
+            if len(trail_values) == 1 and None not in trail_values
+            else Decimal("1.5")
+        ),
+        symbol_strategies=symbol_strategies,
+        symbol_stop_policies=stop_policies,
         max_bar_age=timedelta(seconds=int(market_data["max_bar_age_seconds"])),
         market_data_provider=str(market_data["provider"]),
         market_data_feed=str(market_data["feed"]),
@@ -786,7 +882,7 @@ class _ShadowScenario:
     account: ShadowAccount
     fills: ShadowFillSimulator
     stops: ShadowStopSimulator
-    states: dict[tuple[str, str], dict[str, object]]
+    states: dict[tuple[str, ...], dict[str, object]]
     coordinator: OrderCommandCoordinator
 
 
@@ -863,6 +959,21 @@ class ShadowBrokerGroup:
         self.account_id = account_id
         self.configs = tuple(scenarios)
         self.scenarios: dict[str, _ShadowScenario] = {}
+        self._last_balance_snapshot_at: datetime | None = None
+
+    async def refresh_balance_snapshots(self) -> None:
+        """Publish the isolated simulated balances for dashboard readers."""
+        if not self.scenarios or self.persistence.session is None:
+            return
+        now = self.clock.now()
+        if (self._last_balance_snapshot_at is not None
+                and now - self._last_balance_snapshot_at < timedelta(minutes=1)):
+            return
+        for scenario in self.scenarios.values():
+            snapshot = await scenario.account.get_account()
+            writer = self.persistence.session.bind_scope(snapshot.scope.scope_id)
+            CashEquityRepository(writer, self.clock).append_equity_snapshot(snapshot)
+        self._last_balance_snapshot_at = now
 
     def validate_startup(self) -> bool:
         if self.persistence.session is None:
@@ -1002,8 +1113,48 @@ class _CleanBacktestReconciler:
         return SimpleNamespace(clean=True, entries_permitted=True, reasons=(), status="CLEAN")
 
 
+@dataclass(frozen=True, slots=True)
+class _Binding:
+    """One configured strategy instance bound to a symbol and a role."""
+
+    strategy_id: str
+    version: str
+    role: str  # "buy" | "sell"
+    strategy: Any
+    parameters: Mapping[str, object]
+
+
+@dataclass(frozen=True, slots=True)
+class _Collections:
+    """A symbol's BUY and SELL strategies in deterministic (strategy_id) order."""
+
+    buys: tuple[_Binding, ...]
+    sells: tuple[_Binding, ...]
+
+
+#: The reference pair keeps its original persisted strategy-instance ids so a
+#: restart after upgrading resumes the same durable evaluation state.
+_LEGACY_INSTANCES = {("buy", "vwap_bounce"), ("sell", "vwap_breakdown")}
+
+
 class VwapReferenceLifecycle:
-    """Production evaluator for the mandatory vwap_reference BUY/SELL pair."""
+    """Production SHADOW evaluator for per-symbol BUY/SELL strategy collections.
+
+    Without ``assignments`` every symbol runs the mandatory ``vwap_reference``
+    pair (``vwap_bounce`` BUY, ``vwap_breakdown`` SELL). With ``assignments``
+    each symbol has its own arbitrary-length BUY and SELL collections:
+
+    * every strategy gets independent parameters and persisted evaluation state
+      keyed by ``(role, strategy_id, symbol)`` and sees the same immutable
+      ``MarketContext`` (no strategy fetches or calculates data itself);
+    * flat: all BUY strategies are evaluated and
+      ``arbitrate_entry_decisions`` selects at most one entry, so simultaneous
+      signals can neither duplicate a purchase nor scale a position;
+    * held: all SELL strategies are evaluated and ``arbitrate_exit_decisions``
+      selects at most one full-remainder exit (minimum hold, pending exit);
+    * the protective stop is evaluated first, independent of any SELL strategy,
+      and is cancelled only to make way for a discretionary exit.
+    """
 
     def __init__(
         self,
@@ -1014,6 +1165,10 @@ class VwapReferenceLifecycle:
         protection_policy: ProtectionPolicy,
         buy_parameters: Mapping[str, object],
         sell_parameters: Mapping[str, object],
+        *,
+        assignments: Sequence[SymbolStrategySettings] = (),
+        registry: StrategyRegistry | None = None,
+        stop_specs: Mapping[str, Mapping[str, object]] | None = None,
     ) -> None:
         self.group = group
         self.clock = clock
@@ -1024,7 +1179,74 @@ class VwapReferenceLifecycle:
         self.sell = VwapBreakdownSell()
         self.buy_parameters = dict(buy_parameters)
         self.sell_parameters = dict(sell_parameters)
+        self._stop_specs = {k.upper(): dict(v) for k, v in (stop_specs or {}).items()}
+        self._default = _Collections(
+            (_Binding(VwapBounceBuy.spec.strategy_id, VwapBounceBuy.spec.version, "buy",
+                      self.buy, self.buy_parameters),),
+            (_Binding(VwapBreakdownSell.spec.strategy_id, VwapBreakdownSell.spec.version,
+                      "sell", self.sell, self.sell_parameters),),
+        )
+        self._by_symbol: dict[str, _Collections] = {}
+        if assignments:
+            if registry is None:
+                raise ConfigurationError(
+                    "strategy assignments require a strategy registry",
+                    code="STRATEGY_REGISTRY_MISSING",
+                )
+            for item in assignments:
+                self._by_symbol[item.symbol] = _Collections(
+                    self._bind(registry, item.symbol, StrategyRole.BUY, item.buys),
+                    self._bind(registry, item.symbol, StrategyRole.SELL, item.sells),
+                )
         self._in_flight = 0
+
+    @staticmethod
+    def _bind(
+        registry: StrategyRegistry,
+        symbol: str,
+        role: StrategyRole,
+        assigned: Sequence[StrategyAssignment],
+    ) -> tuple[_Binding, ...]:
+        """Resolve and validate one side of a symbol's collection; fail closed."""
+        bindings: list[_Binding] = []
+        for item in assigned:
+            try:
+                cls = registry.get(item.plugin)
+                parameters = registry.validate_parameters(item.plugin, item.parameters)
+            except Exception as exc:
+                raise ConfigurationError(
+                    f"{symbol}: strategy {item.name!r} (plugin {item.plugin!r}) is not "
+                    f"usable: {exc}",
+                    code="STRATEGY_NOT_USABLE",
+                ) from exc
+            spec = cls.spec
+            if spec.side is not role:
+                raise ConfigurationError(
+                    f"{symbol}: strategy {item.name!r} is a {spec.side.value} strategy "
+                    f"configured as {role.value}",
+                    code="STRATEGY_SIDE_MISMATCH",
+                )
+            if spec.trigger_timeframe is not CandleTimeframe.M1 or any(
+                tf is not CandleTimeframe.M1 for tf in spec.required_timeframes
+            ):
+                raise ConfigurationError(
+                    f"{symbol}: strategy {item.name!r} needs non-1m candles; the SHADOW "
+                    "stream currently builds the 1m shared context only",
+                    code="STRATEGY_TIMEFRAME_UNSUPPORTED",
+                )
+            bindings.append(
+                _Binding(spec.strategy_id, spec.version, role.value.lower(), cls(), parameters)
+            )
+        if len({b.strategy_id for b in bindings}) != len(bindings):
+            raise ConfigurationError(
+                f"{symbol}: a strategy may appear only once per symbol and side",
+                code="STRATEGY_DUPLICATE",
+            )
+        return tuple(sorted(bindings, key=lambda b: b.strategy_id))
+
+    def collections(self, symbol: str) -> _Collections:
+        """The BUY/SELL collections evaluated for ``symbol``."""
+        return self._by_symbol.get(symbol.upper(), self._default)
 
     def verify_startup(self) -> object:
         reasons: list[str] = []
@@ -1062,6 +1284,30 @@ class VwapReferenceLifecycle:
         finally:
             self._in_flight -= 1
 
+    def _policy_for(self, symbol: str, entry_price: Decimal) -> ProtectionPolicy:
+        spec = self._stop_specs.get(symbol.upper())
+        if spec is None:
+            return self.protection_policy
+        return protection_policy_for_entry(spec, entry_price)
+
+    async def _arm(
+        self, scenario: _ShadowScenario, cycle_id: str, symbol: str, at: datetime
+    ) -> None:
+        position = scenario.account.state.positions.get(symbol)
+        if position is None:
+            return
+        await scenario.stops.arm(
+            cycle_id, symbol, self._policy_for(symbol, position.avg_cost), at=at
+        )
+
+    @staticmethod
+    def _open_orders(account: ShadowAccount, symbol: str, side: OrderSide) -> bool:
+        return any(
+            order.symbol == symbol and order.side is side and order.is_open
+            and order.purpose is not OrderPurpose.PROTECTIVE_STOP
+            for order in account.state.orders.values()
+        )
+
     async def _process_symbol(
         self, scenario: _ShadowScenario, context: MarketContext
     ) -> list[str]:
@@ -1083,10 +1329,7 @@ class VwapReferenceLifecycle:
             if fill.is_fill:
                 actions.append(f"FILL:{order.side.value}:{fill.quantity}")
                 if order.side is OrderSide.BUY:
-                    await scenario.stops.arm(
-                        stored.cycle_id, context.symbol, self.protection_policy,
-                        at=context.as_of,
-                    )
+                    await self._arm(scenario, stored.cycle_id, context.symbol, context.as_of)
 
         position = account.state.positions.get(context.symbol)
         if position is not None and quote is not None:
@@ -1100,22 +1343,76 @@ class VwapReferenceLifecycle:
                     actions.append("STOP_EXIT")
                     return actions
 
+        collections = self.collections(context.symbol)
         position = account.state.positions.get(context.symbol)
         if position is not None:
-            state = self._state(scenario, "sell", context.symbol)
-            evaluation = self.sell.evaluate(context, self.sell_parameters, state)
-            self._save_state(scenario, "sell", context.symbol, evaluation.state_updates)
-            held = context.as_of - position.opened_at
-            if evaluation.is_signal and held >= scenario.settings.minimum_hold:
-                actions.extend(await self._exit(scenario, context, evaluation.signal_id or ""))
+            # SELL side: every configured SELL strategy evaluates the held position
+            # (its state advances even when a hold or pending exit blocks the exit).
+            exits: dict[str, _Binding] = {}
+            for binding in collections.sells:
+                state = self._state(scenario, binding, context.symbol)
+                evaluation = binding.strategy.evaluate(context, binding.parameters, state)
+                self._save_state(scenario, binding, context.symbol, evaluation.state_updates)
+                if evaluation.is_signal:
+                    exits[evaluation.signal_id or ""] = binding
+            if exits:
+                domain_position = Position(
+                    account.scope.scope_id, position.symbol, position.quantity,
+                    position.avg_cost, position.cost_basis, context.as_of,
+                    management=ManagementStatus.MANAGED, cycle_id=position.cycle_id,
+                )
+                decision = arbitrate_exit_decisions(
+                    [
+                        ExitCandidate(
+                            signal_id=signal_id, source=ExitSource.STRATEGY_SELL,
+                            symbol=context.symbol, strategy_id=binding.strategy_id,
+                            version=binding.version, position_cycle_id=position.cycle_id,
+                            bar_time=self._bar_time(context),
+                        )
+                        for signal_id, binding in exits.items()
+                    ],
+                    symbol=context.symbol, position=domain_position,
+                    evaluation_time=context.as_of,
+                    minimum_hold=scenario.settings.minimum_hold,
+                    entry_filled_at=position.opened_at,
+                    pending_exit_source=(
+                        ExitSource.STRATEGY_SELL
+                        if self._open_orders(account, context.symbol, OrderSide.SELL)
+                        else None
+                    ),
+                )
+                if decision.selected is not None:
+                    actions.extend(
+                        await self._exit(scenario, context, decision.selected.signal_id)
+                    )
             return actions
 
-        state = self._state(scenario, "buy", context.symbol)
-        state["eligibility"] = "WATCHING_BUY"
-        evaluation = self.buy.evaluate(context, self.buy_parameters, state)
-        self._save_state(scenario, "buy", context.symbol, evaluation.state_updates)
-        if not evaluation.is_signal or not self.entry_gate.authorized:
+        # BUY side: every configured BUY strategy evaluates the flat symbol; the
+        # shared arbitration lets at most one entry through.
+        entries: dict[str, tuple[_Binding, StrategyEvaluation]] = {}
+        for binding in collections.buys:
+            state = self._state(scenario, binding, context.symbol)
+            state["eligibility"] = "WATCHING_BUY"
+            evaluation = binding.strategy.evaluate(context, binding.parameters, state)
+            self._save_state(scenario, binding, context.symbol, evaluation.state_updates)
+            if evaluation.is_signal:
+                entries[evaluation.signal_id or ""] = (binding, evaluation)
+        if not entries:
             return actions
+        arbitration = arbitrate_entry_decisions(
+            [
+                EntryCandidate(
+                    signal_id, binding.strategy_id, binding.version, context.symbol,
+                    evaluation.bar_time,
+                )
+                for signal_id, (binding, evaluation) in entries.items()
+            ],
+            symbol=context.symbol, evaluation_time=context.as_of, position_open=False,
+            entry_pending=self._open_orders(account, context.symbol, OrderSide.BUY),
+        )
+        if arbitration.selected is None or not self.entry_gate.authorized:
+            return actions
+        binding, evaluation = entries[arbitration.selected.signal_id]
         local_day = context.as_of.astimezone(exchange_calendar.NEW_YORK).date()
         session = exchange_calendar.session_for(local_day)
         if context.as_of >= exchange_calendar.entry_cutoff(session, self.cutoff_minutes):
@@ -1151,7 +1448,7 @@ class VwapReferenceLifecycle:
             order_type=OrderType.MARKET, time_in_force=TimeInForce.DAY,
             created_at=context.as_of, quantity=quantity, signal_id=evaluation.signal_id,
         )
-        order = await account.submit_order(intent, strategy_key="vwap_bounce")
+        order = await account.submit_order(intent, strategy_key=binding.strategy_id)
         actions.append(f"ENTRY:{order.broker_order_id}")
         if context.latest_quote is not None:
             fill = scenario.fills.apply_fill_to_account(
@@ -1159,9 +1456,7 @@ class VwapReferenceLifecycle:
             )
             if fill.is_fill:
                 actions.append(f"FILL:BUY:{fill.quantity}")
-                await scenario.stops.arm(
-                    cycle_id, context.symbol, self.protection_policy, at=context.as_of
-                )
+                await self._arm(scenario, cycle_id, context.symbol, context.as_of)
         if decision.reservation is not None:
             # The shadow account now durably owns both the filled commitment and any
             # open-order remainder; the coordinator's short-lived authorization hold
@@ -1170,6 +1465,11 @@ class VwapReferenceLifecycle:
         else:
             await scenario.coordinator.complete(command)
         return actions
+
+    @staticmethod
+    def _bar_time(context: MarketContext) -> datetime | None:
+        bars = context.candles.get(CandleTimeframe.M1, ())
+        return bars[-1].start if bars else None
 
     async def _exit(
         self, scenario: _ShadowScenario, context: MarketContext, signal_id: str
@@ -1210,16 +1510,14 @@ class VwapReferenceLifecycle:
         return actions
 
     def _state(
-        self, scenario: _ShadowScenario, role: str, symbol: str
+        self, scenario: _ShadowScenario, binding: _Binding, symbol: str
     ) -> dict[str, object]:
-        key = (role, symbol)
+        key = (binding.role, binding.strategy_id, symbol)
         if key not in scenario.states:
             loaded: dict[str, object] = {}
             session = self.group.persistence.session
             if session is not None:
-                instance_id = self._ensure_strategy_instance(
-                    scenario, role, symbol
-                )
+                instance_id = self._ensure_strategy_instance(scenario, binding, symbol)
                 repo = StrategyStateRepository(
                     session.bind_scope(scenario.account.scope.scope_id), self.clock
                 )
@@ -1232,28 +1530,32 @@ class VwapReferenceLifecycle:
     def _save_state(
         self,
         scenario: _ShadowScenario,
-        role: str,
+        binding: _Binding,
         symbol: str,
         updates: Mapping[str, object],
     ) -> None:
-        state = self._state(scenario, role, symbol)
+        state = self._state(scenario, binding, symbol)
         state.update(updates)
         session = self.group.persistence.session
         if session is not None:
-            instance_id = self._ensure_strategy_instance(scenario, role, symbol)
+            instance_id = self._ensure_strategy_instance(scenario, binding, symbol)
             StrategyStateRepository(
                 session.bind_scope(scenario.account.scope.scope_id), self.clock
             ).save_state(instance_id, symbol, state)
 
     def _ensure_strategy_instance(
-        self, scenario: _ShadowScenario, role: str, symbol: str
+        self, scenario: _ShadowScenario, binding: _Binding, symbol: str
     ) -> str:
         session = self.group.persistence.session
         if session is None:
             raise RuntimeError("persistence is not open")
         scope = scenario.account.scope.scope_id
-        instance_id = f"{scope}:vwap_reference:{role}:{symbol}"
-        strategy_key = "vwap_bounce" if role == "buy" else "vwap_breakdown"
+        legacy = (binding.role, binding.strategy_id) in _LEGACY_INSTANCES
+        instance_id = (
+            f"{scope}:vwap_reference:{binding.role}:{symbol}"
+            if legacy
+            else f"{scope}:{binding.strategy_id}:{binding.role}:{symbol}"
+        )
         with session.unit_of_work() as conn:
             conn.execute(
                 "INSERT OR IGNORE INTO strategy_instances("
@@ -1263,17 +1565,13 @@ class VwapReferenceLifecycle:
                 (
                     instance_id,
                     scope,
-                    strategy_key,
-                    "1.0.0",
-                    role.upper(),
+                    binding.strategy_id,
+                    binding.version,
+                    binding.role.upper(),
                     symbol,
-                    json.dumps(
-                        self.buy_parameters if role == "buy" else self.sell_parameters,
-                        sort_keys=True,
-                        default=str,
-                    ),
+                    json.dumps(dict(binding.parameters), sort_keys=True, default=str),
                     1,
-                    "vwap_reference",
+                    "vwap_reference" if legacy else None,
                     to_db_timestamp(self.clock.now()),
                 ),
             )
@@ -1646,6 +1944,14 @@ def _scopes(settings: AppSettings) -> tuple[AccountScope, ...]:
     return (AccountScope(environment, settings.account_id),)
 
 
+def _is_legacy_pair(item: SymbolStrategySettings) -> bool:
+    return (
+        len(item.buys) == 1 and len(item.sells) == 1
+        and item.buys[0].plugin == "vwap_bounce" and not item.buys[0].parameters
+        and item.sells[0].plugin == "vwap_breakdown" and not item.sells[0].parameters
+    )
+
+
 def _fingerprint(settings: AppSettings) -> str:
     document = {
         "mode": settings.mode.value,
@@ -1663,6 +1969,31 @@ def _fingerprint(settings: AppSettings) -> str:
         "entry_cutoff_minutes": settings.entry_cutoff_minutes,
         "stop_trail_percent": str(settings.stop_trail_percent),
     }
+    # The single vwap_reference pair with a native trailing stop is the legacy
+    # shape; its fingerprint must not change (a changed fingerprint blocks
+    # entries until an operator acknowledges it). Any other strategy
+    # collection or stop policy is configuration drift and is fingerprinted.
+    custom = [
+        {
+            "symbol": item.symbol,
+            "buy": [[a.plugin, dict(a.parameters)] for a in item.buys],
+            "sell": [[a.plugin, dict(a.parameters)] for a in item.sells],
+        }
+        for item in settings.symbol_strategies
+        if not _is_legacy_pair(item)
+    ]
+    if custom:
+        document["strategies"] = custom
+    custom_stops = {
+        symbol: {key: str(value) for key, value in spec.items()}
+        for symbol, spec in sorted(settings.symbol_stop_policies.items())
+        if not (
+            spec.get("type") == "native_trailing"
+            and spec.get("trail_percent") == settings.stop_trail_percent
+        )
+    }
+    if custom_stops:
+        document["stop_policies"] = custom_stops
     payload = json.dumps(document, sort_keys=True, separators=(",", ":"))
     return hashlib.sha256(payload.encode("utf-8")).hexdigest()
 
@@ -1716,9 +2047,13 @@ def build_runtime(
         default_market_data = ProductionMarketData(clock, settings.max_bar_age)
     market_data = cast(MarketDataPort, supplied.get("market_data", default_market_data))
     registry = StrategyRegistry()
-    registry.register(VwapBounceBuy)
-    registry.register(VwapBreakdownSell)
+    for strategy_cls in (
+        VwapBounceBuy, MomentumBreakoutBuy, OpeningRangeBreakoutBuy,
+        VwapBreakdownSell, MomentumReversalSell, RsiReversalSell,
+    ):
+        registry.register(strategy_cls)
     strategies = supplied.get("strategies", registry)
+    assigned = {item.symbol: item for item in settings.symbol_strategies}
     pair_resolution = (
         resolve_pair_preset("vwap_reference", registry=registry, mode="shadow")
         if settings.mode is ExecutionMode.SHADOW
@@ -1733,14 +2068,18 @@ def build_runtime(
     )
     if isinstance(scheduler, StrategyScheduler):
         for symbol in settings.symbols:
-            scheduler.register(
-                symbol=symbol, strategy_id="vwap_bounce", side=StrategyRole.BUY,
-                triggers=(CANDLE_CLOSED(CandleTimeframe.M1),),
+            item = assigned.get(symbol)
+            plan = (
+                [("vwap_bounce", StrategyRole.BUY), ("vwap_breakdown", StrategyRole.SELL)]
+                if item is None
+                else [(a.plugin, StrategyRole.BUY) for a in item.buys]
+                + [(a.plugin, StrategyRole.SELL) for a in item.sells]
             )
-            scheduler.register(
-                symbol=symbol, strategy_id="vwap_breakdown", side=StrategyRole.SELL,
-                triggers=(CANDLE_CLOSED(CandleTimeframe.M1),),
-            )
+            for strategy_id, side in plan:
+                scheduler.register(
+                    symbol=symbol, strategy_id=strategy_id, side=side,
+                    triggers=(CANDLE_CLOSED(CandleTimeframe.M1),),
+                )
 
     scopes = _scopes(settings)
     persistence = cast(
@@ -1794,6 +2133,18 @@ def build_runtime(
             protection_policy,
             cast(Mapping[str, object], pair_resolution["buy_params"]),
             cast(Mapping[str, object], pair_resolution["sell_params"]),
+            assignments=tuple(
+                item for item in settings.symbol_strategies if not _is_legacy_pair(item)
+            ),
+            registry=cast(StrategyRegistry, strategies),
+            stop_specs={
+                symbol: spec
+                for symbol, spec in settings.symbol_stop_policies.items()
+                if not (
+                    spec.get("type") == "native_trailing"
+                    and spec.get("trail_percent") == settings.stop_trail_percent
+                )
+            },
         )
     execution = supplied.get("execution", lifecycle or broker)
     protection = supplied.get(

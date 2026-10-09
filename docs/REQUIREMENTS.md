@@ -154,6 +154,34 @@ Notes:
   (`last_signal_bar`); a new session resets firing state; evaluation
   windows never span sessions.
 
+### Strategy collections per symbol
+
+Each watched symbol configures an independent, arbitrary-length collection of
+BUY strategies and of SELL strategies (`symbols.<TICKER>.buy_strategies` /
+`sell_strategies`; the singular `buy_strategy` / `sell_strategy` spellings
+remain accepted as one-element collections). Each name refers to an entry in
+`strategies:` (plugin, side, parameters), so the same plugin can be tuned
+differently on different symbols by defining several named entries. Rules:
+
+- BUY and SELL collections are independent; SELL strategies are never paired
+  with a particular BUY strategy. The SELL collection may be empty because the
+  mandatory `stop_policy` protects the position without any SELL strategy.
+- One plugin may serve a symbol at most once per side (signal ids, persisted
+  state and arbitration are keyed by plugin id); a BUY/SELL role mismatch, an
+  unknown plugin, unknown or invalid parameters fail closed.
+- Flat symbol: every BUY strategy is evaluated and at most one entry is
+  selected (`signals.decisions.arbitrate_entry_decisions`: completed-bar time,
+  then `strategy_id`, then `signal_id`). A held position or a working entry
+  order rejects all candidates, so simultaneous BUY signals never duplicate a
+  purchase or scale a position.
+- Held symbol: every SELL strategy is evaluated and at most one full-remainder
+  exit is selected (`arbitrate_exit_decisions`), subject to minimum hold and an
+  already-working exit; protective stops outrank strategy exits and are
+  evaluated first.
+- The SHADOW stream currently builds the 1-minute shared context only, so
+  strategies that need other timeframes (`rsi_reversal`, 5-minute) are refused
+  at start-up rather than silently never firing.
+
 ## 6. Explicitly out of scope
 
 - Short selling, margin semantics beyond broker-reported buying power,

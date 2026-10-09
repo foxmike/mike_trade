@@ -75,6 +75,7 @@ def _settings_from_config() -> DashboardSettings:
         if item["enabled"]
     }
     backup = os.environ.get("MIKE_TRADE_BACKUP_DIR")
+    backup_status = os.environ.get("MIKE_TRADE_BACKUP_STATUS_FILE")
     return DashboardSettings(
         bind_host=bind_host,
         port=port,
@@ -89,6 +90,7 @@ def _settings_from_config() -> DashboardSettings:
         symbols=symbols,
         data_dir=Path(str(service["data_dir"])),
         backup_dir=Path(backup) if backup else None,
+        backup_status_file=Path(backup_status) if backup_status else None,
     )
 
 

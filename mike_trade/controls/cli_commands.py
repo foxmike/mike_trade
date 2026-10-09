@@ -82,6 +82,9 @@ def _run_report(name: str, args: Any) -> Any | None:
 
 
 def _doctor() -> int:
+    import json
+    from datetime import UTC, datetime, timedelta
+
     import mike_trade
     from mike_trade.app import AppSettings
     from mike_trade.runtime import ExecutionMode
@@ -100,18 +103,34 @@ def _doctor() -> int:
         except ImportError:
             print(f"[FAIL] Dependency {dist} unavailable")
             ok = False
-    ignored = False
     ignore_file = Path(".gitignore")
     if ignore_file.exists():
         ignored = any(line.strip().rstrip("/") == "state" for line in ignore_file.read_text().splitlines())
-    print(f"[{ 'PASS' if ignored else 'FAIL' }] state directory gitignored")
-    ok = ok and ignored
+        print(f"[{ 'PASS' if ignored else 'FAIL' }] state directory gitignored")
+        ok = ok and ignored
+    else:
+        print("[INFO] source .gitignore check unavailable in packaged runtime")
     mode = AppSettings().mode
     safe = mode != ExecutionMode.LIVE
     print(f"[{ 'PASS' if safe else 'FAIL' }] default mode: {mode.value}")
     ok = ok and safe
     for key in ("APCA_API_KEY_ID", "APCA_API_SECRET_KEY"):
         print(f"[INFO] Credential {key}: {'PRESENT' if os.environ.get(key) else 'ABSENT'}")
+    backup_status_path = os.environ.get("MIKE_TRADE_BACKUP_STATUS_FILE")
+    if backup_status_path:
+        try:
+            status = json.loads(Path(backup_status_path).read_text(encoding="utf-8"))
+            for name, maximum_age in (("operational", timedelta(hours=36)),
+                                      ("research", timedelta(days=8))):
+                item = status[name]
+                last = datetime.fromisoformat(item["last_success_at"])
+                healthy = (item["last_status"] == "ok" and last.tzinfo is not None
+                           and datetime.now(UTC) - last <= maximum_age)
+                print(f"[{'PASS' if healthy else 'FAIL'}] {name} backup status")
+                ok = ok and healthy
+        except (OSError, ValueError, KeyError, TypeError) as exc:
+            print(f"[FAIL] backup status unavailable: {type(exc).__name__}")
+            ok = False
     return 0 if ok else EXIT_UNHEALTHY
 
 

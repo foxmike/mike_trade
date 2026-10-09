@@ -40,6 +40,7 @@ from mike_trade.domain.trading import (
     TimeInForce,
 )
 from mike_trade.persistence.readstore import ReadStore
+from mike_trade.persistence.maintenance import create_backup
 from mike_trade.persistence.repositories import (
     AccountScopeRepository,
     BrokerOrderRepository,
@@ -572,12 +573,10 @@ def test_health_reports_engine_offline_error(world: World, client: TestClient) -
 
 def test_health_reads_latest_backup_manifest(world: World, dist: Path, tmp_path: Path) -> None:
     backups = tmp_path / "backups"
-    backups.mkdir()
-    (backups / "paper-1.sqlite3.manifest.json").write_text(
-        '{"created_at": "2026-10-08T12:00:00Z", "integrity_ok": true}')
+    create_backup(world.db_path, backups, now=NOW)
     client = make_client(world, dist, DashboardSettings(backup_dir=backups))
     persistence = get(client, f"/api/accounts/{ACCOUNT}/health")["persistence"]
-    assert persistence["last_backup_at"]["value"] == "2026-10-08T12:00:00Z"
+    assert persistence["last_backup_at"]["value"] == "2026-10-08T14:30:00Z"
     assert persistence["last_backup_integrity_ok"] is True
 
 

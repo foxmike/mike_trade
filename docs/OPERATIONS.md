@@ -393,6 +393,81 @@ experiment schema, progress, artifact, and reproducibility behavior is in
 
 ## Database backup and restore
 
+### R730 automated backups
+
+The R730 uses the same host-cron and mounted-SAS-drive pattern as BookieMonster.
+`/dev/disk/by-uuid/b4883d76-a34f-4976-a5d1-ba973de4a837` is mounted at
+`/run/media/mike/SAS_DRIVE_1` from `/etc/fstab`; the backup script refuses to
+write unless this exact filesystem is mounted. Cron runs as `mike`:
+
+```cron
+20 3 * * * cd /home/mike/dev/mike/stocks/python/mike_trade && .venv/bin/python scripts/backup/r730_backup.py operational >> /home/mike/.local/state/mike_trade/backup.log 2>&1
+20 4 * * 0 cd /home/mike/dev/mike/stocks/python/mike_trade && .venv/bin/python scripts/backup/r730_backup.py research >> /home/mike/.local/state/mike_trade/backup.log 2>&1
+```
+
+Daily operational backups use SQLite's online backup API and the existing
+`verify_backup` integrity/hash check. Fourteen complete database and matching
+configuration generations are retained. Configuration includes the private
+`.env`, local YAML, Compose files, `/etc/fstab`, and the user's crontab; the
+backup tree is mode 0700 and copies
+are mode 0600. Weekly research backups contain the complete research artifact
+tree and a read-only, locked DuckDB `EXPORT DATABASE` of the catalog. Each
+Parquet snapshot is checked against its immutable source manifest, and the
+export is imported into an in-memory database to check its table count. Eight
+weekly generations are retained. Only completed generations are pruned; source
+data is never pruned by this job.
+
+Backups live outside the checkout at
+`/run/media/mike/SAS_DRIVE_1/mike_trade/{operational,configuration,research}`.
+The cron log and success/failure status live at
+`/home/mike/.local/state/mike_trade/{backup.log,backup-status.json}`. The
+dashboard mounts the backup and status directories read-only. `/api` health
+verifies the matching operational backup and reports missing, old, or failed
+backup status. `docker compose exec -T mike-trade-api python -m mike_trade.cli
+doctor` checks that daily and weekly jobs last succeeded within their expected
+windows. If the SAS disk is unavailable, the job fails nonzero and records the
+failure in host status/log storage; it never falls back to the system disk.
+
+To recover, first stop the engine and verify the selected operational backup
+with `verify_backup` or `make db-restore-dry-run OUT=<backup-file>`. Preserve
+the current database and its WAL/SHM files before any restore. Use the existing
+`restore_backup` service with explicit `confirm_environment="SHADOW"` for the
+selected verified SQLite copy. Restore `.env` and local configuration from the
+matching configuration generation with mode 0600. Restore research files to
+`research/` from a selected weekly generation, then use DuckDB `IMPORT DATABASE`
+from that generation's `catalog-export/` into a new catalog path while no
+research writer is running, or rebuild catalog metadata from the restored
+immutable manifests with `research-data list`. Verify checksums and database
+identity before starting the engine. Do not test restoration against the active
+database.
+
+For the SQLite part of a real recovery, after selecting a backup file:
+
+```sh
+docker compose stop mike-trade-engine mike-trade-api
+export DB_BACKUP_FILE=/run/media/mike/SAS_DRIVE_1/mike_trade/operational/SELECTED.sqlite3
+.venv/bin/python - <<'PY'
+import os
+from pathlib import Path
+from mike_trade.persistence.maintenance import verify_backup, rehearse_restore, restore_backup
+
+backup = Path(os.environ["DB_BACKUP_FILE"])
+assert verify_backup(backup).ok
+assert rehearse_restore(backup, Path("/tmp/mike_trade_restore_check"))["ok"]
+restore_backup(backup, Path("state/r730/shadow.sqlite3"), confirm_environment="SHADOW")
+PY
+```
+
+`restore_backup` preserves the previous active database and WAL/SHM sidecars
+before installing the verified backup. Inspect its report and the restored
+database identity before restarting the engine.
+
+In SHADOW mode the dashboard's balance values are the isolated simulated
+account's cash, equity, buying power, and portfolio value. The engine publishes
+these to `equity_snapshots` at startup and at most once a minute while running.
+The dashboard shows their source as `shadow:simulated`; Alpaca IEX data-feed
+connectivity does not authenticate a broker trading account.
+
 | Target | Variables | Example |
 | ------ | --------- | ------- |
 | `make db-check` | `FORMAT` | `make db-check` |

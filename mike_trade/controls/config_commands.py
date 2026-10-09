@@ -772,6 +772,47 @@ def _validate_stop_policy(raw: Any, path: str, errors: _ErrorList) -> dict[str, 
             "step_trigger_percent": trigger, "step_percent": step}
 
 
+def _strategy_collection(item: Mapping[str, Any], side: str, path: str,
+                         errors: _ErrorList, *, required: bool) -> list[str] | None:
+    """Normalize ``<side>_strategy`` / ``<side>_strategies`` into one ordered list.
+
+    A symbol carries any number of strategies per side. ``<side>_strategy`` (one
+    name) and ``<side>_strategies`` (a list) are alternative spellings of the
+    same collection and may not both appear. The SELL side may be empty because
+    protective stops (``stop_policy``) never depend on a SELL strategy.
+    """
+    single, plural = f"{side}_strategy", f"{side}_strategies"
+    if single in item and plural in item:
+        _err(errors, _join(path, plural),
+             f"{_join(path, single)} and {_join(path, plural)} are alternatives; use one")
+        return None
+    if plural in item:
+        raw = item[plural]
+        field = _join(path, plural)
+        if not isinstance(raw, list) or any(not isinstance(n, str) or not n.strip()
+                                            for n in raw):
+            _err(errors, field, f"{field} must be a list of strategy names")
+            return None
+        names = [n.strip() for n in raw]
+    elif single in item:
+        name = _req_text(item[single], _join(path, single), errors, _join(path, single))
+        if name is None:
+            return None
+        names = [name]
+    else:
+        names = []
+    if required and not names:
+        field = _join(path, plural)
+        _err(errors, field, f"{path} needs at least one {side} strategy "
+                            f"({single} or {plural})")
+        return None
+    duplicates = sorted({n for n in names if names.count(n) > 1})
+    if duplicates:
+        _err(errors, _join(path, plural), f"duplicate {side} strategies {duplicates}")
+        return None
+    return names
+
+
 def _validate_symbols(raw: Any, errors: _ErrorList) -> dict[str, Any] | None:
     node = _req_mapping(raw, "symbols", errors, "symbols")
     if node is None:
@@ -796,6 +837,7 @@ def _validate_symbols(raw: Any, errors: _ErrorList) -> dict[str, Any] | None:
                               "max_entry_cycles_per_session", "consecutive_loss_limit",
                               "consecutive_loss_reset", "consecutive_loss_scope",
                               "post_sale_cooldown_seconds", "buy_strategy", "sell_strategy",
+                              "buy_strategies", "sell_strategies",
                               "stop_policy"}, path, errors)
         enabled = _req_bool(item.get("enabled", True), _join(path, "enabled"),
                             errors, _join(path, "enabled"))
@@ -840,10 +882,8 @@ def _validate_symbols(raw: Any, errors: _ErrorList) -> dict[str, Any] | None:
         cooldown = _req_int(item.get("post_sale_cooldown_seconds", 0),
                             _join(path, "post_sale_cooldown_seconds"), errors,
                             _join(path, "post_sale_cooldown_seconds"), minimum=0)
-        buy = _req_text(item.get("buy_strategy"), _join(path, "buy_strategy"),
-                        errors, _join(path, "buy_strategy"))
-        sell = _req_text(item.get("sell_strategy"), _join(path, "sell_strategy"),
-                         errors, _join(path, "sell_strategy"))
+        buys = _strategy_collection(item, "buy", path, errors, required=True)
+        sells = _strategy_collection(item, "sell", path, errors, required=False)
         policy = None
         if "stop_policy" not in item:
             _err(errors, _join(path, "stop_policy"), f"{_join(path, 'stop_policy')} is required")
@@ -852,7 +892,7 @@ def _validate_symbols(raw: Any, errors: _ErrorList) -> dict[str, Any] | None:
                                            errors)
         if enabled is None or budget is None or min_hold is None or max_cycles is None \
                 or loss_limit is None or loss_reset is None or loss_scope is None \
-                or cooldown is None or buy is None or sell is None or policy is None:
+                or cooldown is None or buys is None or sells is None or policy is None:
             continue
         normalized[ticker] = {"enabled": enabled, "budget": budget,
                               "planned_loss_cap": cap, "min_hold_seconds": min_hold,
@@ -861,7 +901,11 @@ def _validate_symbols(raw: Any, errors: _ErrorList) -> dict[str, Any] | None:
                               "consecutive_loss_reset": loss_reset,
                               "consecutive_loss_scope": loss_scope,
                               "post_sale_cooldown_seconds": cooldown,
-                              "buy_strategy": buy, "sell_strategy": sell,
+                              "buy_strategies": buys, "sell_strategies": sells,
+                              # First configured entry of each side, kept for
+                              # single-strategy consumers of the settings.
+                              "buy_strategy": buys[0],
+                              "sell_strategy": sells[0] if sells else None,
                               "stop_policy": policy}
     return normalized
 
@@ -1037,14 +1081,22 @@ def _check_cross_field(settings: dict[str, Any], errors: _ErrorList) -> None:
             _err(errors, f"symbols.{ticker}.planned_loss_cap",
                  f"symbols.{ticker}.planned_loss_cap must be less than "
                  f"symbols.{ticker}.budget")
-        buy = strategies.get(symbol["buy_strategy"])
-        if buy is None or buy["side"] != "buy":
-            _err(errors, f"symbols.{ticker}.buy_strategy",
-                 f"symbols.{ticker}.buy_strategy does not reference a buy strategy")
-        sell = strategies.get(symbol["sell_strategy"])
-        if sell is None or sell["side"] != "sell":
-            _err(errors, f"symbols.{ticker}.sell_strategy",
-                 f"symbols.{ticker}.sell_strategy does not reference a sell strategy")
+        plugins: dict[str, str] = {}
+        for side in ("buy", "sell"):
+            for name in symbol[f"{side}_strategies"]:
+                entry = strategies.get(name)
+                if entry is None or entry["side"] != side:
+                    _err(errors, f"symbols.{ticker}.{side}_strategies",
+                         f"symbols.{ticker}.{side}_strategy {name!r} does not reference "
+                         f"a {side} strategy")
+                    continue
+                # Signal identity, persisted state and arbitration are keyed by
+                # plugin id, so one plugin may serve a symbol only once.
+                other = plugins.setdefault(entry["plugin"], name)
+                if other != name:
+                    _err(errors, f"symbols.{ticker}.{side}_strategies",
+                         f"symbols.{ticker} configures plugin {entry['plugin']!r} twice "
+                         f"({other!r}, {name!r})")
     if risk["daily_loss_limit"] > total:
         _err(errors, "risk.daily_loss_limit",
              "risk.daily_loss_limit exceeds risk.total_application_budget")

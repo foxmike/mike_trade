@@ -34,6 +34,15 @@ Policy (first valid exit, no voting)
   quantity (``Position.quantity``); partial exits do not exist.
 * Duplicate suppression across ticks belongs to ``signals.rearm``; callers
   pass the signal ids it has already seen as ``seen_signal_ids``.
+
+Entry arbitration (:func:`arbitrate_entry_decisions`) is the BUY-side
+counterpart: any number of configured BUY strategies may signal for one symbol
+on one tick, and at most one entry is selected. The tie-break is the stable
+``(completed-bar timestamp, strategy_id, signal_id)`` order, independent of
+configuration or arrival order. A held position or an entry order that is still
+working rejects every candidate, so simultaneous BUY signals can neither
+duplicate a purchase nor scale an existing position. The operational lifecycle
+and the historical backtester both call these two pure functions.
 """
 
 from __future__ import annotations
@@ -62,6 +71,11 @@ __all__ = [
     "DecisionRecord",
     "ArbitrationResult",
     "arbitrate_exit_decisions",
+    "EntryDecisionReason",
+    "EntryCandidate",
+    "EntryDecisionRecord",
+    "EntryArbitrationResult",
+    "arbitrate_entry_decisions",
 ]
 
 DECISION_SCHEMA_VERSION = 1
@@ -447,3 +461,154 @@ def arbitrate_exit_decisions(
         selected=selected,
         records=tuple(records),
     )
+
+
+class EntryDecisionReason(Enum):
+    """Explicit reason codes for BUY-side arbitration."""
+
+    SELECTED = "SELECTED"
+    SYMBOL_MISMATCH = "SYMBOL_MISMATCH"
+    POSITION_OPEN = "POSITION_OPEN"
+    ENTRY_ALREADY_PENDING = "ENTRY_ALREADY_PENDING"
+    DUPLICATE_SIGNAL = "DUPLICATE_SIGNAL"
+    SUPERSEDED_BY_TIE_BREAK = "SUPERSEDED_BY_TIE_BREAK"
+
+
+@dataclass(frozen=True, slots=True)
+class EntryCandidate:
+    """One BUY strategy signal for a symbol on one tick."""
+
+    signal_id: str
+    strategy_id: str
+    version: str
+    symbol: str
+    bar_time: datetime | None = None
+
+    def __post_init__(self) -> None:
+        object.__setattr__(self, "signal_id", _text(self.signal_id, "signal_id"))
+        object.__setattr__(self, "strategy_id", _text(self.strategy_id, "strategy_id"))
+        object.__setattr__(self, "version", _text(self.version, "version"))
+        object.__setattr__(self, "symbol", _text(self.symbol, "symbol").upper())
+        if self.bar_time is not None:
+            object.__setattr__(self, "bar_time", _utc(self.bar_time, "bar_time"))
+
+    def sort_key(self) -> tuple[datetime, str, str]:
+        """Stable tie-break: bar time, strategy_id, signal_id."""
+        return (self.bar_time or _MIN_TIME, self.strategy_id, self.signal_id)
+
+
+@dataclass(frozen=True, slots=True)
+class EntryDecisionRecord:
+    """One audit entry per BUY candidate."""
+
+    signal_id: str
+    strategy_id: str
+    version: str
+    symbol: str
+    outcome: DecisionOutcome
+    reason: EntryDecisionReason
+    bar_time: datetime | None
+    superseded_by: str | None = None
+
+    def to_dict(self) -> dict[str, object]:
+        return {
+            "schema_version": DECISION_SCHEMA_VERSION,
+            "side": "BUY",
+            "signal_id": self.signal_id,
+            "strategy_id": self.strategy_id,
+            "version": self.version,
+            "symbol": self.symbol,
+            "outcome": self.outcome.value,
+            "reason_codes": [self.reason.value],
+            "bar_time": _iso(self.bar_time),
+            "superseded_by": self.superseded_by,
+        }
+
+
+@dataclass(frozen=True, slots=True)
+class EntryArbitrationResult:
+    """At most one selected entry plus every candidate's record."""
+
+    symbol: str
+    evaluated_at: datetime
+    selected: EntryDecisionRecord | None
+    records: tuple[EntryDecisionRecord, ...]
+
+    def __post_init__(self) -> None:
+        chosen = [r for r in self.records if r.outcome is DecisionOutcome.SELECTED]
+        if len(chosen) > 1:
+            raise ValueError("at most one entry may be selected")
+        if (self.selected is None) != (not chosen) or (
+            self.selected is not None and self.selected is not chosen[0]
+        ):
+            raise ValueError("selected must be the SELECTED record, or None")
+
+    def to_dict(self) -> dict[str, object]:
+        return {
+            "schema_version": DECISION_SCHEMA_VERSION,
+            "side": "BUY",
+            "symbol": self.symbol,
+            "evaluated_at": _iso(self.evaluated_at),
+            "selected_signal_id": None if self.selected is None else self.selected.signal_id,
+            "records": [record.to_dict() for record in self.records],
+        }
+
+
+def arbitrate_entry_decisions(
+    candidates: Iterable[EntryCandidate],
+    *,
+    symbol: str,
+    evaluation_time: datetime,
+    position_open: bool,
+    entry_pending: bool = False,
+    seen_signal_ids: Collection[str] = frozenset(),
+) -> EntryArbitrationResult:
+    """Select at most one long entry and record every candidate's fate.
+
+    ``position_open`` is true when the symbol already holds a managed long (the
+    one-position-per-symbol lifecycle); ``entry_pending`` is true while an
+    earlier entry order is still working. Either rejects every candidate, so
+    multiple BUY signals can never duplicate or scale a position. Otherwise the
+    first valid candidate in ``EntryCandidate.sort_key`` order is selected and
+    the rest are rejected as superseded. Pure: no clock, I/O or broker access.
+    """
+    symbol = _text(symbol, "symbol").upper()
+    evaluated_at = _utc(evaluation_time, "evaluation_time")
+    if not isinstance(position_open, bool) or not isinstance(entry_pending, bool):
+        raise ValueError("position_open and entry_pending must be bool")
+    supplied = tuple(candidates)
+    if any(not isinstance(c, EntryCandidate) for c in supplied):
+        raise ValueError("candidates must be EntryCandidate instances")
+    seen = set(seen_signal_ids)
+    winner: EntryCandidate | None = None
+    records: list[EntryDecisionRecord] = []
+    for candidate in sorted(supplied, key=EntryCandidate.sort_key):
+        reason: EntryDecisionReason | None = None
+        if candidate.symbol != symbol:
+            reason = EntryDecisionReason.SYMBOL_MISMATCH
+        elif position_open:
+            reason = EntryDecisionReason.POSITION_OPEN
+        elif entry_pending:
+            reason = EntryDecisionReason.ENTRY_ALREADY_PENDING
+        elif candidate.signal_id in seen:
+            reason = EntryDecisionReason.DUPLICATE_SIGNAL
+        seen.add(candidate.signal_id)
+        superseded_by: str | None = None
+        if reason is None and winner is None:
+            winner = candidate
+            reason = EntryDecisionReason.SELECTED
+            outcome = DecisionOutcome.SELECTED
+        else:
+            outcome = DecisionOutcome.REJECTED
+            if reason is None:
+                assert winner is not None
+                reason = EntryDecisionReason.SUPERSEDED_BY_TIE_BREAK
+                superseded_by = winner.signal_id
+        records.append(
+            EntryDecisionRecord(
+                candidate.signal_id, candidate.strategy_id, candidate.version,
+                candidate.symbol, outcome, reason, candidate.bar_time, superseded_by,
+            )
+        )
+    selected = next((r for r in records if r.outcome is DecisionOutcome.SELECTED), None)
+    return EntryArbitrationResult(symbol, evaluated_at, selected, tuple(records))

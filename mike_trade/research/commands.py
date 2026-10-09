@@ -35,12 +35,36 @@ class ExperimentSpec:
     parameters: Mapping[str, Mapping[str, Any]] | None = None
     starting_capital: str = "10000"
     execution: Mapping[str, Any] | None = None
+    #: Explicit BUY / SELL strategy collections for this symbol. When both are
+    #: omitted the job runs the production ``vwap_reference`` pair and
+    #: ``strategy`` is only the recorded focus label (both legs always execute).
+    buy_strategies: tuple[str, ...] | None = None
+    sell_strategies: tuple[str, ...] | None = None
+    #: ``stop_policy``-shaped protective stop (fixed / native_trailing /
+    #: stepped_trailing); omitted keeps the reference 1.5% native trailing stop.
+    protective_stop: Mapping[str, Any] | None = None
 
     def validate(self) -> None:
         if not self.symbol or not self.symbol.replace(".", "").isalnum():
             raise ValueError(f"invalid experiment symbol: {self.symbol!r}")
-        if self.strategy not in {"vwap_bounce", "vwap_breakdown"}:
+        explicit = self.buy_strategies is not None or self.sell_strategies is not None
+        if explicit:
+            if not self.strategy or not self.strategy.replace("_", "").replace("-", "").isalnum():
+                raise ValueError(f"invalid experiment label: {self.strategy!r}")
+            for name in ("buy_strategies", "sell_strategies"):
+                value = getattr(self, name)
+                if value is not None and (
+                    isinstance(value, str) or any(not isinstance(i, str) for i in value)
+                ):
+                    raise ValueError(f"{name} must be a list of strategy ids")
+            if not self.buy_strategies:
+                raise ValueError("an explicit lifecycle needs at least one BUY strategy")
+        elif self.strategy not in {"vwap_bounce", "vwap_breakdown"}:
             raise ValueError(f"unsupported registered lifecycle focus: {self.strategy!r}")
+        if self.protective_stop is not None:
+            from mike_trade.risk.stop_config import normalize_stop_spec
+
+            normalize_stop_spec(self.protective_stop)
         if self.seed < 0:
             raise ValueError("experiment seed must be nonnegative")
         if _moment(self.start) >= _moment(self.end):
@@ -249,6 +273,9 @@ def _execute_experiment(job_data: dict[str, Any], root: str, results: str) -> di
         parameters=spec.parameters,
         starting_capital=Decimal(spec.starting_capital),
         execution=spec.execution,
+        buy_strategies=spec.buy_strategies,
+        sell_strategies=spec.sell_strategies,
+        protective_stop=spec.protective_stop,
     )
     result.pop("trade_ledger", None)  # Ledger remains in the immutable per-run artifact.
     result.update(status="completed", worker_pid=os.getpid())
@@ -387,6 +414,42 @@ def list_data(args: argparse.Namespace) -> int:
     return 0
 
 
+def _research_registry() -> Any:
+    """Registry of every shipped strategy; BUY and SELL entries are independent."""
+    from mike_trade.strategies.buy.momentum_breakout import MomentumBreakoutBuy
+    from mike_trade.strategies.buy.opening_range_breakout import OpeningRangeBreakoutBuy
+    from mike_trade.strategies.buy.vwap_bounce import VwapBounceBuy
+    from mike_trade.strategies.registry import StrategyRegistry
+    from mike_trade.strategies.sell.momentum_reversal import MomentumReversalSell
+    from mike_trade.strategies.sell.rsi_reversal import RsiReversalSell
+    from mike_trade.strategies.sell.vwap_breakdown import VwapBreakdownSell
+
+    registry = StrategyRegistry()
+    for cls in (
+        VwapBounceBuy,
+        MomentumBreakoutBuy,
+        OpeningRangeBreakoutBuy,
+        VwapBreakdownSell,
+        MomentumReversalSell,
+        RsiReversalSell,
+    ):
+        registry.register(cls)
+    return registry
+
+
+def _stop_distance_fraction(spec: Mapping[str, Any]) -> Any:
+    """Return ``reference -> initial stop distance as a fraction of price``."""
+    from mike_trade.risk.stop_config import normalize_stop_spec
+
+    normalized = normalize_stop_spec(spec)
+    for key in ("stop_percent", "trail_percent", "initial_stop_percent"):
+        if key in normalized:
+            fraction = normalized[key] / Decimal(100)
+            return lambda reference: fraction
+    amount = normalized.get("stop_amount", normalized.get("trail_amount"))
+    return lambda reference: amount / reference
+
+
 def _run_one(
     symbol: str,
     start: datetime,
@@ -400,6 +463,9 @@ def _run_one(
     parameters: Mapping[str, Mapping[str, Any]] | None = None,
     starting_capital: Decimal = Decimal("10000"),
     execution: Mapping[str, Any] | None = None,
+    buy_strategies: tuple[str, ...] | None = None,
+    sell_strategies: tuple[str, ...] | None = None,
+    protective_stop: Mapping[str, Any] | None = None,
 ) -> dict[str, Any]:
     from mike_trade.backtest.clock import ReplayClock
     from mike_trade.backtest.execution import (
@@ -535,22 +601,40 @@ def _run_one(
         )
     assumptions = ExecutionAssumptions(**assumption_values)
     sim = HistoricalExecutionSimulator(feed, clock, assumptions)
-    pair = resolve_pair_preset("vwap_reference", mode="shadow")
-    registry = pair["registry"] if "registry" in pair else None
-    if registry is None:
-        from mike_trade.strategies.registry import StrategyRegistry
-
-        registry = StrategyRegistry()
-        registry.register(pair["buy_cls"])
-        registry.register(pair["sell_cls"])
-    buy_id, sell_id = pair["buy_cls"].spec.strategy_id, pair["sell_cls"].spec.strategy_id
-    strategy_params = {buy_id: dict(pair["buy_params"]), sell_id: dict(pair["sell_params"])}
+    registry = _research_registry()
+    if buy_strategies is None and sell_strategies is None:
+        pair = resolve_pair_preset("vwap_reference", mode="shadow")
+        buy_ids = (pair["buy_cls"].spec.strategy_id,)
+        sell_ids = (pair["sell_cls"].spec.strategy_id,)
+        strategy_params = {
+            buy_ids[0]: dict(pair["buy_params"]),
+            sell_ids[0]: dict(pair["sell_params"]),
+        }
+        lifecycle = "vwap_reference"
+    else:
+        buy_ids, sell_ids = tuple(buy_strategies or ()), tuple(sell_strategies or ())
+        for side, ids in ((StrategyRole.BUY, buy_ids), (StrategyRole.SELL, sell_ids)):
+            for strategy_id in ids:
+                if registry.get(strategy_id).spec.side is not side:
+                    raise ValueError(f"{strategy_id} is not a {side.value} strategy")
+        strategy_params = {strategy_id: {} for strategy_id in (*buy_ids, *sell_ids)}
+        lifecycle = "collection"
     for strategy_id, values in (parameters or {}).items():
         if strategy_id not in strategy_params:
             raise ValueError(
                 f"parameters supplied for strategy outside lifecycle pair: {strategy_id}"
             )
         strategy_params[strategy_id].update(values)
+    stop_config: dict[str, Any] = (
+        {"protective_trailing_percent": "1.5"}
+        if protective_stop is None
+        else {"protective_stop": {k: str(v) for k, v in protective_stop.items()}}
+    )
+    stop_fraction = _stop_distance_fraction(
+        {"type": "native_trailing", "trail_percent": "1.5"}
+        if protective_stop is None
+        else protective_stop
+    )
 
     def intent_factory(evaluation: Any, context: Any, request: Any) -> OrderIntent:
         is_buy = evaluation.side is StrategyRole.BUY
@@ -559,7 +643,7 @@ def _run_one(
             if reference is None or reference <= 0:
                 raise ValueError("entry signal has no valid reference price for risk sizing")
             budget_shares = Decimal("3000") / reference
-            risk_shares = Decimal("30") / (reference * Decimal("0.015"))
+            risk_shares = Decimal("30") / (reference * stop_fraction(reference))
             quantity = min(budget_shares, risk_shares).to_integral_value(rounding=ROUND_DOWN)
         else:
             quantity = sim.held_quantity(symbol)
@@ -585,10 +669,10 @@ def _run_one(
         {
             "dataset_id": snapshot.dataset_id,
             "mode": "BACKTEST",
-            "lifecycle": "vwap_reference",
+            "lifecycle": lifecycle,
             "focus_strategy": strategy_name,
-            "position_sizing": "min($3000 symbol budget, $30 planned loss / 1.5% stop distance)",
-            "protective_trailing_percent": "1.5",
+            "position_sizing": "min($3000 symbol budget, $30 planned loss / stop distance)",
+            **stop_config,
             "entry_cutoff_minutes": 30,
             "minimum_hold_seconds": 60,
             "max_entry_cycles_per_session": 1,
@@ -597,9 +681,9 @@ def _run_one(
         },
         seed,
         starting_capital,
-        (buy_id, sell_id),
+        (*buy_ids, *sell_ids),
         strategy_params=strategy_params,
-        initial_strategy_state={buy_id: {"eligibility": "WATCHING_BUY"}},
+        initial_strategy_state={buy_id: {"eligibility": "WATCHING_BUY"} for buy_id in buy_ids},
         result_directory=results,
     )
     result = asyncio.run(
@@ -625,6 +709,16 @@ def _run_one(
     return {
         "symbol": symbol,
         "strategy": strategy_name,
+        "lifecycle": lifecycle,
+        # In the default ``vwap_reference`` lifecycle ``strategy`` is only a focus
+        # label: both legs execute, so the two labels give identical trades.
+        "strategy_is_label": lifecycle == "vwap_reference",
+        "legs": {"buy": list(buy_ids), "sell": list(sell_ids)},
+        "protective_stop": stop_config.get("protective_stop", "native_trailing 1.5%"),
+        "exit_reasons": {
+            reason: sum(t.get("exit_reason") == reason for t in metrics.trades)
+            for reason in sorted({str(t.get("exit_reason")) for t in metrics.trades})
+        },
         "dataset_id": snapshot.dataset_id,
         "start": start.isoformat(),
         "end": end.isoformat(),

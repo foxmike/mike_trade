@@ -83,6 +83,8 @@ OPERATOR_COMMANDS: Mapping[str, str] = {
     "PROTECTION_GAP": "make doctor",
     "RECONCILIATION_DRIFT": "make doctor",
     "BACKUP_UNAVAILABLE": "make doctor",
+    "BACKUP_FAILED": "make doctor",
+    "BACKUP_STALE": "make doctor",
 }
 
 _ZERO = Decimal("0")
@@ -138,6 +140,7 @@ class DashboardSettings:
     labels: Mapping[str, str] = field(default_factory=dict)
     data_dir: Path = Path("/var/lib/mike_trade")
     backup_dir: Path | None = None
+    backup_status_file: Path | None = None
 
     def __post_init__(self) -> None:
         if self.heartbeat_stale_seconds <= 0 or self.heartbeat_offline_seconds <= 0:
@@ -158,12 +161,14 @@ class DashboardSettings:
             port = int(raw_port) if raw_port else defaults.port
         data_dir = Path(env.get("MIKE_TRADE_DATA_DIR", str(defaults.data_dir)))
         backup = env.get("MIKE_TRADE_BACKUP_DIR")
+        backup_status = env.get("MIKE_TRADE_BACKUP_STATUS_FILE")
         return cls(
             bind_host=host,
             port=port,
             allow_non_loopback=env.get("MIKE_TRADE_DASHBOARD_ALLOW_NON_LOOPBACK", "") == "1",
             data_dir=data_dir,
             backup_dir=Path(backup) if backup else None,
+            backup_status_file=Path(backup_status) if backup_status else None,
         )
 
 
@@ -1712,7 +1717,7 @@ class DashboardReadService:
                     provenance="service_health:scheduler")
                if lag_value is not None and scheduler
                else v.unavailable("service_health:scheduler"))
-        backup_at, backup_ok = self._last_backup()
+        backup_at, backup_ok = self._last_backup(identity[0] if identity else None)
         size = wal = None
         try:
             size = self._db_path.stat().st_size
@@ -1724,7 +1729,11 @@ class DashboardReadService:
             database_path=str(self._db_path), database_id=identity[0] if identity else None,
             schema_version=int(version_row[0]) if version_row else None, size_bytes=size,
             wal_size_bytes=wal,
-            last_backup_at=(Sourced(value=backup_at, as_of=backup_at, fresh=True,
+            last_backup_at=(Sourced(value=backup_at, as_of=backup_at,
+                                    fresh=backup_ok is True and ctx.now - backup_at <= timedelta(hours=36),
+                                    stale_reason=("integrity_failed" if not backup_ok else
+                                                  "backup_stale" if ctx.now - backup_at > timedelta(hours=36)
+                                                  else None),
                                     provenance="backup_manifest")
                             if backup_at else v.unavailable("backup_manifest")),
             last_backup_integrity_ok=backup_ok)
@@ -1768,6 +1777,22 @@ class DashboardReadService:
                 f"{len(recon.unresolved_drift_items)} unresolved reconciliation drift item(s).")
         if backup_at is None:
             add("BACKUP_UNAVAILABLE", "info", "No backup manifest found for this database.")
+        elif not backup_ok:
+            add("BACKUP_FAILED", "warning", "Latest database backup failed verification.")
+        elif ctx.now - backup_at > timedelta(hours=36):
+            add("BACKUP_STALE", "warning", "Last verified database backup is over 36 hours old.")
+        status_file = self._settings.backup_status_file
+        if status_file is not None:
+            try:
+                backup_status = json.loads(status_file.read_text(encoding="utf-8"))
+            except (OSError, ValueError):
+                add("BACKUP_FAILED", "warning", "Backup status is unavailable.")
+            else:
+                failed = [name for name in ("operational", "research")
+                          if backup_status.get(name, {}).get("last_status") == "failed"]
+                if failed:
+                    add("BACKUP_FAILED", "warning",
+                        "Latest backup failed: " + ", ".join(failed) + ".")
 
         return HealthResponse(
             account_id=ctx.scope, mode=ctx.mode, engine_state=f.state, server_time=ctx.now,
@@ -1784,14 +1809,16 @@ class DashboardReadService:
                 if recon.last_run_at else v.unavailable("reconciliation_runs")),
             errors=errors)
 
-    def _last_backup(self) -> tuple[datetime | None, bool | None]:
+    def _last_backup(self, database_id: str | None) -> tuple[datetime | None, bool | None]:
         directory = self._settings.backup_dir
-        if directory is None or not directory.is_dir():
+        if directory is None or not directory.is_dir() or database_id is None:
             return None, None
         best: tuple[datetime, bool | None] | None = None
         for path in directory.glob("*.manifest.json"):
             try:
                 data = json.loads(path.read_text(encoding="utf-8"))
+                if data.get("database_id") != database_id:
+                    continue
                 created = datetime.fromisoformat(str(data["created_at"]).replace("Z", "+00:00"))
             except (OSError, ValueError, KeyError):
                 continue
@@ -1799,7 +1826,13 @@ class DashboardReadService:
                 continue
             created = created.astimezone(UTC)
             if best is None or created > best[0]:
-                best = (created, data.get("integrity_ok"))
+                from mike_trade.persistence.maintenance import verify_backup
+
+                backup = path.with_name(path.name.removesuffix(".manifest.json"))
+                try:
+                    best = (created, verify_backup(backup).ok)
+                except OSError:
+                    best = (created, False)
         return (best[0], best[1]) if best else (None, None)
 
 
