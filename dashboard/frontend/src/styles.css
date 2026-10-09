@@ -1,0 +1,404 @@
+/* mike_trade operations dashboard: restrained operational styling. No charts. */
+
+:root {
+  --bg: #101418;
+  --panel: #1a2129;
+  --panel-alt: #222c36;
+  --text: #e8edf2;
+  --muted: #9aa7b4;
+  --border: #33404d;
+  --accent: #4da3ff;
+  --live: #c0392b;
+  --ok: #2e7d4f;
+  --warn: #b7791f;
+  --offline: #8a8f96;
+  --stale: #8a6d1b;
+}
+
+* {
+  box-sizing: border-box;
+}
+
+body {
+  margin: 0;
+  background: var(--bg);
+  color: var(--text);
+  font-family: "IBM Plex Sans", system-ui, -apple-system, "Segoe UI", sans-serif;
+  font-size: 14px;
+  line-height: 1.45;
+}
+
+.app-shell {
+  max-width: 1400px;
+  margin: 0 auto;
+  padding: 16px 20px 40px;
+}
+
+.global-header {
+  background: var(--panel);
+  border: 1px solid var(--border);
+  border-radius: 8px;
+  padding: 16px 18px;
+  position: relative;
+}
+
+.global-header h1 {
+  margin: 0;
+  font-size: 20px;
+}
+
+.header-row {
+  display: flex;
+  justify-content: space-between;
+  align-items: flex-start;
+  gap: 16px;
+  flex-wrap: wrap;
+}
+
+.account-line {
+  color: var(--muted);
+  margin: 6px 0 0;
+}
+
+.badge-row {
+  display: flex;
+  gap: 8px;
+  align-items: center;
+}
+
+.mode-badge,
+.engine-badge {
+  display: inline-block;
+  padding: 4px 12px;
+  border-radius: 999px;
+  font-weight: 700;
+  letter-spacing: 0.06em;
+  font-size: 12px;
+}
+
+.mode-paper {
+  background: #2c3e50;
+  color: #cfe3ff;
+  border: 1px solid #4a6582;
+}
+
+.mode-shadow {
+  background: #3a3f4a;
+  color: #d7dae0;
+  border: 1px solid #5a6272;
+}
+
+/* LIVE is visually distinct: high-contrast red so a live account is unmissable. */
+.mode-live {
+  background: var(--live);
+  color: #fff;
+  border: 2px solid #ff8a7a;
+}
+
+.engine-running {
+  background: var(--ok);
+  color: #fff;
+}
+
+.engine-paused {
+  background: #54697e;
+  color: #fff;
+}
+
+.engine-reconciling {
+  background: #2f6fb2;
+  color: #fff;
+}
+
+.engine-degraded {
+  background: var(--warn);
+  color: #fff;
+}
+
+.engine-offline {
+  background: #3a3d42;
+  color: #f2f4f6;
+  border: 2px solid var(--offline);
+}
+
+.banner {
+  margin-top: 12px;
+  padding: 10px 12px;
+  border-radius: 6px;
+  font-weight: 600;
+}
+
+.banner-unreachable {
+  background: #4a1d18;
+  border: 2px solid #ff6b5e;
+  color: #ffe9e6;
+}
+
+.stale-watermark {
+  margin-top: 12px;
+  padding: 8px 12px;
+  border-radius: 6px;
+  background: repeating-linear-gradient(
+    45deg,
+    #3d320f,
+    #3d320f 12px,
+    #2c250b 12px,
+    #2c250b 24px
+  );
+  border: 1px dashed #d9b62c;
+  color: #ffe9a8;
+  font-weight: 700;
+  letter-spacing: 0.08em;
+}
+
+.hint {
+  color: var(--muted);
+}
+
+.status-grid {
+  display: grid;
+  grid-template-columns: repeat(auto-fit, minmax(220px, 1fr));
+  gap: 8px 16px;
+  margin: 12px 0 0;
+}
+
+.status-grid > div {
+  background: var(--panel-alt);
+  border: 1px solid var(--border);
+  border-radius: 6px;
+  padding: 8px 10px;
+}
+
+.status-grid dt {
+  font-size: 11px;
+  text-transform: uppercase;
+  letter-spacing: 0.06em;
+  color: var(--muted);
+}
+
+.status-grid dd {
+  margin: 2px 0 0;
+  font-weight: 600;
+}
+
+.account-picker {
+  margin: 14px 0;
+}
+
+.kpi-section,
+.health-section,
+.watchlist-section,
+.detail-section {
+  background: var(--panel);
+  border: 1px solid var(--border);
+  border-radius: 8px;
+  padding: 14px 16px;
+  margin-top: 14px;
+}
+
+.kpi-section h2,
+.health-section h2,
+.watchlist-section h2 {
+  margin: 0 0 10px;
+  font-size: 16px;
+}
+
+.kpi-ribbon {
+  list-style: none;
+  margin: 0;
+  padding: 0;
+  display: grid;
+  grid-template-columns: repeat(auto-fit, minmax(180px, 1fr));
+  gap: 8px;
+}
+
+.kpi-card {
+  background: var(--panel-alt);
+  border: 1px solid var(--border);
+  border-radius: 6px;
+  padding: 8px 10px;
+  display: flex;
+  flex-direction: column;
+  gap: 2px;
+  position: relative;
+}
+
+.kpi-card.kpi-stale {
+  border-color: #d9b62c;
+  background: #2c2a15;
+}
+
+.kpi-label {
+  font-size: 11px;
+  text-transform: uppercase;
+  letter-spacing: 0.05em;
+  color: var(--muted);
+}
+
+.kpi-value {
+  font-size: 17px;
+  font-weight: 700;
+  font-variant-numeric: tabular-nums;
+}
+
+.kpi-meta {
+  font-size: 11px;
+  color: var(--muted);
+}
+
+.kpi-stale-flag {
+  color: #ffd75e;
+  font-weight: 700;
+}
+
+.health-grid {
+  display: grid;
+  grid-template-columns: repeat(auto-fit, minmax(240px, 1fr));
+  gap: 8px;
+}
+
+.health-card {
+  background: var(--panel-alt);
+  border: 1px solid var(--border);
+  border-radius: 6px;
+  padding: 10px 12px;
+}
+
+.health-card h3 {
+  margin: 0 0 6px;
+  font-size: 13px;
+  text-transform: uppercase;
+  letter-spacing: 0.05em;
+  color: var(--muted);
+}
+
+.health-card p {
+  margin: 4px 0;
+}
+
+.health-errors ul {
+  margin: 6px 0 0;
+  padding-left: 18px;
+}
+
+.health-errors li {
+  margin-bottom: 6px;
+}
+
+code {
+  background: #0b0e11;
+  border: 1px solid var(--border);
+  border-radius: 4px;
+  padding: 1px 6px;
+  font-family: ui-monospace, "Cascadia Mono", Consolas, monospace;
+  font-size: 12px;
+}
+
+.watchlist-wrap {
+  overflow-x: auto;
+}
+
+.watchlist-table {
+  width: 100%;
+  border-collapse: collapse;
+  font-size: 12px;
+  min-width: 1200px;
+}
+
+.watchlist-table th,
+.watchlist-table td {
+  border: 1px solid var(--border);
+  padding: 6px 8px;
+  vertical-align: top;
+  text-align: left;
+}
+
+.watchlist-table thead th {
+  background: #0d1217;
+  color: var(--muted);
+  text-transform: uppercase;
+  font-size: 11px;
+  letter-spacing: 0.04em;
+  position: sticky;
+  top: 0;
+}
+
+.watch-row {
+  cursor: pointer;
+}
+
+.watch-row:hover {
+  background: #232f3b;
+}
+
+.watch-row-stale {
+  background: #252312;
+}
+
+.field {
+  display: block;
+  margin-bottom: 3px;
+}
+
+.field-label {
+  color: var(--muted);
+}
+
+.fresh-flag {
+  color: var(--muted);
+  font-size: 11px;
+}
+
+.row-sub {
+  display: block;
+  color: var(--muted);
+  font-size: 11px;
+}
+
+.symbol-link {
+  background: none;
+  border: none;
+  color: var(--accent);
+  font-weight: 700;
+  font-size: 14px;
+  padding: 0;
+  cursor: pointer;
+  text-decoration: underline;
+}
+
+.coverage-warning {
+  display: block;
+  margin-top: 4px;
+  background: #4a1d18;
+  border: 1px solid #ff6b5e;
+  color: #ffd7d2;
+  border-radius: 4px;
+  padding: 3px 6px;
+  font-weight: 700;
+  font-size: 11px;
+}
+
+.watchlist-note,
+.watchlist-empty {
+  color: var(--muted);
+}
+
+.app-footer {
+  margin-top: 16px;
+  color: var(--muted);
+  font-size: 12px;
+}
+
+@media (max-width: 720px) {
+  .app-shell {
+    padding: 10px 10px 30px;
+  }
+
+  .header-row {
+    flex-direction: column;
+  }
+
+  .status-grid {
+    grid-template-columns: 1fr;
+  }
+}
