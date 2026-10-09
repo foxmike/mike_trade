@@ -1275,6 +1275,26 @@ def _load_effective(
     return settings, secrets, sources
 
 
+def load_effective_config(
+    config_path: str | os.PathLike[str] | None = None,
+    *,
+    mode_path: str | os.PathLike[str] | None = None,
+    environ: Mapping[str, str] | None = None,
+    cli_overrides: tuple[str, ...] | list[str] = (),
+) -> dict[str, Any]:
+    """Load validated effective configuration without returning secret values."""
+    source = os.environ if environ is None else environ
+    resolved_config = str(config_path or source.get(_ENV_CONFIG) or _DEFAULT_CONFIG_PATH)
+    resolved_mode = mode_path or source.get(_ENV_MODE_CONFIG) or None
+    settings, _secrets, _sources = _load_effective(
+        resolved_config,
+        str(resolved_mode) if resolved_mode else None,
+        source,
+        list(cli_overrides),
+    )
+    return settings
+
+
 # ---------------------------------------------------------------------------
 # Audit helpers: trade-relevant config, fingerprint, redacted effective config
 # ---------------------------------------------------------------------------

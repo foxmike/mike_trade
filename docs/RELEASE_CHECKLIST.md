@@ -129,7 +129,7 @@ be resolved before a GO).
   through the engine control channel; offline refusal (exit `4`) confirmed
   understood — closes are never queued blindly while the engine is offline
   (see `docs/SAFETY_AND_RISK.md` §6–§7).
-- [ ] Stop semantics confirmed: `make stop` drains and publishes `STOPPED`
+- [ ] Stop semantics confirmed: `make engine-stop` drains and publishes `STOPPED`
   while leaving positions and broker-held protective stops in place
   (see `docs/SAFETY_AND_RISK.md` §6–§7).
 
@@ -173,7 +173,7 @@ be resolved before a GO).
   with `make health` / `make positions` / `make reconcile`
   (see `docs/SAFETY_AND_RISK.md` §11).
 - [ ] Engine rollback is restart of the prior known-good checkout/commit
-  (`make restart`, then `make health`); closes go through the reconciled
+  (`make engine-restart`, then `make health`); closes go through the reconciled
   control channel after restart, never around it
   (see `docs/SAFETY_AND_RISK.md` §11).
 

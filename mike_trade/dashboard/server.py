@@ -21,7 +21,9 @@ import ipaddress
 import os
 import sys
 from collections.abc import Awaitable, Callable, Sequence
+from datetime import time
 from pathlib import Path
+from typing import Any, cast
 
 from fastapi import FastAPI, Request, Response
 from fastapi.responses import FileResponse, JSONResponse
@@ -29,6 +31,7 @@ from fastapi.responses import FileResponse, JSONResponse
 from mike_trade.dashboard.api import (
     DashboardReadService,
     DashboardSettings,
+    SymbolSettings,
     create_api_router,
 )
 from mike_trade.domain.errors import ConfigurationError
@@ -43,6 +46,50 @@ _BUILD_MISSING = (
     "Dashboard frontend build not found. Build it with the frontend production build "
     "(output: dashboard/frontend/dist); the /api endpoints remain available."
 )
+
+
+def _settings_from_config() -> DashboardSettings:
+    """Load dashboard display limits from the same effective config as the engine."""
+    from mike_trade.controls.config_commands import load_effective_config
+
+    effective = load_effective_config(environ=os.environ)
+    service = cast(dict[str, Any], effective["service"])
+    dashboard = cast(dict[str, Any], service["dashboard"])
+    market_data = cast(dict[str, Any], effective["market_data"])
+    execution = cast(dict[str, Any], effective["execution"])
+    risk = cast(dict[str, Any], effective["risk"])
+    symbol_config = cast(dict[str, dict[str, Any]], effective["symbols"])
+    bind_host = str(dashboard["bind_host"])
+    port = int(dashboard["port"])
+    cutoff_hour, cutoff_minute = map(int, str(execution["entry_cutoff"]).split(":"))
+    symbols = {
+        name: SymbolSettings(
+            budget=item["budget"],
+            planned_loss_cap=item["planned_loss_cap"],
+            min_hold_seconds=int(item["min_hold_seconds"]),
+            max_entry_cycles_per_session=int(item["max_entry_cycles_per_session"]),
+            consecutive_loss_limit=item["consecutive_loss_limit"],
+            consecutive_loss_reset=item["consecutive_loss_reset"],
+        )
+        for name, item in symbol_config.items()
+        if item["enabled"]
+    }
+    backup = os.environ.get("MIKE_TRADE_BACKUP_DIR")
+    return DashboardSettings(
+        bind_host=bind_host,
+        port=port,
+        allow_non_loopback=os.environ.get(
+            "MIKE_TRADE_DASHBOARD_ALLOW_NON_LOOPBACK", ""
+        ) == "1",
+        heartbeat_stale_seconds=int(dashboard["heartbeat_stale_seconds"]),
+        heartbeat_offline_seconds=int(dashboard["heartbeat_offline_seconds"]),
+        max_bar_age_seconds=int(market_data["max_bar_age_seconds"]),
+        entry_cutoff=time(cutoff_hour, cutoff_minute),
+        total_application_budget=risk.get("total_application_budget"),
+        symbols=symbols,
+        data_dir=Path(str(service["data_dir"])),
+        backup_dir=Path(backup) if backup else None,
+    )
 
 
 def is_loopback_host(host: str) -> bool:
@@ -123,7 +170,7 @@ def main(argv: Sequence[str] | None = None) -> int:
     import uvicorn
 
     configure_logging(level="INFO")
-    settings = DashboardSettings.from_env()
+    settings = _settings_from_config()
     try:
         validate_bind(settings)
     except ConfigurationError as error:

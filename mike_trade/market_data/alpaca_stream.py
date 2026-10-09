@@ -49,6 +49,7 @@ __all__ = [
     "ConnectionClosed",
     "MarketDataConnection",
     "MarketDataTransport",
+    "WebsocketsTransport",
     "AlpacaStreamError",
     "AlpacaStreamAuthError",
     "AlpacaStreamEntitlementError",
@@ -183,6 +184,29 @@ class MarketDataConnection(Protocol):
 
 class MarketDataTransport(Protocol):
     async def connect(self, url: str) -> MarketDataConnection: ...
+
+
+class WebsocketsTransport:
+    """Production transport for :class:`AlpacaMarketDataStream`.
+
+    Importing ``websockets`` is deferred until connection time so configuration
+    inspection and offline modes never open or require a network resource.
+    """
+
+    def __init__(self, *, open_timeout: float = 15.0, close_timeout: float = 10.0) -> None:
+        self.open_timeout = open_timeout
+        self.close_timeout = close_timeout
+
+    async def connect(self, url: str) -> MarketDataConnection:
+        from websockets.asyncio.client import connect
+
+        return await connect(
+            url,
+            open_timeout=self.open_timeout,
+            close_timeout=self.close_timeout,
+            ping_interval=20,
+            ping_timeout=20,
+        )
 
 
 class _Clock(Protocol):

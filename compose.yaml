@@ -1,0 +1,74 @@
+x-runtime-environment: &runtime-environment
+  MIKE_TRADE_CONFIG: /app/config/mike_trade.yaml
+  MIKE_TRADE_DATA_DIR: /app/state
+  MIKE_TRADE_DB_PATH: /app/state/shadow.sqlite3
+  MIKE_TRADE_ACCOUNT_MODE: shadow
+  MIKE_TRADE_RESEARCH_DIR: /app/research/data
+  MIKE_TRADE_RESULTS_DIR: /app/research/results
+
+x-runtime-mounts: &runtime-mounts
+  - ./config:/app/config:ro
+  - ./state/dev:/app/state
+  - ./research:/app/research
+
+services:
+  mike-trade-engine:
+    build:
+      context: .
+      dockerfile: Dockerfile
+    image: mike-trade:dev
+    command: ["start", "--format", "json"]
+    environment:
+      <<: *runtime-environment
+      MIKE_TRADE_ALPACA_DATA_KEY_ID: ${MIKE_TRADE_ALPACA_DATA_KEY_ID}
+      MIKE_TRADE_ALPACA_DATA_SECRET_KEY: ${MIKE_TRADE_ALPACA_DATA_SECRET_KEY}
+    volumes: *runtime-mounts
+    init: true
+    restart: "no"
+    stop_grace_period: 30s
+    healthcheck:
+      test: ["CMD", "python", "-m", "mike_trade.healthcheck", "engine"]
+      interval: 10s
+      timeout: 5s
+      retries: 6
+      start_period: 30s
+
+  mike-trade-api:
+    image: mike-trade:dev
+    entrypoint: ["python", "-m", "mike_trade.dashboard.server"]
+    environment:
+      <<: *runtime-environment
+      MIKE_TRADE_DASHBOARD_BIND: 0.0.0.0:8765
+      MIKE_TRADE_DASHBOARD_ALLOW_NON_LOOPBACK: "1"
+    volumes: *runtime-mounts
+    init: true
+    restart: "no"
+    stop_grace_period: 15s
+    depends_on:
+      mike-trade-engine:
+        condition: service_healthy
+    ports:
+      - "127.0.0.1:8765:8765"
+    healthcheck:
+      test: ["CMD", "python", "-m", "mike_trade.healthcheck", "api"]
+      interval: 10s
+      timeout: 5s
+      retries: 6
+      start_period: 10s
+
+  mike-trade-research:
+    profiles: ["research"]
+    build:
+      context: .
+      dockerfile: Dockerfile
+    image: mike-trade:dev
+    command: ["research-results"]
+    environment:
+      MIKE_TRADE_RESEARCH_DIR: /app/research/data
+      MIKE_TRADE_RESULTS_DIR: /app/research/results
+      MIKE_TRADE_ALPACA_DATA_KEY_ID: ${MIKE_TRADE_ALPACA_DATA_KEY_ID}
+      MIKE_TRADE_ALPACA_DATA_SECRET_KEY: ${MIKE_TRADE_ALPACA_DATA_SECRET_KEY}
+    volumes:
+      - ./research:/app/research
+    init: true
+    restart: "no"

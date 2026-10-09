@@ -1,9 +1,9 @@
 # mike_trade operator targets.
 #
-# Every target is a thin wrapper. Recipes only invoke the operator CLI
-# ($(PYTHON) -m mike_trade.cli) or, for install/update/test/lint/typecheck,
-# the established dependency and test tooling. No provider calls, inline
-# queries, or inline scripting live here. Live confirmation is enforced by
+# Docker Compose is the primary runtime lifecycle interface. Application
+# management and query targets remain thin wrappers around the operator CLI
+# ($(PYTHON) -m mike_trade.cli); other recipes use established tooling. No
+# provider calls, inline queries, or inline scripting live here. Live confirmation is enforced by
 # the CLI itself; Make only forwards CONFIRM_LIVE from the operator
 # environment and never enables it by default.
 #
@@ -46,9 +46,41 @@ BASE_FLAGS := $(ACCOUNT_FLAG) $(SCENARIO_FLAG) $(FORMAT_FLAG)
 FILTER_FLAGS := $(BASE_FLAGS) $(SYMBOL_FLAG) $(STRATEGY_FLAG) $(SINCE_FLAG) $(UNTIL_FLAG) $(LIMIT_FLAG) $(RUN_FLAG)
 
 .PHONY: help install update test test-unit test-integration test-paper lint typecheck
+.PHONY: up start stop restart down build rebuild status logs ps
+.PHONY: engine-start engine-stop engine-restart engine-status app-logs
+
+up: ## Start Compose services in the background without rebuilding
+	docker compose up -d
+
+start: ## Start existing stopped Compose containers
+	docker compose start
+
+stop: ## Stop Compose containers without removing containers or data
+	docker compose stop
+
+restart: ## Restart Compose services
+	docker compose restart
+
+down: ## Remove Compose containers and network; preserve persistent data
+	docker compose down
+
+build: ## Build Compose images
+	docker compose build
+
+rebuild: ## Build images and recreate Compose services
+	docker compose up -d --build --force-recreate
+
+status: ## Show Compose service status
+	docker compose ps
+
+logs: ## Follow Compose service logs
+	docker compose logs -f
+
+ps: ## Show processes running in Compose containers
+	docker compose top
 
 help: ## Show this help message (default goal)
-	@echo "mike_trade operator commands (see docs/OPERATIONS.md):"
+	@echo "mike_trade operational commands (see docs/OPERATIONS.md):"
 	@grep -E '^[a-zA-Z0-9_.-]+:.*?## .*$$' $(MAKEFILE_LIST) | sort | awk 'BEGIN {FS = ":.*?## "}; {printf "  \033[36m%-22s\033[0m %s\n", $$1, $$2}'
 
 install: ## Install locked dependencies and verify the environment
@@ -146,18 +178,18 @@ symbols-disable: ## Disable symbols for new entries (SYMBOL=sym)
 
 # --- engine lifecycle ---
 
-.PHONY: start stop restart status
+.PHONY: engine-start engine-stop engine-restart engine-status
 
-start: ## Start the engine for the chosen account
+engine-start: ## Start the engine for the chosen account (native CLI)
 	CONFIRM_LIVE=$(CONFIRM_LIVE) $(CLI) start $(BASE_FLAGS)
 
-stop: ## Stop the engine loop; positions and protective stops are left in place
+engine-stop: ## Stop the engine loop; positions and protective stops are left in place
 	CONFIRM_LIVE=$(CONFIRM_LIVE) $(CLI) stop $(BASE_FLAGS)
 
-restart: ## Restart the engine for the chosen account
+engine-restart: ## Restart the engine for the chosen account
 	CONFIRM_LIVE=$(CONFIRM_LIVE) $(CLI) restart $(BASE_FLAGS)
 
-status: ## Show engine status for the chosen account
+engine-status: ## Show engine status for the chosen account
 	CONFIRM_LIVE=$(CONFIRM_LIVE) $(CLI) status $(BASE_FLAGS)
 
 # --- dashboard and health ---
@@ -325,7 +357,7 @@ reconcile: ## Reconcile local state against the broker and report drifts
 
 # --- history and logs ---
 
-.PHONY: signals evaluations events logs
+.PHONY: signals evaluations events app-logs
 
 signals: ## Query bounded signal history (SYMBOL/SINCE/UNTIL/LIMIT/RUN_ID filters)
 	CONFIRM_LIVE=$(CONFIRM_LIVE) $(CLI) signals $(FILTER_FLAGS)
@@ -336,7 +368,7 @@ evaluations: ## Query bounded strategy evaluation history
 events: ## Query bounded domain event history
 	CONFIRM_LIVE=$(CONFIRM_LIVE) $(CLI) events $(FILTER_FLAGS)
 
-logs: ## Read bounded structured logs
+app-logs: ## Read bounded structured application logs via CLI
 	CONFIRM_LIVE=$(CONFIRM_LIVE) $(CLI) logs $(FILTER_FLAGS)
 
 # --- reports ---
@@ -369,7 +401,13 @@ report-export: ## Export the trade report (VALUE=dataset, OUT=file path)
 
 # --- backtests ---
 
-.PHONY: backtest backtest-status backtest-report backtest-list
+.PHONY: backtest backtest-status backtest-report backtest-list research-build research-data research-six research-backtest research-batch research-results
+
+WORKERS ?= auto
+JOBS ?=
+
+research-build: ## Build only the manually invoked research image
+	docker compose build mike-trade-research
 
 backtest: ## Run a backtest (VALUE=dataset or manifest reference)
 	CONFIRM_LIVE=$(CONFIRM_LIVE) $(CLI) backtest $(BASE_FLAGS) $(VALUE)
@@ -382,6 +420,21 @@ backtest-report: ## Show a backtest report (STRATEGY=name, VALUE=optional detail
 
 backtest-list: ## List recorded backtest runs
 	CONFIRM_LIVE=$(CONFIRM_LIVE) $(CLI) backtest-list $(BASE_FLAGS)
+
+research-data: ## Acquire/reuse historical bars (SYMBOLS=... START=... END=...)
+	docker compose run --rm --no-deps mike-trade-research research-data acquire --symbols "$(SYMBOLS)" --start "$(START)" --end "$(END)"
+
+research-six: ## Run the six VWAP lifecycle focus experiments (START=... END=... WORKERS=auto|N)
+	docker compose run --rm --no-deps mike-trade-research research-six --start "$(START)" --end "$(END)" --workers "$(WORKERS)" --results /app/research/final-six
+
+research-backtest: ## Run one VWAP lifecycle backtest (SYMBOL=... STRATEGY=... START=... END=...)
+	docker compose run --rm --no-deps mike-trade-research research-backtest --symbol "$(SYMBOL)" --strategy "$(STRATEGY)" --start "$(START)" --end "$(END)"
+
+research-batch: ## Run a JSON experiment batch (JOBS=...json WORKERS=auto|N)
+	docker compose run --rm --no-deps -v "$(abspath $(JOBS)):/app/research/jobs.json:ro" mike-trade-research research-batch --jobs /app/research/jobs.json --workers "$(WORKERS)"
+
+research-results: ## List persisted research results
+	docker compose run --rm --no-deps mike-trade-research research-results --results /app/research/final-six
 
 # --- cache and database ---
 

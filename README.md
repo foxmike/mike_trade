@@ -38,6 +38,9 @@ make doctor
 make version
 ```
 
+For the containerized DEV deployment and exact lifecycle commands, see
+[docs/DOCKER.md](docs/DOCKER.md).
+
 ---
 
 ## Documentation & Architecture

@@ -176,7 +176,7 @@ operational error; this table is normative.
 
 | Operation | Command | Effect | Needs live confirmation on LIVE | Needs engine online |
 | :--- | :--- | :--- | :--- | :--- |
-| **Stop** (engine halt) | `make stop` / CLI `stop` | Stops the engine loop only (SIGTERM drain, bounded, publishes a `STOPPED` heartbeat). Open positions stay open; broker-held protective stops stay in place; nothing is cancelled or closed. `make restart` relaunches. | No (risk-reducing) | No |
+| **Stop** (engine halt) | `make engine-stop` / CLI `stop` | Stops the engine loop only (SIGTERM drain, bounded, publishes a `STOPPED` heartbeat). Open positions stay open; broker-held protective stops stay in place; nothing is cancelled or closed. `make engine-restart` relaunches. | No (risk-reducing) | No |
 | **Pause** (account-wide entry halt) | `make pause` / CLI `pause`; resume with `make resume` | Blocks **new entries** account-wide. Protection, exits, reconciliation, and fill ingestion keep running. | `pause`: no; `resume`: yes | Pause works through the durable control inbox even when degraded; executable closes still need the engine |
 | **Pause-symbol** | `make pause-symbol SYMBOL=X` / `make resume-symbol SYMBOL=X` | Blocks new entries for one symbol only. | Pause: no; resume: yes | Same as pause |
 | **Entry kill switch** | `make entries-disable` / CLI `entries-disable`; re-enable with `make entries-enable` | Disables entries until explicitly re-enabled. **Survives a `resume`**: resuming a pause does not clear a kill-switch disable. | Disable: no; enable: yes | Same as pause |
@@ -184,7 +184,7 @@ operational error; this table is normative.
 | **Close-all** | `make close-all` | Submits closing orders for **all managed positions** through the control channel and waits for acknowledgement. Not a side effect of `stop`. | Yes | **Yes** — refused offline (exit `4`) |
 | **Flatten** | `make flatten` | Flattens the book **including protective handling** (cancels/replaces protection as needed so the book goes flat without orphan stops). Strongest of the three; not a side effect of `stop`. | Yes | **Yes** — refused offline (exit `4`) |
 
-Related: `make status` (engine status), `make health` (ONLINE/OFFLINE with
+Related: `make engine-status` (engine status), `make health` (ONLINE/OFFLINE with
 alerts), `make positions` (external holdings marked `UNMANAGED`),
 `make reconcile` (report drifts), `make live-disable` (immediately disables
 live trading; risk-reducing, no confirmation hurdle).
@@ -228,7 +228,7 @@ live trading; risk-reducing, no confirmation hurdle).
   the environment. `make` only forwards the environment value and never
   enables it by default. Without it the command is refused (exit `3`).
 - Risk-reducing halt commands are exempt so the operator can always
-  de-risk without friction: `make stop`, `make pause`,
+  de-risk without friction: `make engine-stop`, `make pause`,
   `make pause-symbol`, `make entries-disable`, `make live-disable`.
   Everything that widens what the system may do needs confirmation on
   LIVE, including `make close`, `make close-all`, `make flatten`,
@@ -311,7 +311,7 @@ live trading; risk-reducing, no confirmation hurdle).
 1. **Stop new risk first:** `make pause` (or `make pause-symbol SYMBOL=X`,
    or the kill switch `make entries-disable`). These are risk-reducing and
    need no live confirmation.
-2. **Assess:** `make health`, `make status`, `make positions`,
+2. **Assess:** `make health`, `make engine-status`, `make positions`,
    `make orders`, `make reconcile`, `make stops-audit`,
    `make trail-status`. `make health` exits `5` with per-issue remediation
    commands while anything is critical.
@@ -321,13 +321,13 @@ live trading; risk-reducing, no confirmation hurdle).
 4. **Reduce exposure deliberately:** `make close SYMBOL=X`,
    `make close-all`, or `make flatten` — each requires the engine online
    and live confirmation on LIVE. If the engine is offline (exit `4`),
-   restart first (`make restart`, then `make health`) so closes go through
+   restart first (`make engine-restart`, then `make health`) so closes go through
    the reconciled control channel rather than around it.
 5. **Kill live trading if needed:** `make live-disable` (immediate,
    no confirmation hurdle).
 6. **Preserve evidence:** `make db-backup OUT=<path>`, plus bounded
    histories `make signals`, `make evaluations`, `make events`,
-   `make logs` with `SYMBOL`/`SINCE`/`UNTIL`/`LIMIT`/`RUN_ID` filters, and
+   `make app-logs` with `SYMBOL`/`SINCE`/`UNTIL`/`LIMIT`/`RUN_ID` filters, and
    trade reports (`make report`, `make report-daily`, `make report-symbol`,
    `make report-strategy`, `make report-pairs`).
 7. **Recover:** `make db-check`, `make db-restore-dry-run` before any

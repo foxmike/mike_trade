@@ -1,0 +1,711 @@
+"""CLI workflows for persistent market history and reproducible experiments."""
+
+from __future__ import annotations
+
+import argparse
+import asyncio
+import concurrent.futures
+import hashlib
+import json
+import os
+import time
+import traceback
+from collections.abc import Mapping
+from concurrent.futures import FIRST_COMPLETED, ProcessPoolExecutor, wait
+from dataclasses import asdict, dataclass, replace
+from datetime import UTC, datetime, timedelta
+from decimal import ROUND_DOWN, Decimal
+from functools import lru_cache
+from pathlib import Path
+from typing import Any
+
+from mike_trade.research.datasets import HistoricalDatasetRepository
+
+
+@dataclass(frozen=True, slots=True)
+class ExperimentSpec:
+    """Serializable description of one independent replay experiment."""
+
+    symbol: str
+    strategy: str
+    start: str
+    end: str
+    seed: int = 271828
+    dataset_id: str | None = None
+    parameters: Mapping[str, Mapping[str, Any]] | None = None
+    starting_capital: str = "10000"
+    execution: Mapping[str, Any] | None = None
+
+    def validate(self) -> None:
+        if not self.symbol or not self.symbol.replace(".", "").isalnum():
+            raise ValueError(f"invalid experiment symbol: {self.symbol!r}")
+        if self.strategy not in {"vwap_bounce", "vwap_breakdown"}:
+            raise ValueError(f"unsupported registered lifecycle focus: {self.strategy!r}")
+        if self.seed < 0:
+            raise ValueError("experiment seed must be nonnegative")
+        if _moment(self.start) >= _moment(self.end):
+            raise ValueError("experiment start must precede end")
+        if self.parameters is not None and not isinstance(self.parameters, Mapping):
+            raise ValueError("experiment parameters must be a strategy-id mapping")
+        if Decimal(self.starting_capital) <= 0:
+            raise ValueError("starting_capital must be a positive decimal string")
+        if self.execution is not None and not isinstance(self.execution, Mapping):
+            raise ValueError("execution assumptions must be a mapping")
+
+
+def available_cpu_count() -> int:
+    """Return CPUs available to this process, honoring affinity and cgroup quota."""
+    affinity = (
+        len(os.sched_getaffinity(0)) if hasattr(os, "sched_getaffinity") else (os.cpu_count() or 1)
+    )
+    quota_count = affinity
+    for quota_path in ("/sys/fs/cgroup/cpu.max", "/sys/fs/cgroup/cpu/cpu.cfs_quota_us"):
+        try:
+            values = Path(quota_path).read_text().strip().split()
+            if quota_path.endswith("cpu.max"):
+                quota, period = values
+            else:
+                quota, period = (
+                    values[0],
+                    Path("/sys/fs/cgroup/cpu/cpu.cfs_period_us").read_text().strip(),
+                )
+            if quota != "max" and int(quota) > 0:
+                quota_count = max(1, int((int(quota) + int(period) - 1) // int(period)))
+                break
+        except (OSError, ValueError, IndexError):
+            continue
+    return max(1, min(affinity, quota_count))
+
+
+def _available_memory_bytes() -> int | None:
+    for path in ("/sys/fs/cgroup/memory.max", "/sys/fs/cgroup/memory/memory.limit_in_bytes"):
+        try:
+            raw = Path(path).read_text().strip()
+            if raw != "max":
+                limit = int(raw)
+                if limit < (1 << 60):
+                    current_path = (
+                        "/sys/fs/cgroup/memory.current"
+                        if path.endswith("memory.max")
+                        else "/sys/fs/cgroup/memory/memory.usage_in_bytes"
+                    )
+                    used = int(Path(current_path).read_text().strip())
+                    return max(0, limit - used)
+        except (OSError, ValueError):
+            pass
+    try:
+        pages = os.sysconf("SC_AVPHYS_PAGES")
+        page_size = os.sysconf("SC_PAGE_SIZE")
+        return int(pages * page_size)
+    except (ValueError, OSError, AttributeError):
+        return None
+
+
+def resolve_worker_count(requested: str | int, job_count: int) -> int:
+    if job_count < 1:
+        raise ValueError("a batch must contain at least one experiment")
+    cpu_limit = available_cpu_count()
+    available_memory = _available_memory_bytes()
+    memory_limit = (
+        cpu_limit if available_memory is None else max(1, available_memory // (512 * 1024 * 1024))
+    )
+    resource_limit = min(cpu_limit, memory_limit)
+    if str(requested).lower() == "auto":
+        return max(1, min(resource_limit, job_count))
+    try:
+        workers = int(requested)
+    except (TypeError, ValueError) as exc:
+        raise ValueError("--workers must be a positive integer or 'auto'") from exc
+    if workers < 1:
+        raise ValueError("--workers must be at least 1")
+    return min(workers, resource_limit, job_count)
+
+
+def run_experiment_batch(
+    jobs: list[ExperimentSpec],
+    *,
+    workers: str | int,
+    root: str,
+    results: str,
+    batch_file: str | None = None,
+) -> dict[str, Any]:
+    """Bounded process coordinator; each child invokes the existing runner."""
+    repository = HistoricalDatasetRepository(root)
+    resolved_jobs = []
+    for job in jobs:
+        job.validate()
+        if job.dataset_id is None:
+            start, end = _moment(job.start), _moment(job.end)
+            candidates = [
+                snapshot
+                for snapshot in repository.snapshots()
+                if snapshot.symbol == job.symbol.upper()
+                and snapshot.feed == "iex"
+                and snapshot.adjustment == "raw"
+                and datetime.fromisoformat(snapshot.start) <= start
+                and datetime.fromisoformat(snapshot.end) >= end
+            ]
+            if candidates:
+                job = replace(
+                    job, dataset_id=max(candidates, key=lambda item: item.acquired_at).dataset_id
+                )
+        resolved_jobs.append(job)
+    jobs = resolved_jobs
+    selected_workers = resolve_worker_count(workers, len(jobs))
+    started = time.monotonic()
+    completed: list[dict[str, Any]] = []
+    pending_specs = iter(enumerate(jobs))
+    in_flight: dict[concurrent.futures.Future[dict[str, Any]], int] = {}
+    pool = ProcessPoolExecutor(max_workers=selected_workers)
+    try:
+
+        def submit_next() -> bool:
+            try:
+                index, spec = next(pending_specs)
+            except StopIteration:
+                return False
+            future = pool.submit(_execute_experiment, asdict(spec), root, results)
+            in_flight[future] = index
+            return True
+
+        # At most 2x workers are queued; completed output is aggregated here.
+        for _ in range(min(len(jobs), selected_workers * 2)):
+            submit_next()
+        while in_flight:
+            done, _ = wait(in_flight, return_when=FIRST_COMPLETED)
+            for future in done:
+                index = in_flight.pop(future)
+                try:
+                    result = future.result()
+                    result["job_index"] = index
+                    completed.append(result)
+                except BaseException as exc:
+                    completed.append(
+                        {
+                            "job_index": index,
+                            "status": "failed",
+                            "error_type": type(exc).__name__,
+                            "error": str(exc),
+                            "traceback": "".join(traceback.format_exception(exc))[-12000:],
+                        }
+                    )
+                counts = {
+                    state: sum(row["status"] == state for row in completed)
+                    for state in ("completed", "failed")
+                }
+                print(
+                    f"research progress completed={counts['completed']} failed={counts['failed']} "
+                    f"total={len(jobs)} elapsed={time.monotonic() - started:.1f}s",
+                    flush=True,
+                )
+                submit_next()
+    except KeyboardInterrupt:
+        for future in in_flight:
+            future.cancel()
+        pool.shutdown(wait=True, cancel_futures=True)
+        raise
+    except BaseException:
+        pool.shutdown(wait=True, cancel_futures=True)
+        raise
+    else:
+        pool.shutdown(wait=True)
+
+    completed.sort(key=lambda row: row["job_index"])
+    elapsed = time.monotonic() - started
+    successes = sum(row["status"] == "completed" for row in completed)
+    failures = len(completed) - successes
+    batch = {
+        "status": "completed" if failures == 0 else "completed_with_failures",
+        "workers_requested": str(workers),
+        "workers_used": selected_workers,
+        "cpu_limit": available_cpu_count(),
+        "memory_available_bytes": _available_memory_bytes(),
+        "elapsed_seconds": round(elapsed, 3),
+        "throughput_experiments_per_second": round(successes / elapsed, 4) if elapsed else 0,
+        "completed_count": successes,
+        "failed_count": failures,
+        "jobs": completed,
+    }
+    output = Path(batch_file) if batch_file else Path(results) / "batch-results.json"
+    output.parent.mkdir(parents=True, exist_ok=True)
+    output.write_text(json.dumps(batch, sort_keys=True, indent=2, default=str) + "\n")
+    print(json.dumps({key: value for key, value in batch.items() if key != "jobs"}, sort_keys=True))
+    print(f"batch results: {output}")
+    return batch
+
+
+def _execute_experiment(job_data: dict[str, Any], root: str, results: str) -> dict[str, Any]:
+    spec = ExperimentSpec(**job_data)
+    spec.validate()
+    result = _run_one(
+        spec.symbol.upper(),
+        _moment(spec.start),
+        _moment(spec.end),
+        root,
+        results,
+        spec.seed,
+        spec.strategy,
+        dataset_id=spec.dataset_id,
+        parameters=spec.parameters,
+        starting_capital=Decimal(spec.starting_capital),
+        execution=spec.execution,
+    )
+    result.pop("trade_ledger", None)  # Ledger remains in the immutable per-run artifact.
+    result.update(status="completed", worker_pid=os.getpid())
+    return result
+
+
+@lru_cache(maxsize=2)
+def _cached_snapshot_bars(
+    root: str, symbol: str, start: str, end: str, dataset_id: str
+) -> tuple[Any, ...]:
+    """Bounded per-process cache of validated rows from immutable snapshots."""
+    return HistoricalDatasetRepository(root).available(
+        symbol, _moment(start), _moment(end), feed="iex", adjustment="raw", dataset_id=dataset_id
+    )
+
+
+def _moment(text: str) -> datetime:
+    value = datetime.fromisoformat(text.replace("Z", "+00:00"))
+    if value.tzinfo is None:
+        raise ValueError("timestamp must include timezone")
+    return value.astimezone(UTC)
+
+
+def register(subparsers: Any) -> None:
+    data = subparsers.add_parser("research-data", help="manage persistent historical datasets")
+    actions = data.add_subparsers(dest="research_data_action", required=True)
+    acquire = actions.add_parser("acquire", help="incrementally acquire Alpaca historical bars")
+    acquire.add_argument("--symbols", required=True, help="comma-separated symbols")
+    acquire.add_argument("--start", required=True, help="inclusive ISO timestamp")
+    acquire.add_argument("--end", required=True, help="exclusive ISO timestamp")
+    acquire.add_argument("--feed", default="iex", choices=("iex", "sip", "delayed_sip"))
+    acquire.add_argument("--adjustment", default="raw", choices=("raw", "split", "dividend", "all"))
+    acquire.add_argument("--root", default=os.environ.get("MIKE_TRADE_RESEARCH_DIR", "research"))
+    acquire.set_defaults(func=acquire_data)
+    listing = actions.add_parser("list", help="list immutable datasets")
+    listing.add_argument("--root", default=os.environ.get("MIKE_TRADE_RESEARCH_DIR", "research"))
+    listing.set_defaults(func=list_data)
+
+    backtest = subparsers.add_parser("research-backtest", help="run a VWAP lifecycle backtest")
+    backtest.add_argument("--symbol", required=True)
+    backtest.add_argument("--strategy", required=True, choices=("vwap_bounce", "vwap_breakdown"))
+    backtest.add_argument("--start", required=True)
+    backtest.add_argument("--end", required=True)
+    backtest.add_argument("--root", default=os.environ.get("MIKE_TRADE_RESEARCH_DIR", "research"))
+    backtest.add_argument(
+        "--results", default=os.environ.get("MIKE_TRADE_RESULTS_DIR", "research/results")
+    )
+    backtest.add_argument("--seed", type=int, default=271828)
+    backtest.add_argument(
+        "--workers", default="1", help="single run: 1 (accepted for interface consistency)"
+    )
+    backtest.set_defaults(func=run_backtest)
+
+    six = subparsers.add_parser(
+        "research-six", help="run the six initial VWAP baseline experiments"
+    )
+    six.add_argument("--start", required=True)
+    six.add_argument("--end", required=True)
+    six.add_argument("--root", default=os.environ.get("MIKE_TRADE_RESEARCH_DIR", "research"))
+    six.add_argument(
+        "--results", default=os.environ.get("MIKE_TRADE_RESULTS_DIR", "research/results")
+    )
+    six.add_argument("--seed", type=int, default=271828)
+    six.add_argument("--workers", default="auto", help="worker processes: integer or auto")
+    six.set_defaults(func=run_six)
+
+    batch = subparsers.add_parser(
+        "research-batch", help="run serialized experiment specifications in parallel"
+    )
+    batch.add_argument(
+        "--jobs", required=True, help="JSON file containing {experiments: [...]} specifications"
+    )
+    batch.add_argument("--workers", default="auto", help="worker processes: integer or auto")
+    batch.add_argument(
+        "--root", default=os.environ.get("MIKE_TRADE_RESEARCH_DIR", "/app/research/data")
+    )
+    batch.add_argument(
+        "--results", default=os.environ.get("MIKE_TRADE_RESULTS_DIR", "/app/research/results")
+    )
+    batch.add_argument("--output", help="optional batch summary JSON path")
+    batch.set_defaults(func=run_batch)
+
+    results = subparsers.add_parser("research-results", help="list persisted research backtests")
+    results.add_argument(
+        "--results", default=os.environ.get("MIKE_TRADE_RESULTS_DIR", "research/results")
+    )
+    results.add_argument("--limit", type=int, default=50)
+    results.set_defaults(func=list_results)
+
+
+def _client() -> Any:
+    key = os.environ.get("MIKE_TRADE_ALPACA_DATA_KEY_ID", "")
+    secret = os.environ.get("MIKE_TRADE_ALPACA_DATA_SECRET_KEY", "")
+    if not key or not secret:
+        raise ValueError("Alpaca market-data credentials are not configured")
+    from mike_trade.app import _AlpacaDataHttpClient
+
+    return _AlpacaDataHttpClient(key, secret)
+
+
+def acquire_data(args: argparse.Namespace) -> int:
+    start, end = _moment(args.start), _moment(args.end)
+    if start >= end:
+        raise ValueError("--start must precede --end")
+    client = _client()
+    try:
+        snapshots = HistoricalDatasetRepository(args.root).acquire(
+            client,
+            (s.strip() for s in args.symbols.split(",") if s.strip()),
+            start,
+            end,
+            feed=args.feed,
+            adjustment=args.adjustment,
+        )
+    finally:
+        client.close()
+    for snapshot in snapshots:
+        print(
+            json.dumps(
+                {name: getattr(snapshot, name) for name in snapshot.__dataclass_fields__},
+                sort_keys=True,
+            )
+        )
+    return 0
+
+
+def list_data(args: argparse.Namespace) -> int:
+    repo = HistoricalDatasetRepository(args.root)
+    repo.sync_catalog()
+    for item in repo.snapshots():
+        print(
+            json.dumps(
+                {name: getattr(item, name) for name in item.__dataclass_fields__}, sort_keys=True
+            )
+        )
+    return 0
+
+
+def _run_one(
+    symbol: str,
+    start: datetime,
+    end: datetime,
+    root: str,
+    results: str,
+    seed: int,
+    strategy_name: str,
+    *,
+    dataset_id: str | None = None,
+    parameters: Mapping[str, Mapping[str, Any]] | None = None,
+    starting_capital: Decimal = Decimal("10000"),
+    execution: Mapping[str, Any] | None = None,
+) -> dict[str, Any]:
+    from mike_trade.backtest.clock import ReplayClock
+    from mike_trade.backtest.execution import (
+        AmbiguityPolicy,
+        BarFillPolicy,
+        ExecutionAssumptions,
+        HistoricalExecutionSimulator,
+    )
+    from mike_trade.backtest.feed import (
+        DataProvenance,
+        HistoricalReplayFeed,
+        QuoteFidelity,
+        ReplayEvent,
+    )
+    from mike_trade.backtest.manifest import PeriodRole
+    from mike_trade.backtest.runner import BacktestRequest, BacktestRunner, compute_metrics
+    from mike_trade.domain.market import Candle, FeedProvenance, Timeframe
+    from mike_trade.domain.strategy_types import StrategyRole
+    from mike_trade.domain.trading import (
+        OrderIntent,
+        OrderPurpose,
+        OrderSide,
+        OrderType,
+        TimeInForce,
+    )
+    from mike_trade.scheduling.calendar import NEW_YORK, session_for
+    from mike_trade.strategies.presets.pairs import resolve_pair_preset
+
+    repo = HistoricalDatasetRepository(root)
+    snapshots = [
+        s
+        for s in repo.snapshots()
+        if s.symbol == symbol
+        and s.feed == "iex"
+        and s.adjustment == "raw"
+        and datetime.fromisoformat(s.start) <= start
+        and datetime.fromisoformat(s.end) >= end
+        and (dataset_id is None or s.dataset_id == dataset_id)
+    ]
+    if not snapshots:
+        raise ValueError(
+            f"no matching immutable snapshot covers {symbol} {start.isoformat()}..{end.isoformat()}"
+        )
+    snapshot = max(snapshots, key=lambda s: s.acquired_at)
+    bars = _cached_snapshot_bars(
+        str(Path(root).resolve()), symbol, start.isoformat(), end.isoformat(), snapshot.dataset_id
+    )
+    bars = tuple(
+        bar
+        for bar in bars
+        if session_for(bar.timestamp.astimezone(NEW_YORK).date()).open_utc
+        <= bar.timestamp
+        < session_for(bar.timestamp.astimezone(NEW_YORK).date()).close_utc
+    )
+    if not bars:
+        raise ValueError(
+            f"no stored IEX bars cover {symbol} {start.isoformat()}..{end.isoformat()}"
+        )
+    provenance = FeedProvenance("replay", "IEX", "alpaca", False)
+    events = [
+        ReplayEvent.bar(
+            Candle(
+                symbol,
+                Timeframe.M1,
+                bar.timestamp,
+                bar.timestamp + timedelta(minutes=1),
+                bar.open,
+                bar.high,
+                bar.low,
+                bar.close,
+                Decimal(bar.volume),
+                provenance,
+                bar.vwap,
+                int(bar.trade_count) if bar.trade_count is not None else None,
+            )
+        )
+        for bar in bars
+    ]
+    clock = ReplayClock(start)
+    feed = HistoricalReplayFeed(
+        events,
+        DataProvenance(
+            "alpaca", "IEX", False, snapshot.dataset_id, "RAW", False, QuoteFidelity.UNAVAILABLE
+        ),
+        clock=clock,
+        seed=seed,
+    )
+    assumption_values: dict[str, Any] = {
+        "slippage_bps": Decimal("5"),
+        "fee_per_order": Decimal("0"),
+        "fee_per_share": Decimal("0"),
+        "fee_bps": Decimal("0"),
+    }
+    allowed_assumptions = set(ExecutionAssumptions.__dataclass_fields__)
+    unexpected = set(execution or {}) - allowed_assumptions
+    if unexpected:
+        raise ValueError(f"unknown execution assumptions: {sorted(unexpected)}")
+    assumption_values.update(execution or {})
+    decimal_fields = {
+        "slippage_bps",
+        "slippage_ticks",
+        "tick_size",
+        "price_quantum",
+        "participation",
+        "quote_size_multiplier",
+        "fee_per_order",
+        "fee_per_share",
+        "fee_bps",
+        "fee_quantum",
+        "quantity_quantum",
+    }
+    for field_name in decimal_fields:
+        if field_name in assumption_values and not isinstance(
+            assumption_values[field_name], Decimal
+        ):
+            assumption_values[field_name] = Decimal(str(assumption_values[field_name]))
+    if isinstance(assumption_values.get("bar_fill_policy"), str):
+        assumption_values["bar_fill_policy"] = BarFillPolicy(assumption_values["bar_fill_policy"])
+    if isinstance(assumption_values.get("ambiguity_policy"), str):
+        assumption_values["ambiguity_policy"] = AmbiguityPolicy(
+            assumption_values["ambiguity_policy"]
+        )
+    for field_name in ("submission_latency", "stop_replace_latency", "max_quote_age"):
+        value = assumption_values.get(field_name)
+        if isinstance(value, (int, float)):
+            assumption_values[field_name] = timedelta(seconds=value)
+        elif isinstance(value, Mapping) and "seconds" in value:
+            assumption_values[field_name] = timedelta(seconds=float(value["seconds"]))
+    if "fractional_order_types" in assumption_values:
+        assumption_values["fractional_order_types"] = frozenset(
+            value if isinstance(value, OrderType) else OrderType(value)
+            for value in assumption_values["fractional_order_types"]
+        )
+    assumptions = ExecutionAssumptions(**assumption_values)
+    sim = HistoricalExecutionSimulator(feed, clock, assumptions)
+    pair = resolve_pair_preset("vwap_reference", mode="shadow")
+    registry = pair["registry"] if "registry" in pair else None
+    if registry is None:
+        from mike_trade.strategies.registry import StrategyRegistry
+
+        registry = StrategyRegistry()
+        registry.register(pair["buy_cls"])
+        registry.register(pair["sell_cls"])
+    buy_id, sell_id = pair["buy_cls"].spec.strategy_id, pair["sell_cls"].spec.strategy_id
+    strategy_params = {buy_id: dict(pair["buy_params"]), sell_id: dict(pair["sell_params"])}
+    for strategy_id, values in (parameters or {}).items():
+        if strategy_id not in strategy_params:
+            raise ValueError(
+                f"parameters supplied for strategy outside lifecycle pair: {strategy_id}"
+            )
+        strategy_params[strategy_id].update(values)
+
+    def intent_factory(evaluation: Any, context: Any, request: Any) -> OrderIntent:
+        is_buy = evaluation.side is StrategyRole.BUY
+        if is_buy:
+            reference = evaluation.reference_price
+            if reference is None or reference <= 0:
+                raise ValueError("entry signal has no valid reference price for risk sizing")
+            budget_shares = Decimal("3000") / reference
+            risk_shares = Decimal("30") / (reference * Decimal("0.015"))
+            quantity = min(budget_shares, risk_shares).to_integral_value(rounding=ROUND_DOWN)
+        else:
+            quantity = sim.held_quantity(symbol)
+        return OrderIntent(
+            intent_id=f"{evaluation.signal_id}",
+            client_order_id=f"research-{evaluation.signal_id}",
+            account_scope_id="backtest:research",
+            cycle_id=f"research:{symbol}",
+            symbol=symbol,
+            side=OrderSide.BUY if is_buy else OrderSide.SELL,
+            purpose=OrderPurpose.ENTRY if is_buy else OrderPurpose.STRATEGY_EXIT,
+            order_type=OrderType.MARKET,
+            time_in_force=TimeInForce.DAY,
+            created_at=context.as_of,
+            quantity=quantity,
+        )
+
+    request = BacktestRequest(
+        (symbol,),
+        start,
+        end,
+        PeriodRole.RESEARCH,
+        {
+            "dataset_id": snapshot.dataset_id,
+            "mode": "BACKTEST",
+            "lifecycle": "vwap_reference",
+            "focus_strategy": strategy_name,
+            "position_sizing": "min($3000 symbol budget, $30 planned loss / 1.5% stop distance)",
+            "protective_trailing_percent": "1.5",
+            "entry_cutoff_minutes": 30,
+            "minimum_hold_seconds": 60,
+            "max_entry_cycles_per_session": 1,
+            "execution_model": "bar-only next-bar-open",
+            "assumptions": dict(assumptions.as_mapping()),
+        },
+        seed,
+        starting_capital,
+        (buy_id, sell_id),
+        strategy_params=strategy_params,
+        initial_strategy_state={buy_id: {"eligibility": "WATCHING_BUY"}},
+        result_directory=results,
+    )
+    result = asyncio.run(
+        BacktestRunner(registry, feed, clock, sim, intent_factory=intent_factory).run(request)
+    )
+    metrics = compute_metrics(result, starting_capital=starting_capital, seed=seed)
+    bar_open = {bar.timestamp: bar.open for bar in bars}
+    estimated_slippage = sum(
+        (
+            abs(Decimal(str(fill["price"])) - bar_open[fill["time"]])
+            * Decimal(str(fill["quantity"]))
+            for fill in result.fills
+            if fill["time"] in bar_open
+        ),
+        Decimal(0),
+    )
+    total_fill_notional = sum(
+        (Decimal(str(fill["price"])) * Decimal(str(fill["quantity"])) for fill in result.fills),
+        Decimal(0),
+    )
+    unmatched_benchmarks = sum(fill["time"] not in bar_open for fill in result.fills)
+    ending_equity = result.equity_curve[-1]["equity"] if result.equity_curve else starting_capital
+    return {
+        "symbol": symbol,
+        "strategy": strategy_name,
+        "dataset_id": snapshot.dataset_id,
+        "start": start.isoformat(),
+        "end": end.isoformat(),
+        "bars": len(bars),
+        "run_id": result.run_id,
+        "results_hash": result.results_hash,
+        "evaluations": len(result.evaluations),
+        "signals": len(result.signals),
+        "trades": len(metrics.trades),
+        "wins": sum(t["pnl"] > 0 for t in metrics.trades),
+        "losses": sum(t["pnl"] < 0 for t in metrics.trades),
+        "win_rate": str(metrics.win_rate),
+        "gross_return": str(metrics.total_return + estimated_slippage / starting_capital),
+        "net_return": str(metrics.net_return),
+        "avg_pnl": str(metrics.expectancy_net),
+        "profit_factor": None if metrics.profit_factor is None else str(metrics.profit_factor),
+        "max_drawdown": str(metrics.max_drawdown),
+        "sharpe": None,
+        "costs": str(sum((t["costs"] for t in metrics.trades), Decimal(0))),
+        "estimated_slippage": str(estimated_slippage),
+        "slippage_benchmark_unavailable_fills": unmatched_benchmarks,
+        "total_fill_notional": str(total_fill_notional),
+        "ending_equity": str(ending_equity),
+        "execution_assumptions": dict(assumptions.as_mapping()),
+        "trade_ledger": [{k: str(v) for k, v in t.items()} for t in metrics.trades],
+    }
+
+
+def run_backtest(args: argparse.Namespace) -> int:
+    resolve_worker_count(args.workers, 1)
+    result = _run_one(
+        args.symbol.upper(),
+        _moment(args.start),
+        _moment(args.end),
+        args.root,
+        args.results,
+        args.seed,
+        args.strategy,
+    )
+    print(
+        json.dumps(
+            {key: value for key, value in result.items() if key != "trade_ledger"}, sort_keys=True
+        )
+    )
+    return 0
+
+
+def run_batch(args: argparse.Namespace) -> int:
+    payload = json.loads(Path(args.jobs).read_text(encoding="utf-8"))
+    if not isinstance(payload, dict) or not isinstance(payload.get("experiments"), list):
+        raise ValueError("jobs file must contain an experiments array")
+    jobs = [ExperimentSpec(**item) for item in payload["experiments"]]
+    batch_hash = hashlib.sha256(Path(args.jobs).read_bytes()).hexdigest()[:16]
+    batch = run_experiment_batch(
+        jobs,
+        workers=args.workers,
+        root=args.root,
+        results=args.results,
+        batch_file=args.output or str(Path(args.results) / f"batch-{batch_hash}.json"),
+    )
+    return 0 if batch["failed_count"] == 0 else 1
+
+
+def run_six(args: argparse.Namespace) -> int:
+    start, end = _moment(args.start), _moment(args.end)
+    records: list[ExperimentSpec] = []
+    for symbol in ("NVDA", "IBM", "TSLA"):
+        for strategy in ("vwap_bounce", "vwap_breakdown"):
+            records.append(
+                ExperimentSpec(symbol, strategy, start.isoformat(), end.isoformat(), args.seed)
+            )
+    output = Path(args.results) / "initial-six-experiment.json"
+    batch = run_experiment_batch(
+        records, workers=args.workers, root=args.root, results=args.results, batch_file=str(output)
+    )
+    return 0 if batch["failed_count"] == 0 else 1
+
+
+def list_results(args: argparse.Namespace) -> int:
+    from mike_trade.backtest.commands import BacktestResultsIndex
+
+    rows = BacktestResultsIndex(args.results).list_runs(limit=args.limit)
+    print(json.dumps(rows, sort_keys=True, default=str, indent=2))
+    return 0

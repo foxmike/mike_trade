@@ -1,9 +1,9 @@
 # mike_trade Operator Runbook
 
-This runbook documents every `make` target in the project `Makefile`.
-Each target is a thin wrapper around the operator CLI
-(`.venv/bin/python -m mike_trade.cli <subcommand>`); Make contains no
-trading logic. Safety is enforced by the CLI itself, not by Make.
+This runbook documents the operational `make` targets. Compose targets manage
+the containerized runtime; application management and query targets wrap the
+operator CLI (`.venv/bin/python -m mike_trade.cli <subcommand>`). Make contains
+no trading logic. Safety is enforced by the CLI itself, not by Make.
 
 Conventions used below:
 
@@ -23,8 +23,8 @@ Conventions used below:
 
 ## CLI exit codes
 
-Every CLI command returns a stable exit code, which Make propagates
-unchanged:
+CLI commands return stable exit codes, which the corresponding Make targets
+propagate unchanged:
 
 | Code | Meaning |
 | ---- | ------- |
@@ -33,6 +33,18 @@ unchanged:
 | `3`  | Refused by a safety or confirmation guard |
 | `4`  | Engine offline or unreachable for an action that needs it |
 | `5`  | Unhealthy or check failed |
+
+## Docker Compose lifecycle
+
+Docker Compose is the primary runtime interface. Run `make up` to start
+services without rebuilding, `make start` to start existing stopped
+containers, `make stop` to stop while retaining containers and data, and
+`make restart` to restart services. `make down` removes containers and the
+network but preserves persistent data. Use `make build` to build images or
+`make rebuild` to build and recreate the services. `make status`, `make logs`,
+and `make ps` show service status, follow logs, and show container processes.
+These targets do not configure host boot startup or scheduling. See
+[`DOCKER.md`](DOCKER.md) for the stack details.
 
 ## Setup and configuration
 
@@ -96,16 +108,16 @@ The `symbols-*` mutations need live confirmation on LIVE accounts.
 
 | Target | Variables | Example |
 | ------ | --------- | ------- |
-| `make start` | `ACCOUNT` `SCENARIO` | `make start ACCOUNT=PAPER:main` |
-| `make stop` | `ACCOUNT` `SCENARIO` | `make stop ACCOUNT=PAPER:main` |
-| `make restart` | `ACCOUNT` `SCENARIO` | `make restart ACCOUNT=PAPER:main` |
-| `make status` | `ACCOUNT` `SCENARIO` `FORMAT` | `make status ACCOUNT=PAPER:main` |
+| `make engine-start` | `ACCOUNT` `SCENARIO` | `make engine-start ACCOUNT=PAPER:main` |
+| `make engine-stop` | `ACCOUNT` `SCENARIO` | `make engine-stop ACCOUNT=PAPER:main` |
+| `make engine-restart` | `ACCOUNT` `SCENARIO` | `make engine-restart ACCOUNT=PAPER:main` |
+| `make engine-status` | `ACCOUNT` `SCENARIO` `FORMAT` | `make engine-status ACCOUNT=PAPER:main` |
 
 ### stop vs. flatten vs. close-all
 
 These three commands are deliberately distinct:
 
-- `make stop` stops the engine loop only. Open positions and protective
+- `make engine-stop` stops the engine loop only. Open positions and protective
   stops are left in place: anything already resting at the broker stays
   broker-protected, and nothing is cancelled or closed by `stop`.
 - `make close-all` submits closing orders for all managed positions through
@@ -184,7 +196,7 @@ mutation without explicit confirmation is refused with exit `3`. Confirmation
 is enforced by the CLI, never by Make.
 
 Risk-reducing halt commands are exempt so the operator can always de-risk
-without friction: `make stop`, `make pause`, `make pause-symbol`,
+without friction: `make engine-stop`, `make pause`, `make pause-symbol`,
 `make entries-disable`, and `make live-disable` need no confirmation even on
 LIVE. Everything else that changes LIVE state still requires it, including
 the order commands (`make close`, `make close-all`, `make flatten`),
@@ -199,7 +211,7 @@ Example (LIVE):
 
 ```sh
 CONFIRM_LIVE=YES make close SYMBOL=AAPL ACCOUNT=LIVE:main
-make stop ACCOUNT=LIVE:main          # exempt: always allowed
+make engine-stop ACCOUNT=LIVE:main   # exempt: always allowed
 ```
 
 ## Entry controls: pause vs. entries-disable
@@ -236,7 +248,7 @@ make stop ACCOUNT=LIVE:main          # exempt: always allowed
 which requires a fresh engine heartbeat for the selected account. If the
 engine is offline or unreachable, the command is refused with exit `4` and
 nothing is queued: no future intent is stored for later submission. Bring the
-engine back (`make start`), confirm health (`make health`), then reissue the
+engine back (`make engine-start`), confirm health (`make health`), then reissue the
 command explicitly.
 
 ## Protection: trailing stops, entry limits, fixed stops
@@ -273,7 +285,7 @@ placements, and expired stops for follow-up.
 The engine reconciles local state against the broker on startup and on
 demand via `make reconcile`, reporting drifts that need operator attention.
 While reconciliation (or an error state) is unresolved, affected cycles are
-treated as unsafe and new entries for them are blocked; use `make status`,
+treated as unsafe and new entries for them are blocked; use `make engine-status`,
 `make reconcile`, and `make entry-limits` to observe, and `make health` to
 confirm the engine is healthy before re-enabling entries.
 
@@ -293,12 +305,12 @@ or protect them on its own.
 | `make signals` | `ACCOUNT` `SCENARIO` `SYMBOL` `STRATEGY` `SINCE` `UNTIL` `LIMIT` `RUN_ID` `FORMAT` | `make signals ACCOUNT=SHADOW:default SYMBOL=AAPL LIMIT=20` |
 | `make evaluations` | `ACCOUNT` `SCENARIO` `SYMBOL` `STRATEGY` `SINCE` `UNTIL` `LIMIT` `RUN_ID` `FORMAT` | `make evaluations ACCOUNT=SHADOW:default LIMIT=20` |
 | `make events` | `ACCOUNT` `SCENARIO` `SINCE` `UNTIL` `LIMIT` `RUN_ID` `FORMAT` | `make events ACCOUNT=SHADOW:default LIMIT=20` |
-| `make logs` | `ACCOUNT` `SCENARIO` `SINCE` `UNTIL` `LIMIT` `RUN_ID` `FORMAT` | `make logs LIMIT=50` |
+| `make app-logs` | `ACCOUNT` `SCENARIO` `SINCE` `UNTIL` `LIMIT` `RUN_ID` `FORMAT` | `make app-logs LIMIT=50` |
 
 History commands are bounded and read-only: results are capped (default 50
 rows, hard maximum 1000, with clamping reported), timestamps accept ISO-8601
 or New York session dates, output is redacted, and the database is opened
-read-only. `make logs` reads a bounded window of structured log files and
+read-only. `make app-logs` reads a bounded window of structured log files and
 reports when the window is truncated.
 
 ## Reports and exports
@@ -368,6 +380,13 @@ Fees follow provenance, and provenance only:
 
 Backtests run from manifests or datasets referenced by `VALUE` and never
 touch broker credentials.
+
+Historical Parquet/DuckDB research uses the separate Docker Compose research
+commands. Use `make research-six WORKERS=auto` for the baseline batch or
+`make research-batch JOBS=research/jobs.json WORKERS=4` for a general batch.
+Worker selection respects CPU affinity/quota and available memory; detailed
+experiment schema, progress, artifact, and reproducibility behavior is in
+[Historical Research](HISTORICAL_RESEARCH.md).
 
 ## Database backup and restore
 

@@ -302,6 +302,14 @@ class Runtime:
             "reconciliation_status": self.reconciliation_status,
         }
         await _call_optional(self.persistence, ("heartbeat", "publish_heartbeat"), details)
+        feed_details = await _call_optional(self.market_data, ("health_details",))
+        if isinstance(feed_details, Mapping):
+            await _call_optional(
+                self.persistence,
+                ("heartbeat_component",),
+                "feed",
+                feed_details,
+            )
 
     async def _heartbeat_loop(self) -> None:
         try:

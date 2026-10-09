@@ -10,6 +10,7 @@ and optional shadow scenario. LIVE mutations require ``--confirm-live YES`` or
 from __future__ import annotations
 
 import argparse
+import asyncio
 import importlib
 import json
 import os
@@ -43,6 +44,7 @@ CANONICAL_COMMANDS = (
     "signals", "evaluations", "events", "logs", "health",
     "report", "report-daily", "report-symbol", "report-strategy", "report-pairs", "report-shadow", "report-comparison", "report-export",
     "backtest", "backtest-status", "backtest-report", "backtest-list",
+    "research-data", "research-backtest", "research-six", "research-batch", "research-results",
     "cache-status", "cache-refresh",
     "db-check", "db-backup", "db-restore-dry-run",
     "service-install", "service-uninstall", "service-status",
@@ -86,6 +88,8 @@ def build_parser() -> argparse.ArgumentParser:
     _global_options(parser, defaults=True)
     subs = parser.add_subparsers(dest="subcommand", required=True)
     for name in CANONICAL_COMMANDS:
+        if name in {"research-data", "research-backtest", "research-six", "research-batch", "research-results"}:
+            continue
         command = subs.add_parser(name)
         _global_options(command, defaults=False)
         if name in {"close", "pause-symbol", "resume-symbol", "strategy-info", "strategy-check", "strategy-enable", "strategy-disable", "strategy-set", "symbols-add", "symbols-remove", "symbols-enable", "symbols-disable", "report-symbol", "report-strategy", "backtest-report"}:
@@ -96,9 +100,25 @@ def build_parser() -> argparse.ArgumentParser:
             command.add_argument("value", nargs="?", help="Policy, scenario, dataset, or path")
         if name == "report-export":
             command.add_argument("--output", dest="output_path")
+        if name == "start":
+            command.add_argument(
+                "--config", default=None,
+                help="configuration file (default: $MIKE_TRADE_CONFIG or config/mike_trade.yaml)",
+            )
+            command.add_argument(
+                "--mode-config", default=None,
+                help="optional mode overlay (default: $MIKE_TRADE_MODE_CONFIG)",
+            )
+            command.add_argument(
+                "--set", dest="overrides", action="append", default=[],
+                metavar="dotted.path=value",
+                help="one-shot validated configuration override (repeatable)",
+            )
         if name in {"backtest", "report", "report-daily", "report-symbol", "report-strategy", "report-pairs", "report-shadow", "report-comparison"}:
             command.add_argument("--period", default="all")
         command.add_argument("--reason", default="operator request")
+    from mike_trade.research.commands import register as register_research
+    register_research(subs)
     return parser
 
 
@@ -144,6 +164,47 @@ def _history(name: str, args: argparse.Namespace) -> int:
     return int(module.run_history_command(name, args))
 
 
+def _start_engine(args: argparse.Namespace) -> int:
+    """Run the configured production runtime as the foreground process."""
+    from mike_trade.app import build_runtime, load_app_settings
+    from mike_trade.runtime import StartupState
+
+    async def run() -> int:
+        settings = load_app_settings(
+            getattr(args, "config", None),
+            mode_path=getattr(args, "mode_config", None),
+            cli_overrides=getattr(args, "overrides", ()),
+        )
+        runtime = build_runtime(settings)
+        runtime.install_signal_handlers()
+        try:
+            status = await runtime.start()
+            render(
+                {
+                    "state": status.state.value,
+                    "mode": settings.mode.value,
+                    "database": str(settings.database_path),
+                    "symbols": list(settings.symbols),
+                    "reconciliation": status.reconciliation_status,
+                    "entries_allowed": status.entries_allowed,
+                    "reasons": list(status.reasons),
+                },
+                args.format,
+            )
+            while runtime.state is not StartupState.STOPPED:
+                await asyncio.sleep(0.25)
+            return EXIT_OK
+        finally:
+            if runtime.state not in {StartupState.DRAINING, StartupState.STOPPED}:
+                await runtime.stop()
+
+    try:
+        return asyncio.run(run())
+    except Exception as exc:
+        print(f"Engine startup failed: {exc}", file=sys.stderr)
+        return EXIT_UNHEALTHY
+
+
 def main(argv: list[str] | None = None) -> int:
     configure_logging(level="INFO")
     parser = build_parser()
@@ -155,8 +216,16 @@ def main(argv: list[str] | None = None) -> int:
     if args.scenario is None and ":" in args.account and args.account.count(":") > 1:
         args.scenario = args.account.split(":", 2)[2]
     name = args.subcommand
+    if name in {"research-data", "research-backtest", "research-six", "research-batch", "research-results"}:
+        try:
+            return int(args.func(args))
+        except Exception as exc:
+            print(f"Research command failed: {exc}", file=sys.stderr)
+            return EXIT_UNHEALTHY
     if name in LIVE_CONFIRM_COMMANDS and not require_live_confirmation(args, command=name):
         return EXIT_REFUSED
+    if name == "start":
+        return _start_engine(args)
     if name in HISTORY_COMMANDS:
         try:
             return _history(name, args)

@@ -8,9 +8,11 @@ instance lock is always acquired before SQLite migration or broker validation.
 
 from __future__ import annotations
 
+import asyncio
 import hashlib
 import json
 import logging
+import os
 from collections.abc import Mapping, Sequence
 from dataclasses import dataclass, field
 from datetime import UTC, datetime, time, timedelta
@@ -52,7 +54,12 @@ from mike_trade.execution.coordinator import (
     OrderCommandCoordinator,
 )
 from mike_trade.market_data.cache import MarketDataCache, MarketDataUpdate
-from mike_trade.market_data.candles import CandleBuilder, CandleTimeframe
+from mike_trade.market_data.candles import (
+    CandleBuilder,
+    CandleOrigin,
+    CandleTimeframe,
+    MinuteBar,
+)
 from mike_trade.market_data.context import (
     ContextBuilder,
     IndicatorInput,
@@ -109,8 +116,10 @@ __all__ = [
     "ShadowScenarioSettings",
     "SQLitePersistence",
     "ProductionMarketData",
+    "AlpacaProductionMarketData",
     "VwapReferenceLifecycle",
     "build_runtime",
+    "load_app_settings",
 ]
 
 
@@ -156,6 +165,10 @@ class AppSettings:
     entry_cutoff_minutes: int = 30
     stop_trail_percent: Decimal = Decimal("1.5")
     max_bar_age: timedelta = timedelta(seconds=90)
+    market_data_provider: str = "memory"
+    market_data_feed: str = "iex"
+    market_data_warmup_bars: int = 60
+    heartbeat_interval_seconds: float = 5.0
     backtest_start: datetime = datetime(2024, 1, 2, 14, 30, tzinfo=UTC)
     auto_eod_liquidation: bool = False
     credential_environment: Mapping[str, str] | None = field(
@@ -178,6 +191,14 @@ class AppSettings:
                 "automatic EOD liquidation is intentionally opt-in outside vwap_reference",
                 code="EOD_LIQUIDATION_NOT_CONFIGURED",
             )
+        if self.market_data_provider not in {"memory", "alpaca"}:
+            raise ValueError("market_data_provider must be memory or alpaca")
+        if self.market_data_feed not in {"iex", "sip"}:
+            raise ValueError("market_data_feed must be iex or sip")
+        if self.market_data_warmup_bars < 1:
+            raise ValueError("market_data_warmup_bars must be positive")
+        if self.heartbeat_interval_seconds <= 0:
+            raise ValueError("heartbeat_interval_seconds must be positive")
 
     @property
     def database_path(self) -> Path:
@@ -279,6 +300,19 @@ class SQLitePersistence:
         if self._health is not None:
             self._health.heartbeat("engine", HealthStatus.HEALTHY, details)
 
+    def heartbeat_component(
+        self, component: str, details: Mapping[str, object]
+    ) -> None:
+        if self._health is None:
+            return
+        connected = str(details.get("connected", "")).lower() == "true"
+        status = HealthStatus.HEALTHY if connected else HealthStatus.DEGRADED
+        self._health.heartbeat(
+            component,
+            status,
+            {str(key): str(value) for key, value in details.items()},
+        )
+
     def append_event(self, event: Mapping[str, object]) -> None:
         # Domain mutation is owned by typed repositories/ledgers, never an untyped append.
         raise TypeError("use a typed persistence repository")
@@ -318,7 +352,7 @@ class ProductionMarketData:
         self.clock = clock
         self.cache = MarketDataCache()
         self.candles = CandleBuilder(
-            timeframes=(CandleTimeframe.M1,), max_history=500, clock=clock,
+            timeframes=(CandleTimeframe.M1,), max_history=500,
             session_open=time(9, 30),
         )
         specs = {
@@ -371,6 +405,378 @@ class ProductionMarketData:
     def close(self) -> None:
         self.running = False
         self.closed = True
+
+
+class _AlpacaDataHttpClient:
+    """Authenticated client for the existing historical-bars adapter."""
+
+    def __init__(self, key_id: str, secret_key: str) -> None:
+        import httpx
+
+        self._client = httpx.Client(
+            base_url="https://data.alpaca.markets",
+            headers={
+                "APCA-API-KEY-ID": key_id,
+                "APCA-API-SECRET-KEY": secret_key,
+            },
+            timeout=20.0,
+        )
+
+    def get(self, path: str, params: Mapping[str, object] | None = None) -> object:
+        response = self._client.get(path, params=params)
+        response.raise_for_status()
+        return response.json()
+
+    def close(self) -> None:
+        self._client.close()
+
+
+class AlpacaProductionMarketData(ProductionMarketData):
+    """Alpaca acquisition feeding the existing cache, candles and lifecycle."""
+
+    def __init__(
+        self,
+        clock: ClockPort,
+        max_age: timedelta,
+        *,
+        feed: str,
+        warmup_bars: int,
+        environ: Mapping[str, str] | None,
+        startup_timeout: float = 20.0,
+    ) -> None:
+        super().__init__(clock, max_age)
+        self.feed = feed
+        self.warmup_bars = warmup_bars
+        self.environ = os.environ if environ is None else environ
+        self.startup_timeout = startup_timeout
+        self._symbols: tuple[str, ...] = ()
+        self._stream: object | None = None
+        self._stream_task: asyncio.Task[None] | None = None
+        self._subscribed = asyncio.Event()
+        self._scheduler: object | None = None
+        self._lifecycle: object | None = None
+        self._evaluations = 0
+        self._events = 0
+        self._logger = get_logger("mike_trade.market_data.alpaca")
+
+    def bind_engine(self, scheduler: object, lifecycle: object | None) -> None:
+        self._scheduler = scheduler
+        self._lifecycle = lifecycle
+
+    def _credentials(self) -> tuple[str, str]:
+        key_var = "MIKE_TRADE_ALPACA_DATA_KEY_ID"
+        secret_var = "MIKE_TRADE_ALPACA_DATA_SECRET_KEY"
+        key_id = (self.environ.get(key_var) or "").strip()
+        secret_key = (self.environ.get(secret_var) or "").strip()
+        missing = [
+            name
+            for name, value in ((key_var, key_id), (secret_var, secret_key))
+            if not value
+        ]
+        if missing:
+            raise ConfigurationError(
+                f"missing Alpaca market-data credential variable(s): {', '.join(missing)}",
+                code="MARKET_DATA_CREDENTIALS_MISSING",
+            )
+        return key_id, secret_key
+
+    async def warm(self, symbols: Sequence[str]) -> bool:
+        from mike_trade.market_data.alpaca_history import AlpacaHistoricalBars
+
+        self._symbols = tuple(dict.fromkeys(symbol.upper() for symbol in symbols))
+        self.subscribe(self._symbols)
+        key_id, secret_key = self._credentials()
+        client = _AlpacaDataHttpClient(key_id, secret_key)
+        now = self.clock.now()
+
+        def fetch() -> dict[str, tuple[object, ...]]:
+            history = AlpacaHistoricalBars(client, max_pages=20)
+            start = now - timedelta(days=14)
+            return {
+                symbol: history.fetch_bars(
+                    symbol, "1Min", start, now, feed=self.feed, adjustment="raw"
+                )[-(self.warmup_bars + 1):]
+                for symbol in self._symbols
+            }
+
+        try:
+            result = await asyncio.to_thread(fetch)
+        finally:
+            client.close()
+        for symbol, bars in result.items():
+            for bar in bars:
+                item = cast(Any, bar)
+                self.candles.on_minute_bar(
+                    MinuteBar(
+                        symbol=symbol,
+                        start=item.timestamp,
+                        open=item.open,
+                        high=item.high,
+                        low=item.low,
+                        close=item.close,
+                        volume=Decimal(item.volume),
+                        feed_id=item.feed_id,
+                        consolidated=item.feed_id == "sip",
+                        origin=CandleOrigin.HISTORICAL_REST,
+                        trade_count=(
+                            int(item.trade_count) if item.trade_count is not None else None
+                        ),
+                    )
+                )
+        self._logger.info(
+            "Alpaca historical warmup complete",
+            extra={
+                "feed": self.feed,
+                "symbols": list(self._symbols),
+                "bars": {symbol: len(bars) for symbol, bars in result.items()},
+            },
+        )
+        return True
+
+    def _on_state(self, change: object) -> None:
+        from mike_trade.market_data.alpaca_stream import ConnectionState
+
+        state = getattr(change, "state", None)
+        details = {"state": getattr(state, "value", str(state)), "feed": self.feed}
+        reason = getattr(change, "reason", None)
+        if reason:
+            details["reason"] = reason
+        self._logger.info("Alpaca market-data connection state", extra=details)
+        if state is ConnectionState.SUBSCRIBED:
+            self._subscribed.set()
+
+    async def start(self) -> None:
+        if self.running:
+            return
+        from mike_trade.market_data.alpaca_stream import (
+            AlpacaMarketDataStream,
+            Channel,
+            StreamCredentials,
+            WebsocketsTransport,
+        )
+
+        key_id, secret_key = self._credentials()
+        self._stream = AlpacaMarketDataStream(
+            StreamCredentials(key_id, secret_key),
+            WebsocketsTransport(),
+            self.clock,
+            feed=self.feed,
+            sip_entitled=self.feed == "sip",
+            on_state=self._on_state,
+        )
+        pairs = tuple(
+            (symbol, channel)
+            for symbol in self._symbols
+            for channel in (Channel.BARS, Channel.QUOTES, Channel.TRADES)
+        )
+        await cast(Any, self._stream).subscribe(pairs)
+        self.running = True
+        self.closed = False
+        self._stream_task = asyncio.create_task(
+            self._consume(), name="alpaca-market-data-stream"
+        )
+        waiter = asyncio.create_task(self._subscribed.wait())
+        done, _pending = await asyncio.wait(
+            {self._stream_task, waiter},
+            timeout=self.startup_timeout,
+            return_when=asyncio.FIRST_COMPLETED,
+        )
+        if waiter in done and waiter.result():
+            return
+        waiter.cancel()
+        if self._stream_task in done:
+            await self._stream_task
+            raise RuntimeError("Alpaca market-data stream ended before subscribing")
+        raise TimeoutError("Alpaca market-data subscription acknowledgement timed out")
+
+    async def _consume(self) -> None:
+        from mike_trade.market_data.alpaca_stream import StreamBar, SubscriptionUpdate
+
+        assert self._stream is not None
+        async for event in cast(Any, self._stream).events():
+            if isinstance(event, SubscriptionUpdate):
+                self._logger.info(
+                    "Alpaca subscriptions acknowledged",
+                    extra={
+                        "feed": self.feed,
+                        "subscription_count": len(event.subscriptions),
+                        "symbols": list(self._symbols),
+                    },
+                )
+                continue
+            self._events += 1
+            self.cache.store_event(event, source="stream")
+            if isinstance(event, StreamBar):
+                await self._on_bar(event)
+
+    async def _on_bar(self, event: object) -> None:
+        item = cast(Any, event)
+        ingested = self.candles.on_minute_bar(
+            MinuteBar(
+                symbol=item.symbol,
+                start=item.provider_source_ts,
+                open=item.open,
+                high=item.high,
+                low=item.low,
+                close=item.close,
+                volume=item.volume,
+                feed_id=item.feed_id,
+                consolidated=item.feed_id == "sip",
+                trade_count=item.trade_count,
+            )
+        )
+        closed = [bar for bar in ingested.closed if bar.timeframe is CandleTimeframe.M1]
+        if not closed or self._scheduler is None or self._lifecycle is None:
+            return
+        latest = closed[-1]
+        due = cast(Any, self._scheduler).on_candle_closed(
+            item.symbol, CandleTimeframe.M1, latest.end
+        )
+        if not due:
+            return
+        context = self.contexts.build(
+            item.symbol,
+            timeframes=(CandleTimeframe.M1,),
+            indicators=("vwap", "vwap_prev"),
+        )
+        actions = await cast(Any, self._lifecycle).process({item.symbol: context})
+        self._evaluations += 1
+        self._logger.info(
+            "Strategy evaluation completed",
+            extra={
+                "symbol": item.symbol,
+                "bar_end": latest.end,
+                "evaluation_count": self._evaluations,
+                "actions": actions,
+            },
+        )
+
+    def is_fresh(self) -> bool:
+        return self.running and self._subscribed.is_set() and not self.closed
+
+    def health_details(self) -> Mapping[str, object]:
+        state = getattr(getattr(self._stream, "state", None), "value", "DISCONNECTED")
+        return {
+            "connected": str(self.is_fresh()).lower(),
+            "state": state,
+            "feed": self.feed,
+            "subscriptions": len(self.active_subscriptions),
+            "events": self._events,
+            "evaluations": self._evaluations,
+        }
+
+    @property
+    def active_subscriptions(self) -> frozenset[object]:
+        if self._stream is None:
+            return frozenset()
+        return cast(Any, self._stream).active_subscriptions
+
+    async def close(self) -> None:
+        if self.closed:
+            return
+        self.closed = True
+        self.running = False
+        if self._stream is not None:
+            await cast(Any, self._stream).close()
+        task, self._stream_task = self._stream_task, None
+        if task is not None:
+            task.cancel()
+            await asyncio.gather(task, return_exceptions=True)
+
+
+def load_app_settings(
+    config_path: str | Path | None = None,
+    *,
+    mode_path: str | Path | None = None,
+    environ: Mapping[str, str] | None = None,
+    cli_overrides: Sequence[str] = (),
+) -> AppSettings:
+    """Map the validated operator configuration into the composition root."""
+    from mike_trade.controls.config_commands import load_effective_config
+
+    source = os.environ if environ is None else environ
+    effective = load_effective_config(
+        config_path,
+        mode_path=mode_path,
+        environ=source,
+        cli_overrides=list(cli_overrides),
+    )
+    execution = cast(Mapping[str, Any], effective["execution"])
+    service = cast(Mapping[str, Any], effective["service"])
+    market_data = cast(Mapping[str, Any], effective["market_data"])
+    risk = cast(Mapping[str, Any], effective["risk"])
+    symbol_map = cast(Mapping[str, Mapping[str, Any]], effective["symbols"])
+    symbols = tuple(name for name, item in symbol_map.items() if item["enabled"])
+    if not symbols:
+        raise ConfigurationError("configuration has no enabled symbols", code="NO_ENABLED_SYMBOLS")
+    selected = [symbol_map[symbol] for symbol in symbols]
+
+    def one_value(name: str) -> Any:
+        values = {item[name] for item in selected}
+        if len(values) != 1:
+            raise ConfigurationError(
+                f"runtime requires one shared {name} value across enabled symbols",
+                code="DIVERGENT_SYMBOL_RUNTIME_SETTING",
+                context={"setting": name},
+            )
+        return next(iter(values))
+
+    configured_symbols = set(symbols)
+    scenarios: list[ShadowScenarioSettings] = []
+    for raw in cast(Sequence[Mapping[str, Any]], effective["shadow_scenarios"]):
+        if not raw["enabled"]:
+            continue
+        if set(cast(Sequence[str], raw["symbols"])) != configured_symbols:
+            raise ConfigurationError(
+                "runtime requires each enabled shadow scenario to use the enabled universe",
+                code="SHADOW_SCENARIO_UNIVERSE_MISMATCH",
+            )
+        scenarios.append(
+            ShadowScenarioSettings(
+                name=str(raw["name"]),
+                starting_cash=cast(Decimal, raw["starting_cash"]),
+                per_symbol_budget=cast(Decimal, one_value("budget")),
+                total_budget=cast(Decimal, risk["total_application_budget"]),
+                max_entry_cycles_per_session=int(one_value("max_entry_cycles_per_session")),
+                consecutive_loss_limit=cast(int | None, one_value("consecutive_loss_limit")),
+                lockout_scope_by_strategy=one_value("consecutive_loss_scope") == "strategy",
+                post_sale_cooldown=timedelta(
+                    seconds=int(one_value("post_sale_cooldown_seconds"))
+                ),
+                minimum_hold=timedelta(seconds=int(one_value("min_hold_seconds"))),
+                allow_fractional=bool(execution["fractional_enabled"]),
+            )
+        )
+
+    cutoff_hour, cutoff_minute = map(int, str(execution["entry_cutoff"]).split(":"))
+    cutoff_from_close = (16 * 60) - (cutoff_hour * 60 + cutoff_minute)
+    if cutoff_from_close < 0:
+        raise ConfigurationError("entry cutoff must not be after 16:00 ET")
+    stop_values = {item["stop_policy"]["trail_percent"] for item in selected}
+    if len(stop_values) != 1:
+        raise ConfigurationError("runtime requires one shared trailing-stop percentage")
+    mode = ExecutionMode(str(execution["account_mode"]).upper())
+    data_dir = Path(str(service["data_dir"]))
+    db_path = source.get("MIKE_TRADE_DB_PATH") or data_dir / f"{mode.value.lower()}.sqlite3"
+    return AppSettings(
+        mode=mode,
+        enable_live_trading=bool(execution["live_trading_enabled"]),
+        db_path=db_path,
+        data_dir=data_dir,
+        symbols=symbols,
+        shadow_scenarios=tuple(scenarios),
+        total_budget=cast(Decimal, risk["total_application_budget"]),
+        per_symbol_budget=cast(Decimal, one_value("budget")),
+        entry_cutoff_minutes=cutoff_from_close,
+        stop_trail_percent=cast(Decimal, next(iter(stop_values))),
+        max_bar_age=timedelta(seconds=int(market_data["max_bar_age_seconds"])),
+        market_data_provider=str(market_data["provider"]),
+        market_data_feed=str(market_data["feed"]),
+        market_data_warmup_bars=int(market_data["warmup_bars"]),
+        heartbeat_interval_seconds=float(service["engine_heartbeat_interval_seconds"]),
+        auto_eod_liquidation=bool(execution["end_of_day_close"]["enabled"]),
+        credential_environment=source,
+    )
 
 
 @dataclass(slots=True)
@@ -1294,10 +1700,21 @@ def build_runtime(
     else:
         clock = SystemClock()
     calendar = supplied.get("calendar", ExchangeCalendar(clock))
-    market_data = cast(
-        MarketDataPort,
-        supplied.get("market_data", ProductionMarketData(clock, settings.max_bar_age)),
-    )
+    default_market_data: MarketDataPort
+    if settings.market_data_provider == "alpaca" and settings.mode is not ExecutionMode.BACKTEST:
+        default_market_data = cast(
+            MarketDataPort,
+            AlpacaProductionMarketData(
+                clock,
+                settings.max_bar_age,
+                feed=settings.market_data_feed,
+                warmup_bars=settings.market_data_warmup_bars,
+                environ=settings.credential_environment,
+            ),
+        )
+    else:
+        default_market_data = ProductionMarketData(clock, settings.max_bar_age)
+    market_data = cast(MarketDataPort, supplied.get("market_data", default_market_data))
     registry = StrategyRegistry()
     registry.register(VwapBounceBuy)
     registry.register(VwapBreakdownSell)
@@ -1429,7 +1846,11 @@ def build_runtime(
         symbols=settings.symbols,
         lifecycle=lifecycle,
         entry_gate=entry_gate,
+        heartbeat_interval=settings.heartbeat_interval_seconds,
     )
+    bind_engine = getattr(market_data, "bind_engine", None)
+    if callable(bind_engine):
+        bind_engine(scheduler, lifecycle)
     logger.info(
         "Runtime graph built",
         extra={

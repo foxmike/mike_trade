@@ -1,0 +1,7 @@
+# Selected by COMPOSE_FILE on the R730. Explicit research runs remain available;
+# a plain `docker compose up` cannot start trading services there.
+services:
+  mike-trade-engine:
+    profiles: ["trading"]
+  mike-trade-api:
+    profiles: ["trading"]
