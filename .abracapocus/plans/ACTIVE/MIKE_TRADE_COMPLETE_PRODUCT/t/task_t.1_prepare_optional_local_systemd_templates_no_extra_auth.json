@@ -1,0 +1,43 @@
+{
+  "schema_version": 1,
+  "task_id": "t.1",
+  "phase": "T",
+  "phase_id": "t",
+  "title": "Prepare optional local systemd service templates without deployment or additional authentication",
+  "description": "Prepare simple, OPTIONAL systemd service templates and lightweight service-management helpers for mike_trade. The application is being developed and tested on the DEV desktop. DO NOT deploy, install, enable, start, or configure services on the Dell R730 or DEV as part of this task. The R730 is only a future target; operator will develop a separate scripted deployment after the trading application is proven ready. The implementation should remain efficient and compatible with an Ubuntu R730, but this task produces source files only.\n\nContext: This is a single-operator trading experiment in a private home LAN, not a public multi-user trading service. Prioritize ease of use, operational reliability, quick intervention, and simple maintenance. Do not introduce a new identity, authentication, token, confirmation, or secrets-management system.\n\nBefore editing, inspect:\n- mike_trade/controls/service_manager.py, if present\n- mike_trade/controls/ for existing lifecycle and emergency-stop behavior\n- existing settings/configuration and .env loading conventions\n- mike_trade/dashboard/ and its FastAPI production entrypoint\n- Makefile and existing deployment artifacts\n\nImplementation requirements:\n1. deploy/systemd/mike-trade-engine.service: create a straightforward TEMPLATE for a possible later Ubuntu deployment, not an installed service. Use the existing Linux operator account via a documented User= or a user-level systemd arrangement; do NOT create an extra login or dedicated service account. Reuse the application's existing environment/config loading (the operator's normal .env); do NOT require separate /etc/mike-trade/{shadow,paper,live}.env files, root ownership, permissions ceremonies, external secret stores, or new tokens. Do not embed actual credentials in the unit. Resolve the installed repo path, venv path, working directory, and mode through straightforward documented substitutions appropriate for a future deployment. Include Restart=on-failure, a bounded restart policy, and a reasonable TimeoutStopSec for graceful shutdown. A normal stop must allow SIGTERM/drain, and must not close positions or cancel broker-held protective stops. Avoid an elaborate systemd sandbox or filesystem permissions framework.\n2. deploy/systemd/mike-trade-dashboard.service: create a separate optional TEMPLATE running FastAPI with the compiled React build, not a Vite development server. The dashboard must remain reachable if the engine fails or is stopped, so do not add Requires=/BindsTo=/PartOf= on the engine. Reuse existing configuration. Do not add dashboard login, passwords, tokens, role-based access, session handling, or identity infrastructure. Default to localhost, configurable for the operator's private LAN. Keep the dashboard read-only through the existing application architecture, not through additional logins.\n3. mike_trade/controls/service_manager.py: implement minimal, maintainable start/stop/restart/status/enable/disable helpers if existing CLI/Make targets require them. No duplicate service orchestration framework, install wizard, privilege broker, permission validator, token management, or per-command LIVE confirmation flag. Use normal OS permissions for systemctl. Starting, restarting, enabling, stopping, or checking services must not prompt for or require any new application-level token, password, CONFIRM_LIVE variable, or --confirm-live flag. Service-manager controls must remain easy to invoke. If systemd units are not yet installed, return a clear, ordinary 'not installed' result; do not install them automatically.\n4. Retain existing trading-engine controls: config-based mode selection, account isolation, single-instance database lock enforced by the engine, order/risk limits, and existing broker credentials. This task must not weaken or bypass trading safety checks already implemented elsewhere. Crucially, 'stop engine' and 'disable new entries' must never require interactive confirmation, and must not implicitly flatten positions, liquidate, or cancel broker-held protective stops.\n5. Never print or log actual API secrets. No new secret storage, additional API keys, authentication keys, login workflows, confirmation tokens, sudo requirements beyond ordinary systemd behavior, or repetitive prompts.\n6. No deployment actions: do not call systemctl, write to /etc/systemd or ~/.config/systemd, enable lingering, change Linux users/groups/permissions, connect to the R730, transfer application files, or start an engine or dashboard. Work only in allowed repository source paths. The later deployment will be handled by a separate operator-approved script.\n7. Prefer clear, small implementations over abstraction-heavy security or service-management frameworks. Keep changes limited to the three allowed paths and avoid broad tests.",
+  "acceptance_criteria": [
+    "Both deploy/systemd/mike-trade-engine.service and deploy/systemd/mike-trade-dashboard.service exist as clearly documented optional future-use templates, each with [Unit], [Service], and [Install] sections.",
+    "Neither service is installed, enabled, started, or deployed to DEV or the R730 by this task. No systemctl commands or host configuration changes are executed.",
+    "No new Linux account, login, credential file layout, authentication mechanism, authorization token, confirmation flag, or password is required by either service template or service_manager.py.",
+    "The engine template uses existing application configuration/.env conventions, does not embed real credentials, and includes graceful SIGTERM shutdown, TimeoutStopSec, and Restart=on-failure.",
+    "The dashboard remains independent of engine service lifecycle, serves the compiled React frontend through FastAPI, is read-only, and adds no dashboard authentication or broker credential requirement.",
+    "Service manager provides straightforward operations, if needed, without extra LIVE-mode start/restart/enable confirmation or application-level tokens. Stop and status have no confirmation requirements.",
+    "No stop operation invokes liquidation, position flattening, order cancellation, or cancellation of broker-held protective stops.",
+    "Any pre-existing engine-level mode controls, instance lock, and trading risk/order limits remain intact; this task does not add or bypass those controls.",
+    "The code and comments clearly distinguish future deployment templates from current DEV execution."
+  ],
+  "selected_backend": "pi_cli",
+  "model": "openrouter/meta/muse-spark-1.3-contributor",
+  "verification_profile": "focused",
+  "allowed_write_paths": [
+    "deploy/systemd/mike-trade-engine.service",
+    "deploy/systemd/mike-trade-dashboard.service",
+    "mike_trade/controls/service_manager.py"
+  ],
+  "forbidden_changes": [
+    "modify files outside allowed_write_paths",
+    "change PLAN_SKELETON.json or any planning artifacts under .abracapocus/",
+    "create new user accounts, passwords, tokens, CONFIRM_LIVE checks, --confirm-live flags, or additional authentication for routine service operations",
+    "require extra root-owned or per-mode external env files, elaborate permission validation, or mandatory secret-manager integration",
+    "introduce unnecessary systemd sandboxing directives or multi-user service infrastructure",
+    "install, start, enable, stop, or modify real services on DEV or the Dell R730",
+    "run real systemctl, SSH to the R730, write outside the repository, or perform deployment of any kind",
+    "commit or embed actual credentials, tokens, or account identifiers",
+    "remove or bypass existing engine-level trading risk limits, mode isolation, or order safety controls",
+    "add stop hooks that liquidate positions or cancel broker-held protective stops",
+    "make the dashboard unit depend on the engine unit lifecycle",
+    "invoke live broker endpoints or broad test suites"
+  ],
+  "dependencies": [],
+  "task_timeout_seconds": 1200
+}

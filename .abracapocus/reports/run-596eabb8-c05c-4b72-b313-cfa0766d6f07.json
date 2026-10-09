@@ -1,0 +1,127 @@
+{
+  "plan_summary": "Task run: Verify reference VWAP pair offline historical replay and stop parity",
+  "backend_executions": [
+    {
+      "backend": "pi_cli",
+      "command": [
+        "pi",
+        "-p",
+        "--provider",
+        "openrouter",
+        "--model",
+        "meta/muse-spark-1.3-contributor",
+        "Task: Verify reference VWAP pair offline historical replay and stop parity\nDescription: Create the phase-q integrity verification: a real integration test plus an audit document. It proves the production backtest subsystem replays the vwap_reference pair deterministically, with no lookahead, no duplicate buys, and stop parity. It is offline and uses no credentials.\n\n1. tests/integration/test_backtest_integrity.py. Build bounded synthetic 1-minute regular-session bars in-memory (a few dozen bars, one or two symbols) with explicit DataProvenance (feed=IEX, synthetic revision). Run them through BacktestRunner + HistoricalReplayFeed + ReplayClock + HistoricalExecutionSimulator, using the production vwap_bounce BUY and vwap_breakdown SELL classes resolved through the real strategy registry/vwap_reference pair. No hardcoded signals.\n\n   Required scenarios:\n   a) SELL path:\n      - A completed bar crosses upward through session VWAP (prior close <= prior VWAP, latest close > latest VWAP).\n      - Exactly one entry follows. Protection is placed only after the confirmed positive fill and covers the filled quantity.\n      - A later completed bar crosses downward and produces a vwap_breakdown SELL.\n      - The complete close leaves quantity 0.\n      - The ledger is exact: Decimal cash = start - entry cost - fees + exit proceeds - fees.\n      - The cycle state returns to WATCHING_BUY.\n   b) Stop-first path: price falls through the protective stop before any downward VWAP cross. The stop fills, the strategy SELL does not double-sell, the position closes completely, the ledger is exact, and the state is WATCHING_BUY.\n   c) Ambiguous intrabar bar: the bar both ratchets the trailing level and touches the stop. It resolves pessimistically and is flagged AMBIGUOUS_INTRABAR_ORDER.\n   d) Repeated evaluation of the same completed bar, and a no-cross bar sequence, emit no additional BUY signal (duplicate/no-signal suppression). There is never more than one entry per position cycle.\n   e) No lookahead:\n      - Instrument the strategy context or feed to assert that every bar seen at evaluation time t has availability time <= t.\n      - Mutating bars strictly after an evaluation time does not change any decision made at or before that time.\n      - The developing (incomplete) bar is never visible.\n   f) Deterministic rerun identity: two runs with the same dataset/config/seed produce identical manifest config hash and identical results hash.\n   g) Stop parity: the protective stop price computed during replay equals the output of the shared risk protection/trailing functions used by live/shadow for the same inputs, and it never moves down.\n\n   The test asserts no network/credential use. Monkeypatch socket creation to raise and set fake ALPACA_* env vars that must remain unread. It must also assert the run produces no profitability claim.\n\n2. docs/verification/phase_q_backtest.md: an audit artifact. It lists:\n   - each scenario and the exact test function that covers it\n   - the fixture provenance and bounds\n   - the assumptions: fill policy, slippage/fees, ambiguity policy, IEX/bar-only quote-fidelity limitation\n   - the determinism evidence (hashes printed by the test, or how to obtain them)\n   - known limitations: no SIP, bar-only intrabar ambiguity, synthetic data only\n   - an explicit statement that the replay demonstrates mechanics, not profitability\n   - the targeted command an operator uses to run only this test file\n\nBefore editing, inspect:\n- mike_trade/backtest/clock.py, feed.py (q.1), execution.py (q.2), runner.py, manifest.py (q.3), commands.py (q.4)\n- mike_trade/strategies/buy/vwap_bounce.py, mike_trade/strategies/sell/vwap_breakdown.py, mike_trade/strategies/presets/pairs.py, mike_trade/strategies/registry.py\n- mike_trade/market_data/context.py and mike_trade/strategies/indicators/core.py (session VWAP computation)\n- mike_trade/risk/fixed_stop.py, mike_trade/risk/trailing.py, mike_trade/risk/protection.py\n- mike_trade/portfolio/cycles.py (WATCHING_BUY and cycle states)\n- tests/unit/test_buy_vwap.py and tests/integration/test_shadow_restart.py (existing fixture conventions)\n\nIf a scenario fails because of a defect in a production module, do not edit that module. Mark the test with an explicit xfail(strict=True) naming the defect, and record it under 'Open defects' in the doc.\nPhase: Q\nAcceptance criteria:\n  - tests/integration/test_backtest_integrity.py exists and resolves vwap_bounce and vwap_breakdown through the real strategy registry/vwap_reference pair, with no hardcoded BUY/SELL fixtures\n  - The SELL-path test asserts exactly one entry, protection placed only after a positive fill and covering filled quantity, a vwap_breakdown exit, final quantity 0, exact Decimal ledger cash, and final state WATCHING_BUY\n  - The stop-first test asserts the stop closes the full position, total sold quantity equals bought quantity (no short), exact Decimal ledger, and final state WATCHING_BUY\n  - The ambiguous intrabar test asserts pessimistic stop-first resolution and the AMBIGUOUS_INTRABAR_ORDER flag\n  - The duplicate-suppression test asserts that re-evaluating the same completed bar and a no-cross sequence produce zero additional BUY signals or entries\n  - The no-lookahead test asserts every bar visible at evaluation time t has availability <= t, and that mutating post-t bars leaves pre-t decisions unchanged\n  - The rerun-identity test asserts equal config hash and equal results hash across two runs with identical inputs and seed\n  - The stop-parity test asserts replay stop prices equal the shared risk protection/trailing function outputs and never decrease for the long position\n  - Tests block socket creation and confirm no ALPACA_* credential is read; no network or credentials are used\n  - docs/verification/phase_q_backtest.md maps each scenario to its test function and documents fixture provenance, assumptions, IEX/bar-only limitations, determinism evidence, open defects (if any) and an explicit no-profitability-claim statement\n  - The test file passes when run alone (any strict xfail is documented in the verification doc)\nContext: AGENTS.md guidance:\n# AGENTS.md\n## Purpose\nThis repository is operated by an autonomous multi-agent system (abracapocus_2).\nAll agents must follow these rules when modifying the codebase.\n---\n## Core Principles\n- Minimal blast radius: only modify what is required for the task\n- Deterministic verification: all changes must be verifiable via code (tests, compile, scripts)\n- No architecture drift: do not introduce new frameworks or major design changes unless explicitly required\n- No unrelated refactors\n- All changes must be reproducible from a clean clone\n---\n## Project Structure\n- docs/ → design, plans, architecture constraints\n- plans/ → master plans\n- phases/ → phase definitions\n- tasks/ → executable task documents\n- backends/ → CLI backend adapters\n- agents/ → specialist agents\n- runtime/ → orchestration, routing, state\n...(truncated)\n\n## Task Contract Constraints\n\n{\n  \"allowed_write_paths\": [\n    \"tests/integration/test_backtest_integrity.py\",\n    \"docs/verification/phase_q_backtest.md\"\n  ],\n  \"forbidden_changes\": [\n    \"modify files outside allowed_write_paths, including any mike_trade/ production module\",\n    \"change PLAN_SKELETON.json or other planning artifacts\",\n    \"use network access, historical downloads or broker credentials\",\n    \"replace production strategy classes with hardcoded signal fixtures\",\n    \"claim or imply strategy profitability\",\n    \"create live broker orders or run broad test suites/backtests\"\n  ]\n}\nAGENTS.md:\n# AGENTS.md\n\n## Purpose\n\nThis repository is operated by an autonomous multi-agent system (abracapocus_2).\nAll agents must follow these rules when modifying the codebase.\n\n---\n\n## Core Principles\n\n- Minimal blast radius: only modify what is required for the task\n- Deterministic verification: all changes must be verifiable via code (tests, compile, scripts)\n- No architecture drift: do not introduce new frameworks or major design changes unless explicitly required\n- No unrelated refactors\n- All changes must be reproducible from a clean clone\n\n---\n\n## Project Structure\n\n- docs/ → design, plans, architecture constraints\n- plans/ → master plans\n- phases/ → phase definitions\n- tasks/ → executable task documents\n- backends/ → CLI backend adapters\n- agents/ → specialist agents\n- runtime/ → orchestration, routing, state\n- reports/ → execution reports (DO NOT MODIFY MANUALLY)\n- state/runtime_state.json → runtime state (DO NOT COMMIT)\n\n---\n\n## Task Execution Rules\n\n- Always operate from a task document when available\n- Respect:\n  - selected_backend\n  - verification_profile\n  - acceptance_criteria\n- If a task conflicts with architecture constraints or phase scope:\n  - STOP and report conflict\n\n---\n\n## Backend Rules\n\n- Backends must:\n  - execute commands deterministically\n  - capture stdout, stderr, exit_code\n  - not silently fail\n- Do not invent backend interfaces; use existing adapters\n- Codex CLI, Aider, Gemini, Claude Code should be invoked through backends only\n\n---\n\n## Verification Rules\n\n- Verification must be deterministic\n- Preferred checks:\n  - pytest\n  - python -m py_compile\n- Do not rely on model self-evaluation\n\n---\n\n## Execution Control Flow (PERMANENT ARCHITECTURAL RULE)\n\n**HEURISTIC INFERENCE MUST NEVER PARTICIPATE IN ABRACAPOCUS EXECUTION CONTROL FLOW.**\n\nAbracapocus must not determine execution success, failure, acceptance,\nrejection, blocking, retry eligibility, phase progression, or completion from\nheuristic inference. A heuristic is any conclusion that is *inferred* rather\nthan *directly established by an explicit executable contract or a concrete\nruntime fact*.\n\nRuntime status is derived ONLY from concrete, mechanically observable facts:\n\n1. The backend process exit code. A backend that exits `0` (with no hard\n   write-policy violation) is a successful execution.\n2. Objectively observed hard write-policy violations (changed paths outside the\n   declared allowed write paths).\n3. Explicit operator-authored commands (task/phase verification the plan\n   explicitly contains). Their raw results are reported, kept DISTINCT from\n   backend execution status.\n4. Objective orchestrator failures with direct evidence (backend could not\n   launch, required document could not be parsed, subprocess infrastructure\n   failed).\n\n**Verification results are observational and must not rewrite backend execution\nstatus.** A verifier returning non-zero must NEVER, by itself, turn a\nsuccessful backend execution into unverified, stop a phase, or trigger an\nautomatic rerun. Verification is the result of a command, not authority to\nrewrite history.\n\n**Execution control:** Task-local problems (non-zero exit, timeout,\nwrite-policy violation, frame failure, backend launch failure) produce\nacceptance status ``\"unverified\"`` with truthful evidence preserved. They\nMUST NOT stop sibling tasks, later phases, or the plan. Only operator\ncancellation (SIGINT/SIGTERM/dashboard cancel) may terminate a run\n(acceptance status ``\"interrupted\"``). Dependencies are ordering constraints,\nnot acceptance gates — any terminal attempt outcome satisfies a dependency\nedge. The status ``\"failed\"`` is banned from acceptance output.\n\nDo NOT reintroduce -- under any name, feature flag, \"advisory\" wrapper, or\ncompatibility mode -- context completeness/sufficiency scoring, change or\narchitecture assessment used as a gate, intent/scope matching, reconciliation\ngates, no-progress judgments, confidence/risk scores, model/LLM/reviewer\njudgments over status, shadow/adaptive/secondary-verification gates, or\nheuristic retry/failure-classification control flow. Failure classification may\nonly *summarize* an already-established concrete failure; it must never create\none. Retries are permitted only for explicitly defined mechanical backend\nfailures. Future agents must not add these systems back.\n\n---\n\n## Git Rules\n\n- Do not commit:\n  - runtime_state.json\n  - reports/\n  - logs/\n  - virtual environments\n- Do not modify .gitignore unless required by task\n- Do not create excessive commits; prefer grouped logical commits\n\n---\n\n## Allowed Changes\n\n- Implement task requirements\n- Fix failing verification\n- Update relevant tests\n- Improve documentation tied to the task\n\n---\n\n## Forbidden Changes\n\n- Changing architecture without explicit instruction\n- Adding dependencies without justification\n- Modifying unrelated files\n- Deleting important files\n- Bypassing verification\n\n---\n\n## Planning Rules\n\n- Plans are multi-phase\n- Completed sections are immutable\n- Remaining sections may be updated\n- Tasks must align with:\n  - project brief\n  - architecture constraints\n  - active phase\n\n---\n\n## Reporting\n\n- All executions must produce structured reports\n- Reports must include:\n  - changed files\n  - verification results\n  - assessment\n\n---\n\n## Behavior\n\n- Do not ask unnecessary questions\n- Do not stall execution\n- Do not perform broad scans unless required\n- Prefer direct action over analysis\n\n---\n\n## Priority Order\n\nThis ordering guides *implementation decisions* only. It does NOT make\nverification an acceptance authority: verification results are observational\n(see \"Execution Control Flow\"), and never override a concrete backend\nexecution result.\n\n1. Architecture constraints\n2. Task definition\n3. Verification results (observational signal, not acceptance authority)\n4. Plan guidance\n\nIf conflicts occur, follow this order.\n\nAGENTS metadata:\n{\"loaded\": true, \"path\": \"/home/mike/dev/mike/abracapocus/python/abracapocus_2/AGENTS.md\", \"rule_count\": 77, \"sha256_12\": \"3f9b549ba1ce\"}\n"
+      ],
+      "stdout": "Blast radius is clean. Now writing the audit document.\n",
+      "stderr": "",
+      "exit_code": 0,
+      "duration_seconds": 581.2041592597961,
+      "model": "openrouter/meta/muse-spark-1.3-contributor",
+      "model_tags": [],
+      "working_directory": "/home/mike/dev/mike/stocks/python/mike_trade",
+      "changed_files": [
+        {
+          "path": "tests/integration/test_backtest_integrity.py",
+          "status": "untracked",
+          "code": "??"
+        }
+      ],
+      "diff_summary": "git diff reported no changes",
+      "model_attempts": [
+        {
+          "backend": "pi_cli",
+          "model": "openrouter/meta/muse-spark-1.3-contributor",
+          "exit_code": 0,
+          "stdout": "Blast radius is clean. Now writing the audit document.\n",
+          "stderr": "",
+          "duration_seconds": 581.2041592597961,
+          "changed_files": [
+            {
+              "path": "tests/integration/test_backtest_integrity.py",
+              "status": "untracked",
+              "code": "??"
+            }
+          ],
+          "diff_summary": "git diff reported no changes",
+          "outcome_classification": "backend_completed_with_changes",
+          "backend_timeout": false,
+          "backend_verification_timeout": false,
+          "timeout_seconds": null
+        }
+      ],
+      "write_policy_violations": [],
+      "outcome_classification": "backend_completed_with_changes",
+      "backend_timeout": false,
+      "backend_verification_timeout": false,
+      "changed_files_at_timeout_exit": [],
+      "abracapocus_verification_ran_after_backend_timeout": false,
+      "verification_owner": "abracapocus",
+      "verification_result": "skipped"
+    }
+  ],
+  "review": {
+    "status": "approved",
+    "findings": [],
+    "summary": "q.5:Review complete",
+    "created_at": "2026-10-08T22:53:35.508897"
+  },
+  "verification": {
+    "status": "skipped",
+    "checks": [],
+    "created_at": "2026-10-08T22:53:35.508906",
+    "notes": "Q:skipped",
+    "profile": "focused"
+  },
+  "metadata": {
+    "run_id": "596eabb8-c05c-4b72-b313-cfa0766d6f07",
+    "project_name": "mike_trade",
+    "plan_version": "task-q.5",
+    "task_id": "q.5",
+    "task_title": "Verify reference VWAP pair offline historical replay and stop parity",
+    "task_status": "completed",
+    "selected_backend": "pi_cli",
+    "verification_profile": "focused",
+    "backend_reason": "phase_based",
+    "frame_failures": [],
+    "agents_md": {
+      "loaded": true,
+      "path": "/home/mike/dev/mike/abracapocus/python/abracapocus_2/AGENTS.md",
+      "rule_count": 77,
+      "sha256_12": "3f9b549ba1ce"
+    },
+    "phase_results": [
+      {
+        "phase_name": "Q",
+        "status": "passed",
+        "verification": "skipped",
+        "task_results": [
+          {
+            "task_id": "q.5",
+            "status": "passed",
+            "acceptance_status": "accepted",
+            "backend": "pi_cli",
+            "backend_outcome_classification": "backend_completed_with_changes",
+            "changed_files": [
+              {
+                "path": "tests/integration/test_backtest_integrity.py",
+                "status": "untracked",
+                "code": "??"
+              }
+            ],
+            "backend_timeout": false,
+            "backend_elapsed_seconds": 581.2041592597961,
+            "backend_timeout_seconds": null,
+            "changed_files_at_timeout_exit": [],
+            "abracapocus_verification_ran_after_backend_timeout": false,
+            "verification_owner": "abracapocus",
+            "verification_result": "skipped",
+            "verification_status": "skipped",
+            "verification_checks": [],
+            "frame_failure": false,
+            "retry_attempts": []
+          }
+        ]
+      }
+    ]
+  }
+}
