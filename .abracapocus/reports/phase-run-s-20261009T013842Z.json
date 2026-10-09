@@ -1,0 +1,95 @@
+{
+  "run_at": "2026-10-09T01:38:42.151631",
+  "phase_dir": "/home/mike/dev/mike/stocks/python/mike_trade/.abracapocus/plans/ACTIVE/MIKE_TRADE_COMPLETE_PRODUCT/s",
+  "status": "passed",
+  "counts": {
+    "passed": 5,
+    "failed": 0,
+    "blocked": 0,
+    "skipped": 0,
+    "unverified": 0
+  },
+  "tasks": [
+    {
+      "task_id": "s.1",
+      "task_file": "/home/mike/dev/mike/stocks/python/mike_trade/.abracapocus/plans/ACTIVE/MIKE_TRADE_COMPLETE_PRODUCT/s/task_s.1_implement_broker_fee_activity_ingestion_and_account_equity_reconciliation_reports.json",
+      "status": "passed",
+      "acceptance_status": "accepted",
+      "task_verification": {
+        "status": "skipped",
+        "checks": [],
+        "owner": "abracapocus"
+      },
+      "run_id": "4a57dad2-a708-40f4-a908-b145d114e93f",
+      "write_policy_violations": [],
+      "failure_classification": null,
+      "reviewer_summary": "s.1:Review complete"
+    },
+    {
+      "task_id": "s.2",
+      "task_file": "/home/mike/dev/mike/stocks/python/mike_trade/.abracapocus/plans/ACTIVE/MIKE_TRADE_COMPLETE_PRODUCT/s/task_s.2_implement_strategy_trade_performance_attribution_and_csv_json_export.json",
+      "status": "passed",
+      "acceptance_status": "accepted",
+      "task_verification": {
+        "status": "skipped",
+        "checks": [],
+        "owner": "abracapocus"
+      },
+      "run_id": "8a9f4f86-c71b-4f32-8fbd-0f9c19cec578",
+      "write_policy_violations": [],
+      "failure_classification": null,
+      "reviewer_summary": "s.2:Review complete"
+    },
+    {
+      "task_id": "s.3",
+      "task_file": "/home/mike/dev/mike/stocks/python/mike_trade/.abracapocus/plans/ACTIVE/MIKE_TRADE_COMPLETE_PRODUCT/s/task_s.3_implement_complete_operator_cli_commands_for_lifecycle_budget_stop_and_limits.json",
+      "status": "passed",
+      "acceptance_status": "accepted",
+      "task_verification": {
+        "status": "skipped",
+        "checks": [],
+        "owner": "abracapocus"
+      },
+      "run_id": "e0db0b40-7d67-4f8b-9029-9141b3613e37",
+      "write_policy_violations": [],
+      "failure_classification": null,
+      "reviewer_summary": "s.3:Review complete"
+    },
+    {
+      "task_id": "s.5",
+      "task_file": "/home/mike/dev/mike/stocks/python/mike_trade/.abracapocus/plans/ACTIVE/MIKE_TRADE_COMPLETE_PRODUCT/s/task_s.5_implement_bounded_filterable_events_signals_logs_and_health_read_commands.json",
+      "status": "passed",
+      "acceptance_status": "accepted",
+      "task_verification": {
+        "status": "skipped",
+        "checks": [],
+        "owner": "abracapocus"
+      },
+      "run_id": "f37eb382-ad81-4ba5-b9be-d3b03d6e352a",
+      "write_policy_violations": [],
+      "failure_classification": null,
+      "reviewer_summary": "s.5:Review complete"
+    },
+    {
+      "task_id": "s.4",
+      "task_file": "/home/mike/dev/mike/stocks/python/mike_trade/.abracapocus/plans/ACTIVE/MIKE_TRADE_COMPLETE_PRODUCT/s/task_s.4_expose_all_documented_service_and_trading_operations_through_make_targets.json",
+      "status": "passed",
+      "acceptance_status": "accepted",
+      "task_verification": {
+        "status": "skipped",
+        "checks": [],
+        "owner": "abracapocus"
+      },
+      "run_id": "cfa4b1be-dcfd-40b5-b7ca-892daa612d24",
+      "write_policy_violations": [],
+      "failure_classification": null,
+      "reviewer_summary": "s.4:Review complete"
+    }
+  ],
+  "phase_verification": {
+    "status": "warning",
+    "checks": [],
+    "notes": "phase verification complete",
+    "run_when": "all_tasks_pass"
+  }
+}

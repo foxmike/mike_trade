@@ -1,0 +1,78 @@
+# OPTIONAL future-use template only. NOT installed by this repository.
+#
+# mike-trade dashboard (systemd template for a possible later Ubuntu deployment).
+#
+# Current DEV execution does NOT use this file: on DEV run the dashboard via
+# `make dashboard-start` / `python -m mike_trade.dashboard.server`, which
+# serves the compiled React build (dashboard/frontend/dist) through FastAPI.
+# This template only exists so a future, operator-approved deployment script
+# has a sane starting point.
+#
+# No deployment action has been taken: this file was never copied to
+# /etc/systemd/system, never enabled, never started. A separate
+# operator-approved script will handle any future deployment.
+#
+# Substitutions (apply when preparing a future host; edit the copies, not DEV):
+#   __OPERATOR_USER__  Existing Linux operator account that owns the checkout
+#                      (e.g. mike). Do NOT create a new login or service
+#                      account for this template.
+#   __REPO_DIR__       Absolute path of the installed checkout
+#                      (e.g. /home/mike/mike_trade).
+#   __VENV_DIR__       Absolute path of the repo venv (e.g. /home/mike/mike_trade/.venv).
+#   __ENV_FILE__       The operator's normal .env for that checkout
+#                      (e.g. /home/mike/mike_trade/.env). Reuses the existing
+#                      MIKE_TRADE_* conventions (MIKE_TRADE_DASHBOARD_BIND,
+#                      MIKE_TRADE_DATA_DIR, MIKE_TRADE_DB_PATH). Do NOT create
+#                      separate /etc/mike-trade/{shadow,paper,live}.env files
+#                      or new secret stores, and do NOT embed real credentials
+#                      in this unit. The dashboard needs no broker credentials.
+#
+# Independence: this unit deliberately has no lifecycle binding to the
+# engine unit of any kind. The dashboard stays up when
+# the engine fails or is stopped (engine OFFLINE is reported from heartbeat
+# age; see mike_trade/dashboard/api.py).
+#
+# Serving: ExecStart runs the FastAPI production entrypoint
+# (mike_trade/dashboard/server.py), which serves the COMPILED React build
+# via uvicorn. Never point this at a frontend development server.
+#
+# Network: defaults to localhost (127.0.0.1:8765 via DashboardSettings).
+# For the operator's private LAN, set MIKE_TRADE_DASHBOARD_BIND in the normal
+# .env plus the explicit non-loopback opt-in
+# (MIKE_TRADE_DASHBOARD_ALLOW_NON_LOOPBACK=1); remote exposure must sit
+# behind private auth/TLS/VPN/reverse proxy.
+#
+# Access: the dashboard is read-only by architecture (GET/HEAD only; every
+# other method gets 405). No dashboard login, roles, sessions, credentials,
+# or identity infrastructure is added here or required.
+#
+# User-level alternative: for a per-user deployment instead of a system unit,
+# drop the User= line, install the edited copy under
+# ~/.config/systemd/user/, and change [Install] to WantedBy=default.target.
+#
+# No extra login, credential, or live-confirmation gate is involved in
+# operating this unit.
+
+[Unit]
+Description=mike_trade dashboard (optional future deployment template)
+Documentation=https://github.com/mike/mike_trade
+After=network.target
+StartLimitIntervalSec=300
+StartLimitBurst=5
+
+[Service]
+Type=simple
+User=__OPERATOR_USER__
+WorkingDirectory=__REPO_DIR__
+EnvironmentFile=-__ENV_FILE__
+Environment=PYTHONUNBUFFERED=1
+ExecStart=__VENV_DIR__/bin/python -m mike_trade.dashboard.server
+KillSignal=SIGTERM
+TimeoutStopSec=30
+Restart=on-failure
+RestartSec=10
+StandardOutput=journal
+StandardError=journal
+
+[Install]
+WantedBy=multi-user.target
