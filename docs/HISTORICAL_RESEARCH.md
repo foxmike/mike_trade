@@ -163,6 +163,26 @@ rsync -a --ignore-existing config/mike_trade.yaml mike@192.168.254.147:/home/mik
 ssh mike@192.168.254.147 'cd /home/mike/dev/mike/stocks/python/mike_trade || exit; if ! grep -q "^COMPOSE_FILE=" .env; then printf "\nCOMPOSE_FILE=compose.yaml:compose.r730.yaml\n" >> .env; fi; if ! grep -q "^COMPOSE_PROFILES=" .env; then printf "COMPOSE_PROFILES=trading\n" >> .env; fi; chmod 600 .env'
 ```
 
+On a fresh R730 checkout, create its own state directory and adapt the copied
+non-secret config before starting the engine. Never transfer `state/dev/`:
+
+```sh
+ssh mike@192.168.254.147
+cd /home/mike/dev/mike/stocks/python/mike_trade
+mkdir -p state/r730
+python3 - <<'PY'
+from pathlib import Path
+p = Path('config/mike_trade.yaml')
+s = p.read_text()
+assert '- name: dev_shadow' in s
+assert 'data_dir: /home/mike/dev/mike/stocks/python/mike_trade/state/dev' in s
+s = s.replace('- name: dev_shadow', '- name: r730_shadow', 1)
+s = s.replace('data_dir: /home/mike/dev/mike/stocks/python/mike_trade/state/dev', 'data_dir: /app/state', 1)
+p.write_text(s)
+PY
+make up
+```
+
 For later configuration changes, transfer an incoming copy with `rsync` and
 review it against the server settings before replacing them. Keep the server's
 `COMPOSE_FILE` and `COMPOSE_PROFILES=trading` settings. Credentials stay in
