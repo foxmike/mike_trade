@@ -1,0 +1,158 @@
+{
+  "plan_summary": "Task run: Implement broker fee activity ingestion and account equity reconciliation reports",
+  "backend_executions": [
+    {
+      "backend": "claude_code_cli",
+      "command": [
+        "claude",
+        "-p",
+        "Task: Implement broker fee activity ingestion and account equity reconciliation reports\nPhase: S\nDescription: Implement broker fee/activity ingestion and account equity reconciliation reporting. Every account or scenario is reported separately and modes are never mixed.\n\nBefore editing, inspect: the broker port and the Alpaca trading adapter from earlier phases, especially any account-activities/fills/fees method, its pagination, and the idempotency keys it exposes; the persistence package (SQLite WAL single authoritative writer, migrations, append-only event store, idempotent broker activity ingestion records, read projections for fills/orders/positions/cycles/balances); the shadow ledger and its simulated fee model; the domain Decimal money/quantity types and the mode/account/scenario identifiers; the clock port and the America/New_York session calendar used for day/week boundaries; and any existing mike_trade/reporting package modules. Reuse existing persistence writers and readers. Do not add schema migrations outside allowed paths.\n\nImplement mike_trade/reporting/fees.py:\n(1) A FeeStatus str Enum whose values are exactly 'CONFIRMED', 'ESTIMATED' and 'UNAVAILABLE'. The phase s.2 task relies on these exact string values.\n(2) A function that normalizes broker activities from the broker port into filtered typed records. Only an allowlist of fields is kept (activity id, type, order id/client_order_id when present, symbol, qty, price, net amount, fee amount, timestamp UTC, description category). Raw unfiltered payloads, secrets and full account identifiers are never retained.\n(3) Classification of each activity as TRADE_FILL, FEE (regulatory/commission/other, with subtype), EXTERNAL_FLOW (deposits, withdrawals, transfers, journals), INCOME (dividends/interest), CORPORATE_ACTION or OTHER.\n(4) Idempotent ingestion keyed by broker activity id. Re-ingesting the same activity produces no duplicate record or event, and records are emitted through the existing single authoritative writer path only.\n(5) Per-order fee attribution. A fee is CONFIRMED only when a broker activity explicitly links it to that order. Otherwise the order fee is ESTIMATED from the configured fee schedule, labeled as estimated, or UNAVAILABLE when no schedule exists. An estimate is never stored or reported as confirmed, and there is no function that loads operator-supplied fee files (CSV or otherwise).\n(6) For SHADOW scenarios, fees come only from the scenario's configured simulated fee model and are labeled ESTIMATED.\n\nImplement mike_trade/reporting/accounting.py:\n(1) An AccountLedgerReport (or equivalently named) dataclass per account/scenario and period (day, week, lifetime; session boundaries in America/New_York, timestamps UTC). It holds these separate Decimal fields:\n- starting cash, ending cash and ending equity;\n- account buying power vs. authorized project budget (total and per symbol) vs. current symbol commitment (reserved pending buys plus deployed cost basis);\n- realized gross P&L, confirmed fees, estimated fees, net realized P&L and a fees_complete flag;\n- unrealized P&L with mark price source, as-of and stale flag;\n- external flows (deposits/withdrawals/transfers), income and corporate adjustments, each reported apart from trading P&L.\n(2) Reconciliation identity: starting equity + external flows + income/corporate adjustments + net realized P&L + change in unrealized P&L = ending equity. The residual is computed at full Decimal precision. The report has an explicit valuation convention (mark source and as-of) and an explicit rounding convention (presentation quantized to cents using ROUND_HALF_EVEN; internal math unrounded). It exposes residual and reconciled=true|false against a configurable tolerance, and a nonzero residual beyond tolerance is reported as drift rather than hidden.\n(3) A query helper that rejects requests mixing accounts or modes.\n\nWrite tests/unit/test_reporting_reconciliation.py using temporary migrated SQLite and fake broker activity fixtures. No network access and no credentials. Cover:\n- deposits/withdrawals excluded from trading P&L;\n- partial fills producing correct realized P&L;\n- confirmed vs. estimated vs. unavailable fee labeling, with net P&L flagged incomplete when any fee is unavailable;\n- idempotent re-ingestion;\n- filtering of raw payload fields and secrets;\n- identity holding to zero residual on a consistent fixture, and drift reported on an inconsistent fixture;\n- rounding convention;\n- cross-account/mode isolation;\n- absence of any manual fee-file loader.\n\nBounded decision budget: if the broker port lacks an activities method, add nothing outside allowed paths. Accept an iterable of activity records via dependency injection, and leave fees UNAVAILABLE when no source is wired.\nContext: AGENTS.md guidance:\n# AGENTS.md\n## Purpose\nThis repository is operated by an autonomous multi-agent system (abracapocus_2).\nAll agents must follow these rules when modifying the codebase.\n---\n## Core Principles\n- Minimal blast radius: only modify what is required for the task\n- Deterministic verification: all changes must be verifiable via code (tests, compile, scripts)\n- No architecture drift: do not introduce new frameworks or major design changes unless explicitly required\n- No unrelated refactors\n- All changes must be reproducible from a clean clone\n---\n## Project Structure\n- docs/ → design, plans, architecture constraints\n- plans/ → master plans\n- phases/ → phase definitions\n- tasks/ → executable task documents\n- backends/ → CLI backend adapters\n- agents/ → specialist agents\n- runtime/ → orchestration, routing, state\n...(truncated)\n\n## Task Contract Constraints\n\n{\n  \"allowed_symbols\": [\n    \"FeeStatus\",\n    \"ActivityCategory\",\n    \"normalize_broker_activity\",\n    \"ingest_broker_activities\",\n    \"attribute_order_fees\",\n    \"AccountLedgerReport\",\n    \"build_account_ledger_report\",\n    \"reconcile_equity\"\n  ],\n  \"allowed_write_paths\": [\n    \"mike_trade/reporting/accounting.py\",\n    \"mike_trade/reporting/fees.py\",\n    \"tests/unit/test_reporting_reconciliation.py\"\n  ],\n  \"forbidden_changes\": [\n    \"modify files outside allowed_write_paths\",\n    \"change PLAN_SKELETON.json or planning artifacts\",\n    \"add any manual or hand-loaded fee file import path\",\n    \"fabricate per-order fees or report estimated fees as confirmed\",\n    \"persist raw unfiltered provider payloads, secrets or full account identifiers\",\n    \"write to the database outside the existing single authoritative writer path\",\n    \"combine balances or P&L across accounts, modes or scenarios\",\n    \"use float for money, quantity or fee values\",\n    \"access broker credentials, call real broker endpoints, or create broker orders\",\n    \"run broad test suites or backtests\"\n  ]\n}\n\nAGENTS.md guidance:\n# AGENTS.md\n\n## Purpose\n\nThis repository is operated by an autonomous multi-agent system (abracapocus_2).\nAll agents must follow these rules when modifying the codebase.\n\n---\n\n## Core Principles\n\n- Minimal blast radius: only modify what is required for the task\n- Deterministic verification: all changes must be verifiable via code (tests, compile, scripts)\n- No architecture drift: do not introduce new frameworks or major design changes unless explicitly required\n- No unrelated refactors\n- All changes must be reproducible from a clean clone\n\n---\n\n## Project Structure\n\n- docs/ → design, plans, architecture constraints\n- plans/ → master plans\n- phases/ → phase definitions\n- tasks/ → executable task documents\n- backends/ → CLI backend adapters\n- agents/ → specialist agents\n- runtime/ → orchestration, routing, state\n- reports/ → execution reports (DO NOT MODIFY MANUALLY)\n- state/runtime_state.json → runtime state (DO NOT COMMIT)\n\n---\n\n## Task Execution Rules\n\n- Always operate from a task document when available\n- Respect:\n  - selected_backend\n  - verification_profile\n  - acceptance_criteria\n- If a task conflicts with architecture constraints or phase scope:\n  - STOP and report conflict\n\n---\n\n## Backend Rules\n\n- Backends must:\n  - execute commands deterministically\n  - capture stdout, stderr, exit_code\n  - not silently fail\n- Do not invent backend interfaces; use existing adapters\n- Codex CLI, Aider, Gemini, Claude Code should be invoked through backends only\n\n---\n\n## Verification Rules\n\n- Verification must be deterministic\n- Preferred checks:\n  - pytest\n  - python -m py_compile\n- Do not rely on model self-evaluation\n\n---\n\n## Execution Control Flow (PERMANENT ARCHITECTURAL RULE)\n\n**HEURISTIC INFERENCE MUST NEVER PARTICIPATE IN ABRACAPOCUS EXECUTION CONTROL FLOW.**\n\nAbracapocus must not determine execution success, failure, acceptance,\nrejection, blocking, retry eligibility, phase progression, or completion from\nheuristic inference. A heuristic is any conclusion that is *inferred* rather\nthan *directly established by an explicit executable contract or a concrete\nruntime fact*.\n\nRuntime status is derived ONLY from concrete, mechanically observable facts:\n\n1. The backend process exit code. A backend that exits `0` (with no hard\n   write-policy violation) is a successful execution.\n2. Objectively observed hard write-policy violations (changed paths outside the\n   declared allowed write paths).\n3. Explicit operator-authored commands (task/phase verification the plan\n   explicitly contains). Their raw results are reported, kept DISTINCT from\n   backend execution status.\n4. Objective orchestrator failures with direct evidence (backend could not\n   launch, required document could not be parsed, subprocess infrastructure\n   failed).\n\n**Verification results are observational and must not rewrite backend execution\nstatus.** A verifier returning non-zero must NEVER, by itself, turn a\nsuccessful backend execution into unverified, stop a phase, or trigger an\nautomatic rerun. Verification is the result of a command, not authority to\nrewrite history.\n\n**Execution control:** Task-local problems (non-zero exit, timeout,\nwrite-policy violation, frame failure, backend launch failure) produce\nacceptance status ``\"unverified\"`` with truthful evidence preserved. They\nMUST NOT stop sibling tasks, later phases, or the plan. Only operator\ncancellation (SIGINT/SIGTERM/dashboard cancel) may terminate a run\n(acceptance status ``\"interrupted\"``). Dependencies are ordering constraints,\nnot acceptance gates — any terminal attempt outcome satisfies a dependency\nedge. The status ``\"failed\"`` is banned from acceptance output.\n\nDo NOT reintroduce -- under any name, feature flag, \"advisory\" wrapper, or\ncompatibility mode -- context completeness/sufficiency scoring, change or\narchitecture assessment used as a gate, intent/scope matching, reconciliation\ngates, no-progress judgments, confidence/risk scores, model/LLM/reviewer\njudgments over status, shadow/adaptive/secondary-verification gates, or\nheuristic retry/failure-classification control flow. Failure classification may\nonly *summarize* an already-established concrete failure; it must never create\none. Retries are permitted only for explicitly defined mechanical backend\nfailures. Future agents must not add these systems back.\n\n---\n\n## Git Rules\n\n- Do not commit:\n  - runtime_state.json\n  - reports/\n  - logs/\n  - virtual environments\n- Do not modify .gitignore unless required by task\n- Do not create excessive commits; prefer grouped logical commits\n\n---\n\n## Allowed Changes\n\n- Implement task requirements\n- Fix failing verification\n- Update relevant tests\n- Improve documentation tied to the task\n\n---\n\n## Forbidden Changes\n\n- Changing architecture without explicit instruction\n- Adding dependencies without justification\n- Modifying unrelated files\n- Deleting important files\n- Bypassing verification\n\n---\n\n## Planning Rules\n\n- Plans are multi-phase\n- Completed sections are immutable\n- Remaining sections may be updated\n- Tasks must align with:\n  - project brief\n  - architecture constraints\n  - active phase\n\n---\n\n## Reporting\n\n- All executions must produce structured reports\n- Reports must include:\n  - changed files\n  - verification results\n  - assessment\n\n---\n\n## Behavior\n\n- Do not ask unnecessary questions\n- Do not stall execution\n- Do not perform broad scans unless required\n- Prefer direct action over analysis\n\n---\n\n## Priority Order\n\nThis ordering guides *implementation decisions* only. It does NOT make\nverification an acceptance authority: verification results are observational\n(see \"Execution Control Flow\"), and never override a concrete backend\nexecution result.\n\n1. Architecture constraints\n2. Task definition\n3. Verification results (observational signal, not acceptance authority)\n4. Plan guidance\n\nIf conflicts occur, follow this order.\n",
+        "--dangerously-skip-permissions",
+        "--output-format",
+        "text",
+        "--model",
+        "claude-sonnet-5-5"
+      ],
+      "stdout": "Both reporting modules and the test file are written, and all 54 tests in `tests/unit/test_reporting_reconciliation.py` pass. They pass on the project's 3.12 venv; the default `python` here is 3.11, which can't import the repo. `ruff` and `mypy` are clean on the new files. I ran only that test file, no broad suite. I didn't commit anything, and the only new paths are `mike_trade/reporting/` and the test file.\n\n## Decision-budget calls\n- **No activities method on the broker port.** `ingest_broker_activities` takes an injected iterable of mappings or attribute objects, so the Alpaca adapter's normalized dataclasses work as input. Passing `None` ingests nothing. Fees then stay `UNAVAILABLE` unless a fee schedule is configured.\n- **Unrealized P&L for PAPER/LIVE is derived, not independently marked.** `equity_snapshots` is the only historical valuation, so unrealized is snapshot equity − snapshot cash − the open cost basis replayed from fills. It tells you which snapshot supplied the mark, its as-of and whether it's stale. In practice the residual measures unexplained cash movement, such as a fee the broker charged that I didn't see, or an unrecorded fill. It does not check position marks. This convention is written into the report as `valuation_convention`.\n- **The reporting window follows the equity snapshots.** The window is bounded by the baseline and ending snapshots so events and equity share one clock. `window_start` and `window_end` show the actual bounds. The nominal ET boundaries (midnight, or Monday midnight for a week) only choose which snapshot is the baseline.\n- **Unlinked broker fee activities count as confirmed.** A fee activity that names no order still counts toward `confirmed_fees`, because the cash really left the account. It is also broken out in `unattributed_confirmed_fees`. Per-order `CONFIRMED` still requires an explicit link by order id or client order id.\n- **Fill rows' own `fee` column is ignored for PAPER/LIVE.** It has no provenance.\n\n## What it does\n- **`fees.py`:** `FeeStatus` and `ActivityCategory` are `str` Enums. Normalization keeps only the allowlisted fields. Free-text descriptions, raw payloads and account ids are dropped, and a \"description category\" is a short token from the activity subtype.\n- **Ingestion:** it goes through `BrokerOrderRepository.record_activity` and `CashEquityRepository.append_cash_event` on the scoped writer, and refuses SHADOW databases. Re-ingesting the same activity adds no activity row, cash event or journal event.\n- **Fee attribution:** `attribute_order_fees` gives each order `CONFIRMED`, `ESTIMATED` (from a configured `FeeSchedule`) or `UNAVAILABLE`. SHADOW fees are the fee recorded on each simulated fill, always `ESTIMATED`. There is no file loader of any kind.\n- **`accounting.py`:** `AccountLedgerReport` has all the requested separate fields, `reconcile_equity` applies the identity, and `build_account_ledger_report` builds a report. `presented()` quantizes to cents with `ROUND_HALF_EVEN`, while `reconciled` compares the unrounded residual with the tolerance. `require_single_scope` rejects requests that mix accounts or modes.\n\n## Behaviors worth knowing\n- The default tolerance is $0.01. I picked it, so change it if you want something tighter.\n- If a fee is `UNAVAILABLE`, it is left out of net P&L and `fees_complete` is false. The resulting residual shows up as drift.\n- Date-only provider timestamps are midnight UTC. They can land in the previous ET day.\n- The SHADOW replay assumes the ledger is time-ordered.\n- Budget commitments are measured at report time, not period end. Reservations with no symbol are excluded.\n",
+      "stderr": "",
+      "exit_code": 0,
+      "duration_seconds": 648.9147455692291,
+      "model": "claude-sonnet-5-5",
+      "model_tags": [],
+      "working_directory": "/home/mike/dev/mike/stocks/python/mike_trade",
+      "changed_files": [
+        {
+          "path": "mike_trade/reporting/accounting.py",
+          "status": "untracked",
+          "code": "??"
+        },
+        {
+          "path": "mike_trade/reporting/fees.py",
+          "status": "untracked",
+          "code": "??"
+        },
+        {
+          "path": "tests/unit/test_reporting_reconciliation.py",
+          "status": "untracked",
+          "code": "??"
+        }
+      ],
+      "diff_summary": "git diff reported no changes",
+      "model_attempts": [
+        {
+          "backend": "claude_code_cli",
+          "model": "claude-sonnet-5-5",
+          "exit_code": 0,
+          "stdout": "Both reporting modules and the test file are written, and all 54 tests in `tests/unit/test_reporting_reconciliation.py` pass. They pass on the project's 3.12 venv; the default `python` here is 3.11, which can't import the repo. `ruff` and `mypy` are clean on the new files. I ran only that test file, no broad suite. I didn't commit anything, and the only new paths are `mike_trade/reporting/` and the test file.\n\n## Decision-budget calls\n- **No activities method on the broker port.** `ingest_broker_activities` takes an injected iterable of mappings or attribute objects, so the Alpaca adapter's normalized dataclasses work as input. Passing `None` ingests nothing. Fees then stay `UNAVAILABLE` unless a fee schedule is configured.\n- **Unrealized P&L for PAPER/LIVE is derived, not independently marked.** `equity_snapshots` is the only historical valuation, so unrealized is snapshot equity − snapshot cash − the open cost basis replayed from fills. It tells you which snapshot supplied the mark, its as-of and whether it's stale. In practice the residual measures unexplained cash movement, such as a fee the broker charged that I didn't see, or an unrecorded fill. It does not check position marks. This convention is written into the report as `valuation_convention`.\n- **The reporting window follows the equity snapshots.** The window is bounded by the baseline and ending snapshots so events and equity share one clock. `window_start` and `window_end` show the actual bounds. The nominal ET boundaries (midnight, or Monday midnight for a week) only choose which snapshot is the baseline.\n- **Unlinked broker fee activities count as confirmed.** A fee activity that names no order still counts toward `confirmed_fees`, because the cash really left the account. It is also broken out in `unattributed_confirmed_fees`. Per-order `CONFIRMED` still requires an explicit link by order id or client order id.\n- **Fill rows' own `fee` column is ignored for PAPER/LIVE.** It has no provenance.\n\n## What it does\n- **`fees.py`:** `FeeStatus` and `ActivityCategory` are `str` Enums. Normalization keeps only the allowlisted fields. Free-text descriptions, raw payloads and account ids are dropped, and a \"description category\" is a short token from the activity subtype.\n- **Ingestion:** it goes through `BrokerOrderRepository.record_activity` and `CashEquityRepository.append_cash_event` on the scoped writer, and refuses SHADOW databases. Re-ingesting the same activity adds no activity row, cash event or journal event.\n- **Fee attribution:** `attribute_order_fees` gives each order `CONFIRMED`, `ESTIMATED` (from a configured `FeeSchedule`) or `UNAVAILABLE`. SHADOW fees are the fee recorded on each simulated fill, always `ESTIMATED`. There is no file loader of any kind.\n- **`accounting.py`:** `AccountLedgerReport` has all the requested separate fields, `reconcile_equity` applies the identity, and `build_account_ledger_report` builds a report. `presented()` quantizes to cents with `ROUND_HALF_EVEN`, while `reconciled` compares the unrounded residual with the tolerance. `require_single_scope` rejects requests that mix accounts or modes.\n\n## Behaviors worth knowing\n- The default tolerance is $0.01. I picked it, so change it if you want something tighter.\n- If a fee is `UNAVAILABLE`, it is left out of net P&L and `fees_complete` is false. The resulting residual shows up as drift.\n- Date-only provider timestamps are midnight UTC. They can land in the previous ET day.\n- The SHADOW replay assumes the ledger is time-ordered.\n- Budget commitments are measured at report time, not period end. Reservations with no symbol are excluded.\n",
+          "stderr": "",
+          "duration_seconds": 648.9147455692291,
+          "changed_files": [
+            {
+              "path": "mike_trade/reporting/accounting.py",
+              "status": "untracked",
+              "code": "??"
+            },
+            {
+              "path": "mike_trade/reporting/fees.py",
+              "status": "untracked",
+              "code": "??"
+            },
+            {
+              "path": "tests/unit/test_reporting_reconciliation.py",
+              "status": "untracked",
+              "code": "??"
+            }
+          ],
+          "diff_summary": "git diff reported no changes",
+          "outcome_classification": "backend_completed_with_changes",
+          "backend_timeout": false,
+          "backend_verification_timeout": false,
+          "timeout_seconds": null
+        }
+      ],
+      "write_policy_violations": [],
+      "outcome_classification": "backend_completed_with_changes",
+      "backend_timeout": false,
+      "backend_verification_timeout": false,
+      "changed_files_at_timeout_exit": [],
+      "abracapocus_verification_ran_after_backend_timeout": false,
+      "verification_owner": "abracapocus",
+      "verification_result": "skipped"
+    }
+  ],
+  "review": {
+    "status": "approved",
+    "findings": [],
+    "summary": "s.1:Review complete",
+    "created_at": "2026-10-09T00:56:03.861152"
+  },
+  "verification": {
+    "status": "skipped",
+    "checks": [],
+    "created_at": "2026-10-09T00:56:03.861160",
+    "notes": "S:skipped",
+    "profile": "focused"
+  },
+  "metadata": {
+    "run_id": "4a57dad2-a708-40f4-a908-b145d114e93f",
+    "project_name": "mike_trade",
+    "plan_version": "task-s.1",
+    "task_id": "s.1",
+    "task_title": "Implement broker fee activity ingestion and account equity reconciliation reports",
+    "task_status": "completed",
+    "selected_backend": "claude_code_cli",
+    "verification_profile": "focused",
+    "backend_reason": "phase_based",
+    "frame_failures": [],
+    "agents_md": {
+      "loaded": true,
+      "path": "/home/mike/dev/mike/abracapocus/python/abracapocus_2/AGENTS.md",
+      "rule_count": 77,
+      "sha256_12": "3f9b549ba1ce"
+    },
+    "phase_results": [
+      {
+        "phase_name": "S",
+        "status": "passed",
+        "verification": "skipped",
+        "task_results": [
+          {
+            "task_id": "s.1",
+            "status": "passed",
+            "acceptance_status": "accepted",
+            "backend": "claude_code_cli",
+            "backend_outcome_classification": "backend_completed_with_changes",
+            "changed_files": [
+              {
+                "path": "mike_trade/reporting/accounting.py",
+                "status": "untracked",
+                "code": "??"
+              },
+              {
+                "path": "mike_trade/reporting/fees.py",
+                "status": "untracked",
+                "code": "??"
+              },
+              {
+                "path": "tests/unit/test_reporting_reconciliation.py",
+                "status": "untracked",
+                "code": "??"
+              }
+            ],
+            "backend_timeout": false,
+            "backend_elapsed_seconds": 648.9147455692291,
+            "backend_timeout_seconds": null,
+            "changed_files_at_timeout_exit": [],
+            "abracapocus_verification_ran_after_backend_timeout": false,
+            "verification_owner": "abracapocus",
+            "verification_result": "skipped",
+            "verification_status": "skipped",
+            "verification_checks": [],
+            "frame_failure": false,
+            "retry_attempts": []
+          }
+        ]
+      }
+    ]
+  }
+}
