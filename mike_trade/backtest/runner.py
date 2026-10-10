@@ -10,8 +10,9 @@ from __future__ import annotations
 import hashlib
 import json
 import random
+import uuid
 from collections import defaultdict, deque
-from dataclasses import dataclass, field
+from dataclasses import dataclass, field, replace
 from datetime import UTC, datetime, timedelta
 from decimal import Decimal
 from pathlib import Path
@@ -71,6 +72,7 @@ from mike_trade.signals.decisions import (
     arbitrate_exit_decisions,
 )
 from mike_trade.strategies.base import StrategyEvaluation
+from mike_trade.strategies.indicators.core import rsi as calculate_rsi
 from mike_trade.strategies.registry import StrategyRegistry
 from mike_trade.strategies.sell.base import ExitSource
 
@@ -604,6 +606,17 @@ class BacktestRunner:
         role = PeriodRole(request.period_role)
         provenance = self.feed.provenance
         plans = self._plan(request)
+        supported_replay_timeframes = {CandleTimeframe.M1, CandleTimeframe.M5}
+        for plan in plans.values():
+            for cls in plan.all:
+                required = {*cls.spec.required_timeframes, cls.spec.trigger_timeframe}
+                unsupported = required - supported_replay_timeframes
+                if unsupported:
+                    labels = sorted(tf.value for tf in unsupported)
+                    raise ValueError(
+                        f"strategy {cls.spec.strategy_id} requires unsupported replay "
+                        f"timeframes {labels}; local 1m replay derives completed 5m bars only"
+                    )
         stop_spec = _stop_spec_from_config(request.config)
         used: dict[tuple[str, str], type] = {}
         for plan in plans.values():
@@ -687,9 +700,11 @@ class BacktestRunner:
                 }
             ).encode()
         ).hexdigest()
+        execution_id = str(uuid.uuid4())
+        started_at = datetime.now(UTC)
         manifest = RunManifest(
             run_id,
-            request.window_start,
+            started_at,
             digest,
             tuple(request.symbols),
             request.window_start,
@@ -714,6 +729,14 @@ class BacktestRunner:
             request.seed,
             tuple({"name": c.spec.strategy_id, "version": c.spec.version} for c in strategies),
             access,
+            execution_id=execution_id,
+            started_at=started_at,
+            run_purpose=(
+                str(request.config.get("run_purpose") or request.config.get("purpose"))
+                if request.config.get("run_purpose") or request.config.get("purpose")
+                else None
+            ),
+            configuration=effective,
         )
         root = Path(request.result_directory)
         scope_id = str(request.config.get("research_scope_id", "backtest:research"))
@@ -737,6 +760,9 @@ class BacktestRunner:
         protections: dict[str, _Protection] = {}
         protection_count = 0
         candles_by_symbol: dict[str, list[Candle]] = defaultdict(list)
+        strategy_candles: dict[str, dict[CandleTimeframe, deque[StrategyCandle]]] = defaultdict(
+            lambda: {tf: deque(maxlen=request.context_history_bars) for tf in CandleTimeframe}
+        )
         window: dict[str, deque[StrategyCandle]] = defaultdict(
             lambda: deque(maxlen=request.context_history_bars)
         )
@@ -752,7 +778,7 @@ class BacktestRunner:
                 state[(symbol, strategy_id)].update(dict(initial))
         vwap_session: dict[str, tuple[str, Decimal, Decimal, Decimal | None]] = {}
         entries_by_session: dict[tuple[str, str], int] = defaultdict(int)
-        timeframe_checked = False
+        rsi_values: dict[str, tuple[Decimal | None, Decimal | None]] = {}
 
         async def order_is_open(order_id: str) -> bool:
             order = await self.execution.get_order(order_id)
@@ -1074,19 +1100,6 @@ class BacktestRunner:
             plan = plans.get(symbol)
             if plan is None:
                 continue
-            if not timeframe_checked:
-                timeframe_checked = True
-                for cls in {c for p in plans.values() for c in p.all}:
-                    if cls.spec.trigger_timeframe.value != ev.candle.timeframe.value or any(
-                        tf.value != ev.candle.timeframe.value
-                        for tf in cls.spec.required_timeframes
-                    ):
-                        raise ValueError(
-                            f"strategy {cls.spec.strategy_id} needs "
-                            f"{cls.spec.trigger_timeframe.value} bars but the replay feed "
-                            f"supplies {ev.candle.timeframe.value}; derived-timeframe "
-                            "aggregation is not part of the historical replay"
-                        )
             marks[symbol] = ev.candle.close
             equity_curve.append(
                 {
@@ -1098,8 +1111,7 @@ class BacktestRunner:
             )
             candles_by_symbol[symbol].append(ev.candle)
             candle = ev.candle
-            window[symbol].append(
-                StrategyCandle(
+            strategy_bar = StrategyCandle(
                     candle.symbol,
                     CandleTimeframe(candle.timeframe.value),
                     candle.start,
@@ -1116,7 +1128,45 @@ class BacktestRunner:
                     CandleStatus.CLOSED,
                     candle.trade_count,
                 )
-            )
+            window[symbol].append(strategy_bar)
+            strategy_candles[symbol][CandleTimeframe.M1].append(strategy_bar)
+            # Derive only fully completed, contiguous five-minute buckets aligned
+            # to the regular-session open. The current 1m bar is available only
+            # at its close, so no developing or future minute can enter the bucket.
+            session = session_for(candle.start.astimezone(NEW_YORK).date())
+            elapsed = int((candle.end - session.open_utc).total_seconds() // 60)
+            m5_closed = elapsed > 0 and elapsed % 5 == 0
+            if m5_closed:
+                minute_history = list(strategy_candles[symbol][CandleTimeframe.M1])
+                parts = minute_history[-5:]
+                if len(parts) == 5 and all(
+                    b.timeframe is CandleTimeframe.M1
+                    and b.start == parts[0].start + timedelta(minutes=i)
+                    and b.start.astimezone(NEW_YORK).date() == candle.start.astimezone(NEW_YORK).date()
+                    for i, b in enumerate(parts)
+                ):
+                    strategy_candles[symbol][CandleTimeframe.M5].append(
+                        StrategyCandle(
+                            symbol, CandleTimeframe.M5, parts[0].start, parts[-1].end,
+                            parts[0].open, max(b.high for b in parts), min(b.low for b in parts),
+                            parts[-1].close, sum((b.volume for b in parts), ZERO),
+                            parts[-1].feed_id, parts[-1].consolidated, CandleOrigin.REPLAY,
+                            PriceBasis.RAW, CandleStatus.CLOSED,
+                            None if any(b.trade_count is None for b in parts)
+                            else sum((b.trade_count or 0 for b in parts), 0),
+                        )
+                    )
+                    period = next((
+                        int(plan.params[cls.spec.strategy_id].get("rsi_period", 14))
+                        for cls in plan.sells if cls.spec.strategy_id == "rsi_reversal"
+                    ), 14)
+                    calc_values = calculate_rsi(
+                        (b.close for b in strategy_candles[symbol][CandleTimeframe.M5]), period
+                    )
+                    rsi_values[symbol] = (
+                        calc_values[-1] if calc_values else None,
+                        calc_values[-2] if len(calc_values) >= 2 else None,
+                    )
             session_date = candle.start.astimezone(NEW_YORK).date().isoformat()
             previous_session = vwap_session.get(symbol)
             if previous_session is None or previous_session[0] != session_date:
@@ -1148,6 +1198,14 @@ class BacktestRunner:
                     due_at=ev.available_at,
                 )
             )
+            if m5_closed and strategy_candles[symbol][CandleTimeframe.M5] and strategy_candles[symbol][CandleTimeframe.M5][-1].end == candle.end:
+                due += self.scheduler.process(
+                    CandleClosedEvent(
+                        symbol, CandleTimeframe.M5, candle.end,
+                        snapshot_version=len(strategy_candles[symbol][CandleTimeframe.M5]),
+                        due_at=ev.available_at,
+                    )
+                )
             due_ids = {item.strategy_id for item in due if item.symbol == symbol}
             session_status = self.clock.session_status()
             age = ev.available_at - candle.end
@@ -1165,17 +1223,26 @@ class BacktestRunner:
                 session_status,
                 ev.available_at.astimezone(NEW_YORK).date().isoformat(),
                 freshness,
-                {CandleTimeframe(candle.timeframe.value): tuple(window[symbol])},
-                {"vwap": latest_vwap, "vwap_prev": prior_vwap},
+                {tf: tuple(bars) for tf, bars in strategy_candles[symbol].items() if bars},
+                {"vwap": latest_vwap, "vwap_prev": prior_vwap,
+                 "rsi": rsi_values.get(symbol, (None, None))[0],
+                 "rsi_prev": rsi_values.get(symbol, (None, None))[1]},
             )
 
             def evaluate(cls: type) -> StrategyEvaluation | None:
                 spec = cls.spec
                 if spec.strategy_id not in due_ids:
                     return None
-                if len(candles_by_symbol[symbol]) < max(1, spec.warmup_bars):
+                selected_history = strategy_candles[symbol].get(spec.trigger_timeframe, ())
+                if len(selected_history) < max(1, spec.warmup_bars):
                     return None
-                key = (symbol, spec.strategy_id, candle.start)
+                if spec.trigger_timeframe.value != candle.timeframe.value and not (
+                    spec.trigger_timeframe is CandleTimeframe.M5 and m5_closed
+                    and selected_history and selected_history[-1].end == candle.end
+                ):
+                    return None
+                trigger_bar = selected_history[-1]
+                key = (symbol, spec.strategy_id, trigger_bar.start)
                 if key in trigger_rows:
                     return None
                 trigger_rows.add(key)
@@ -1183,13 +1250,30 @@ class BacktestRunner:
                     context, plan.params[spec.strategy_id], state[(symbol, spec.strategy_id)]
                 )
                 state[(symbol, spec.strategy_id)].update(evaluation.state_updates)
+                context_bars = [
+                    bar for history in strategy_candles[symbol].values() for bar in history
+                ]
+                context_max_bar_end = max((bar.end for bar in context_bars), default=None)
                 row = {
                     "symbol": symbol,
                     "strategy": spec.strategy_id,
                     "side": spec.side.value,
                     "version": spec.version,
                     "time": ev.available_at,
-                    "bar_time": candle.start,
+                    "bar_time": trigger_bar.start,
+                    "trigger_timeframe": spec.trigger_timeframe.value,
+                    "trigger_bar_end": trigger_bar.end,
+                    "trigger_history_count": len(selected_history),
+                    "context_max_bar_end": context_max_bar_end,
+                    "context_indicators": {
+                        key: context.indicators.get(key)
+                        for key in ("rsi", "rsi_prev")
+                    },
+                    "trigger_bar_ohlcv": {
+                        "open": trigger_bar.open, "high": trigger_bar.high,
+                        "low": trigger_bar.low, "close": trigger_bar.close,
+                        "volume": trigger_bar.volume,
+                    },
                     "signal_id": evaluation.signal_id,
                     "reference_price": evaluation.reference_price,
                     "reason_codes": [x.value for x in evaluation.reason_codes],
@@ -1298,6 +1382,8 @@ class BacktestRunner:
                         await submit(candidates[result.selected.signal_id][1], context, symbol)
         payload = {
             "schema_version": "2",
+            "run_id": run_id,
+            "execution_id": execution_id,
             "evaluations": evaluations,
             "signals": signals,
             "intents": intents,
@@ -1307,10 +1393,12 @@ class BacktestRunner:
             "cycles": cycles + list(open_cycles.values()),
             "equity_curve": equity_curve,
         }
+        manifest = replace(manifest, completed_at=datetime.now(UTC))
         result_hash = hashlib.sha256(canonical_json(payload).encode()).hexdigest()
-        result_path = root / f"{run_id}.results.json"
+        artifact_root = root / "executions" / execution_id
+        result_path = artifact_root / f"{run_id}.results.json"
         result_path.parent.mkdir(parents=True, exist_ok=True)
-        manifest_path = root / f"{run_id}.manifest.json"
+        manifest_path = artifact_root / f"{run_id}.manifest.json"
         # Workers may finish duplicate job specs concurrently. Coordinate the
         # small immutable-artifact commit section; simulations remain parallel.
         import fcntl
@@ -1340,7 +1428,7 @@ class BacktestRunner:
                         f.write(canonical_json(payload))
                         f.flush()
                     # Publish the manifest only after the immutable result ledger is complete.
-                    write_manifest(manifest, root)
+                    write_manifest(manifest, artifact_root)
             finally:
                 fcntl.flock(lock.fileno(), fcntl.LOCK_UN)
         return BacktestResult(

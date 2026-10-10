@@ -154,6 +154,133 @@ It never downloads per strategy. An identical complete backtest rerun in the
 same result directory verifies the content-addressed ledger and reuses it; a
 different result fails closed rather than overwriting the artifact.
 
+## Frozen 100-symbol historical universe (version 1)
+
+`config/research_universe_100_v1.json` is the authoritative frozen member list
+(`us-liquid-research-100-v1`, selected 2026-10-10 14:42:28 UTC): 83 US-listed
+equities and 17 unleveraged US-listed ETFs. The file records ticker identity at
+selection, asset class, a broad exposure group, source links, the methodology,
+selection timestamp, Alpaca/IEX/raw provenance, and the exact research window.
+Its SHA-256 is fixed in acquisition progress. Editing it after acquisition
+starts is refused; publish a new version for a different membership or method.
+
+This is a **selection-date candidate universe**, not historical point-in-time
+membership. It intentionally spans technology, finance, consumer, health care,
+industrials, energy/materials/utilities, actively traded smaller companies,
+broad-market ETFs, and sector ETFs. It excludes OTC listings, leveraged and
+inverse funds, duplicate share classes, and recently introduced symbols that
+cannot span the one-year window. The stock candidates were checked against
+[Nasdaq's stock screener](https://www.nasdaq.com/market-activity/stocks/screener)
+on 2026-10-10: all 83 appeared in the current listing export; all 17 ETFs
+appeared in Nasdaq's current ETF export. A current share-volume screen found
+82 of 83 stocks at or above 500,000 shares; BLK showed 437,376 shares at a
+$1,065.35 last sale (roughly $466 million of turnover). This is candidate
+metadata, not a historical liquidity guarantee. The ETF identities and
+sector roles are drawn from sponsor lists,
+including [State Street's sector funds](https://www.ssga.com/us/en/individual/capabilities/equities/sector-investing/select-sector-etfs),
+[iShares' fund list](https://www.ishares.com/us/products/etf-investments),
+and the listed SPDR market funds. No return, strategy score, or future
+profitability was used to select members. A full year of IEX activity is not
+asserted until acquisition and verification finish. Smaller names and funds
+may have sparse IEX bars, and corporate actions remain unadjusted by design.
+Future point-in-time universes need instrument identifiers and per-member
+effective intervals, recorded as new immutable universe versions; this v1
+file makes no claim about membership before its selection date.
+
+The requested observation interval is `[2025-10-09T00:00:00Z,
+2026-10-09T00:00:00Z)`. Alpaca's historical endpoint documents an inclusive
+`end`, so the adapter filters returned timestamps to the project's exclusive
+end convention. Bars retain the provider's UTC event timestamps. Monthly UTC
+request windows are capped at 31 days and paginated with a 10,000-bar page
+limit and three-page safety cap; regular NYSE sessions are selected with the
+existing New York calendar, including daylight-saving and scheduled early
+closes. The feed is explicitly `iex` and the adjustment is explicitly `raw`;
+neither is silently substituted. IEX is one venue rather than the consolidated
+market, so missing minute bars may reflect no IEX trade rather than an outage.
+See [Alpaca's historical bars reference](https://docs.alpaca.markets/us/reference/stockbars)
+and [market-data plan limits](https://docs.alpaca.markets/us/docs/about-market-data-api).
+
+Run the new commands from the isolated worktree at
+`/home/mike/dev/mike/stocks/python/mike_trade-research-universe`:
+
+```sh
+make research-data-plan       # no network request or download
+make research-data-preflight  # one bounded five-minute IEX probe
+make research-data-status     # progress, failures and per-symbol coverage
+make research-data-verify     # manifests, SHA-256, Parquet rows and coverage
+```
+
+`make research-data-acquire` is the operator-started foreground command.
+The default is one worker and 20 historical requests per minute; at most two
+workers and 60 requests/minute can be configured with `RESEARCH_WORKERS` and
+`RESEARCH_RPM`. This is deliberately below Alpaca Basic's published 200/minute
+historical limit and does not assume a higher account entitlement. Every
+HTTP request retains the existing 20-second timeout, and 429, transient 5xx,
+and transport failures receive capped exponential backoff with jitter and
+bounded retries. An entitlement/permission failure stops the affected window
+with its HTTP status and is visible in `status`; it never selects SIP.
+
+For a durable detached run, start a transient **system** unit. It runs as
+`mike`, persists independently of the SSH session or an AI session, and logs
+to the system journal. The timestamp makes each invocation's unit name
+unique; the acquisition's nonblocking file lock prevents simultaneous jobs.
+Do not run this command until ready to acquire:
+
+```sh
+cd /home/mike/dev/mike/stocks/python/mike_trade-research-universe
+sudo systemd-run --unit="mike-trade-research-100-v1-$(date -u +%Y%m%dT%H%M%SZ)" \
+  --uid=mike --gid=mike --working-directory="$PWD" --property=Type=exec \
+  --remain-after-exit \
+  /usr/bin/make research-data-acquire
+```
+
+The unit name prints at launch. Monitor progress with `make
+research-data-status`, read logs with `sudo journalctl -u UNIT_NAME -f`, and
+inspect the process exit with `sudo systemctl show UNIT_NAME -p ActiveState
+-p Result -p ExecMainStatus`. A zero exit code means all 100 full-range
+snapshots completed with no unresolved window failures. A nonzero exit or a
+recorded failure needs review. To resume after interruption, rerun the same
+`systemd-run` command (its timestamp gives a new unit name), or run `make
+research-data-acquire` in the foreground. No container restart or live
+subscription change is involved.
+
+Persistent output is under the existing host
+`/home/mike/dev/mike/stocks/python/mike_trade/research/data`, which is mounted
+outside disposable research containers. The existing DuckDB catalog and
+immutable Parquet/manifests are reused. Each completed monthly window is
+published as an immutable snapshot; progress is checkpointed atomically under
+`research/data/acquisition/us-liquid-research-100-v1/state.json`. Per-window
+coverage files in its `coverage/` directory record the source ticker metadata,
+snapshot ID and checksum, observed bar count, first/last provider timestamp,
+expected regular-session minutes, and every missing interval. A crash after
+snapshot publication but before checkpoint can discover and verify that
+snapshot on restart. Existing fully covering snapshots are verified and
+reused. Once a symbol's 12 windows are complete, a full-range immutable
+snapshot is published for existing `research-backtest` and `research-batch`
+selection. The full snapshot ID and checksum are in the progress state.
+Failed windows remain listed with symbol/window and error, are retried on the
+next acquire run, and cannot erase an earlier valid snapshot.
+
+The theoretical regular-session upper bound is roughly 10 million one-minute
+symbol slots (100 symbols × about 252 sessions × 390 minutes); IEX may have
+fewer actual bars. Plan for roughly 1–10 GiB of Parquet, manifests, coverage
+metadata, and final full-range copies until measured compression is known.
+The preflight requires at least 10 GiB free and reports actual free space,
+cached windows, and request estimates. The first plan found 9 monthly windows
+covered by existing NVDA, IBM, and TSLA snapshots, leaving 1,191 monthly
+windows before pagination/retries. The 2026-10-10 bounded preflight queried
+the oldest 2025-10-09 five-minute window, returned six NVDA IEX bars, and
+confirmed configured data credentials and historical
+API access. It does not establish the other 99 symbols' completeness.
+
+For backtests, pin the full-range `dataset_id` from status or the progress
+state in the existing experiment JSON. Preserve the universe file/hash,
+window coverage files, snapshot manifests, and backtest manifests together.
+Future ML work should use the same immutable bars and explicit training/test
+time splits; acquisition intentionally computes no hindsight indicators or
+features. A study of dates before 2026-10-10 using this selected-today list
+has survivorship/selection bias even when every bar checksum verifies.
+
 ## R730 research server
 
 The R730 checkout is `/home/mike/dev/mike/stocks/python/mike_trade` on

@@ -399,8 +399,16 @@ class BacktestResultsIndex:
             return None
         return raw
 
-    def _results_for(self, run_id: str) -> dict[str, Any]:
-        raw = self._read_json_file(self._directory / f"{run_id}.results.json")
+    def _results_for(self, run_id: str, manifest_path: Path | None = None) -> dict[str, Any]:
+        path = (
+            manifest_path.with_name(manifest_path.name.replace(".manifest.json", ".results.json"))
+            if manifest_path is not None
+            else self._directory / f"{run_id}.results.json"
+        )
+        if manifest_path is None and not path.is_file():
+            matches = sorted(self._directory.glob(f"executions/*/{run_id}.results.json"))
+            path = matches[0] if matches else path
+        raw = self._read_json_file(path)
         return raw if raw is not None else {}
 
     def _summary(self, manifest: dict[str, Any], results: dict[str, Any]) -> dict[str, Any]:
@@ -449,10 +457,14 @@ class BacktestResultsIndex:
             "warnings": list(metrics.warnings),
         }
 
-    def _row(self, manifest: dict[str, Any]) -> dict[str, Any]:
-        summary = self._summary(manifest, self._results_for(str(manifest["run_id"])))
+    def _row(self, manifest: dict[str, Any], manifest_path: Path | None = None) -> dict[str, Any]:
+        summary = self._summary(
+            manifest,
+            self._results_for(str(manifest.get("execution_id") or manifest["run_id"]), manifest_path),
+        )
         return {
             "run_id": str(manifest["run_id"]),
+            "execution_id": manifest.get("execution_id"),
             "created_at": str(manifest["created_at"]),
             "symbols": [str(item) for item in manifest["symbols"]],
             "window": {
@@ -473,10 +485,12 @@ class BacktestResultsIndex:
         if not self._directory.is_dir():
             return []
         manifests: list[dict[str, Any]] = []
-        for path in sorted(self._directory.glob("*.manifest.json")):
+        paths = sorted(self._directory.glob("*.manifest.json"))
+        paths.extend(sorted(self._directory.glob("executions/*/*.manifest.json")))
+        for path in paths:
             record = self._manifest_record(path)
             if record is not None:
-                manifests.append(record)
+                manifests.append({**record, "_artifact_path": str(path)})
         manifests.sort(
             key=lambda raw: (str(raw.get("created_at", "")), str(raw.get("run_id", ""))),
             reverse=False,
@@ -493,7 +507,10 @@ class BacktestResultsIndex:
         deterministic: list[dict[str, Any]] = []
         for created in sorted(grouped, reverse=True):
             deterministic.extend(sorted(grouped[created], key=lambda raw: str(raw["run_id"])))
-        return [self._row(record) for record in deterministic[:limit]]
+        return [
+            self._row(record, Path(record["_artifact_path"]))
+            for record in deterministic[:limit]
+        ]
 
     def get(self, run_id: str) -> dict[str, Any] | None:
         """Return the full record (manifest, summary, trades) for ``run_id``."""
@@ -501,14 +518,25 @@ class BacktestResultsIndex:
             return None
         if "/" in run_id or "\\" in run_id or ".." in run_id:
             return None
-        manifest = self._manifest_record(self._directory / f"{run_id}.manifest.json")
+        manifest_path = self._directory / f"{run_id}.manifest.json"
+        if not manifest_path.is_file():
+            candidates = sorted(self._directory.glob(f"executions/*/{run_id}.manifest.json"))
+            if not candidates:
+                candidates = [
+                    path for path in sorted(self._directory.glob("executions/*/*.manifest.json"))
+                    if (record := self._manifest_record(path)) is not None
+                    and record.get("execution_id") == run_id
+                ]
+            manifest_path = candidates[0] if candidates else manifest_path
+        manifest = self._manifest_record(manifest_path)
         if manifest is None:
             return None
-        results = self._results_for(run_id)
+        results = self._results_for(str(manifest.get("execution_id") or run_id), manifest_path)
         summary = self._summary(manifest, results)
         trades = self._trades(manifest, results)
         return {
-            "run_id": run_id,
+            "run_id": str(manifest["run_id"]),
+            "execution_id": manifest.get("execution_id"),
             "manifest": _jsonable(dict(manifest)),
             "summary": _jsonable(summary),
             "trades": _jsonable(trades),

@@ -408,12 +408,20 @@ report-export: ## Export the trade report (VALUE=dataset, OUT=file path)
 # --- backtests ---
 
 .PHONY: backtest backtest-status backtest-report backtest-list research-build research-data research-six research-backtest research-batch research-results research-sync-r730
+.PHONY: research-data-plan research-data-preflight research-data-acquire research-data-status research-data-verify
 
 WORKERS ?= auto
 JOBS ?=
 RESEARCH_REMOTE ?= mike@192.168.254.147
 RESEARCH_REMOTE_ROOT ?= /home/mike/dev/mike/stocks/python/mike_trade
 RESEARCH_SSH ?= ssh
+RESEARCH_UNIVERSE ?= config/research_universe_100_v1.json
+RESEARCH_DATA_ROOT ?= /home/mike/dev/mike/stocks/python/mike_trade/research/data
+RESEARCH_PYTHON ?= /home/mike/dev/mike/stocks/python/mike_trade/.venv/bin/python
+RESEARCH_ENV ?= /home/mike/dev/mike/stocks/python/mike_trade/.env
+RESEARCH_WORKERS ?= 1
+RESEARCH_RPM ?= 20
+RESEARCH_UNIVERSE_FLAGS := --universe "$(RESEARCH_UNIVERSE)" --root "$(RESEARCH_DATA_ROOT)"
 
 research-build: ## Build only the manually invoked research image
 	docker compose build mike-trade-research
@@ -435,6 +443,21 @@ backtest-list: ## List recorded backtest runs
 
 research-data: ## Acquire/reuse historical bars (SYMBOLS=... START=... END=...)
 	docker compose run --rm --no-deps mike-trade-research research-data acquire --symbols "$(SYMBOLS)" --start "$(START)" --end "$(END)"
+
+research-data-plan: ## Show frozen 100-symbol acquisition plan without downloading
+	PYTHONPATH="$(CURDIR)" "$(RESEARCH_PYTHON)" -m mike_trade.cli research-data plan $(RESEARCH_UNIVERSE_FLAGS)
+
+research-data-preflight: ## Check disk, credentials and one bounded Alpaca IEX request
+	@set -a; . "$(RESEARCH_ENV)"; set +a; PYTHONPATH="$(CURDIR)" "$(RESEARCH_PYTHON)" -m mike_trade.cli research-data preflight $(RESEARCH_UNIVERSE_FLAGS)
+
+research-data-acquire: ## Operator-started resumable 100-symbol acquisition (RESEARCH_WORKERS=1|2)
+	@set -a; . "$(RESEARCH_ENV)"; set +a; PYTHONPATH="$(CURDIR)" "$(RESEARCH_PYTHON)" -m mike_trade.cli research-data acquire-universe $(RESEARCH_UNIVERSE_FLAGS) --workers "$(RESEARCH_WORKERS)" --requests-per-minute "$(RESEARCH_RPM)"
+
+research-data-status: ## Show 100-symbol progress, failures and coverage totals
+	PYTHONPATH="$(CURDIR)" "$(RESEARCH_PYTHON)" -m mike_trade.cli research-data status $(RESEARCH_UNIVERSE_FLAGS)
+
+research-data-verify: ## Verify completed universe manifests, checksums and Parquet consistency
+	PYTHONPATH="$(CURDIR)" "$(RESEARCH_PYTHON)" -m mike_trade.cli research-data verify $(RESEARCH_UNIVERSE_FLAGS)
 
 research-six: ## Run the six VWAP lifecycle focus experiments (START=... END=... WORKERS=auto|N)
 	docker compose run --rm --no-deps mike-trade-research research-six --start "$(START)" --end "$(END)" --workers "$(WORKERS)" --results /app/research/final-six

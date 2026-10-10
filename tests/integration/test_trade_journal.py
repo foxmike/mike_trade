@@ -295,13 +295,97 @@ def test_backtest_older_artifact_is_listed_without_invented_attribution_or_bars(
             }
         )
     )
-    assert any(row["run_id"] == run for row in client.get("/api/research/runs").json()["runs"])
+    runs = client.get("/api/research/runs").json()["runs"]
+    listed = next(row for row in runs if row["run_id"] == run)
+    assert listed["execution_at"] is None
+    assert listed["execution_identity_uncertain"] is True
+    run_detail = client.get(f"/api/research/runs/{listed['selection_id']}").json()
+    assert run_detail["run"]["run_id"] == run
+    assert run_detail["run"]["execution_at"] is None
     trade = client.get(f"/api/research/runs/{run}/trades").json()["items"][0]
     assert trade["execution_mode"] == "BACKTEST" and trade["entry_strategy_id"] is None
     assert trade["entry_signal_id"] is None and trade["attribution_complete"] is False
     assert trade["exit_reason"] == "STRATEGY_EXIT"
     detail = client.get(f"/api/research/runs/{run}/trades/old-cycle").json()
     assert detail["bars_available"] is False and "unavailable" in detail["bars_limitation"]
+
+
+def test_execution_scoped_artifacts_appear_in_research_api(tmp_path: Path) -> None:
+    client, _ = seed(tmp_path / "ops.sqlite")
+    execution_id = "execution-123"
+    run_id = "experiment-abc"
+    artifact_dir = tmp_path / "research" / "executions" / execution_id
+    artifact_dir.mkdir(parents=True)
+    manifest = {
+        "run_id": run_id,
+        "execution_id": execution_id,
+        "created_at": "2026-10-08T14:29:00Z",
+        "started_at": "2026-10-08T14:29:00Z",
+        "completed_at": "2026-10-08T14:32:00Z",
+        "completion_status": "COMPLETED",
+        "config_hash": "config-hash",
+        "symbols": ["NVDA"],
+        "window_start": "2026-10-08T14:30:00Z",
+        "window_end": "2026-10-08T14:32:00Z",
+        "period_role": "RESEARCH",
+        "data_revision": "local-fixture",
+        "dataset_hash": "dataset-hash",
+        "starting_capital": "100000",
+        "data_provenance": {"source": "local-parquet", "point_in_time": True},
+        "strategies": [{"name": "vwap_bounce", "version": "1.0.0"},
+                        {"name": "vwap_breakdown", "version": "1.0.0"}],
+        "configuration": {
+            "strategy_params": {"vwap_bounce": {"example": "value"}},
+            "strategy_collections": {"NVDA": {"buy": ["vwap_bounce"],
+                                                 "sell": ["vwap_breakdown"]}},
+            "protective_stop": {"type": "fixed", "stop_percent": "2"},
+        },
+    }
+    result = {
+        "schema_version": "2",
+        "run_id": run_id,
+        "execution_id": execution_id,
+        "cycles": [{
+            "cycle_id": "cycle-1", "symbol": "NVDA",
+            "opened_at": "2026-10-08T14:30:00Z", "closed_at": "2026-10-08T14:31:00Z",
+            "entry_strategy": "vwap_bounce", "exit_strategy": "vwap_breakdown",
+            "exit_reason": "STRATEGY_SELL",
+        }],
+        "fills": [
+            {"fill_id": "buy-1", "cycle_id": "cycle-1", "side": "BUY", "symbol": "NVDA",
+             "quantity": "2", "price": "100", "fee": "0", "time": "2026-10-08T14:30:00Z",
+             "strategy": "vwap_bounce"},
+            {"fill_id": "sell-1", "cycle_id": "cycle-1", "side": "SELL", "symbol": "NVDA",
+             "quantity": "2", "price": "105", "fee": "0", "time": "2026-10-08T14:31:00Z",
+             "strategy": "vwap_breakdown", "exit_reason": "STRATEGY_SELL"},
+        ],
+        "equity_curve": [{"equity": "100000"}, {"equity": "100010"}],
+    }
+    (artifact_dir / f"{run_id}.manifest.json").write_text(json.dumps(manifest))
+    (artifact_dir / f"{run_id}.results.json").write_text(json.dumps(result))
+
+    listed = client.get("/api/research/runs").json()["runs"]
+    row = next(item for item in listed if item["execution_id"] == execution_id)
+    assert row["selection_id"] == execution_id
+    assert row["execution_at"] == "2026-10-08T14:29:00Z"
+    assert row["buy_strategies"] == ["vwap_bounce"]
+    assert row["sell_strategies"] == ["vwap_breakdown"]
+    assert row["completed_trade_count"] == 1
+    assert row["net_pnl"] == "10"
+
+    run_detail = client.get(f"/api/research/runs/{execution_id}").json()
+    assert run_detail["run"]["run_id"] == run_id
+    assert run_detail["configuration"]["protective_stop"]["type"] == "fixed"
+    trades = client.get(f"/api/research/runs/{execution_id}/trades").json()
+    assert trades["total"] == 1
+    trade = trades["items"][0]
+    assert trade["entry_strategy_id"] == "vwap_bounce"
+    assert trade["exit_strategy_id"] == "vwap_breakdown"
+    assert trade["realized_pnl"] == "10"
+    inspection = client.get(
+        f"/api/research/runs/{execution_id}/trades/cycle-1"
+    ).json()
+    assert inspection["trade"]["exit_price"] == "105"
 
 
 def test_account_scope_isolation_and_filters(tmp_path: Path) -> None:
