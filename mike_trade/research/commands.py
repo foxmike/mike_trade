@@ -483,6 +483,15 @@ def _research_registry() -> Any:
     from mike_trade.strategies.buy.money_flow_index import MoneyFlowIndexBuy
     from mike_trade.strategies.buy.chaikin_money_flow import ChaikinMoneyFlowBuy
     from mike_trade.strategies.buy.engulfing_candle_reversal import EngulfingCandleReversalBuy
+    from mike_trade.strategies.buy.awesome_oscillator import AwesomeOscillatorBuy
+    from mike_trade.strategies.buy.hull_moving_average import HullMovingAverageBuy
+    from mike_trade.strategies.buy.keltner_channel_breakout import KeltnerChannelBreakoutBuy
+    from mike_trade.strategies.buy.linear_regression_trend import LinearRegressionTrendBuy
+    from mike_trade.strategies.buy.moving_average_envelope import MovingAverageEnvelopeBuy
+    from mike_trade.strategies.buy.moving_average_reclaim import MovingAverageReclaimBuy
+    from mike_trade.strategies.buy.nr7_breakout import Nr7BreakoutBuy
+    from mike_trade.strategies.buy.rate_of_change_momentum import RateOfChangeMomentumBuy
+    from mike_trade.strategies.buy.triple_moving_average import TripleMovingAverageBuy
     from mike_trade.strategies.buy.dmi_crossover import DmiCrossoverBuy
     from mike_trade.strategies.buy.donchian_channel_breakout import DonchianChannelBreakoutBuy
     from mike_trade.strategies.buy.ema_crossover import EmaCrossoverBuy
@@ -501,6 +510,9 @@ def _research_registry() -> Any:
     from mike_trade.strategies.sell.money_flow_index_reversal import MoneyFlowIndexReversalSell
     from mike_trade.strategies.sell.chaikin_money_flow_reversal import ChaikinMoneyFlowReversalSell
     from mike_trade.strategies.sell.bearish_engulfing_exit import BearishEngulfingExitSell
+    from mike_trade.strategies.sell.awesome_oscillator_reversal import AwesomeOscillatorReversalSell
+    from mike_trade.strategies.sell.keltner_channel_breakdown import KeltnerChannelBreakdownSell
+    from mike_trade.strategies.sell.previous_swing_low_break import PreviousSwingLowBreakSell
     from mike_trade.strategies.sell.dmi_bearish_crossover import DmiBearishCrossoverSell
     from mike_trade.strategies.sell.donchian_lower_channel_exit import DonchianLowerChannelExitSell
     from mike_trade.strategies.sell.ema_bearish_crossover import EmaBearishCrossoverSell
@@ -546,6 +558,15 @@ def _research_registry() -> Any:
         MoneyFlowIndexBuy,
         ChaikinMoneyFlowBuy,
         EngulfingCandleReversalBuy,
+        AwesomeOscillatorBuy,
+        HullMovingAverageBuy,
+        KeltnerChannelBreakoutBuy,
+        LinearRegressionTrendBuy,
+        MovingAverageEnvelopeBuy,
+        MovingAverageReclaimBuy,
+        Nr7BreakoutBuy,
+        RateOfChangeMomentumBuy,
+        TripleMovingAverageBuy,
         AroonBearishReversalSell,
         CciZeroLineBreakdownSell,
         DmiBearishCrossoverSell,
@@ -564,6 +585,9 @@ def _research_registry() -> Any:
         MoneyFlowIndexReversalSell,
         ChaikinMoneyFlowReversalSell,
         BearishEngulfingExitSell,
+        AwesomeOscillatorReversalSell,
+        KeltnerChannelBreakdownSell,
+        PreviousSwingLowBreakSell,
     ):
         registry.register(cls)
     return registry

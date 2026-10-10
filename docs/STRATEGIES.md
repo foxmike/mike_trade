@@ -2189,19 +2189,15 @@ First-batch totals: 28 `implemented` (14 BUY, 14 SELL), 2
 | `rsi_reversal` | SELL | `technical` / `oscillator` |
 
 These six are mapped to inventory candidates as `existing_equivalent` only when
-the matching candidate name is recorded; the full candidate list is not in the
-repository (see §9.4), so no mapping is asserted here.
+the matching candidate name is recorded. The complete candidate list and current
+status are in [TECHNICAL_STRATEGY_INVENTORY.md](TECHNICAL_STRATEGY_INVENTORY.md).
 
 ### 9.4 Remaining candidates
 
-The original inventory is 106 BUY and 50 SELL candidate methods. The list of
-candidate names was not present in the repository when the first batch was
-written, so only the 30 methods named in the batch request are itemized above.
-Assuming those 30 belong to the original inventory, **91 BUY and 35 SELL
-candidates remain `pending`**; each should be appended to §9.1 by name, with its
-status, when the candidate list is added. Strategies from books, videos,
-individual traders or in-house research will be added as separate, separately
-named implementations and are not part of this batch.
+The original inventory is 106 BUY and 50 SELL candidate methods. See
+[TECHNICAL_STRATEGY_INVENTORY.md](TECHNICAL_STRATEGY_INVENTORY.md) for every
+candidate and the current status counts. This section records the first batch's
+methods only.
 ## 10. Finite-window strategy additions (6 BUY, 4 SELL)
 
 These methods use completed 1-minute candles, declared through each strategy's own
@@ -2232,3 +2228,33 @@ library holds 23 BUY and 21 SELL.
 
 For the complete 156-candidate implementation status, see
 [`TECHNICAL_STRATEGY_INVENTORY.md`](TECHNICAL_STRATEGY_INVENTORY.md).
+
+## 11. Technical strategy batch 2 (9 BUY, 3 SELL)
+
+The following rules use completed M1 bars and retain only the shared last-signal-bar
+state. Every configurable lookback implements `required_bars(params)`; the declared
+warmup is the requirement at its default. Rolling indicators use observed bars
+without filling missing minutes. Signal edges require adjacent completed bars;
+NR7 requires its entire setup to be consecutive, and the five-bar swing pivot
+requires consecutive candles around the pivot. SELL signals remain advisory
+through `SellRule` and the existing exit arbitration. The registered library now
+contains 32 BUY and 24 SELL methods.
+
+| Strategy ID | Role | Exact signal; default lookback | Published interpretation |
+|---|---|---|---|
+| `rate_of_change_momentum` | BUY | ROC(close,12) crosses above zero; 14 bars | StockCharts ROC centerline crossover. |
+| `moving_average_envelope` | BUY | Close crosses upper SMA(20) × 1.025; 21 bars | StockCharts percentage moving-average envelope; SMA center. |
+| `moving_average_reclaim` | BUY | Close crosses above SMA(20); 21 bars | StockCharts price-to-moving-average crossover. |
+| `triple_moving_average` | BUY | SMA(5) first exceeds both SMA(10) and SMA(20); 21 bars | StockCharts triple moving-average crossover; configured periods must increase. |
+| `hull_moving_average` | BUY | HMA(20) turns from flat/falling to rising; 25 bars | Alan Hull turning-point method; nearest-integer half and square-root lengths. |
+| `linear_regression_trend` | BUY | 20-bar least-squares close slope crosses above zero; 21 bars | StockCharts Slope bullish centerline crossing. |
+| `nr7_breakout` | BUY | Prior bar is strictly narrowest of 7 and next close exceeds its high; 8 bars | Toby Crabel NR7, adapted to M1 bars. Parameter `period=4` covers NR4. |
+| `awesome_oscillator` | BUY | SMA(5, median price) − SMA(34, median price) crosses above zero; 35 bars | Bill Williams AO zero-line buy as documented by TradingView. |
+| `keltner_channel_breakout` | BUY | Close crosses above SMA(10, typical price) + SMA(10, high−low); 11 bars | Chester Keltner's original finite channel, not the later EMA/ATR variant. |
+| `awesome_oscillator_reversal` | SELL | AO crosses below zero; 35 bars | Bill Williams AO zero-line sell as documented by TradingView. |
+| `keltner_channel_breakdown` | SELL | Close crosses below original Keltner lower channel; 11 bars | Chester Keltner original SMA/range channel. |
+| `previous_swing_low_break` | SELL | Close breaks latest confirmed five-bar fractal low within 20 prior bars; 21 bars | Bill Williams fractal level break; two right-hand bars must already be closed. |
+
+The complete source links, parameter ranges, and interpretation limits are in
+the individual `StrategySpec` declarations. These strategies provide signals;
+they do not select order size, submit orders, or change protective stops.
