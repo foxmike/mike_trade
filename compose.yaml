@@ -51,7 +51,7 @@ services:
       mike-trade-engine:
         condition: service_healthy
     ports:
-      - "127.0.0.1:8765:8765"
+      - "0.0.0.0:8765:8765"
     healthcheck:
       test: ["CMD", "python", "-m", "mike_trade.healthcheck", "api"]
       interval: 10s
