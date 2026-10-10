@@ -51,6 +51,35 @@ npm run typecheck    # tsc --noEmit (frontend type gate)
   `make dashboard`. Build output uses hashed asset filenames
   (`assets/[name]-[hash].js`) with no sourcemaps.
 
+### Dashboard-only Compose operation
+
+On a host where the trading engine runs elsewhere, start only the existing
+dashboard service with:
+
+```sh
+make up-dashboard
+```
+
+The dashboard is then available at <http://localhost:8765/>. This command
+starts `mike-trade-api` with Compose's `--no-deps` option, so it neither starts
+nor waits for `mike-trade-engine` and does not open a market-data connection.
+The dashboard service is independently buildable from the existing application
+Dockerfile and uses the normal read-only API together with the existing
+`./state/dev` and `./research` mounts, preserving access to locally available
+operational records, trade history, and research artifacts.
+
+The engine may be absent or offline. Persisted records remain inspectable;
+engine-dependent values are marked stale or `OFFLINE`, and unavailable bars
+or attribution remain explicitly unavailable. Stop only this dashboard with:
+
+```sh
+make down-dashboard
+```
+
+That command stops `mike-trade-api` without stopping or removing the trading
+engine, research containers, or other Compose services. The existing `make up`
+and `make down` commands retain their normal full-stack behavior.
+
 ## 3. Systemd unit usage (t.1 artifacts)
 
 - `deploy/systemd/mike-trade-dashboard.service` is an **optional

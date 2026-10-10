@@ -34,6 +34,9 @@ services:
       start_period: 30s
 
   mike-trade-api:
+    build:
+      context: .
+      dockerfile: Dockerfile
     image: mike-trade:dev
     entrypoint: ["python", "-m", "mike_trade.dashboard.server"]
     environment:

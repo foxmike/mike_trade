@@ -46,11 +46,14 @@ BASE_FLAGS := $(ACCOUNT_FLAG) $(SCENARIO_FLAG) $(FORMAT_FLAG)
 FILTER_FLAGS := $(BASE_FLAGS) $(SYMBOL_FLAG) $(STRATEGY_FLAG) $(SINCE_FLAG) $(UNTIL_FLAG) $(LIMIT_FLAG) $(RUN_FLAG)
 
 .PHONY: help install update test test-unit test-integration test-paper lint typecheck
-.PHONY: up start stop restart down build rebuild status logs ps
+.PHONY: up up-dashboard start stop restart down down-dashboard build rebuild status logs ps
 .PHONY: engine-start engine-stop engine-restart engine-status app-logs
 
 up: ## Start Compose services in the background without rebuilding
 	docker compose up -d
+
+up-dashboard: ## Start only the read-only dashboard without the trading engine
+	docker compose up -d --no-deps mike-trade-api
 
 start: ## Start existing stopped Compose containers
 	docker compose start
@@ -63,6 +66,9 @@ restart: ## Restart Compose services
 
 down: ## Remove Compose containers and network; preserve persistent data
 	docker compose down
+
+down-dashboard: ## Stop only the dashboard service
+	docker compose stop mike-trade-api
 
 build: ## Build Compose images
 	docker compose build
