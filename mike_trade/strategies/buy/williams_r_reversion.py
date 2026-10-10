@@ -8,7 +8,7 @@
   default, -20/-80 levels); the -80/-20 re-cross trigger follows the cTrader and
   TrendSpider indicator documentation (sources differ on the trigger).
 
-Calculation (completed 1-minute bars, oldest first)::
+Calculation (completed bars, oldest first)::
 
     %R = -100 * (highest high(n) - close) / (highest high(n) - lowest low(n))
 
@@ -17,19 +17,21 @@ Signal (edge, evaluated once per completed bar `t` with prior bar `t-1`)::
     %R[t-1] <= oversold  AND  %R[t] > oversold   ->  BUY   (default oversold = -80)
 
 Parameters: `period` (default 14), `oversold` (default -80). Lookback: `period + 1`
-completed bars (15 by default). Interval: completed 1-minute bars (trigger and only required
-timeframe; the one interval served to both the historical replay and the SHADOW stream).
+completed bars (15 by default); `required_bars(params)` returns the requirement of the
+configured periods. Interval: completed 1-minute bars (the declared `trigger_timeframe`; the
+one interval served to both the historical replay and the SHADOW stream).
 
 Interpretation decisions: StockCharts also describes a cross above -50 after an oversold
 reading, which needs an unspecified look-back; the single-step -80 re-cross documented by
 cTrader/TrendSpider is used. A flat range leaves %R undefined and suppresses the signal.
 
-Indicators run over the completed-bar history supplied by the context, which may span
-sessions like a continuous chart. The crossing itself must occur between two bars of the
-same New York trading date, so an overnight gap never signals. Regular session only; stale
-or non-regular-session contexts never signal. Entry signal only: no stops, sizing or orders
-(protective stops belong to the existing stop policy). No additional confirmation condition
-is applied.
+Indicators run over the observed completed bars supplied by the context (a missing bar is
+neither filled nor counted), which may span sessions like a continuous chart. The prior and
+latest bars of the signal must be adjacent completed bars (no missing bar between them),
+otherwise the result is INSUFFICIENT_DATA. Windowed values are computed from the latest
+completed bars in the context. Regular session only; stale or non-regular-session contexts
+never signal. Entry signal only: no stops, sizing or orders (protective stops belong to the
+existing stop policy). No additional confirmation condition is applied.
 """
 
 from __future__ import annotations
@@ -39,6 +41,7 @@ from decimal import Decimal
 from typing import TYPE_CHECKING
 
 from mike_trade.domain.strategy_types import StrategyRole
+from mike_trade.market_data.candles import CandleTimeframe
 from mike_trade.strategies.base import (
     BuyStrategy,
     ParameterKind,
@@ -51,14 +54,14 @@ from mike_trade.strategies.base import (
 from mike_trade.strategies.closed_bar import (
     REASON_CODES,
     STATE_LAST_SIGNAL_BAR,
-    TIMEFRAME,
+    adjacent,
+    blocked,
     closed_bars,
     crossed_above,
     finish,
     gate,
     insufficient,
     known,
-    same_session,
 )
 from mike_trade.strategies.indicators.core import williams_r
 
@@ -68,6 +71,7 @@ if TYPE_CHECKING:
 __all__ = [
     "STRATEGY_ID",
     "STRATEGY_VERSION",
+    "TIMEFRAME",
     "DEFAULT_PERIOD",
     "DEFAULT_OVERSOLD",
     "WARMUP_BARS",
@@ -77,12 +81,22 @@ __all__ = [
 STRATEGY_ID = "williams_r_reversion"
 STRATEGY_VERSION = "1.0.0"
 
+#: The strategy's declared trigger and only required timeframe (see `_SPEC`).
+TIMEFRAME = CandleTimeframe.M1
+
 DEFAULT_PERIOD = 14
 DEFAULT_OVERSOLD = Decimal("-80")
-#: Floor of the history requirement over the allowed parameter range; the replay and the
-#: SELL contract gate on this static value, so the requirement of the configured periods
-#: (15 completed bars at the defaults) is enforced dynamically in the rule.
-WARMUP_BARS = 3
+
+
+def _required_bars(validated: Mapping[str, object]) -> int:
+    period = validated["period"]
+    assert isinstance(period, int)
+    return period + 1
+
+
+#: Completed bars needed at the default parameters; `required_bars(params)` gives
+#: the exact requirement of a configured lookback (valid shorter periods stay valid).
+WARMUP_BARS = 15
 
 _SPEC = StrategySpec(
     strategy_id=STRATEGY_ID,
@@ -131,8 +145,8 @@ _SPEC = StrategySpec(
     ),
     execution_limitations=(
         "Entry signal only: no sizing, stops, targets, or order submission.",
-        "Long entries only; regular session only; completed 1-minute bars only.",
-        "The prior and latest bars of the crossing must share a New York trading date.",
+        "Long entries only; regular session only; completed bars only.",
+        "The prior and latest bars of a signal must be adjacent (no missing bar).",
     ),
     reason_codes=REASON_CODES,
 )
@@ -143,6 +157,10 @@ class WilliamsRReversionBuy(BuyStrategy):
     being at or below it on the prior bar."""
 
     spec = _SPEC
+
+    @classmethod
+    def required_bars(cls, params: Mapping[str, object]) -> int:
+        return _required_bars(cls.spec.parameter_schema.validate(params))
 
     def evaluate(
         self,
@@ -155,12 +173,15 @@ class WilliamsRReversionBuy(BuyStrategy):
         oversold = validated["oversold"]
         assert isinstance(period, int)
         assert isinstance(oversold, Decimal)
+        need = _required_bars(validated)
 
-        early = gate(self.spec, context, state)
-        if early is not None:
-            return early
-        bars = closed_bars(context, period + 1)
-        if bars is None or not same_session(bars[-2], bars[-1]):
+        reason = gate(self.spec, context, state)
+        bars = closed_bars(self.spec, context, need)
+        if bars is None:
+            return insufficient(self.spec, context)
+        if reason is not None:
+            return blocked(self.spec, context, reason)
+        if not adjacent(bars[-2], bars[-1]):
             return insufficient(self.spec, context)
 
         window = bars[-(period + 1):]

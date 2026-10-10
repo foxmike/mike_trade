@@ -235,3 +235,124 @@ def test_series_functions_reject_non_decimal_input_and_bad_periods() -> None:
         core.sma([D(1)], 0)
     with pytest.raises(ValueError):
         core.aroon(bars(("2", "1", "1")), 0)
+
+
+# ---------------------------------------------------------------- published reference values
+#
+# Independent of this code base: the StockCharts ChartSchool spreadsheet examples (RSI,
+# Moving Averages, CCI), transcribed from the published sheets.  The sheets compute from
+# unrounded prices that they display to two decimals, so the displayed inputs reproduce the
+# displayed outputs only to within that rounding; tolerances below are set accordingly.
+
+SC_RSI_CLOSES = (
+    "44.34 44.09 44.15 43.61 44.33 44.83 45.10 45.42 45.84 46.08 45.89 46.03 45.61 46.28 "
+    "46.28 46.00 46.03 46.41 46.22 45.64 46.21 46.25 45.71 46.45 45.78 45.35 44.03 44.18 "
+    "44.22 44.57 43.42 42.66 43.13").split()
+SC_RSI_14 = (
+    "70.53 66.32 66.55 69.41 66.36 57.97 62.93 63.26 56.06 62.38 54.71 50.42 39.99 41.46 "
+    "41.87 45.46 37.30 33.08 37.77").split()
+
+SC_MA_PRICES = (
+    "22.27 22.19 22.08 22.17 22.18 22.13 22.23 22.43 22.24 22.29 22.15 22.39 22.38 22.61 "
+    "23.36 24.05 23.75 23.83 23.95 23.63 23.82 23.87 23.65 23.19 23.10 23.33 22.68 23.10 "
+    "22.40 22.17").split()
+SC_SMA_10 = (
+    "22.22 22.21 22.23 22.26 22.31 22.42 22.61 22.77 22.91 23.08 23.21 23.38 23.53 23.65 "
+    "23.71 23.69 23.61 23.51 23.43 23.28 23.13").split()
+SC_EMA_10 = (
+    "22.22 22.21 22.24 22.27 22.33 22.52 22.80 22.97 23.13 23.28 23.34 23.43 23.51 23.54 "
+    "23.47 23.40 23.39 23.26 23.23 23.08 22.92").split()
+
+SC_CCI_TYPICAL_PRICES = (
+    "23.98 23.92 23.79 23.67 23.54 23.36 23.65 23.72 24.16 23.91 23.81 23.92 23.74 24.68 "
+    "24.94 24.93 25.10 25.12 25.20 25.06 24.50 24.31 24.57 24.62 24.49 24.37 24.41 24.35 "
+    "23.75 24.09").split()
+SC_CCI_20 = ("102.31 30.74 6.55 33.30 34.95 13.84 -10.75 -11.58 -29.35 -129.36 -73.07").split()
+
+
+def assert_within(actual: list[Decimal | None], published: list[str], tolerance: str) -> None:
+    assert len(actual) == len(published)
+    for index, (got, want) in enumerate(zip(actual, published)):
+        assert got is not None and abs(got - D(want)) <= D(tolerance), (index, got, want)
+
+
+def test_rsi_matches_the_published_wilder_example() -> None:
+    values = core.rsi([D(c) for c in SC_RSI_CLOSES], 14)
+    assert values[:14] == [None] * 14
+    # first value uses simple-mean seeds, later ones Wilder smoothing: all 19 published rows
+    assert_within(values[14:], SC_RSI_14, "0.1")
+    calc = core.RSICalculator(14)
+    streamed = [calc.update(D(c)) for c in SC_RSI_CLOSES]
+    assert streamed == values
+
+
+def test_sma_and_ema_match_the_published_ten_period_example() -> None:
+    prices = [D(p) for p in SC_MA_PRICES]
+    assert_within(core.sma(prices, 10)[9:], SC_SMA_10, "0.011")
+    ema = core.ema(prices, 10)
+    assert ema[:9] == [None] * 9
+    assert ema[9] == core.sma(prices, 10)[9]  # the EMA is seeded with the SMA
+    assert_within(ema[9:], SC_EMA_10, "0.011")
+
+
+def test_cci_matches_the_published_twenty_period_example() -> None:
+    bars_ = [HLC(D(tp), D(tp), D(tp)) for tp in SC_CCI_TYPICAL_PRICES]
+    values = core.cci(bars_, 20)
+    assert values[:19] == [None] * 19
+    # published rows 20..30 (the sheet's first CCI is row 20, our index 19)
+    assert_within(values[19:], SC_CCI_20, "1")
+    assert core.sma([b.close for b in bars_], 20)[-1].quantize(D("0.01")) == D("24.50")
+
+
+# ---------------------------------------------------------------- snapshot / restore continuity
+
+CALCULATORS = {
+    "ema": (lambda: core.EMACalculator(5), lambda b: b.close, core.EMACalculator.restore),
+    "rsi": (lambda: core.RSICalculator(5), lambda b: b.close, core.RSICalculator.restore),
+    "macd": (lambda: core.MACDCalculator(5, 9, 4), lambda b: b.close,
+             core.MACDCalculator.restore),
+    "macd_line_only": (lambda: core.MACDCalculator(4, 8, None), lambda b: b.close,
+                       core.MACDCalculator.restore),
+    "dmi": (lambda: core.DMICalculator(6), lambda b: b, core.DMICalculator.restore),
+    "parabolic_sar": (lambda: core.ParabolicSARCalculator(), lambda b: b,
+                      core.ParabolicSARCalculator.restore),
+}
+
+
+@pytest.mark.parametrize("name", sorted(CALCULATORS))
+def test_a_restored_snapshot_continues_exactly_like_the_original(name: str) -> None:
+    import json
+
+    from mike_trade.persistence.journal import canonical_payload_json
+
+    make, take, restore = CALCULATORS[name]
+    data = _series(90)
+    reference = make()
+    expected = [reference.update(take(b)) for b in data]
+    for cut in (1, 2, 3, 7, 12, 30, 60):  # seed phase, around the seed boundary, and well after
+        first = make()
+        for b in data[:cut]:
+            first.update(take(b))
+        stored = json.loads(canonical_payload_json(first.snapshot()))  # real persistence codec
+        resumed = restore(stored)
+        assert [resumed.update(take(b)) for b in data[cut:]] == expected[cut:], (name, cut)
+
+
+def test_corrupt_or_inconsistent_snapshots_are_rejected_not_trusted() -> None:
+    good = core.EMACalculator(3)
+    for value in "123":
+        good.update(D(value))
+    snap = good.snapshot()
+    with pytest.raises(KeyError):
+        core.EMACalculator.restore({k: v for k, v in snap.items() if k != "value"})
+    with pytest.raises(TypeError):
+        core.EMACalculator.restore({**snap, "value": 2})  # decimals must be strings
+    with pytest.raises(ArithmeticError):
+        core.EMACalculator.restore({**snap, "value": "not-a-number"})
+    with pytest.raises(ValueError):
+        core.EMACalculator.restore({"period": 3, "seed": ["1", "2", "3"], "value": None})
+    rsi = core.RSICalculator(3)
+    for value in "1234":
+        rsi.update(D(value))
+    with pytest.raises(ValueError):
+        core.RSICalculator.restore({**rsi.snapshot(), "avg_loss": None})

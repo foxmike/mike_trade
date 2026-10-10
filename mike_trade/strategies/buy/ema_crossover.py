@@ -9,7 +9,7 @@
   crossover: bullish when the shorter average crosses above the longer, bearish when it
   crosses below).
 
-Calculation (completed 1-minute bars, oldest first)::
+Calculation (completed bars, oldest first)::
 
     EMA(n)[t] = (2 / (n + 1)) * close[t] + (1 - 2 / (n + 1)) * EMA(n)[t-1]
     EMA(n) is seeded with the SMA of the first n closes (StockCharts convention).
@@ -20,20 +20,24 @@ Signal (edge, evaluated once per completed bar `t` with prior bar `t-1`)::
 
 Parameters: `fast_period` (default 10), `slow_period` (default 50); fast_period <
 slow_period. Lookback: `slow_period + 1` completed bars (51 by default); the whole supplied
-history seeds the EMA. Interval: completed 1-minute bars (trigger and only required
-timeframe; the one interval served to both the historical replay and the SHADOW stream).
+history seeds the EMA; `required_bars(params)` returns the requirement of the configured
+periods. Interval: completed 1-minute bars (the declared `trigger_timeframe`; the one
+interval served to both the historical replay and the SHADOW stream).
 
 Interpretation decisions: The published page gives 10/50 (and 5/35, 50/200) as example EMA
 pairs and no single default; 10/50 is used. With fast=12 and slow=26 this equals the MACD
 zero-line crossover. The EMA is seeded at the start of the supplied history, so early values
 are seed-dominated (a published convention, not a defect).
 
-Indicators run over the completed-bar history supplied by the context, which may span
-sessions like a continuous chart. The crossing itself must occur between two bars of the
-same New York trading date, so an overnight gap never signals. Regular session only; stale
-or non-regular-session contexts never signal. Entry signal only: no stops, sizing or orders
-(protective stops belong to the existing stop policy). No additional confirmation condition
-is applied.
+Indicators run over the observed completed bars supplied by the context (a missing bar is
+neither filled nor counted), which may span sessions like a continuous chart. The prior and
+latest bars of the signal must be adjacent completed bars (no missing bar between them),
+otherwise the result is INSUFFICIENT_DATA. The recursive indicator state is persisted under
+`indicator_state` in the strategy's own state and resumed bar by bar, so values do not
+depend on the size of the candle history window; absent or unusable state is re-seeded from
+the supplied history. Regular session only; stale or non-regular-session contexts never
+signal. Entry signal only: no stops, sizing or orders (protective stops belong to the
+existing stop policy). No additional confirmation condition is applied.
 """
 
 from __future__ import annotations
@@ -42,6 +46,7 @@ from collections.abc import Mapping
 from typing import TYPE_CHECKING
 
 from mike_trade.domain.strategy_types import StrategyRole
+from mike_trade.market_data.candles import CandleTimeframe
 from mike_trade.strategies.base import (
     BuyStrategy,
     ParameterKind,
@@ -53,18 +58,21 @@ from mike_trade.strategies.base import (
 )
 from mike_trade.strategies.closed_bar import (
     REASON_CODES,
+    STATE_INDICATOR,
     STATE_LAST_SIGNAL_BAR,
-    TIMEFRAME,
+    adjacent,
+    advance,
+    blocked,
     closed_bars,
     crossed_above,
     finish,
     gate,
     insufficient,
     known,
+    parts,
     require_param,
-    same_session,
 )
-from mike_trade.strategies.indicators.core import ema
+from mike_trade.strategies.indicators.core import MACDCalculator
 
 if TYPE_CHECKING:
     from mike_trade.market_data.context import MarketContext
@@ -72,6 +80,7 @@ if TYPE_CHECKING:
 __all__ = [
     "STRATEGY_ID",
     "STRATEGY_VERSION",
+    "TIMEFRAME",
     "DEFAULT_FAST_PERIOD",
     "DEFAULT_SLOW_PERIOD",
     "WARMUP_BARS",
@@ -81,12 +90,22 @@ __all__ = [
 STRATEGY_ID = "ema_crossover"
 STRATEGY_VERSION = "1.0.0"
 
+#: The strategy's declared trigger and only required timeframe (see `_SPEC`).
+TIMEFRAME = CandleTimeframe.M1
+
 DEFAULT_FAST_PERIOD = 10
 DEFAULT_SLOW_PERIOD = 50
-#: Floor of the history requirement over the allowed parameter range; the replay and the
-#: SELL contract gate on this static value, so the requirement of the configured periods
-#: (51 completed bars at the defaults) is enforced dynamically in the rule.
-WARMUP_BARS = 4
+
+
+def _required_bars(validated: Mapping[str, object]) -> int:
+    slow_period = validated["slow_period"]
+    assert isinstance(slow_period, int)
+    return slow_period + 1
+
+
+#: Completed bars needed at the default parameters; `required_bars(params)` gives
+#: the exact requirement of a configured lookback (valid shorter periods stay valid).
+WARMUP_BARS = 51
 
 _SPEC = StrategySpec(
     strategy_id=STRATEGY_ID,
@@ -121,7 +140,7 @@ _SPEC = StrategySpec(
             ),
         )
     ),
-    persistent_state_keys=(STATE_LAST_SIGNAL_BAR,),
+    persistent_state_keys=(STATE_LAST_SIGNAL_BAR, STATE_INDICATOR),
     methodology=(
         "BUY on the completed bar where the fast EMA of closes crosses above the slow EMA "
         "(prior fast <= prior slow and latest fast > latest slow). Restates a published "
@@ -135,8 +154,8 @@ _SPEC = StrategySpec(
     ),
     execution_limitations=(
         "Entry signal only: no sizing, stops, targets, or order submission.",
-        "Long entries only; regular session only; completed 1-minute bars only.",
-        "The prior and latest bars of the crossing must share a New York trading date.",
+        "Long entries only; regular session only; completed bars only.",
+        "The prior and latest bars of a signal must be adjacent (no missing bar).",
     ),
     reason_codes=REASON_CODES,
 )
@@ -147,6 +166,10 @@ class EmaCrossoverBuy(BuyStrategy):
     fast <= prior slow and latest fast > latest slow)."""
 
     spec = _SPEC
+
+    @classmethod
+    def required_bars(cls, params: Mapping[str, object]) -> int:
+        return _required_bars(cls.spec.parameter_schema.validate(params))
 
     def evaluate(
         self,
@@ -160,17 +183,27 @@ class EmaCrossoverBuy(BuyStrategy):
         assert isinstance(fast_period, int)
         assert isinstance(slow_period, int)
         require_param(fast_period < slow_period, "fast_period < slow_period", "fast_period")
+        need = _required_bars(validated)
 
-        early = gate(self.spec, context, state)
-        if early is not None:
-            return early
-        bars = closed_bars(context, slow_period + 1)
-        if bars is None or not same_session(bars[-2], bars[-1]):
+        reason = gate(self.spec, context, state)
+        bars = closed_bars(self.spec, context, need)
+        if bars is None:
             return insufficient(self.spec, context)
+        signature = f"{STRATEGY_ID}|{STRATEGY_VERSION}|{fast_period}|{slow_period}"
+        adv = advance(
+            state, bars, signature,
+            fresh=lambda: MACDCalculator(fast_period, slow_period, None),
+            restore=MACDCalculator.restore,
+            feed=lambda calc, bar: calc.update(bar.close),
+        )
+        if reason is not None:
+            return blocked(self.spec, context, reason, adv.updates)
+        if not adjacent(bars[-2], bars[-1]):
+            return insufficient(self.spec, context, adv.updates)
 
-        closes = [bar.close for bar in bars]
-        fast, slow = ema(closes, fast_period), ema(closes, slow_period)
-        if not known(fast[-2], fast[-1], slow[-2], slow[-1]):
-            return insufficient(self.spec, context)
-        triggered = crossed_above(fast[-2], slow[-2], fast[-1], slow[-1])
-        return finish(self.spec, context, bars[-1], state, triggered)
+        fast_prior, slow_prior, *_ = parts(adv.prior, 4)
+        fast_latest, slow_latest, *_ = parts(adv.latest, 4)
+        if not known(fast_prior, slow_prior, fast_latest, slow_latest):
+            return insufficient(self.spec, context, adv.updates)
+        triggered = crossed_above(fast_prior, slow_prior, fast_latest, slow_latest)
+        return finish(self.spec, context, bars[-1], state, triggered, adv.updates)

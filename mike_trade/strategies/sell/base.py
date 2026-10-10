@@ -248,7 +248,9 @@ class SellRule(SellStrategy):
         state: Mapping[str, object],
     ) -> StrategyEvaluation:
         spec = type(self).spec
-        failure = self._context_failure(context, spec)
+        failure = self._context_failure(
+            context, spec, type(self).required_bars(params)
+        )
         if failure is not None:
             reason, _detail = failure
             return StrategyEvaluation.no_signal(
@@ -266,7 +268,10 @@ class SellRule(SellStrategy):
 
     @classmethod
     def _context_failure(
-        cls, context: MarketContext | None, spec: StrategySpec
+        cls,
+        context: MarketContext | None,
+        spec: StrategySpec,
+        required_bars: int | None = None,
     ) -> tuple[ReasonCode, str] | None:
         if context is None:
             return (ReasonCode.INSUFFICIENT_DATA, "NO_DATA")
@@ -278,7 +283,8 @@ class SellRule(SellStrategy):
             not context.candles.get(tf) for tf in spec.required_timeframes
         ):
             return (ReasonCode.INSUFFICIENT_DATA, "NO_DATA")
-        if len(context.candles.get(spec.trigger_timeframe, ())) < spec.warmup_bars:
+        needed = spec.warmup_bars if required_bars is None else required_bars
+        if len(context.candles.get(spec.trigger_timeframe, ())) < needed:
             return (ReasonCode.INSUFFICIENT_DATA, "NOT_WARMED")
         return None
 

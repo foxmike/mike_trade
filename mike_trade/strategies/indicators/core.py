@@ -7,14 +7,17 @@ value is 50. EMA and ATR are unavailable until their documented seed is
 complete. The series functions at the end of the module (``sma`` ... ``parabolic_sar``)
 take a whole oldest-first history and return lists aligned with the input, with ``None``
 wherever a value is not yet defined (or is mathematically undefined, such as a flat
-range); element ``i`` depends only on inputs ``0..i``, never on later inputs. The module
-performs no I/O and keeps no shared mutable state.
+range); element ``i`` depends only on inputs ``0..i``, never on later inputs. The recursive
+calculators (EMA, RSI, MACD, DMI, Parabolic SAR) can ``snapshot()`` their state into plain
+JSON-safe values (Decimals as strings) and ``restore()`` it, so a strategy can resume them
+across evaluations and restarts instead of re-deriving the seed from a bounded history
+window. The module performs no I/O and keeps no shared mutable state.
 """
 
 from __future__ import annotations
 
 from collections import deque
-from collections.abc import Iterable, Sequence
+from collections.abc import Iterable, Mapping, Sequence
 from contextlib import contextmanager
 from decimal import Decimal, ROUND_HALF_EVEN, localcontext
 from typing import Iterator, Protocol
@@ -24,6 +27,7 @@ __all__ = [
     "ATRCalculator", "VWAPCalculator", "CumulativeSessionVolumeCalculator",
     "VolumeSMACalculator", "RelativeVolumeCalculator", "ema", "rsi", "atr",
     "session_vwap", "cumulative_session_volume", "volume_sma", "relative_volume",
+    "MACDCalculator", "DMICalculator", "ParabolicSARCalculator",
     "sma", "macd", "stochastic", "williams_r", "cci", "donchian",
     "directional_indicators", "aroon", "parabolic_sar",
 ]
@@ -54,6 +58,19 @@ def _period(period: int) -> int:
     if isinstance(period, bool) or not isinstance(period, int) or period < 1:
         raise ValueError("period must be a positive int")
     return period
+
+
+def _dump(value: Decimal | None) -> str | None:
+    return None if value is None else str(value)
+
+
+def _load(value: object) -> Decimal | None:
+    """Inverse of :func:`_dump`; rejects anything that is not a finite Decimal string."""
+    if value is None:
+        return None
+    if not isinstance(value, str):
+        raise TypeError("snapshot decimals must be strings")
+    return _decimal(Decimal(value))
 
 
 class BarLike(Protocol):
@@ -98,6 +115,19 @@ class EMACalculator:
         with _arithmetic():
             self._value = self._alpha * value + (_ONE - self._alpha) * self._value
         return self._value
+
+    def snapshot(self) -> dict[str, object]:
+        return {"period": self.period, "seed": [str(v) for v in self._seed],
+                "value": _dump(self._value)}
+
+    @classmethod
+    def restore(cls, snapshot: Mapping[str, object]) -> EMACalculator:
+        calc = cls(snapshot["period"])  # type: ignore[arg-type]
+        calc._seed = [_decimal(Decimal(v)) for v in snapshot["seed"]]  # type: ignore[union-attr]
+        calc._value = _load(snapshot["value"])
+        if calc._value is None and len(calc._seed) >= calc.period:
+            raise ValueError("inconsistent EMA snapshot")
+        return calc
 
 
 class RSICalculator:
@@ -146,6 +176,26 @@ class RSICalculator:
                 self._avg_gain = (self._avg_gain * (p - _ONE) + gain) / p
                 self._avg_loss = (self._avg_loss * (p - _ONE) + loss) / p
         return self._result()
+
+    def snapshot(self) -> dict[str, object]:
+        return {
+            "period": self.period, "previous": _dump(self._previous),
+            "changes": [[str(g), str(l)] for g, l in self._changes],
+            "avg_gain": _dump(self._avg_gain), "avg_loss": _dump(self._avg_loss),
+        }
+
+    @classmethod
+    def restore(cls, snapshot: Mapping[str, object]) -> RSICalculator:
+        calc = cls(snapshot["period"])  # type: ignore[arg-type]
+        calc._previous = _load(snapshot["previous"])
+        calc._changes = [
+            (_decimal(Decimal(g)), _decimal(Decimal(l)))
+            for g, l in snapshot["changes"]  # type: ignore[union-attr]
+        ]
+        calc._avg_gain, calc._avg_loss = _load(snapshot["avg_gain"]), _load(snapshot["avg_loss"])
+        if (calc._avg_gain is None) != (calc._avg_loss is None):
+            raise ValueError("inconsistent RSI snapshot")
+        return calc
 
 
 class ATRCalculator:
@@ -281,10 +331,8 @@ class RelativeVolumeCalculator:
 
 
 def ema(values: Iterable[Decimal], period: int) -> list[Decimal | None]:
-    """EMA seeded with the SMA of the first ``period`` values (identical to ``EMACalculator``)."""
-    period = _period(period)
-    with _arithmetic():
-        return _ema_list(_series(values), period)
+    calc = EMACalculator(period)
+    return [calc.update(value) for value in values]
 
 
 def rsi(closes: Iterable[Decimal], period: int) -> list[Decimal | None]:
@@ -345,21 +393,6 @@ def _sma_list(values: Sequence[Decimal | None], period: int) -> list[Decimal | N
     return out
 
 
-def _ema_list(values: Sequence[Decimal], period: int) -> list[Decimal | None]:
-    """EMA seeded with the SMA of the first ``period`` values (same as ``EMACalculator``)."""
-    out: list[Decimal | None] = [None] * len(values)
-    if len(values) < period:
-        return out
-    alpha = _TWO / Decimal(period + 1)
-    keep = _ONE - alpha
-    current = sum(values[:period], _ZERO) / Decimal(period)
-    out[period - 1] = current
-    for i in range(period, len(values)):
-        current = alpha * values[i] + keep * current
-        out[i] = current
-    return out
-
-
 def sma(values: Iterable[Decimal], period: int) -> list[Decimal | None]:
     """Simple moving average; first value at index ``period - 1``."""
     period = _period(period)
@@ -367,29 +400,72 @@ def sma(values: Iterable[Decimal], period: int) -> list[Decimal | None]:
         return _sma_list(_series(values), period)
 
 
+class MACDCalculator:
+    """Appel MACD from closes; ``update`` returns ``(fast_ema, slow_ema, macd, signal)``.
+
+    ``macd = EMA(fast) - EMA(slow)``; ``signal`` is the EMA of the MACD line seeded with
+    the SMA of its first ``signal`` values (``None`` when ``signal`` is ``None``). Each
+    element is ``None`` until its seed is complete.
+    """
+
+    def __init__(self, fast: int = 12, slow: int = 26, signal: int | None = 9) -> None:
+        self.fast_period, self.slow_period = _period(fast), _period(slow)
+        if self.fast_period >= self.slow_period:
+            raise ValueError("fast period must be shorter than slow period")
+        self.signal_period = None if signal is None else _period(signal)
+        self._fast, self._slow = EMACalculator(self.fast_period), EMACalculator(self.slow_period)
+        self._signal = None if signal is None else EMACalculator(signal)
+        self.warmup_bars = self.slow_period + (self.signal_period or 1) - 1
+
+    def update(
+        self, close: Decimal
+    ) -> tuple[Decimal | None, Decimal | None, Decimal | None, Decimal | None]:
+        fast, slow = self._fast.update(close), self._slow.update(close)
+        line: Decimal | None = None
+        if fast is not None and slow is not None:
+            with _arithmetic():
+                line = fast - slow
+        signal = None
+        if self._signal is not None and line is not None:
+            signal = self._signal.update(line)
+        return fast, slow, line, signal
+
+    def snapshot(self) -> dict[str, object]:
+        return {
+            "fast": self._fast.snapshot(), "slow": self._slow.snapshot(),
+            "signal": None if self._signal is None else self._signal.snapshot(),
+        }
+
+    @classmethod
+    def restore(cls, snapshot: Mapping[str, object]) -> MACDCalculator:
+        fast, slow = snapshot["fast"], snapshot["slow"]
+        signal = snapshot["signal"]
+        calc = cls(
+            fast["period"], slow["period"],  # type: ignore[index]
+            None if signal is None else signal["period"],  # type: ignore[index]
+        )
+        calc._fast = EMACalculator.restore(fast)  # type: ignore[arg-type]
+        calc._slow = EMACalculator.restore(slow)  # type: ignore[arg-type]
+        if signal is not None:
+            calc._signal = EMACalculator.restore(signal)  # type: ignore[arg-type]
+        else:
+            calc._signal = None
+        return calc
+
+
 def macd(
     closes: Iterable[Decimal], fast: int = 12, slow: int = 26, signal: int = 9
 ) -> tuple[list[Decimal | None], list[Decimal | None], list[Decimal | None]]:
-    """Appel MACD: ``(macd_line, signal_line, histogram)``.
-
-    ``macd = EMA(fast) - EMA(slow)`` of closes; ``signal = EMA(signal)`` of the MACD line,
-    seeded with the SMA of its first ``signal`` values; ``histogram = macd - signal``.
-    """
-    fast, slow, signal = _period(fast), _period(slow), _period(signal)
-    if fast >= slow:
-        raise ValueError("fast period must be shorter than slow period")
+    """Whole-history MACD ``(macd_line, signal_line, histogram)`` via :class:`MACDCalculator`."""
+    calc = MACDCalculator(fast, slow, signal)
+    line: list[Decimal | None] = []
+    sig: list[Decimal | None] = []
+    for close in closes:
+        _, _, m, g = calc.update(close)
+        line.append(m)
+        sig.append(g)
     with _arithmetic():
-        data = _series(closes, "close")
-        fast_ema, slow_ema = _ema_list(data, fast), _ema_list(data, slow)
-        line: list[Decimal | None] = [
-            None if f is None or s is None else f - s for f, s in zip(fast_ema, slow_ema)
-        ]
-        first = next((i for i, v in enumerate(line) if v is not None), len(line))
-        tail = _ema_list([v for v in line[first:] if v is not None], signal)
-        sig: list[Decimal | None] = [None] * first + tail
-        hist: list[Decimal | None] = [
-            None if m is None or g is None else m - g for m, g in zip(line, sig)
-        ]
+        hist = [None if m is None or g is None else m - g for m, g in zip(line, sig)]
     return line, sig, hist
 
 
@@ -489,43 +565,82 @@ def donchian(
     return upper, lower
 
 
+class DMICalculator:
+    """Wilder +DI/-DI with StockCharts' smoothing; ``update(bar)`` returns ``(+DI, -DI)``.
+
+    TR, +DM and -DM start at the second bar. The first smoothed value is the sum of the
+    first ``period`` raw values; afterwards ``smoothed = previous - previous / period +
+    current``. ``(None, None)`` until ``period`` raw values exist or while smoothed TR is 0.
+    """
+
+    def __init__(self, period: int = 14) -> None:
+        self.period = _period(period)
+        self.warmup_bars = self.period + 1
+        self._prev: tuple[Decimal, Decimal, Decimal] | None = None
+        self._count = 0
+        self._tr = self._plus = self._minus = _ZERO
+
+    def update(self, bar: _HLC) -> tuple[Decimal | None, Decimal | None]:
+        high, low, close = (_decimal(getattr(bar, n), n) for n in ("high", "low", "close"))
+        prev, self._prev = self._prev, (high, low, close)
+        if prev is None:
+            return None, None
+        prev_high, prev_low, prev_close = prev
+        with _arithmetic():
+            tr = max(high - low, abs(high - prev_close), abs(low - prev_close))
+            up, down = high - prev_high, prev_low - low
+            dm_plus = up if up > down and up > 0 else _ZERO
+            dm_minus = down if down > up and down > 0 else _ZERO
+            self._count += 1
+            if self._count <= self.period:
+                self._tr, self._plus, self._minus = (
+                    self._tr + tr, self._plus + dm_plus, self._minus + dm_minus)
+                if self._count < self.period:
+                    return None, None
+            else:
+                count = Decimal(self.period)
+                self._tr += tr - self._tr / count
+                self._plus += dm_plus - self._plus / count
+                self._minus += dm_minus - self._minus / count
+            if self._tr <= 0:
+                return None, None
+            return _HUNDRED * self._plus / self._tr, _HUNDRED * self._minus / self._tr
+
+    def snapshot(self) -> dict[str, object]:
+        return {
+            "period": self.period, "count": self._count,
+            "prev": None if self._prev is None else [str(v) for v in self._prev],
+            "tr": str(self._tr), "plus": str(self._plus), "minus": str(self._minus),
+        }
+
+    @classmethod
+    def restore(cls, snapshot: Mapping[str, object]) -> DMICalculator:
+        calc = cls(snapshot["period"])  # type: ignore[arg-type]
+        prev = snapshot["prev"]
+        if prev is not None:
+            high, low, close = (_decimal(Decimal(v)) for v in prev)  # type: ignore[union-attr]
+            calc._prev = (high, low, close)
+        calc._count = int(snapshot["count"])  # type: ignore[call-overload]
+        tr, plus, minus = (
+            _load(snapshot[k]) for k in ("tr", "plus", "minus")
+        )
+        if tr is None or plus is None or minus is None:
+            raise ValueError("inconsistent DMI snapshot")
+        calc._tr, calc._plus, calc._minus = tr, plus, minus
+        return calc
+
+
 def directional_indicators(
     bars: Iterable[_HLC], period: int = 14
 ) -> tuple[list[Decimal | None], list[Decimal | None]]:
-    """Wilder ``(+DI, -DI)`` with StockCharts' smoothing.
-
-    TR, +DM, -DM start at the second bar. The first smoothed value is the sum of the first
-    ``period`` raw values; afterwards ``smoothed = previous - previous / period + current``.
-    ``+DI = 100 * smoothed(+DM) / smoothed(TR)``. First defined at index ``period``.
-    """
-    period = _period(period)
-    data = list(bars)
-    for b in data:
-        _decimal(b.high, "high"), _decimal(b.low, "low"), _decimal(b.close, "close")
-    plus: list[Decimal | None] = [None] * len(data)
-    minus: list[Decimal | None] = [None] * len(data)
-    if len(data) <= period:
-        return plus, minus
-    with _arithmetic():
-        count = Decimal(period)
-        tr_s = dm_plus_s = dm_minus_s = _ZERO
-        for i in range(1, len(data)):
-            cur, prev = data[i], data[i - 1]
-            tr = max(cur.high - cur.low, abs(cur.high - prev.close), abs(cur.low - prev.close))
-            up, down = cur.high - prev.high, prev.low - cur.low
-            dm_plus = up if up > down and up > 0 else _ZERO
-            dm_minus = down if down > up and down > 0 else _ZERO
-            if i <= period:
-                tr_s, dm_plus_s, dm_minus_s = tr_s + tr, dm_plus_s + dm_plus, dm_minus_s + dm_minus
-                if i < period:
-                    continue
-            else:
-                tr_s += tr - tr_s / count
-                dm_plus_s += dm_plus - dm_plus_s / count
-                dm_minus_s += dm_minus - dm_minus_s / count
-            if tr_s > 0:
-                plus[i] = _HUNDRED * dm_plus_s / tr_s
-                minus[i] = _HUNDRED * dm_minus_s / tr_s
+    """Whole-history Wilder ``(+DI, -DI)`` via :class:`DMICalculator`."""
+    calc = DMICalculator(period)
+    plus: list[Decimal | None] = []
+    minus: list[Decimal | None] = []
+    for bar in bars:
+        p, m = calc.update(bar)
+        plus.append(p)
+        minus.append(m)
     return plus, minus
 
 
@@ -560,49 +675,92 @@ def aroon(
     return up, down
 
 
-def parabolic_sar(
-    bars: Iterable[_HLC],
-    step: Decimal = Decimal("0.02"),
-    maximum: Decimal = Decimal("0.20"),
-) -> list[tuple[Decimal, bool] | None]:
-    """Wilder Parabolic SAR as ``(sar, is_uptrend)`` per bar; ``None`` for the first bar.
+class ParabolicSARCalculator:
+    """Wilder Parabolic SAR; ``update(bar)`` returns ``(sar, is_uptrend)`` (``None`` for bar 1).
 
-    ``SAR = prior SAR + AF * (EP - prior SAR)``; AF starts at ``step``, grows by ``step``
-    on each new extreme point and is capped at ``maximum``. In an uptrend SAR is never
-    above the prior two bars' lows (in a downtrend never below their highs). When the bar
+    ``SAR = prior SAR + AF * (EP - prior SAR)``; AF starts at ``step``, grows by ``step`` on
+    each new extreme point and is capped at ``maximum``. In an uptrend SAR is never above
+    the prior two bars' lows (in a downtrend never below their highs). When the bar
     penetrates SAR (low < SAR in an uptrend, high > SAR in a downtrend) the trend reverses:
     the new SAR is the prior EP, the new EP is the penetrating bar's extreme and AF resets.
     Initial trend (an interpretation, see docs): uptrend if the second close is at or above
     the first, else downtrend; the first SAR is the first bar's low (high), EP its high (low).
     """
-    step, maximum = _decimal(step, "step"), _decimal(maximum, "maximum")
-    if step <= 0 or maximum < step:
-        raise ValueError("step must be positive and maximum must be >= step")
-    data = list(bars)
-    for b in data:
-        _decimal(b.high, "high"), _decimal(b.low, "low"), _decimal(b.close, "close")
-    out: list[tuple[Decimal, bool] | None] = [None] * len(data)
-    if len(data) < 2:
-        return out
-    with _arithmetic():
-        up = data[1].close >= data[0].close
-        sar = data[0].low if up else data[0].high
-        ep = data[0].high if up else data[0].low
-        af = step
-        for i in range(1, len(data)):
-            bar = data[i]
-            sar = sar + af * (ep - sar)
-            if up:
-                sar = min(sar, data[i - 1].low, *(data[i - 2].low,) if i >= 2 else ())
-                if bar.low < sar:
-                    up, sar, ep, af = False, ep, bar.low, step
-                elif bar.high > ep:
-                    ep, af = bar.high, min(af + step, maximum)
+
+    def __init__(self, step: Decimal = Decimal("0.02"), maximum: Decimal = Decimal("0.20")) -> None:
+        self.step, self.maximum = _decimal(step, "step"), _decimal(maximum, "maximum")
+        if self.step <= 0 or self.maximum < self.step:
+            raise ValueError("step must be positive and maximum must be >= step")
+        self.warmup_bars = 2
+        self._first_close: Decimal | None = None
+        self._recent: list[tuple[Decimal, Decimal]] = []  # (high, low) of the last two bars
+        self._up = True
+        self._sar = self._ep = self._af = _ZERO
+        self._started = False
+
+    def update(self, bar: _HLC) -> tuple[Decimal, bool] | None:
+        high, low, close = (_decimal(getattr(bar, n), n) for n in ("high", "low", "close"))
+        if self._first_close is None:
+            self._first_close = close
+            self._recent = [(high, low)]
+            return None
+        with _arithmetic():
+            if not self._started:
+                self._started = True
+                self._up = close >= self._first_close
+                first_high, first_low = self._recent[0]
+                self._sar = first_low if self._up else first_high
+                self._ep = first_high if self._up else first_low
+                self._af = self.step
+            sar = self._sar + self._af * (self._ep - self._sar)
+            if self._up:
+                sar = min(sar, *(lo for _, lo in self._recent))
+                if low < sar:
+                    self._up, sar, self._ep, self._af = False, self._ep, low, self.step
+                elif high > self._ep:
+                    self._ep, self._af = high, min(self._af + self.step, self.maximum)
             else:
-                sar = max(sar, data[i - 1].high, *(data[i - 2].high,) if i >= 2 else ())
-                if bar.high > sar:
-                    up, sar, ep, af = True, ep, bar.high, step
-                elif bar.low < ep:
-                    ep, af = bar.low, min(af + step, maximum)
-            out[i] = (sar, up)
-    return out
+                sar = max(sar, *(hi for hi, _ in self._recent))
+                if high > sar:
+                    self._up, sar, self._ep, self._af = True, self._ep, high, self.step
+                elif low < self._ep:
+                    self._ep, self._af = low, min(self._af + self.step, self.maximum)
+            self._sar = sar
+        self._recent = [*self._recent, (high, low)][-2:]
+        return sar, self._up
+
+    def snapshot(self) -> dict[str, object]:
+        return {
+            "step": str(self.step), "maximum": str(self.maximum),
+            "first_close": _dump(self._first_close), "started": self._started,
+            "recent": [[str(h), str(lo)] for h, lo in self._recent], "up": self._up,
+            "sar": str(self._sar), "ep": str(self._ep), "af": str(self._af),
+        }
+
+    @classmethod
+    def restore(cls, snapshot: Mapping[str, object]) -> ParabolicSARCalculator:
+        step, maximum = _load(snapshot["step"]), _load(snapshot["maximum"])
+        if step is None or maximum is None:
+            raise ValueError("inconsistent Parabolic SAR snapshot")
+        calc = cls(step, maximum)
+        calc._first_close = _load(snapshot["first_close"])
+        calc._started = bool(snapshot["started"])
+        calc._recent = [
+            (_decimal(Decimal(h)), _decimal(Decimal(lo)))
+            for h, lo in snapshot["recent"]  # type: ignore[union-attr]
+        ]
+        calc._up = bool(snapshot["up"])
+        calc._sar, calc._ep, calc._af = (
+            _decimal(Decimal(snapshot[k])) for k in ("sar", "ep", "af")  # type: ignore[arg-type]
+        )
+        return calc
+
+
+def parabolic_sar(
+    bars: Iterable[_HLC],
+    step: Decimal = Decimal("0.02"),
+    maximum: Decimal = Decimal("0.20"),
+) -> list[tuple[Decimal, bool] | None]:
+    """Whole-history Parabolic SAR ``(sar, is_uptrend)`` via :class:`ParabolicSARCalculator`."""
+    calc = ParabolicSARCalculator(step, maximum)
+    return [calc.update(bar) for bar in bars]

@@ -644,6 +644,17 @@ class _Strategy(ABC):
                 f"{cls.__name__}.spec.side is {declared.side.value}; expected {cls._side.value}"
             )
 
+    @classmethod
+    def required_bars(cls, params: Mapping[str, object]) -> int:
+        """Completed trigger-timeframe bars needed before ``params`` can evaluate.
+
+        The default is the static ``spec.warmup_bars``.  A strategy whose lookback depends
+        on its parameters overrides this so that ``spec.warmup_bars`` can state the
+        requirement at the default parameters while engines still gate a configured
+        (shorter or longer) lookback exactly.
+        """
+        return cls.spec.warmup_bars
+
     @abstractmethod
     def evaluate(
         self,

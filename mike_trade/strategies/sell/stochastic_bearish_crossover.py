@@ -7,7 +7,7 @@
 * Source: George Lane's Stochastic Oscillator as documented in StockCharts ChartSchool,
   'Stochastic Oscillator' (Full Stochastic 14,3,3; %K/%D signal-line cross).
 
-Calculation (completed 1-minute bars, oldest first)::
+Calculation (completed bars, oldest first)::
 
     raw %K = 100 * (close - lowest low(n)) / (highest high(n) - lowest low(n))
     %K = SMA(raw %K, k_smooth)        %D = SMA(%K, d_period)     (Full Stochastic 14,3,3)
@@ -17,20 +17,23 @@ Signal (edge, evaluated once per completed bar `t` with prior bar `t-1`)::
     %K[t-1] >= %D[t-1]  AND  %K[t] < %D[t]   ->  SELL   (bearish signal-line cross)
 
 Parameters: `k_period` (default 14), `k_smooth` (default 3), `d_period` (default 3).
-Lookback: `k_period + k_smooth + d_period - 1` completed bars (19 by default). Interval:
-completed 1-minute bars (trigger and only required timeframe; the one interval served to
-both the historical replay and the SHADOW stream).
+Lookback: `k_period + k_smooth + d_period - 1` completed bars (19 by default);
+`required_bars(params)` returns the requirement of the configured periods. Interval:
+completed 1-minute bars (the declared `trigger_timeframe`; the one interval served to both
+the historical replay and the SHADOW stream).
 
 Interpretation decisions: No overbought/oversold qualification is applied (StockCharts
 defines the cross itself as the signal). A flat range leaves %K undefined and suppresses the
 signal.
 
-Indicators run over the completed-bar history supplied by the context, which may span
-sessions like a continuous chart. The crossing itself must occur between two bars of the
-same New York trading date, so an overnight gap never signals. Regular session only; stale
-or non-regular-session contexts never signal. Exit signal only: the composition layer owns
-position checks, minimum hold, arbitration and full-remainder sizing; no order is submitted
-here. No additional confirmation condition is applied.
+Indicators run over the observed completed bars supplied by the context (a missing bar is
+neither filled nor counted), which may span sessions like a continuous chart. The prior and
+latest bars of the signal must be adjacent completed bars (no missing bar between them),
+otherwise the result is INSUFFICIENT_DATA. Windowed values are computed from the latest
+completed bars in the context. Regular session only; stale or non-regular-session contexts
+never signal. Exit signal only: the composition layer owns position checks, minimum hold,
+arbitration and full-remainder sizing; no order is submitted here. No additional
+confirmation condition is applied.
 """
 
 from __future__ import annotations
@@ -39,6 +42,7 @@ from collections.abc import Mapping
 from typing import TYPE_CHECKING
 
 from mike_trade.domain.strategy_types import StrategyRole
+from mike_trade.market_data.candles import CandleTimeframe
 from mike_trade.strategies.base import (
     ParameterKind,
     ParameterSchema,
@@ -50,14 +54,14 @@ from mike_trade.strategies.base import (
 from mike_trade.strategies.closed_bar import (
     REASON_CODES,
     STATE_LAST_SIGNAL_BAR,
-    TIMEFRAME,
+    adjacent,
+    blocked,
     closed_bars,
     crossed_below,
     finish,
     gate,
     insufficient,
     known,
-    same_session,
 )
 from mike_trade.strategies.indicators.core import stochastic
 from mike_trade.strategies.sell.base import SellRule
@@ -68,6 +72,7 @@ if TYPE_CHECKING:
 __all__ = [
     "STRATEGY_ID",
     "STRATEGY_VERSION",
+    "TIMEFRAME",
     "DEFAULT_K_PERIOD",
     "DEFAULT_K_SMOOTH",
     "DEFAULT_D_PERIOD",
@@ -78,13 +83,27 @@ __all__ = [
 STRATEGY_ID = "stochastic_bearish_crossover"
 STRATEGY_VERSION = "1.0.0"
 
+#: The strategy's declared trigger and only required timeframe (see `_SPEC`).
+TIMEFRAME = CandleTimeframe.M1
+
 DEFAULT_K_PERIOD = 14
 DEFAULT_K_SMOOTH = 3
 DEFAULT_D_PERIOD = 3
-#: Floor of the history requirement over the allowed parameter range; the replay and the
-#: SELL contract gate on this static value, so the requirement of the configured periods
-#: (19 completed bars at the defaults) is enforced dynamically in the rule.
-WARMUP_BARS = 3
+
+
+def _required_bars(validated: Mapping[str, object]) -> int:
+    k_period = validated["k_period"]
+    assert isinstance(k_period, int)
+    k_smooth = validated["k_smooth"]
+    assert isinstance(k_smooth, int)
+    d_period = validated["d_period"]
+    assert isinstance(d_period, int)
+    return k_period + k_smooth + d_period - 1
+
+
+#: Completed bars needed at the default parameters; `required_bars(params)` gives
+#: the exact requirement of a configured lookback (valid shorter periods stay valid).
+WARMUP_BARS = 19
 
 _SPEC = StrategySpec(
     strategy_id=STRATEGY_ID,
@@ -141,8 +160,8 @@ _SPEC = StrategySpec(
     execution_limitations=(
         "Advisory exit signal only: no order submission; minimum hold, arbitration and "
         "position checks belong to the composition layer.",
-        "Long exits only (full remainder); regular session only; completed 1-minute bars only.",
-        "The prior and latest bars of the crossing must share a New York trading date.",
+        "Long exits only (full remainder); regular session only; completed bars only.",
+        "The prior and latest bars of a signal must be adjacent (no missing bar).",
     ),
     reason_codes=REASON_CODES,
 )
@@ -153,6 +172,10 @@ class StochasticBearishCrossoverSell(SellRule):
     latest %K < %D)."""
 
     spec = _SPEC
+
+    @classmethod
+    def required_bars(cls, params: Mapping[str, object]) -> int:
+        return _required_bars(cls.spec.parameter_schema.validate(params))
 
     def evaluate_trigger(
         self,
@@ -167,13 +190,15 @@ class StochasticBearishCrossoverSell(SellRule):
         assert isinstance(k_period, int)
         assert isinstance(k_smooth, int)
         assert isinstance(d_period, int)
-        need = k_period + k_smooth + d_period - 1
+        need = _required_bars(validated)
 
-        early = gate(self.spec, context, state)
-        if early is not None:
-            return early
-        bars = closed_bars(context, need)
-        if bars is None or not same_session(bars[-2], bars[-1]):
+        reason = gate(self.spec, context, state)
+        bars = closed_bars(self.spec, context, need)
+        if bars is None:
+            return insufficient(self.spec, context)
+        if reason is not None:
+            return blocked(self.spec, context, reason)
+        if not adjacent(bars[-2], bars[-1]):
             return insufficient(self.spec, context)
 
         window = bars[-need:]

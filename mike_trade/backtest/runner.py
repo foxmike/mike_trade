@@ -1234,7 +1234,9 @@ class BacktestRunner:
                 if spec.strategy_id not in due_ids:
                     return None
                 selected_history = strategy_candles[symbol].get(spec.trigger_timeframe, ())
-                if len(selected_history) < max(1, spec.warmup_bars):
+                if len(selected_history) < max(
+                    1, cls.required_bars(plan.params[spec.strategy_id])
+                ):
                     return None
                 if spec.trigger_timeframe.value != candle.timeframe.value and not (
                     spec.trigger_timeframe is CandleTimeframe.M5 and m5_closed

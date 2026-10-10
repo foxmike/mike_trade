@@ -27,7 +27,7 @@ Each strategy declares one immutable `StrategySpec` (`mike_trade/strategies/base
 | `sub_category` | Stable sub-classification identifier, e.g. `moving_average` (see §1.7). |
 | `reference_symbols` | Declared reference symbols (empty tuple for all three shipped BUY strategies). |
 | `required_timeframes` | Non-empty tuple of `CandleTimeframe` values the strategy reads. |
-| `warmup_bars` | Minimum completed bars before evaluation can signal (`int >= 0`). |
+| `warmup_bars` | Completed trigger-timeframe bars needed at the strategy's default parameters (`int >= 0`). A strategy whose lookback depends on its parameters overrides the `required_bars(params)` classmethod (default: `warmup_bars`); the backtest runner and `SellRule` gate on `required_bars(params)`. |
 | `completed_bars_only` | Must be `True` for every shipped BUY strategy; developing bars never signal. |
 | `requires_volume` | `True` for every shipped BUY strategy; volume is always checked. |
 | `trigger_kind` | `EDGE_ON_CLOSED_BAR` for all three shipped BUY strategies (edge-triggered crossing on the latest completed bar). |
@@ -1025,9 +1025,10 @@ condition, is registered by the existing explicit calls (`build_runtime` in
 `mike_trade/app.py` and `_research_registry` in `mike_trade/research/commands.py`),
 and runs unchanged through the historical `BacktestRunner` and the SHADOW
 engine. The pure Decimal indicator functions they use live in the existing
-shared module `mike_trade/strategies/indicators/core.py`; the few guard helpers
-(stale/session/eligibility checks, crossing comparison, same-bar replay
-suppression) are plain functions in `mike_trade/strategies/closed_bar.py`. No
+shared module `mike_trade/strategies/indicators/core.py`; the few shared helpers
+(stale/session/eligibility checks, adjacency, crossing comparison, same-bar
+replay suppression, resuming recursive indicator state) are plain functions in
+`mike_trade/strategies/closed_bar.py`. No
 filter, composition, declarative-rule or base-class framework was added.
 These are textbook definitions only: nothing here is an alpha or profitability
 claim and none of it was backtested for this change.
@@ -1035,52 +1036,93 @@ claim and none of it was backtested for this change.
 Conventions that apply to every strategy below (any deviation is stated in the
 strategy's own interpretation notes):
 
-- **Interval.** Completed 1-minute bars only: `required_timeframes` and
-  `trigger_timeframe` are `1m`. 1m is the only interval available both to the
-  historical replay (1m/5m) and to the SHADOW stream (1m context only), so one
-  implementation serves both. Periods are bar counts at that interval.
-- **History and seeding.** Indicators run over the whole completed-bar history in
-  the context (bounded by the engine: 500 bars), oldest first. Windowed
-  indicators (SMA, Stochastic, Williams %R, CCI, Donchian, Aroon) are exact.
-  Recursive indicators use their published seeds at the start of that history:
-  EMA is seeded with the SMA of the first n closes (StockCharts); the MACD signal
-  line is seeded with the SMA of its first values; Wilder RSI and DMI use
-  Wilder's simple-sum seed then Wilder smoothing; Parabolic SAR follows
-  Wilder's recursion. A chart that started earlier can differ slightly in the
-  first bars after the seed because smoothing converges geometrically.
+- **Timeframe is declared, not assumed.** Each strategy states its trigger and
+  required timeframe in its own `StrategySpec`; the shared helpers in
+  `closed_bar.py` read `spec.trigger_timeframe` and hold no universal interval.
+  All 28 strategies below declare completed **1-minute** bars: 1m is the only
+  interval available both to the historical replay (1m, plus 5m derived from 1m)
+  and to the SHADOW stream. Periods are bar counts at that interval. A strategy
+  declaring another timeframe uses the same helpers unchanged. Separate
+  limitation: the SHADOW stream builds only a 1m context, so SHADOW configuration
+  rejects any strategy needing other timeframes (`STRATEGY_TIMEFRAME_UNSUPPORTED`,
+  for example the existing 5m `rsi_reversal`); the backtest runner runs both.
+- **Missing candles.** The two bars of an edge must be adjacent
+  (`latest.start == prior.end`, the same gap convention as
+  `market_data.warmup` and the existing `rsi_reversal`); inside bar needs three
+  consecutive bars. Otherwise the result is `INSUFFICIENT_DATA`: a missing
+  interval or the overnight close is never read as one continuous observation,
+  nothing is filled in, and a crossing hidden in a gap is not reported later.
+  Indicator windows count *observed* completed bars (a bar that never printed is
+  neither filled nor counted) and may span sessions like a continuous chart. Level
+  rules need no sequence and are unaffected. The policy lives in the strategy, so
+  backtest and SHADOW behave identically.
+- **Recursive indicators are resumed, not recomputed.** EMA, MACD, RSI, DMI and
+  Parabolic SAR depend on every earlier bar through their seed and smoothing, so
+  their value must not depend on how many candles a bounded history window
+  (500 in SHADOW and the backtest default) happens to hold. Each such strategy
+  keeps a JSON-safe snapshot of its calculator in its own persisted state
+  (`indicator_state`: calculator state, last processed bar, the outputs on that bar
+  and the one before, and a signature of strategy, version and calculation
+  parameters; roughly 0.3–0.7 KB). Each evaluation feeds only the bars after the
+  last processed one, so the result equals having processed every bar in order,
+  across window advances, sessions and process restarts. State is also advanced
+  when the context is stale, outside the regular session or (BUY) not eligible, so
+  gating never makes it lag. The same bar replayed returns the stored outputs. If
+  no usable state exists (first evaluation, changed parameters, a gap the history
+  no longer reaches, a corrupt snapshot) the calculator is re-seeded from the
+  supplied history using the published seed at its oldest bar; nothing is guessed
+  about unseen bars. Published seeds: EMA = SMA of the first n closes
+  (StockCharts); MACD signal = SMA seed over its first values; Wilder RSI and DMI
+  = simple-sum seed then Wilder smoothing; Parabolic SAR = Wilder's recursion.
+  Windowed indicators (SMA, Stochastic, Williams %R, CCI, Donchian, Aroon) are
+  exact and stateless.
 - **Crossings.** `a` crosses above `b` on bar `t` when `a[t-1] <= b[t-1]` and
   `a[t] > b[t]`; crossing below mirrors it (`>=` then `<`). For a level the
   fixed convention is the same: the prior bar at or on the level, the latest bar
   strictly beyond it. Evaluation is on the latest completed bar only, so no
   future candle is read.
-- **Same trading date.** Indicators may span sessions like a continuous chart, but
-  the prior and latest bars of an edge must start on the same New York trading
-  date; otherwise the result is `INSUFFICIENT_DATA` and an overnight gap is never
-  read as an intraday crossing. Level rules are not affected.
 - **Eligibility and reasons.** Stale context → `STALE_DATA`; session not
   `REGULAR` → `NOT_ELIGIBLE`; BUY additionally requires the engine-owned state
   `eligibility == "WATCHING_BUY"` (read only) → `NOT_ELIGIBLE`; fewer completed
   bars than the configured lookback, an undefined indicator value (for example a
-  flat range or zero deviation) or the overnight case → `INSUFFICIENT_DATA`;
+  flat range or zero deviation) or non-adjacent bars → `INSUFFICIENT_DATA`;
   otherwise `SIGNAL` or `NO_SIGNAL`. Invalid or inconsistent parameters raise
   `ParameterValidationError` and never signal.
-- **Replay suppression.** The only strategy-owned state key is `last_signal_bar`
-  (ISO start of the bar that fired). The same completed bar never emits twice;
+- **Replay suppression.** `last_signal_bar` (ISO start of the bar that fired) is
+  the other strategy-owned state key. The same completed bar never emits twice;
   the signal id is the deterministic SHA-256 of strategy, version, symbol, side
   and bar start. Edge rules rearm naturally on the next crossing; level rules
   (`price_below_ema`, `price_below_sma`, `donchian_lower_channel_exit`) signal on
   every completed bar while the condition holds, each with its own id.
-- **Warm-up.** `spec.warmup_bars` is the floor of the lookback over the allowed
-  parameter range (the replay and the SELL contract gate on this static value so
-  a small configured period is never blocked); the lookback of the configured
-  periods is enforced inside the rule. The tables state the lookback at the
-  defaults.
+- **Warm-up.** `spec.warmup_bars` / `WARMUP_BARS` is the requirement at the
+  default parameters (the tables below). `required_bars(params)` returns the
+  exact requirement of a configured lookback, and both the backtest runner and
+  `SellRule` gate on it, so a valid short configuration (for example SMA 3/5) is
+  evaluated as soon as it has history and no configuration signals early.
 - **Roles.** BUY strategies emit an entry signal only and add no stop, sizing,
   target or order logic. SELL strategies extend the existing `SellRule` and emit an
   advisory full exit of an owned long; position checks, minimum hold, arbitration
   and the protective stop remain with the existing exit and stop machinery.
 - **No added confirmation.** No volume, trend, ADX or other filter is added to any
   rule beyond what the cited definition states.
+
+### Known limitations
+
+- A strategy that is not evaluated for longer than the history window (a BUY
+  strategy while a position is open, for instance) cannot catch up from the
+  window and re-seeds from it on its next evaluation; recursive values then
+  converge to the continuous ones geometrically but are no longer guaranteed
+  identical. Removing this needs an engine-level decision (advance every bound
+  strategy on every closed bar, or an indicator service with its own persistence).
+- SHADOW fetches `market_data.warmup_bars` (default 60) historical bars at
+  start-up, fewer than several defaults need (for example 201 for SMA 50/200), so
+  those strategies return `INSUFFICIENT_DATA` until enough live bars accrue;
+  configure the warm-up to at least the lookback in the tables.
+- Each evaluation persists the indicator snapshot and emits the engine's
+  existing state-saved event (roughly 0.3–0.7 KB per strategy, symbol and bar).
+- The shared `context.indicators` service (`vwap`, `rsi`) is parameterless and
+  recomputes over its own bounded window; the existing `rsi_reversal` uses it
+  and is unchanged.
 
 ### Overview
 
@@ -1114,7 +1156,6 @@ strategy's own interpretation notes):
 | `dmi_bearish_crossover` | DMI Bearish Crossover | SELL | `trend_following` | edge | period=14 |
 | `aroon_bearish_reversal` | Aroon Bearish Reversal | SELL | `trend_following` | edge | period=25 |
 | `donchian_lower_channel_exit` | Donchian Lower Channel Exit | SELL | `breakout` | level | period=20 |
-
 
 ### 8.1 `sma_crossover` — SMA Crossover (BUY, 1.0.0)
 
@@ -1579,7 +1620,7 @@ Exact signal condition:
 inside bar at t-1  AND  close[t] > mother.high   ->  BUY
 ```
 
-Interpretation decisions: Only the first bar after the inside bar can break out (no multi-bar inside sequences), the breakout is a completed close above the mother bar's high (not an intraday touch), and the three bars must share a New York trading date. The 'body-only' inside-bar variant is not used.
+Interpretation decisions: Only the first bar after the inside bar can break out (no multi-bar inside sequences), the breakout is a completed close above the mother bar's high (not an intraday touch), and the three bars must be consecutive completed bars (no missing bar between them). The 'body-only' inside-bar variant is not used.
 
 ### 8.15 `macd_bearish_crossover` — MACD Bearish Crossover (SELL, 1.0.0)
 
