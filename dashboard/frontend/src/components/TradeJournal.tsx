@@ -1,7 +1,7 @@
 import { useEffect, useMemo, useState } from "react";
 import {
-  getResearchRuns, getResearchTrade, getResearchTrades, getTrade, getTrades,
-  type ResearchRun, type TradeBar, type TradeFilters, type TradeInspection,
+  getResearchRun, getResearchRuns, getResearchTrade, getResearchTrades, getTrade, getTrades,
+  type ResearchRun, type ResearchRunDetail, type TradeBar, type TradeFilters, type TradeInspection,
   type TradeListResponse, type TradeRecord,
 } from "../api/client";
 
@@ -9,6 +9,9 @@ const unavailable = (value: unknown) => value === null || value === undefined ||
 const money = (value: string | null) => value === null ? "—" : Number(value).toFixed(2);
 const localTime = (value: string | null) => value === null ? "—" : new Intl.DateTimeFormat("en-US", {
   timeZone: "America/New_York", month: "short", day: "2-digit", hour: "2-digit", minute: "2-digit", second: "2-digit",
+}).format(new Date(value));
+const localDateTime = (value: string | null) => value === null ? "Execution time unavailable" : new Intl.DateTimeFormat("en-US", {
+  timeZone: "America/New_York", year: "numeric", month: "short", day: "2-digit", hour: "2-digit", minute: "2-digit", second: "2-digit",
 }).format(new Date(value));
 const duration = (value: string | null) => {
   if (value === null) return "—"; const total = Math.max(0, Number(value));
@@ -33,13 +36,23 @@ const newYorkDate = (value: string | undefined) => {
 export default function TradeJournal({ accountId, accountMode }: { accountId: string; accountMode: string }) {
   const [source, setSource] = useState<"account" | "backtest">("account");
   const [runs, setRuns] = useState<ResearchRun[]>([]); const [runId, setRunId] = useState("");
+  const [runDetail, setRunDetail] = useState<ResearchRunDetail | null>(null);
+  const [runSearch, setRunSearch] = useState(""); const [runBuy, setRunBuy] = useState("");
+  const [runSell, setRunSell] = useState(""); const [runGroup, setRunGroup] = useState("");
+  const [runStop, setRunStop] = useState(""); const [runDate, setRunDate] = useState("");
   const [filters, setFilters] = useState<TradeFilters>({ page: 1, pageSize: 25, sort: "entry_timestamp", direction: "desc" });
   const [list, setList] = useState<TradeListResponse | null>(null); const [selected, setSelected] = useState<TradeInspection | null>(null);
   const [error, setError] = useState<string | null>(null); const [loading, setLoading] = useState(false);
 
   useEffect(() => { const controller = new AbortController(); getResearchRuns(controller.signal).then((body) => {
-    setRuns(body.runs); setRunId((current) => current || body.runs[0]?.run_id || "");
+    setRuns(body.runs); setRunId((current) => current || body.runs[0]?.selection_id || "");
   }).catch(() => undefined); return () => controller.abort(); }, []);
+
+  useEffect(() => { if (source !== "backtest" || !runId) { setRunDetail(null); return; }
+    const controller = new AbortController(); getResearchRun(runId, controller.signal).then(setRunDetail)
+      .catch((reason: unknown) => { if (!(reason instanceof DOMException && reason.name === "AbortError")) setRunDetail(null); });
+    return () => controller.abort();
+  }, [runId, source]);
 
   useEffect(() => { const controller = new AbortController(); setLoading(true); setSelected(null);
     const request = source === "account" ? getTrades(accountId, filters, controller.signal) :
@@ -52,12 +65,54 @@ export default function TradeJournal({ accountId, accountMode }: { accountId: st
   const choose = (trade: TradeRecord) => { setError(null); const request = source === "account" ? getTrade(accountId, trade.trade_id) : getResearchTrade(runId, trade.trade_id);
     request.then(setSelected).catch((reason: unknown) => setError(reason instanceof Error ? reason.message : "Unable to inspect trade")); };
   const patchFilter = (patch: Partial<TradeFilters>) => setFilters((current) => ({ ...current, ...patch, page: patch.page ?? 1 }));
+  const visibleRuns = runs.filter((run) => {
+    const strategyText = [...run.buy_strategies, ...run.sell_strategies].join(" ").toLowerCase();
+    const text = `${run.symbols.join(" ")} ${strategyText} ${run.run_id} ${run.run_purpose ?? ""} ${run.artifact_group ?? ""}`.toLowerCase();
+    const stopText = JSON.stringify(run.stop_configuration).toLowerCase();
+    return (!runSearch || text.includes(runSearch.toLowerCase())) && (!runBuy || run.buy_strategies.includes(runBuy)) &&
+      (!runSell || run.sell_strategies.includes(runSell)) && (!runGroup || (run.run_purpose ?? run.artifact_group ?? "legacy/unknown") === runGroup) &&
+      (!runStop || stopText.includes(runStop.toLowerCase())) && (!runDate || (run.execution_at ? newYorkDate(run.execution_at) === runDate : false));
+  });
+  const selectedRun = runs.find((run) => run.selection_id === runId) ?? null;
+  const allBuy = [...new Set(runs.flatMap((run) => run.buy_strategies))].sort();
+  const allSell = [...new Set(runs.flatMap((run) => run.sell_strategies))].sort();
+  const allGroups = [...new Set(runs.map((run) => run.run_purpose ?? run.artifact_group ?? "legacy/unknown"))].sort();
+  const allStops = [...new Set(runs.flatMap((run) => Object.keys(run.stop_configuration)))].sort();
   return <section aria-label="Unified trade journal" className="trades-section">
     <div className="section-heading"><div><h2>Trades</h2><p className="hint">Unified read-only journal · timestamps shown in America/New_York</p></div>
       <div className="source-switch"><button className={source === "account" ? "active" : ""} onClick={() => setSource("account")}>Account ({accountMode})</button>
-      <button className={source === "backtest" ? "active" : ""} onClick={() => setSource("backtest")}>Backtest</button></div></div>
+      <button className={source === "backtest" ? "active" : ""} onClick={() => setSource("backtest")}>Backtest / Research Runs</button></div></div>
+    {source === "backtest" ? <div className="research-browser">
+      <div className="research-browser-heading"><div><h3>Backtest and research executions</h3><p className="hint">Execution time is separate from the historical data window and trade timestamps.</p></div><span>{visibleRuns.length} of {runs.length} runs</span></div>
+      <div className="trade-filters research-filters">
+        <label>Search<input value={runSearch} onChange={(e) => setRunSearch(e.target.value)} placeholder="Symbol, strategy, purpose, ID" /></label>
+        <label>BUY strategy<select value={runBuy} onChange={(e) => setRunBuy(e.target.value)}><option value="">All</option>{allBuy.map((name) => <option key={name}>{name}</option>)}</select></label>
+        <label>SELL strategy<select value={runSell} onChange={(e) => setRunSell(e.target.value)}><option value="">All</option>{allSell.map((name) => <option key={name}>{name}</option>)}</select></label>
+        <label>Purpose / group<select value={runGroup} onChange={(e) => setRunGroup(e.target.value)}><option value="">All</option>{allGroups.map((name) => <option key={name}>{name}</option>)}</select></label>
+        <label>Stop setting<select value={runStop} onChange={(e) => setRunStop(e.target.value)}><option value="">All</option>{allStops.map((name) => <option key={name}>{name}</option>)}</select></label>
+        <label>Execution date<input type="date" value={runDate} onChange={(e) => setRunDate(e.target.value)} /></label>
+      </div>
+      <div className="trade-table-wrap"><table className="trade-table research-table"><thead><tr><th>Execution time</th><th>Historical period</th><th>Symbol(s)</th><th>BUY / SELL strategies</th><th>Protection</th><th>Purpose / artifact group</th><th>Trades</th><th>Net P&amp;L</th><th>Return</th><th>Win rate</th><th>Profit factor</th><th>Max drawdown</th><th>Status / identity</th></tr></thead>
+        <tbody>{visibleRuns.map((run) => <tr key={run.selection_id} className={run.selection_id === runId ? "research-selected" : ""} onClick={() => { setRunId(run.selection_id); setFilters((current) => ({ ...current, page: 1 })); setSelected(null); }}>
+          <td>{localDateTime(run.execution_at)}{run.completed_at ? <small className="row-sub">Completed {localDateTime(run.completed_at)}</small> : null}</td>
+          <td>{run.window_start?.slice(0, 10) ?? "Unknown"} – {run.window_end?.slice(0, 10) ?? "Unknown"}</td><td>{run.symbols.join(", ") || "Unknown"}</td>
+          <td><span className="row-sub">BUY: {run.buy_strategies.join(", ") || "Unknown"}</span><span className="row-sub">SELL: {run.sell_strategies.join(", ") || "Unknown"}</span></td>
+          <td>{Object.keys(run.stop_configuration).length ? JSON.stringify(run.stop_configuration) : "Unavailable"}</td>
+          <td>{run.run_purpose ?? run.artifact_group ?? "Legacy / unknown"}{run.duplicate_artifact_count > 1 ? <small className="row-sub">{run.duplicate_artifact_count} artifact copies</small> : null}</td>
+          <td>{run.completed_trade_count}</td><td className={Number(run.net_pnl) >= 0 ? "positive" : "negative"}>{money(run.net_pnl)}</td>
+          <td>{run.return_percent === null ? "—" : `${Number(run.return_percent).toFixed(2)}%`}</td><td>{run.win_rate === null ? "—" : `${Number(run.win_rate).toFixed(1)}%`}</td>
+          <td>{run.profit_factor ?? "—"}</td><td>{run.max_drawdown === null ? "—" : `${Number(run.max_drawdown).toFixed(2)}%`}</td>
+          <td>{run.status}{run.execution_identity_uncertain ? <small className="row-sub">Legacy execution identity unavailable</small> : run.execution_id ? <small className="row-sub">{run.execution_id.slice(0, 12)}</small> : null}</td>
+        </tr>)}</tbody></table></div>
+      {selectedRun && runDetail ? <div className="research-run-detail"><div><h3>{selectedRun.symbols.join(", ")} · {selectedRun.run_id.slice(0, 16)}</h3><p>Execution: {localDateTime(selectedRun.execution_at)} · Historical window: {selectedRun.window_start ?? "Unknown"} to {selectedRun.window_end ?? "Unknown"}</p>
+        <p>Dataset: {selectedRun.dataset_id ?? "Unavailable"} · Dataset hash: {selectedRun.dataset_hash ?? "Unavailable"} · Source: {selectedRun.data_source ?? "Unavailable"} · Role: {selectedRun.period_role ?? "Unknown"}</p>
+        <p>Initial equity {money(selectedRun.starting_capital)} · Final equity {money(selectedRun.final_equity)} · Net P&amp;L {money(selectedRun.net_pnl)} · Win rate {selectedRun.win_rate === null ? "—" : `${Number(selectedRun.win_rate).toFixed(1)}%`} · Profit factor {selectedRun.profit_factor ?? "—"} · Max drawdown {selectedRun.max_drawdown === null ? "—" : `${Number(selectedRun.max_drawdown).toFixed(2)}%`}</p>
+        {selectedRun.execution_identity_uncertain ? <p className="banner banner-unreachable">This legacy record has no execution identifier. Identical result ledgers are listed once; the original execution time cannot be recovered.</p> : null}
+        <details><summary>Complete configuration and provenance</summary><pre>{JSON.stringify({ configuration: runDetail.configuration, data_provenance: selectedRun.provenance, artifact_locations: runDetail.artifact_locations }, null, 2)}</pre></details>
+      </div></div> : null}
+    </div> : null}
     <div className="trade-filters">
-      {source === "backtest" ? <label>Research run<select value={runId} onChange={(e) => setRunId(e.target.value)}><option value="">No local runs</option>{runs.map((run) => <option key={run.run_id} value={run.run_id}>{run.run_id.slice(0, 12)} · {run.symbols.join(",")}</option>)}</select></label> : null}
+      {source === "backtest" ? <label>Selected execution<select value={runId} onChange={(e) => setRunId(e.target.value)}><option value="">No local runs</option>{runs.map((run) => <option key={run.selection_id} value={run.selection_id}>{localDateTime(run.execution_at)} · {run.symbols.join(",")}</option>)}</select></label> : null}
       <label>Symbol<input value={filters.symbol ?? ""} onChange={(e) => patchFilter({ symbol: e.target.value.toUpperCase() })} placeholder="All" /></label>
       <label>From<input type="date" value={newYorkDate(filters.dateFrom)} onChange={(e) => patchFilter({ dateFrom: e.target.value ? newYorkBoundary(e.target.value, false) : undefined })} /></label>
       <label>To<input type="date" value={newYorkDate(filters.dateTo)} onChange={(e) => patchFilter({ dateTo: e.target.value ? newYorkBoundary(e.target.value, true) : undefined })} /></label>

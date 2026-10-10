@@ -122,14 +122,24 @@ class RunManifest:
     seed: int
     strategies: tuple[Mapping[str, str], ...]
     holdout_access: Mapping[str, Any] | None = None
+    # run_id is the deterministic experiment/configuration identity. These
+    # fields identify one completed invocation and are optional for legacy files.
+    execution_id: str | None = None
+    started_at: datetime | None = None
+    completed_at: datetime | None = None
+    run_purpose: str | None = None
+    configuration: Mapping[str, Any] | None = None
+    completion_status: str = "COMPLETED"
 
     def __post_init__(self) -> None:
         if not self.run_id or not self.config_hash:
             raise ValueError("run_id and config_hash are required")
         if not isinstance(self.period_role, PeriodRole):
             object.__setattr__(self, "period_role", PeriodRole(self.period_role))
-        for name in ("created_at", "window_start", "window_end"):
+        for name in ("created_at", "window_start", "window_end", "started_at", "completed_at"):
             dt = getattr(self, name)
+            if dt is None:
+                continue
             if dt.tzinfo is None or dt.utcoffset() is None:
                 raise ValueError(f"{name} must be timezone-aware")
             object.__setattr__(self, name, dt.astimezone(UTC))
@@ -139,7 +149,8 @@ class RunManifest:
             raise ValueError("manifest requires 1-10 symbols")
         object.__setattr__(self, "symbols", tuple(sorted({s.upper() for s in self.symbols})))
         for name in ("code_revision", "data_provenance", "fee_assumptions", "slippage_assumptions",
-                     "fill_assumptions", "ambiguity_assumptions", "holdout_access"):
+                     "fill_assumptions", "ambiguity_assumptions", "holdout_access",
+                     "configuration"):
             value = getattr(self, name)
             if value is not None:
                 object.__setattr__(self, name, MappingProxyType(dict(value)))
@@ -157,8 +168,9 @@ class RunManifest:
     @classmethod
     def from_json(cls, value: str) -> "RunManifest":
         raw = json.loads(value)
-        for field in ("created_at", "window_start", "window_end"):
-            raw[field] = datetime.fromisoformat(raw[field].replace("Z", "+00:00"))
+        for field in ("created_at", "window_start", "window_end", "started_at", "completed_at"):
+            if raw.get(field) is not None:
+                raw[field] = datetime.fromisoformat(raw[field].replace("Z", "+00:00"))
         raw["period_role"] = PeriodRole(raw["period_role"])
         raw["symbols"] = tuple(raw["symbols"])
         raw["strategies"] = tuple(raw["strategies"])

@@ -45,6 +45,7 @@ from pydantic import AfterValidator, BaseModel, ConfigDict
 
 from mike_trade.dashboard.trades import (
     ResearchRuns,
+    ResearchRunDetail,
     TradeDiagnostics,
     TradeInspection,
     TradeJournalService,
@@ -1961,6 +1962,13 @@ def create_api_router(service: DashboardReadService) -> APIRouter:
     @router.get("/research/runs", response_model=ResearchRuns)
     def research_runs() -> Any:
         return service.trades.research_runs()
+
+    @router.get("/research/runs/{selection_id}", response_model=ResearchRunDetail)
+    def research_run_detail(selection_id: str) -> Any:
+        try:
+            return service.trades.research_run_detail(selection_id)
+        except LookupError as error:
+            raise HTTPException(status_code=404, detail="unknown research run") from error
 
     @router.get("/research/runs/{run_id}/trades", response_model=TradeList)
     def research_trades(

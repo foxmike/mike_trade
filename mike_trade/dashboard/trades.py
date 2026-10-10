@@ -8,7 +8,6 @@ from collections.abc import Callable
 from dataclasses import dataclass
 from datetime import UTC, datetime, timedelta
 from decimal import Decimal, InvalidOperation
-from itertools import islice
 from pathlib import Path
 from typing import Any, Literal
 from zoneinfo import ZoneInfo
@@ -149,15 +148,48 @@ class TradeInspection(_Model):
 
 
 class ResearchRun(_Model):
+    # selection_id is a stable API locator; execution_id is null for legacy runs.
+    selection_id: str
+    execution_id: str | None = None
+    experiment_id: str
     run_id: str
     created_at: datetime | None = None
+    execution_at: datetime | None = None
+    completed_at: datetime | None = None
     symbols: list[str]
     period_role: str | None = None
     window_start: datetime | None = None
     window_end: datetime | None = None
     dataset_id: str | None = None
+    dataset_hash: str | None = None
     config_fingerprint: str | None = None
     artifact_version: str | None = None
+    strategies: list[dict[str, Any]] = []
+    buy_strategies: list[str] = []
+    sell_strategies: list[str] = []
+    stop_configuration: dict[str, Any] = {}
+    run_purpose: str | None = None
+    artifact_group: str | None = None
+    execution_mode: str = "BACKTEST"
+    status: str = "COMPLETED"
+    starting_capital: Decimal | None = None
+    final_equity: Decimal | None = None
+    net_pnl: Decimal | None = None
+    return_percent: Decimal | None = None
+    completed_trade_count: int = 0
+    win_rate: Decimal | None = None
+    profit_factor: Decimal | None = None
+    max_drawdown: Decimal | None = None
+    data_source: str | None = None
+    duplicate_artifact_count: int = 1
+    execution_identity_uncertain: bool = False
+    provenance: dict[str, Any] = {}
+
+
+class ResearchRunDetail(_Model):
+    run: ResearchRun
+    configuration: dict[str, Any]
+    artifact_locations: list[str]
 
 
 class ResearchRuns(_Model):
@@ -790,45 +822,201 @@ class TradeJournalService:
             else "No persisted completed one-minute bars are available for this session.",
         )
 
-    def _artifact_paths(self) -> dict[str, tuple[Path, Path]]:
-        found: dict[str, tuple[Path, Path]] = {}
+    def _artifact_catalog(self) -> list[dict[str, Any]]:
+        """Index artifact pairs once per execution, collapsing copied legacy ledgers."""
         if not self.research_root.is_dir():
-            return found
-        for manifest in islice(self.research_root.rglob("*.manifest.json"), 2000):
-            results = manifest.with_name(manifest.name.replace(".manifest.json", ".results.json"))
-            if not results.is_file():
+            return []
+        groups: dict[tuple[str, str], list[dict[str, Any]]] = {}
+        for manifest_path in sorted(self.research_root.rglob("*.manifest.json")):
+            result_path = manifest_path.with_name(
+                manifest_path.name.replace(".manifest.json", ".results.json")
+            )
+            if not result_path.is_file():
                 continue
             try:
-                run_id = str(json.loads(manifest.read_text(encoding="utf-8"))["run_id"])
-            except (OSError, ValueError, KeyError):
+                manifest = json.loads(manifest_path.read_text(encoding="utf-8"))
+                result_bytes = result_path.read_bytes()
+                result = json.loads(result_bytes)
+                run_id = str(manifest["run_id"])
+                result_hash = hashlib.sha256(result_bytes).hexdigest()
+            except (OSError, ValueError, KeyError, TypeError):
                 continue
-            found.setdefault(run_id, (manifest, results))
-        return found
+            execution_id = manifest.get("execution_id") or result.get("execution_id")
+            # Legacy records have no invocation identity. Identical result ledgers
+            # under the same deterministic run_id are exposed once with all paths.
+            key = (str(execution_id or run_id), "execution" if execution_id else result_hash)
+            groups.setdefault(key, []).append({
+                "manifest_path": manifest_path,
+                "result_path": result_path,
+                "manifest": manifest,
+                "result": result,
+                "run_id": run_id,
+                "execution_id": str(execution_id) if execution_id else None,
+                "result_hash": result_hash,
+            })
+        catalog = []
+        for (_, variant), copies in groups.items():
+            copies.sort(key=lambda item: item["manifest_path"].as_posix())
+            chosen = copies[0]
+            run_id = chosen["run_id"]
+            execution_id = chosen["execution_id"]
+            # A differing legacy ledger under one experiment is a separate
+            # artifact variant, not proof of a separate execution.
+            selection_id = execution_id or (
+                run_id if variant == chosen["result_hash"] and
+                sum(1 for key in groups if key[0] == run_id) == 1
+                else f"legacy-{run_id}-{chosen['result_hash'][:16]}"
+            )
+            groups_for_run = [key for key in groups if key[0] == run_id]
+            if not execution_id and len(groups_for_run) == 1:
+                selection_id = run_id
+            catalog.append({
+                **chosen,
+                "selection_id": selection_id,
+                "copies": copies,
+                "locations": [
+                    str(item["manifest_path"].parent.relative_to(self.research_root))
+                    for item in copies
+                ],
+                "execution_identity_uncertain": execution_id is None,
+                "variant_count": len(groups_for_run),
+            })
+        return catalog
+
+    def _artifact_paths(self) -> dict[str, tuple[Path, Path]]:
+        catalog = self._artifact_catalog()
+        paths = {
+            item["selection_id"]: (item["manifest_path"], item["result_path"])
+            for item in catalog
+        }
+        by_experiment: dict[str, list[dict[str, Any]]] = {}
+        for item in catalog:
+            by_experiment.setdefault(item["run_id"], []).append(item)
+        for run_id, items in by_experiment.items():
+            if len(items) == 1:
+                paths.setdefault(run_id, (items[0]["manifest_path"], items[0]["result_path"]))
+        return paths
+
+    @staticmethod
+    def _strategy_rows(manifest: dict[str, Any]) -> list[dict[str, Any]]:
+        config = manifest.get("configuration") or {}
+        params = config.get("strategy_params") or {}
+        rows = []
+        for strategy in manifest.get("strategies", []):
+            name = str(strategy.get("name", "unknown"))
+            rows.append({
+                "name": name,
+                "version": strategy.get("version"),
+                "parameters": params.get(name, {}),
+            })
+        return rows
+
+    @staticmethod
+    def _stop_configuration(manifest: dict[str, Any]) -> dict[str, Any]:
+        config = manifest.get("configuration") or {}
+        keys = ("stop", "protect", "trailing")
+        return {
+            str(key): value for key, value in config.items()
+            if any(token in str(key).lower() for token in keys)
+        }
+
+    def _research_run_row(self, artifact: dict[str, Any]) -> ResearchRun:
+        manifest = artifact["manifest"]
+        result = artifact["result"]
+        selection_id = artifact["selection_id"]
+        trades = self._research_records(selection_id)
+        closed = [trade for trade in trades if trade.position_status == "CLOSED" and trade.realized_pnl is not None]
+        pnls = [trade.realized_pnl for trade in closed if trade.realized_pnl is not None]
+        positive = sum((value for value in pnls if value > ZERO), ZERO)
+        negative = -sum((value for value in pnls if value < ZERO), ZERO)
+        wins = sum(1 for value in pnls if value > ZERO)
+        starting = _decimal(manifest.get("starting_capital"))
+        curve = result.get("equity_curve", [])
+        final = _decimal(curve[-1].get("equity")) if curve else None
+        if final is None and starting is not None:
+            final = starting + sum(pnls, ZERO)
+        peak = starting or ZERO
+        drawdown = ZERO
+        for point in curve:
+            equity = _decimal(point.get("equity"))
+            if equity is None:
+                continue
+            peak = max(peak, equity)
+            if peak > ZERO:
+                drawdown = max(drawdown, (peak - equity) / peak)
+        locations = artifact["locations"]
+        folder_labels = [Path(label).parts[0] for label in locations if Path(label).parts]
+        known_groups = {"acceptance-once", "parallel-bench", "reproduction", "r730-validation", "final-six", "initial-six"}
+        group = next((label for label in folder_labels if label in known_groups), None)
+        if group is None:
+            group = next((label for label in folder_labels if label.startswith("r730-")), None)
+        config = manifest.get("configuration") or {}
+        collections = config.get("strategy_collections") or {}
+        buys = sorted({str(name) for row in collections.values() for name in row.get("buy", [])})
+        sells = sorted({str(name) for row in collections.values() for name in row.get("sell", [])})
+        net = final - starting if final is not None and starting is not None else sum(pnls, ZERO)
+        purpose = manifest.get("run_purpose")
+        return ResearchRun(
+            selection_id=selection_id,
+            execution_id=artifact["execution_id"],
+            experiment_id=str(manifest["run_id"]),
+            run_id=str(manifest["run_id"]),
+            created_at=_time(manifest.get("created_at")),
+            execution_at=_time(manifest.get("started_at")),
+            completed_at=_time(manifest.get("completed_at")),
+            symbols=[str(x) for x in manifest.get("symbols", [])],
+            period_role=manifest.get("period_role"),
+            window_start=_time(manifest.get("window_start")),
+            window_end=_time(manifest.get("window_end")),
+            dataset_id=manifest.get("data_revision") or manifest.get("data_vintage"),
+            dataset_hash=manifest.get("dataset_hash"),
+            config_fingerprint=manifest.get("config_hash"),
+            artifact_version=result.get("schema_version"),
+            strategies=self._strategy_rows(manifest),
+            buy_strategies=buys,
+            sell_strategies=sells,
+            stop_configuration=self._stop_configuration(manifest),
+            run_purpose=purpose,
+            artifact_group=group,
+            execution_mode="BACKTEST",
+            status=str(manifest.get("completion_status") or "COMPLETED"),
+            starting_capital=starting,
+            final_equity=final,
+            net_pnl=net,
+            return_percent=(net / starting * Decimal(100)) if starting else None,
+            completed_trade_count=len(closed),
+            win_rate=(Decimal(wins) / Decimal(len(closed)) * Decimal(100)) if closed else None,
+            profit_factor=(positive / negative) if negative else None,
+            max_drawdown=drawdown * Decimal(100),
+            data_source=(manifest.get("data_provenance") or {}).get("source"),
+            duplicate_artifact_count=len(artifact["copies"]),
+            execution_identity_uncertain=artifact["execution_identity_uncertain"],
+            provenance=dict(manifest.get("data_provenance") or {}),
+        )
 
     def research_runs(self) -> ResearchRuns:
-        rows: list[ResearchRun] = []
-        for run_id, (path, _) in self._artifact_paths().items():
-            try:
-                raw = json.loads(path.read_text(encoding="utf-8"))
-            except (OSError, ValueError):
-                continue
-            rows.append(
-                ResearchRun(
-                    run_id=run_id,
-                    created_at=_time(raw.get("created_at")),
-                    symbols=[str(x) for x in raw.get("symbols", [])],
-                    period_role=raw.get("period_role"),
-                    window_start=_time(raw.get("window_start")),
-                    window_end=_time(raw.get("window_end")),
-                    dataset_id=raw.get("data_revision") or raw.get("data_vintage"),
-                    config_fingerprint=raw.get("config_hash"),
-                    artifact_version=raw.get("schema_version"),
-                )
-            )
+        rows = [self._research_run_row(item) for item in self._artifact_catalog()]
         rows.sort(
-            key=lambda r: (r.created_at or datetime.min.replace(tzinfo=UTC), r.run_id), reverse=True
+            key=lambda row: (row.execution_at or datetime.min.replace(tzinfo=UTC), row.selection_id),
+            reverse=True,
         )
         return ResearchRuns(runs=rows[:500])
+
+    def research_run_detail(self, selection_id: str) -> ResearchRunDetail:
+        artifact = next(
+            (item for item in self._artifact_catalog() if item["selection_id"] == selection_id),
+            None,
+        )
+        if artifact is None:
+            raise LookupError(selection_id)
+        configuration = dict(artifact["manifest"].get("configuration") or {})
+        # Holdout authorization tokens are stored in a separate manifest field;
+        # they are never included in the dashboard response.
+        return ResearchRunDetail(
+            run=self._research_run_row(artifact),
+            configuration=configuration,
+            artifact_locations=artifact["locations"],
+        )
 
     def _artifact(self, run_id: str) -> tuple[dict[str, Any], dict[str, Any]]:
         paths = self._artifact_paths().get(run_id)

@@ -17,6 +17,7 @@ import pytest
 from scripted_strategies import build_registry
 
 from mike_trade.backtest.clock import ReplayClock
+from mike_trade.backtest.commands import BacktestResultsIndex
 from mike_trade.backtest.execution import ExecutionAssumptions, HistoricalExecutionSimulator
 from mike_trade.backtest.feed import DataProvenance, HistoricalReplayFeed, ReplayEvent
 from mike_trade.backtest.manifest import PeriodRole
@@ -321,11 +322,47 @@ def test_artifact_preserves_selected_signal_versions_cycles_and_stop_changes(tmp
     assert [event["event_type"] for event in result.protection_events] == [
         "INITIAL_STOP_ESTABLISHED", "STOP_MOVED"
     ]
-    payload = __import__("json").loads((tmp_path / f"{result.run_id}.results.json").read_text())
+    artifact_dir = tmp_path / "executions" / str(result.manifest.execution_id)
+    payload = __import__("json").loads(
+        (artifact_dir / f"{result.run_id}.results.json").read_text()
+    )
     assert payload["schema_version"] == "2"
+    assert payload["execution_id"] == result.manifest.execution_id
+    assert result.manifest.started_at is not None
+    assert result.manifest.completed_at is not None
+    assert result.manifest.created_at != result.manifest.window_start
     assert payload["protection_events"][1]["new_stop_price"] == str(
         result.protection_events[1]["new_stop_price"]
     )
+
+
+def test_identical_executions_get_distinct_artifacts_and_index_rows(tmp_path):
+    args = ({"AAA": [_flat(), _flat(), _flat(), _flat()]}, ("buy_alpha",))
+    options = {"params": {"buy_alpha": {"fire_at": 3}}, "result_dir": tmp_path}
+    first = _run_sync(*args, **options)
+    second = _run_sync(*args, **options)
+
+    assert first.run_id == second.run_id
+    assert first.manifest.execution_id
+    assert second.manifest.execution_id
+    assert first.manifest.execution_id != second.manifest.execution_id
+    for result in (first, second):
+        execution_dir = tmp_path / "executions" / str(result.manifest.execution_id)
+        manifest_path = execution_dir / f"{result.run_id}.manifest.json"
+        result_path = execution_dir / f"{result.run_id}.results.json"
+        manifest = __import__("json").loads(manifest_path.read_text())
+        payload = __import__("json").loads(result_path.read_text())
+        assert manifest["run_id"] == payload["run_id"] == result.run_id
+        assert manifest["execution_id"] == payload["execution_id"] == result.manifest.execution_id
+        assert manifest["completion_status"] == "COMPLETED"
+        assert manifest["started_at"] and manifest["completed_at"]
+
+    index = BacktestResultsIndex(tmp_path)
+    rows = index.list_runs()
+    assert {row["execution_id"] for row in rows} == {
+        first.manifest.execution_id, second.manifest.execution_id
+    }
+    assert index.get(str(second.manifest.execution_id))["run_id"] == first.run_id
 
 
 def test_native_trailing_artifact_records_actual_simulated_stop_movements(tmp_path):

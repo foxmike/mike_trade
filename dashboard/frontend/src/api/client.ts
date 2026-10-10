@@ -457,9 +457,23 @@ export interface TradeListResponse {
 }
 
 export interface ResearchRun {
-  run_id: string; created_at: string | null; symbols: string[]; period_role: string | null;
-  window_start: string | null; window_end: string | null; dataset_id: string | null;
+  selection_id: string; execution_id: string | null; experiment_id: string;
+  run_id: string; created_at: string | null; execution_at: string | null; completed_at: string | null;
+  symbols: string[]; period_role: string | null;
+  window_start: string | null; window_end: string | null; dataset_id: string | null; dataset_hash: string | null;
   config_fingerprint: string | null; artifact_version: string | null;
+  strategies: { name: string; version: string | null; parameters: Record<string, unknown> }[];
+  buy_strategies: string[]; sell_strategies: string[]; stop_configuration: Record<string, unknown>;
+  run_purpose: string | null; artifact_group: string | null; execution_mode: string; status: string;
+  starting_capital: string | null; final_equity: string | null; net_pnl: string | null;
+  return_percent: string | null; completed_trade_count: number; win_rate: string | null;
+  profit_factor: string | null; max_drawdown: string | null; data_source: string | null;
+  duplicate_artifact_count: number; execution_identity_uncertain: boolean;
+  provenance: Record<string, unknown>;
+}
+
+export interface ResearchRunDetail {
+  run: ResearchRun; configuration: Record<string, unknown>; artifact_locations: string[];
 }
 
 export interface TradeFill {
@@ -565,6 +579,9 @@ export function getTrade(accountId: string, tradeId: string, signal?: SignalOpti
 }
 export function getResearchRuns(signal?: SignalOption) {
   return getJson<{ runs: ResearchRun[] }>("/api/research/runs", signal);
+}
+export function getResearchRun(runId: string, signal?: SignalOption) {
+  return getJson<ResearchRunDetail>(`/api/research/runs/${enc(runId)}`, signal);
 }
 export function getResearchTrades(runId: string, filters: TradeFilters = {}, signal?: SignalOption) {
   return getJson<TradeListResponse>(`/api/research/runs/${enc(runId)}/trades${tradeParams(filters)}`, signal);
