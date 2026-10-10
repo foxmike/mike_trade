@@ -138,6 +138,15 @@ EXISTING = {
     "rsi_reversal": ("SELL", "oscillator"),
 }
 
+EXTENSION_BUY = {
+    "bollinger_band_breakout", "cci_reversion", "stochastic_oversold_reversal",
+    "money_flow_index", "chaikin_money_flow", "engulfing_candle_reversal",
+}
+EXTENSION_SELL = {
+    "cci_bearish_reversal", "money_flow_index_reversal", "chaikin_money_flow_reversal",
+    "bearish_engulfing_exit",
+}
+
 REGISTRY = _research_registry()
 
 
@@ -574,9 +583,11 @@ def test_new_strategy_metadata_registration_and_role(strategy_id: str) -> None:
 def test_registry_inventory_counts() -> None:
     buys = {cls.spec.strategy_id for cls in REGISTRY.list_strategies(StrategyRole.BUY)}
     sells = {cls.spec.strategy_id for cls in REGISTRY.list_strategies(StrategyRole.SELL)}
-    assert buys == set(NEW_BUY) | {k for k, v in EXISTING.items() if v[0] == "BUY"}
-    assert sells == set(NEW_SELL) | {k for k, v in EXISTING.items() if v[0] == "SELL"}
+    assert buys == set(NEW_BUY) | EXTENSION_BUY | {k for k, v in EXISTING.items() if v[0] == "BUY"}
+    assert sells == set(NEW_SELL) | EXTENSION_SELL | {
+        k for k, v in EXISTING.items() if v[0] == "SELL"}
     assert (len(NEW_BUY), len(NEW_SELL)) == (14, 14)
+    assert (len(buys), len(sells)) == (23, 21)  # 3 + 14 + 6 BUY, 3 + 14 + 4 SELL
     assert not buys & sells
 
 
@@ -1333,3 +1344,104 @@ def test_existing_five_minute_strategy_is_still_compatible_with_the_backtest(
     assert rows[0]["trigger_history_count"] == strategy_class("rsi_reversal").spec.warmup_bars
     assert any(r["strategy"] == "parabolic_sar" and r["trigger_timeframe"] == "1m"
                for r in result.evaluations)
+
+
+# --------------------------------------------------------------------------- finite-window library extension
+
+#: id -> (default period requirement, [(parameters, requirement)]) worked out by hand:
+#: a prior and a latest value of an n-bar window need n + 1 bars (MFI compares typical
+#: prices, so each value needs n + 1 bars and two values n + 2).
+EXTENSION_WARMUP: dict[str, tuple[int, list[tuple[dict[str, object], int]]]] = {
+    "bollinger_band_breakout": (21, [({"period": 5}, 6), ({"period": 50}, 51)]),
+    "cci_reversion": (21, [({"period": 3}, 4), ({"period": 50}, 51)]),
+    "cci_bearish_reversal": (21, [({"period": 3}, 4), ({"period": 50}, 51)]),
+    "stochastic_oversold_reversal": (15, [({"period": 2}, 3), ({"period": 50}, 51)]),
+    "money_flow_index": (16, [({"period": 2}, 4), ({"period": 50}, 52)]),
+    "money_flow_index_reversal": (16, [({"period": 2}, 4), ({"period": 50}, 52)]),
+    "chaikin_money_flow": (21, [({"period": 2}, 3), ({"period": 50}, 51)]),
+    "chaikin_money_flow_reversal": (21, [({"period": 2}, 3), ({"period": 50}, 51)]),
+    "engulfing_candle_reversal": (2, [({}, 2)]),
+    "bearish_engulfing_exit": (2, [({}, 2)]),
+}
+
+
+def _extension_state(strategy_id: str) -> dict[str, object]:
+    return dict(WATCHING) if strategy_id in EXTENSION_BUY else {}
+
+
+def test_bollinger_middle_band_of_ten_through_fourteen_is_twelve() -> None:
+    from mike_trade.strategies.indicators.finite import bollinger
+
+    lower, middle, upper = bollinger([Decimal(v) for v in (10, 11, 12, 13, 14)], 5, Decimal(2))
+    assert middle == Decimal(12)
+    width = Decimal(2) * Decimal(2).sqrt()  # population SD of 10..14 is sqrt(2); 2 deviations
+    assert abs((upper - middle) - width) < Decimal("1e-20")
+    assert abs((middle - lower) - width) < Decimal("1e-20")
+
+
+@pytest.mark.parametrize("strategy_id", sorted(EXTENSION_WARMUP))
+def test_extension_warmup_is_parameter_specific(strategy_id: str) -> None:
+    default, variants = EXTENSION_WARMUP[strategy_id]
+    cls = strategy_class(strategy_id)
+    assert cls.spec.warmup_bars == default == cls.required_bars({})
+    for params, required in variants:
+        assert cls.required_bars(params) == required
+        bars = candles(path(required + 3))
+        short = cls().evaluate(context(bars[: required - 1]), params, _extension_state(strategy_id))
+        if required > 1:
+            assert short.reason_codes == (ReasonCode.INSUFFICIENT_DATA,)
+        exact = cls().evaluate(context(bars[:required]), params, _extension_state(strategy_id))
+        assert ReasonCode.INSUFFICIENT_DATA not in exact.reason_codes, (params, exact)
+
+
+@pytest.mark.parametrize("strategy_id", sorted(EXTENSION_WARMUP))
+def test_extension_strategies_treat_a_missing_candle_as_a_gap(strategy_id: str) -> None:
+    params = EXTENSION_WARMUP[strategy_id][1][0][0]
+    cls = strategy_class(strategy_id)
+    need = cls.required_bars(params)
+    bars = candles(path(need + 5))
+    bars = bars[:-1] + [candle(len(bars) - 1, *ROWS[len(bars) - 1], offset=len(bars) + 14)]
+    result = cls().evaluate(context(bars), params, _extension_state(strategy_id))
+    assert not result.is_signal and result.reason_codes == (ReasonCode.INSUFFICIENT_DATA,)
+
+
+@pytest.mark.parametrize("strategy_id", sorted(EXTENSION_WARMUP))
+def test_extension_strategies_honor_the_shared_guards(strategy_id: str) -> None:
+    cls = strategy_class(strategy_id)
+    ctx_bars = candles(path(60))
+    assert cls().evaluate(context(ctx_bars, stale=True), {}, _extension_state(strategy_id)
+                          ).reason_codes == (ReasonCode.STALE_DATA,)
+    assert cls().evaluate(context(ctx_bars, status=SessionStatus.CLOSED), {},
+                          _extension_state(strategy_id)).reason_codes == (ReasonCode.NOT_ELIGIBLE,)
+    if strategy_id in EXTENSION_BUY:
+        assert cls().evaluate(context(ctx_bars), {}, {}).reason_codes == (
+            ReasonCode.NOT_ELIGIBLE,)
+    assert cls.spec.trigger_timeframe is CandleTimeframe.M1
+    assert cls.spec.required_timeframes == (CandleTimeframe.M1,)
+
+
+def test_new_strategies_run_through_the_real_evaluation_paths_and_a_backtest(
+    tmp_path: Path,
+) -> None:
+    # representative BUY and SELL through the real evaluate()/SellRule path ...
+    bars = candles(path(60))
+    for index in range(len(bars)):  # sweep until the CCI rules each fire once
+        buy = strategy_class("cci_reversion")().evaluate(
+            context(bars[: index + 1]), {"period": 8}, dict(WATCHING))
+        if buy.is_signal:
+            assert buy.side is StrategyRole.BUY and buy.reference_price == bars[index].close
+            break
+    else:
+        pytest.fail("cci_reversion never fired on the scan path")
+    assert any(
+        strategy_class("cci_bearish_reversal")().evaluate(
+            context(bars[: i + 1]), {"period": 8}, {}).is_signal
+        for i in range(len(bars))
+    )
+    # ... and one small BacktestRunner run with both sides
+    params = {"cci_reversion": {"period": 8}, "cci_bearish_reversal": {"period": 8}}
+    result = _backtest(tmp_path, ("cci_reversion", "cci_bearish_reversal"), params)
+    assert any(f["side"] == "BUY" for f in result.fills)
+    assert any(f["side"] == "SELL" for f in result.fills)
+    assert {r["strategy"]: r["side"] for r in result.evaluations} == {
+        "cci_reversion": "BUY", "cci_bearish_reversal": "SELL"}

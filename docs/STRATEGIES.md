@@ -1,9 +1,9 @@
 # Strategies — Shipped Definitions and Reference Configuration
 
 Sections 1–7 describe the original reference strategies and the strategy
-contract; section 8 documents the technical strategy library (first batch of
-14 BUY and 14 SELL strategies) and section 9 is the implementation inventory
-of the candidate methods. It makes no claim
+contract; section 8 documents the first technical batch and section 9 records
+its original candidate methods. Section 10 documents the finite-window
+strategy additions (10 further strategies). It makes no claim
 about alpha, edge, or profitability. Nothing here is a profitability claim,
 and there are no confidence scores anywhere in the strategy contract,
 implementations, presets, or evaluations.
@@ -2202,3 +2202,33 @@ candidates remain `pending`**; each should be appended to §9.1 by name, with it
 status, when the candidate list is added. Strategies from books, videos,
 individual traders or in-house research will be added as separate, separately
 named implementations and are not part of this batch.
+## 10. Finite-window strategy additions (6 BUY, 4 SELL)
+
+These methods use completed 1-minute candles, declared through each strategy's own
+`StrategySpec` (the section 8 conventions apply unchanged). Their indicators are exact
+finite-window calculations over the latest completed candles, so they keep no recursive
+indicator state. Period parameters are bounded at 50. `StrategySpec.warmup_bars` is the
+requirement at the default period and `required_bars(params)` gives the exact requirement of
+the configured period (the "history" column is that requirement), so short configurations are
+evaluated as soon as they have enough candles and none signals earlier. Rolling periods count
+observed completed candles; a missing candle is never filled. Every edge compares the two
+adjacent completed candles (`latest.start == prior.end`); a missing interval gives
+`INSUFFICIENT_DATA`. The SELL classes emit only advisory exits and continue through the
+existing `SellRule` position/eligibility contract. With 34 earlier strategies the registered
+library holds 23 BUY and 21 SELL.
+
+| Strategy ID | Role / category | Signal rule and calculation | Default; history | Source and interpretation |
+|---|---|---|---|---|
+| `bollinger_band_breakout` | BUY / breakout | Close crosses above the current upper band; upper = SMA(close, n) + deviations × population standard deviation(close, n). | n=20, deviations=2; n+1 bars for prior/latest comparison. | John Bollinger's official description confirms population standard deviation; StockCharts documents the completed-close band-break interpretation. No squeeze filter. |
+| `cci_reversion` | BUY / mean_reversion | CCI crosses upward through -100. CCI uses typical price, rolling SMA, mean absolute deviation, and Lambert's 0.015 constant. | n=20; n+1 bars. | Donald Lambert; StockCharts CCI. A zero mean deviation is undefined. |
+| `stochastic_oversold_reversal` | BUY / oscillator | Fast %K crosses upward through 20; %K = 100 × (close - n-bar low) / (n-bar high - n-bar low). | n=14; n+1 bars. | George Lane; StockCharts Stochastic. No %K/%D confirmation is added; flat windows are undefined. |
+| `money_flow_index` | BUY / volume | MFI crosses upward through 20. MFI uses n typical-price × volume flows, signed by typical-price direction. | n=14; n+2 bars for both adjacent MFI readings. | StockCharts MFI. Equal typical prices add to neither positive nor negative flow; zero total signed flow is undefined. |
+| `chaikin_money_flow` | BUY / volume | Rolling CMF crosses above zero; sum(money-flow multiplier × volume) / sum(volume), where multiplier = ((close-low) - (high-close)) / (high-low). | n=20; n+1 bars. | Marc Chaikin; StockCharts CMF. A zero-range candle contributes multiplier zero; a zero-volume window is undefined. |
+| `engulfing_candle_reversal` | BUY / price_action | Bearish real body followed by bullish real body that fully contains it, including equality at body boundaries. | Two adjacent bars. | StockCharts bullish engulfing pattern. Shadows are excluded, and no broad downtrend filter or next-bar confirmation is added. |
+| `cci_bearish_reversal` | SELL / oscillator | CCI crosses downward through +100, using the same CCI definition as the BUY CCI strategy. | n=20; n+1 bars. | Donald Lambert; StockCharts CCI. Advisory full exit only. |
+| `money_flow_index_reversal` | SELL / volume | MFI crosses downward through 80, using the same finite rolling calculation as the BUY MFI strategy. | n=14; n+2 bars. | StockCharts MFI. Advisory full exit only. |
+| `chaikin_money_flow_reversal` | SELL / volume | Rolling CMF crosses below zero, using the same finite rolling calculation as the BUY CMF strategy. | n=20; n+1 bars. | Marc Chaikin; StockCharts CMF. Advisory full exit only. |
+| `bearish_engulfing_exit` | SELL / price_action | Bullish real body followed by bearish real body that fully contains it. Bars must be adjacent; a gap suppresses the pattern. | Two adjacent bars. | StockCharts bearish engulfing pattern. Advisory full exit only; no separate trend filter is added. |
+
+For the complete 156-candidate implementation status, see
+[`TECHNICAL_STRATEGY_INVENTORY.md`](TECHNICAL_STRATEGY_INVENTORY.md).
