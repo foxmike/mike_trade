@@ -116,6 +116,12 @@ from mike_trade.signals.decisions import (
 from mike_trade.strategies.base import StrategyEvaluation
 from mike_trade.strategies.buy.aroon_trend import AroonTrendBuy
 from mike_trade.strategies.buy.cci_zero_line_crossover import CciZeroLineCrossoverBuy
+from mike_trade.strategies.buy.bollinger_band_breakout import BollingerBandBreakoutBuy
+from mike_trade.strategies.buy.cci_reversion import CciReversionBuy
+from mike_trade.strategies.buy.stochastic_oversold_reversal import StochasticOversoldReversalBuy
+from mike_trade.strategies.buy.money_flow_index import MoneyFlowIndexBuy
+from mike_trade.strategies.buy.chaikin_money_flow import ChaikinMoneyFlowBuy
+from mike_trade.strategies.buy.engulfing_candle_reversal import EngulfingCandleReversalBuy
 from mike_trade.strategies.buy.dmi_crossover import DmiCrossoverBuy
 from mike_trade.strategies.buy.donchian_channel_breakout import DonchianChannelBreakoutBuy
 from mike_trade.strategies.buy.ema_crossover import EmaCrossoverBuy
@@ -137,6 +143,10 @@ from mike_trade.strategies.registry import StrategyRegistry
 from mike_trade.strategies.sell.aroon_bearish_reversal import AroonBearishReversalSell
 from mike_trade.strategies.sell.base import ExitSource
 from mike_trade.strategies.sell.cci_zero_line_breakdown import CciZeroLineBreakdownSell
+from mike_trade.strategies.sell.cci_bearish_reversal import CciBearishReversalSell
+from mike_trade.strategies.sell.money_flow_index_reversal import MoneyFlowIndexReversalSell
+from mike_trade.strategies.sell.chaikin_money_flow_reversal import ChaikinMoneyFlowReversalSell
+from mike_trade.strategies.sell.bearish_engulfing_exit import BearishEngulfingExitSell
 from mike_trade.strategies.sell.dmi_bearish_crossover import DmiBearishCrossoverSell
 from mike_trade.strategies.sell.donchian_lower_channel_exit import DonchianLowerChannelExitSell
 from mike_trade.strategies.sell.ema_bearish_crossover import EmaBearishCrossoverSell
@@ -2092,6 +2102,12 @@ def build_runtime(
         SmaCrossoverBuy,
         StochasticCrossoverBuy,
         WilliamsRReversionBuy,
+        BollingerBandBreakoutBuy,
+        CciReversionBuy,
+        StochasticOversoldReversalBuy,
+        MoneyFlowIndexBuy,
+        ChaikinMoneyFlowBuy,
+        EngulfingCandleReversalBuy,
         AroonBearishReversalSell,
         CciZeroLineBreakdownSell,
         DmiBearishCrossoverSell,
@@ -2106,6 +2122,10 @@ def build_runtime(
         SmaBearishCrossoverSell,
         StochasticBearishCrossoverSell,
         WilliamsRReversalSell,
+        CciBearishReversalSell,
+        MoneyFlowIndexReversalSell,
+        ChaikinMoneyFlowReversalSell,
+        BearishEngulfingExitSell,
     ):
         registry.register(strategy_cls)
     strategies = supplied.get("strategies", registry)

@@ -504,8 +504,16 @@ def test_new_strategy_metadata_registration_and_role(strategy_id: str) -> None:
 def test_registry_inventory_counts() -> None:
     buys = {cls.spec.strategy_id for cls in REGISTRY.list_strategies(StrategyRole.BUY)}
     sells = {cls.spec.strategy_id for cls in REGISTRY.list_strategies(StrategyRole.SELL)}
-    assert buys == set(NEW_BUY) | {k for k, v in EXISTING.items() if v[0] == "BUY"}
-    assert sells == set(NEW_SELL) | {k for k, v in EXISTING.items() if v[0] == "SELL"}
+    extensions_buy = {
+        "bollinger_band_breakout", "cci_reversion", "stochastic_oversold_reversal",
+        "money_flow_index", "chaikin_money_flow", "engulfing_candle_reversal",
+    }
+    extensions_sell = {
+        "cci_bearish_reversal", "money_flow_index_reversal",
+        "chaikin_money_flow_reversal", "bearish_engulfing_exit",
+    }
+    assert buys == set(NEW_BUY) | extensions_buy | {k for k, v in EXISTING.items() if v[0] == "BUY"}
+    assert sells == set(NEW_SELL) | extensions_sell | {k for k, v in EXISTING.items() if v[0] == "SELL"}
     assert (len(NEW_BUY), len(NEW_SELL)) == (14, 14)
     assert not buys & sells
 
@@ -800,7 +808,8 @@ def _backtest(tmp_path: Path, strategy_ids: tuple[str, ...], params: dict[str, d
         period_role=PeriodRole.RESEARCH, config={}, seed=7, starting_capital=Decimal("100000"),
         strategy_ids=strategy_ids, strategy_params=params,
         initial_strategy_state={
-            sid: dict(WATCHING) for sid in strategy_ids if CATALOGUE[sid][0] == "BUY"},
+            sid: dict(WATCHING) for sid in strategy_ids
+            if REGISTRY.get(sid).spec.side is StrategyRole.BUY},
         context_history_bars=120, result_directory=tmp_path,
     )
     runner = BacktestRunner(REGISTRY, feed, clock, sim, intent_factory=_intent_factory(sim))
@@ -828,3 +837,13 @@ def test_new_strategies_run_through_the_backtest_runner(tmp_path: Path) -> None:
     again = _backtest(tmp_path / "b", ids, params)
     assert again.evaluations == result.evaluations
     assert again.signals == result.signals and again.fills == result.fills
+
+
+def test_finite_window_addition_runs_through_backtest_runner(tmp_path: Path) -> None:
+    strategy_id = "bollinger_band_breakout"
+    result = _backtest(tmp_path, (strategy_id,), {
+        strategy_id: {"period": 10, "deviations": Decimal("1")},
+    })
+    assert any(row["strategy"] == strategy_id for row in result.evaluations)
+    assert any(row["strategy"] == strategy_id for row in result.signals)
+    assert any(row["side"] == "BUY" for row in result.fills)
