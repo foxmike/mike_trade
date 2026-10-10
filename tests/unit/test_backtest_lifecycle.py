@@ -303,6 +303,44 @@ def test_trailing_stop_ratchets_up_and_never_down_protecting_gains(tmp_path, sto
     assert sell["price"] > _fills(result, "BUY")[0]["price"]
 
 
+def test_artifact_preserves_selected_signal_versions_cycles_and_stop_changes(tmp_path):
+    result = _run_sync(
+        {"AAA": list(_RISE_AND_FALL)}, ("buy_alpha",),
+        params={"buy_alpha": {"fire_at": 3}},
+        config={"protective_stop": {"type": "stepped_trailing",
+                "initial_stop_percent": "1.5", "step_trigger_percent": "1.0",
+                "step_percent": "0.5"}}, result_dir=tmp_path,
+    )
+    buy = _fills(result, "BUY")[0]
+    cycle = result.cycles[0]
+    assert buy["cycle_id"] == cycle["cycle_id"]
+    assert buy["signal_id"] == cycle["entry_signal_id"]
+    assert buy["strategy_version"] == cycle["entry_strategy_version"] == "1.0.0"
+    assert cycle["entry_decision"] == "SELECTED"
+    assert cycle["protection_mode"] == "TRAILING_STEPPED"
+    assert [event["event_type"] for event in result.protection_events] == [
+        "INITIAL_STOP_ESTABLISHED", "STOP_MOVED"
+    ]
+    payload = __import__("json").loads((tmp_path / f"{result.run_id}.results.json").read_text())
+    assert payload["schema_version"] == "2"
+    assert payload["protection_events"][1]["new_stop_price"] == str(
+        result.protection_events[1]["new_stop_price"]
+    )
+
+
+def test_native_trailing_artifact_records_actual_simulated_stop_movements(tmp_path):
+    result = _run_sync(
+        {"AAA": list(_RISE_AND_FALL)}, ("buy_alpha",),
+        params={"buy_alpha": {"fire_at": 3}},
+        config={"protective_stop": {"type": "native_trailing", "trail_percent": "1.5"}},
+        result_dir=tmp_path,
+    )
+    prices = [event["stop_price"] for event in result.protection_events]
+    assert len(prices) >= 2
+    assert prices == sorted(prices)
+    assert result.protection_events[-1]["protection_mode"] == "TRAILING_NATIVE"
+
+
 def test_legacy_trailing_percent_key_is_the_native_trailing_alias(tmp_path):
     legacy = _run_sync(
         {"AAA": list(_RISE_AND_FALL)}, ("buy_alpha",), params={"buy_alpha": {"fire_at": 3}},

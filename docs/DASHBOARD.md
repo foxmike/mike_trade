@@ -125,3 +125,49 @@ engine control channel (`make close`, `make close-all`, `make flatten`,
 `make pause`, `make entries-disable`, strategy/symbol mutations, and the
 live lifecycle commands), each with its own online and confirmation
 requirements (see `docs/SAFETY_AND_RISK.md` §6 and §9).
+
+## 8. Unified trade journal and inspection
+
+The existing dashboard includes a **Trades** section. The account view
+projects SHADOW, PAPER, or LIVE cycles from the selected SQLite account scope.
+The Backtest view reads immutable research artifacts from
+`MIKE_TRADE_RESEARCH_ROOT` (default `research`) after explicit run selection.
+Both use one normalized model and inspection panel; scopes and runs are never
+combined.
+
+The journal supports open, partially closed, and completed cycles, bounded
+pagination, sorting, and symbol/date/entry-strategy/exit/result/status filters.
+Selecting a row opens a dependency-free SVG chart with completed one-minute
+bars, actual fill markers, recorded VWAP, the holding interval, and recorded
+stop changes. Full-session and around-trade windows are available. Displayed
+wall-clock times use `America/New_York`; API timestamps remain aware ISO-8601.
+
+Entry attribution follows the accepted ENTRY intent's `signal_id` to the exact
+signal and strategy instance. Same-bar candidates remain visible as accepted
+or rejected decisions. A legacy `entry_strategy_key` can supply a name but
+never a guessed version or signal; missing history displays `UNKNOWN`.
+Discretionary exits follow the STRATEGY_EXIT signal. Protective, manual,
+safety, and end-of-session intents retain their own causes and are not labeled
+as SELL strategies.
+
+Realized values use quantity-weighted executed fills and fees. MFE, MAE,
+best/worst price, and maximum unrealized gain/loss use completed-bar highs and
+lows with the fill-derived quantity active at each minute wholly inside the
+actual holding interval. Boundary minutes
+are excluded when a fill occurs intrabar because OHLC cannot establish
+intrabar ordering. Missing bars leave excursion fields null and show an
+availability message while recorded executions and events remain visible.
+
+Read-only routes are:
+
+- `/api/accounts/{account_id}/trades` and
+  `/api/accounts/{account_id}/trades/{trade_id}`
+- the trade detail `/bars`, `/events`, and `/diagnostics` subroutes
+- `/api/research/runs`
+- `/api/research/runs/{run_id}/trades` and equivalent detail subroutes
+
+List parameters are `page`, `page_size`, `symbol`, `date_from`, `date_to`,
+`entry_strategy`, `exit_filter`, `outcome`, `position_status`, `sort`, and
+`direction`. Decimal values are JSON strings. Detail includes individual
+partial fills, authoritative events, provenance, and explicit unavailable-data
+semantics for AI agents and external read-only analysis.

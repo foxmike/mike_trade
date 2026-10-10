@@ -269,3 +269,23 @@ Response steps for an operator (via the delegating CLI/Makefile recipes):
    keeping the `.pre-restore-*` copy until reconciliation is clean.
 5. Do not replay unverified edits into the ledger; re-ingest broker truth
    through the exactly-once fill/activity paths instead.
+
+## Trade-journal projection
+
+The journal adds no database and no destructive migration. It reads existing
+tables in one account-scoped, read-only WAL snapshot. `position_cycles`
+provides identity; `order_intents.signal_id`, `signals`, `decisions`, and
+`strategy_instances` provide exact accepted attribution and rejected
+candidates; `broker_orders` and `fills` retain partial execution evidence;
+`protection_orders` and `trailing_stop_events` retain protection history;
+`positions` supplies last-known open P&L; and `market_bars` supplies completed
+one-minute OHLC/VWAP observations.
+
+Every SQL statement is constrained by `account_scope_id`. Database identity
+continues to isolate execution environments. The dashboard uses SQLite
+`mode=ro`, `query_only`, and a write-denying authorizer, and therefore remains
+usable from persisted state while the engine is offline.
+
+Older rows can lack signal links, versions, bars, or protection events. Those
+fields return null. The projection does not infer decisions from prices or run
+historical data through current strategy code.

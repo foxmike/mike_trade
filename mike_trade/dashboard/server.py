@@ -91,6 +91,10 @@ def _settings_from_config() -> DashboardSettings:
         data_dir=Path(str(service["data_dir"])),
         backup_dir=Path(backup) if backup else None,
         backup_status_file=Path(backup_status) if backup_status else None,
+        research_root=Path(os.environ.get("MIKE_TRADE_RESEARCH_ROOT", "research")),
+        research_dataset_root=Path(
+            os.environ.get("MIKE_TRADE_RESEARCH_DATASET_ROOT", "research/data")
+        ),
     )
 
 

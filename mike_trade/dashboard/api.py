@@ -40,9 +40,17 @@ from decimal import Decimal, InvalidOperation
 from pathlib import Path
 from typing import Annotated, Any, Literal
 
-from fastapi import APIRouter, HTTPException, Request
+from fastapi import APIRouter, HTTPException, Query, Request
 from pydantic import AfterValidator, BaseModel, ConfigDict
 
+from mike_trade.dashboard.trades import (
+    ResearchRuns,
+    TradeDiagnostics,
+    TradeInspection,
+    TradeJournalService,
+    TradeList,
+    TradeQuery,
+)
 from mike_trade.persistence import projections, schema
 from mike_trade.persistence.readstore import ReadStore, ReadStoreUnavailableError
 from mike_trade.runtime import ClockPort
@@ -141,6 +149,8 @@ class DashboardSettings:
     data_dir: Path = Path("/var/lib/mike_trade")
     backup_dir: Path | None = None
     backup_status_file: Path | None = None
+    research_root: Path = Path("research")
+    research_dataset_root: Path = Path("research/data")
 
     def __post_init__(self) -> None:
         if self.heartbeat_stale_seconds <= 0 or self.heartbeat_offline_seconds <= 0:
@@ -169,6 +179,10 @@ class DashboardSettings:
             data_dir=data_dir,
             backup_dir=Path(backup) if backup else None,
             backup_status_file=Path(backup_status) if backup_status else None,
+            research_root=Path(env.get("MIKE_TRADE_RESEARCH_ROOT", "research")),
+            research_dataset_root=Path(
+                env.get("MIKE_TRADE_RESEARCH_DATASET_ROOT", "research/data")
+            ),
         )
 
 
@@ -760,6 +774,16 @@ class DashboardReadService:
         self._settings = settings
         self._clock = clock
         self._db_path = Path(db_path)
+        self._trade_journal = TradeJournalService(
+            self._db_path,
+            settings.research_root,
+            settings.research_dataset_root,
+            now=self.server_time,
+        )
+
+    @property
+    def trades(self) -> TradeJournalService:
+        return self._trade_journal
 
     # ---- access ------------------------------------------------------------
 
@@ -1848,8 +1872,14 @@ def create_api_router(service: DashboardReadService) -> APIRouter:
             return call()
         except UnknownAccountError as error:
             raise HTTPException(status_code=404, detail=f"unknown account_id: {error}") from error
+        except LookupError as error:
+            raise HTTPException(status_code=404, detail=f"unknown trade or account: {error}") from error
         except DatabaseUnavailableError as error:
             raise HTTPException(status_code=503, detail="database unavailable") from error
+        except RuntimeError as error:
+            if str(error) == "database unavailable":
+                raise HTTPException(status_code=503, detail="database unavailable") from error
+            raise
 
     @router.get("/live", response_model=LiveResponse)
     def live() -> LiveResponse:
@@ -1882,6 +1912,97 @@ def create_api_router(service: DashboardReadService) -> APIRouter:
     @router.get("/accounts/{account_id}/health", response_model=HealthResponse)
     def health(account_id: str) -> Any:
         return guarded(lambda: service.health(account_id))
+
+    def trade_query(
+        page: int, page_size: int, symbol: str | None, date_from: datetime | None,
+        date_to: datetime | None, entry_strategy: str | None, exit_filter: str | None,
+        outcome: str | None, position_status: str | None, sort: str, direction: str,
+    ) -> TradeQuery:
+        try:
+            return TradeQuery(page, page_size, symbol, date_from, date_to, entry_strategy,
+                              exit_filter, outcome, position_status, sort, direction)
+        except ValueError as error:
+            raise HTTPException(status_code=422, detail=str(error)) from error
+
+    @router.get("/accounts/{account_id}/trades", response_model=TradeList)
+    def trades(
+        account_id: str, page: int = Query(1, ge=1),
+        page_size: int = Query(50, ge=1, le=200), symbol: str | None = None,
+        date_from: datetime | None = None, date_to: datetime | None = None,
+        entry_strategy: str | None = None, exit_filter: str | None = None,
+        outcome: str | None = None, position_status: str | None = None,
+        sort: str = "entry_timestamp", direction: str = "desc",
+    ) -> Any:
+        query = trade_query(page, page_size, symbol, date_from, date_to, entry_strategy,
+                            exit_filter, outcome, position_status, sort, direction)
+        return guarded(lambda: service.trades.operational_list(account_id, query))
+
+    def inspection(account_id: str, trade_id: str, as_of: datetime | None = None) -> Any:
+        return guarded(lambda: service.trades.operational_inspection(account_id, trade_id, as_of))
+
+    @router.get("/accounts/{account_id}/trades/{trade_id}", response_model=TradeInspection)
+    def trade_detail(account_id: str, trade_id: str, as_of: datetime | None = None) -> Any:
+        return inspection(account_id, trade_id, as_of)
+
+    @router.get("/accounts/{account_id}/trades/{trade_id}/bars")
+    def trade_bars(account_id: str, trade_id: str, as_of: datetime | None = None) -> Any:
+        return inspection(account_id, trade_id, as_of).bars
+
+    @router.get("/accounts/{account_id}/trades/{trade_id}/events")
+    def trade_events(account_id: str, trade_id: str, as_of: datetime | None = None) -> Any:
+        return inspection(account_id, trade_id, as_of).events
+
+    @router.get("/accounts/{account_id}/trades/{trade_id}/diagnostics",
+                response_model=TradeDiagnostics)
+    def trade_diagnostics(account_id: str, trade_id: str,
+                          as_of: datetime | None = None) -> Any:
+        return inspection(account_id, trade_id, as_of).diagnostics
+
+    @router.get("/research/runs", response_model=ResearchRuns)
+    def research_runs() -> Any:
+        return service.trades.research_runs()
+
+    @router.get("/research/runs/{run_id}/trades", response_model=TradeList)
+    def research_trades(
+        run_id: str, page: int = Query(1, ge=1), page_size: int = Query(50, ge=1, le=200),
+        symbol: str | None = None, date_from: datetime | None = None,
+        date_to: datetime | None = None, entry_strategy: str | None = None,
+        exit_filter: str | None = None, outcome: str | None = None,
+        position_status: str | None = None, sort: str = "entry_timestamp",
+        direction: str = "desc",
+    ) -> Any:
+        query = trade_query(page, page_size, symbol, date_from, date_to, entry_strategy,
+                            exit_filter, outcome, position_status, sort, direction)
+        try:
+            return service.trades.research_list(run_id, query)
+        except LookupError as error:
+            raise HTTPException(status_code=404, detail=f"unknown research run: {run_id}") from error
+
+    def research_inspection(run_id: str, trade_id: str, as_of: datetime | None = None) -> Any:
+        try:
+            return service.trades.research_inspection(run_id, trade_id, as_of)
+        except LookupError as error:
+            raise HTTPException(status_code=404, detail="unknown research run or trade") from error
+
+    @router.get("/research/runs/{run_id}/trades/{trade_id}", response_model=TradeInspection)
+    def research_trade_detail(run_id: str, trade_id: str,
+                              as_of: datetime | None = None) -> Any:
+        return research_inspection(run_id, trade_id, as_of)
+
+    @router.get("/research/runs/{run_id}/trades/{trade_id}/bars")
+    def research_trade_bars(run_id: str, trade_id: str, as_of: datetime | None = None) -> Any:
+        return research_inspection(run_id, trade_id, as_of).bars
+
+    @router.get("/research/runs/{run_id}/trades/{trade_id}/events")
+    def research_trade_events(run_id: str, trade_id: str,
+                              as_of: datetime | None = None) -> Any:
+        return research_inspection(run_id, trade_id, as_of).events
+
+    @router.get("/research/runs/{run_id}/trades/{trade_id}/diagnostics",
+                response_model=TradeDiagnostics)
+    def research_trade_diagnostics(run_id: str, trade_id: str,
+                                   as_of: datetime | None = None) -> Any:
+        return research_inspection(run_id, trade_id, as_of).diagnostics
 
     @router.get("/{unknown:path}", include_in_schema=False)
     def unknown_api(unknown: str, request: Request) -> Any:

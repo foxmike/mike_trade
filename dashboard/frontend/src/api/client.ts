@@ -433,6 +433,88 @@ export interface HealthResponse {
   errors: ActionableError[];
 }
 
+export interface TradeRecord {
+  trade_id: string; execution_mode: string; account_id: string; scenario_id: string | null;
+  research_run_id: string | null; symbol: string; cycle_id: string;
+  entry_timestamp: string | null; exit_timestamp: string | null;
+  entry_price: string | null; exit_price: string | null; filled_quantity: string;
+  exited_quantity: string; open_quantity: string; entry_notional: string | null;
+  exit_notional: string | null; realized_pnl: string | null; unrealized_pnl: string | null;
+  realized_return_percent: string | null; position_status: string;
+  entry_strategy_id: string | null; entry_strategy_version: string | null;
+  entry_signal_id: string | null; entry_signal_timestamp: string | null;
+  entry_decision: string | null; exit_strategy_id: string | null;
+  exit_strategy_version: string | null; exit_signal_id: string | null;
+  exit_signal_timestamp: string | null; exit_reason: string | null;
+  protective_stop_mode: string | null; initial_stop_price: string | null;
+  final_stop_price: string | null; holding_duration_seconds: string | null;
+  data_provenance: string | null; attribution_complete: boolean;
+}
+
+export interface TradeListResponse {
+  items: TradeRecord[]; page: number; page_size: number; total: number; pages: number;
+  available_entry_strategies: string[]; available_exit_reasons: string[];
+}
+
+export interface ResearchRun {
+  run_id: string; created_at: string | null; symbols: string[]; period_role: string | null;
+  window_start: string | null; window_end: string | null; dataset_id: string | null;
+  config_fingerprint: string | null; artifact_version: string | null;
+}
+
+export interface TradeFill {
+  fill_id: string; order_id: string | null; side: string; timestamp: string;
+  price: string; quantity: string; fee: string;
+}
+export interface TradeBar {
+  timestamp: string; timestamp_et: string; open: string; high: string; low: string;
+  close: string; vwap: string | null; volume: string; feed: string | null;
+  provenance: string | null;
+}
+export interface TradeEvent {
+  timestamp: string; timestamp_et: string; event_type: string; source: string | null;
+  strategy_id: string | null; strategy_version: string | null; signal_id: string | null;
+  order_id: string | null; price: string | null; quantity: string | null;
+  reason: string | null; details: Record<string, unknown>;
+}
+export interface TradeDiagnostics {
+  basis: string; observations_available: boolean; observations_through: string | null;
+  entry_price: string | null; exit_price: string | null; quantity: string;
+  realized_pnl: string | null; unrealized_pnl: string | null;
+  realized_return_percent: string | null; holding_duration_seconds: string | null;
+  maximum_favorable_excursion: string | null; maximum_adverse_excursion: string | null;
+  maximum_unrealized_gain: string | null; maximum_unrealized_loss: string | null;
+  best_price: string | null; worst_price: string | null; initial_stop_distance: string | null;
+  final_stop_distance: string | null; exit_reason: string | null; limitation: string | null;
+}
+export interface TradeInspection {
+  trade: TradeRecord; fills: TradeFill[]; bars: TradeBar[]; events: TradeEvent[];
+  diagnostics: TradeDiagnostics; bars_available: boolean; bars_limitation: string | null;
+  timezone: "America/New_York";
+}
+
+export interface TradeFilters {
+  page?: number; pageSize?: number; symbol?: string; dateFrom?: string; dateTo?: string;
+  entryStrategy?: string; exitFilter?: string; outcome?: string; positionStatus?: string;
+  sort?: string; direction?: string;
+}
+
+function tradeParams(filters: TradeFilters): string {
+  const params = new URLSearchParams();
+  if (filters.page) params.set("page", String(filters.page));
+  if (filters.pageSize) params.set("page_size", String(filters.pageSize));
+  if (filters.symbol) params.set("symbol", filters.symbol);
+  if (filters.dateFrom) params.set("date_from", filters.dateFrom);
+  if (filters.dateTo) params.set("date_to", filters.dateTo);
+  if (filters.entryStrategy) params.set("entry_strategy", filters.entryStrategy);
+  if (filters.exitFilter) params.set("exit_filter", filters.exitFilter);
+  if (filters.outcome) params.set("outcome", filters.outcome);
+  if (filters.positionStatus) params.set("position_status", filters.positionStatus);
+  if (filters.sort) params.set("sort", filters.sort);
+  if (filters.direction) params.set("direction", filters.direction);
+  const value = params.toString(); return value ? `?${value}` : "";
+}
+
 // ---------------------------------------------------------------------------
 // GET endpoints (same-origin relative /api URLs only).
 // ---------------------------------------------------------------------------
@@ -473,4 +555,20 @@ export function getAccountDetail(
   signal?: SignalOption,
 ): Promise<AccountDetailResponse> {
   return getJson<AccountDetailResponse>(`/api/accounts/${enc(accountId)}/detail`, signal);
+}
+
+export function getTrades(accountId: string, filters: TradeFilters = {}, signal?: SignalOption) {
+  return getJson<TradeListResponse>(`/api/accounts/${enc(accountId)}/trades${tradeParams(filters)}`, signal);
+}
+export function getTrade(accountId: string, tradeId: string, signal?: SignalOption) {
+  return getJson<TradeInspection>(`/api/accounts/${enc(accountId)}/trades/${enc(tradeId)}`, signal);
+}
+export function getResearchRuns(signal?: SignalOption) {
+  return getJson<{ runs: ResearchRun[] }>("/api/research/runs", signal);
+}
+export function getResearchTrades(runId: string, filters: TradeFilters = {}, signal?: SignalOption) {
+  return getJson<TradeListResponse>(`/api/research/runs/${enc(runId)}/trades${tradeParams(filters)}`, signal);
+}
+export function getResearchTrade(runId: string, tradeId: string, signal?: SignalOption) {
+  return getJson<TradeInspection>(`/api/research/runs/${enc(runId)}/trades/${enc(tradeId)}`, signal);
 }

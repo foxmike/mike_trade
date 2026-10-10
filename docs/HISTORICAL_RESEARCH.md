@@ -295,3 +295,27 @@ sizes entries through the supplied `intent_factory` (the research worker uses
 `min($3,000 budget, $30 planned loss / initial stop distance)`), whereas the
 SHADOW engine sizes by the per-symbol budget alone; quotes, bid/ask spread and
 partial fills beyond the bar-volume participation cap are not modelled.
+
+## Trade inspection artifacts
+
+The dashboard discovers paired `*.manifest.json` and `*.results.json` files
+recursively under `MIKE_TRADE_RESEARCH_ROOT` and de-duplicates run IDs. It does
+not download data, rewrite artifacts, or copy Parquet into SQLite. Chart bars
+are read from the immutable dataset named by `data_revision`/`data_vintage`
+under `MIKE_TRADE_RESEARCH_DATASET_ROOT` (default `research/data`) after its
+stored SHA-256 is verified.
+
+Artifact schema version 2 adds future trade-inspection evidence: strategy
+version, accepted signal ID/time, cycle ID on fills, entry and exit attribution
+on cycles, protection mode, initial/final stop, and a compact
+`protection_events` list containing initialization and actual moves only.
+Arbitration records still preserve every selected and rejected candidate. No
+per-bar event stream or redundant price copy is written.
+
+Earlier results remain readable. Their fills and persisted cycle boundaries
+produce the common model while absent signal, version, decision, and stop
+fields remain null/`UNKNOWN`. Decisions are never recomputed with current
+strategy code. If referenced Parquet is absent on the host, chart and excursion
+diagnostics state that limitation while recorded fills remain inspectable.
+This supports R730 artifacts in place on the R730 and deterministic local DEV
+fixtures without copying the R730 datasets.

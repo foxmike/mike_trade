@@ -158,6 +158,8 @@ class BacktestResult:
     results_hash: str
     #: Entry/exit arbitration audit records (selected and rejected candidates).
     decisions: tuple[Mapping[str, Any], ...] = ()
+    #: Meaningful protection state changes only; no per-bar logging.
+    protection_events: tuple[Mapping[str, Any], ...] = ()
 
 
 @dataclass(frozen=True, slots=True)
@@ -720,6 +722,7 @@ class BacktestRunner:
         signals: list[Mapping[str, Any]] = []
         intents: list[Mapping[str, Any]] = []
         decisions: list[Mapping[str, Any]] = []
+        protection_events: list[Mapping[str, Any]] = []
         fills: list[Mapping[str, Any]] = []
         cycles: list[dict[str, Any]] = []
         equity_curve: list[dict[str, Any]] = []
@@ -831,9 +834,26 @@ class BacktestRunner:
                 "strategy": None,
                 "protection_mode": str(spec_type(stop_spec)),
             }
+            recorded_stop = stop_now
+            if policy.kind is ProtectionKind.BROKER_TRAILING_STOP:
+                native_state = self.execution.protection_state(order.broker_order_id)
+                if native_state is not None:
+                    recorded_stop = native_state.stop_price
             protections[symbol] = _Protection(
-                order.broker_order_id, stop_spec, policy, entry_reference, stop_now, stepped
+                order.broker_order_id, stop_spec, policy, entry_reference, recorded_stop, stepped
             )
+            open_cycles[symbol]["protection_mode"] = str(spec_type(stop_spec))
+            if recorded_stop > ZERO:
+                open_cycles[symbol].setdefault("initial_stop_price", recorded_stop)
+                open_cycles[symbol]["final_stop_price"] = recorded_stop
+            protection_events.append({
+                "cycle_id": cycle_id, "symbol": symbol,
+                "event_type": "INITIAL_STOP_ESTABLISHED", "time": self.clock.now(),
+                "protection_mode": str(spec_type(stop_spec)),
+                "order_id": order.broker_order_id,
+                "stop_price": None if recorded_stop == ZERO else recorded_stop,
+                "quantity": quantities[symbol],
+            })
 
         async def ratchet_stepped(symbol: str, high: Decimal) -> None:
             """Engine-managed stepped trailing: raise (never lower) the stop."""
@@ -864,8 +884,41 @@ class BacktestRunner:
             protection.stepped = moved
             candidate = _floor_stop(moved.candidate_stop)
             if candidate > protection.current_stop:
+                previous = protection.current_stop
                 await self.execution.replace_order(protection.order_id, stop_price=candidate)
                 protection.current_stop = candidate
+                cycle_id = str(open_cycles[symbol]["cycle_id"])
+                open_cycles[symbol]["final_stop_price"] = candidate
+                protection_events.append({
+                    "cycle_id": cycle_id, "symbol": symbol,
+                    "event_type": "STOP_MOVED", "time": self.clock.now(),
+                    "protection_mode": "TRAILING_STEPPED",
+                    "order_id": protection.order_id,
+                    "previous_stop_price": previous, "new_stop_price": candidate,
+                    "stop_price": candidate,
+                })
+
+        async def record_native_stop(symbol: str) -> None:
+            """Record broker-simulated native stop changes after a replay event."""
+            protection = protections.get(symbol)
+            if protection is None or protection.policy.kind is not ProtectionKind.BROKER_TRAILING_STOP:
+                return
+            state = self.execution.protection_state(protection.order_id)
+            if state is None or state.stop_price <= protection.current_stop:
+                return
+            previous = protection.current_stop
+            protection.current_stop = state.stop_price
+            cycle = open_cycles.get(symbol)
+            if cycle is None:
+                return
+            cycle["final_stop_price"] = state.stop_price
+            protection_events.append({
+                "cycle_id": str(cycle["cycle_id"]), "symbol": symbol,
+                "event_type": "STOP_MOVED", "time": self.clock.now(),
+                "protection_mode": "TRAILING_NATIVE", "order_id": protection.order_id,
+                "previous_stop_price": previous, "new_stop_price": state.stop_price,
+                "stop_price": state.stop_price,
+            })
 
         def spec_type(spec: Mapping[str, Any]) -> str:
             return {
@@ -889,6 +942,11 @@ class BacktestRunner:
                 {
                     "symbol": symbol,
                     "strategy": evaluation.strategy_id,
+                    "strategy_version": evaluation.version,
+                    "signal_id": evaluation.signal_id,
+                    "signal_time": context.as_of,
+                    "signal_bar_time": evaluation.bar_time,
+                    "cycle_id": None,
                     "side": intent.side.value,
                     "purpose": intent.purpose.value,
                     "time": context.as_of,
@@ -896,10 +954,14 @@ class BacktestRunner:
                 }
             )
             order = await self.execution.submit_order(intent)
+            intents[-1]["order_id"] = order.broker_order_id
             order_meta[order.broker_order_id] = {
                 "purpose": intent.purpose.value,
                 "strategy": evaluation.strategy_id,
+                "strategy_version": evaluation.version,
                 "signal_id": evaluation.signal_id,
+                "signal_time": context.as_of,
+                "intent_id": getattr(intent, "intent_id", None),
             }
             if intent.side is OrderSide.BUY:
                 pending_entry[symbol] = order.broker_order_id
@@ -910,6 +972,7 @@ class BacktestRunner:
             assert ev.available_at
             self.clock.advance_to(ev.available_at)
             outputs = self.execution.process_event(ev)
+            await record_native_stop(ev.symbol)
             for x in outputs:
                 meta = order_meta.get(x.fill.broker_order_id, {})
                 is_buy = x.side.value == "BUY"
@@ -924,6 +987,9 @@ class BacktestRunner:
                     "evidence": x.evidence,
                     "purpose": x.purpose.value,
                     "strategy": meta.get("strategy"),
+                    "strategy_version": meta.get("strategy_version"),
+                    "signal_id": meta.get("signal_id"),
+                    "signal_time": meta.get("signal_time"),
                     "exit_reason": None
                     if is_buy
                     else (
@@ -946,16 +1012,27 @@ class BacktestRunner:
                         session_key = x.fill.filled_at.astimezone(NEW_YORK).date().isoformat()
                         entries_by_session[(x.symbol, session_key)] += 1
                         open_cycles[x.symbol] = {
-                            "cycle_id": f"{run_id}:{x.symbol}:{len(cycles) + 1}",
+                            # Run identity is already carried by the artifact envelope. A
+                            # run-local stable cycle id keeps economically identical runs
+                            # comparable even when their config hashes differ.
+                            "cycle_id": f"{x.symbol}:{len(cycles) + 1}",
                             "symbol": x.symbol,
                             "opened_at": x.fill.filled_at,
                             "closed_at": None,
                             "entry_quantity": ZERO,
                             "exit_quantity": ZERO,
                             "entry_strategy": meta.get("strategy"),
+                            "entry_strategy_version": meta.get("strategy_version"),
+                            "entry_signal_id": meta.get("signal_id"),
+                            "entry_signal_timestamp": meta.get("signal_time"),
+                            "entry_decision": "SELECTED",
                             "exit_reason": None,
                             "exit_strategy": None,
                         }
+                    fill_row["cycle_id"] = open_cycles[x.symbol]["cycle_id"]
+                    for intent_row in intents:
+                        if intent_row.get("intent_id") == meta.get("intent_id"):
+                            intent_row["cycle_id"] = fill_row["cycle_id"]
                     open_cycles[x.symbol]["entry_quantity"] += x.quantity
                     await arm_protection(x.symbol, x.price)
                 else:
@@ -964,9 +1041,16 @@ class BacktestRunner:
                     quantities[x.symbol] -= x.quantity
                     if x.symbol in open_cycles:
                         cycle = open_cycles[x.symbol]
+                        fill_row["cycle_id"] = cycle["cycle_id"]
+                        for intent_row in intents:
+                            if intent_row.get("intent_id") == meta.get("intent_id"):
+                                intent_row["cycle_id"] = fill_row["cycle_id"]
                         cycle["exit_quantity"] += x.quantity
                         cycle["exit_reason"] = fill_row["exit_reason"]
                         cycle["exit_strategy"] = meta.get("strategy")
+                        cycle["exit_strategy_version"] = meta.get("strategy_version")
+                        cycle["exit_signal_id"] = meta.get("signal_id")
+                        cycle["exit_signal_timestamp"] = meta.get("signal_time")
                         if quantities[x.symbol] <= ZERO:
                             costs[x.symbol] = ZERO
                             protections.pop(x.symbol, None)
@@ -1107,6 +1191,7 @@ class BacktestRunner:
                     "time": ev.available_at,
                     "bar_time": candle.start,
                     "signal_id": evaluation.signal_id,
+                    "reference_price": evaluation.reference_price,
                     "reason_codes": [x.value for x in evaluation.reason_codes],
                 }
                 evaluations.append(row)
@@ -1212,10 +1297,12 @@ class BacktestRunner:
                     ):
                         await submit(candidates[result.selected.signal_id][1], context, symbol)
         payload = {
+            "schema_version": "2",
             "evaluations": evaluations,
             "signals": signals,
             "intents": intents,
             "decisions": decisions,
+            "protection_events": protection_events,
             "fills": fills,
             "cycles": cycles + list(open_cycles.values()),
             "equity_curve": equity_curve,
@@ -1267,4 +1354,5 @@ class BacktestRunner:
             tuple(equity_curve),
             result_hash,
             tuple(decisions),
+            tuple(protection_events),
         )

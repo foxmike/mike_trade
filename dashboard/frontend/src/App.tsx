@@ -3,6 +3,7 @@ import { ApiError, getHealth, getKpis, getStatus, getWatchlist } from "./api/cli
 import AccountDetail, { AccountSelector } from "./components/AccountDetail";
 import SymbolDetails from "./components/SymbolDetails";
 import Watchlist from "./components/Watchlist";
+import TradeJournal from "./components/TradeJournal";
 
 // Bounded polling interval for account-scoped dashboard reads (GET only).
 const POLL_INTERVAL_MS = 5000;
@@ -511,6 +512,8 @@ export default function App() {
               />
             )}
           </section>
+
+          <TradeJournal accountId={selectedAccountId} accountMode={modeLabel} />
 
           <section aria-label="Account detail" className="detail-section">
             <AccountDetail accountId={selectedAccountId} />

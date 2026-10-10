@@ -196,6 +196,47 @@ body {
   margin-top: 14px;
 }
 
+.trades-section {
+  background: var(--panel); border: 1px solid var(--border); border-radius: 8px;
+  padding: 14px 16px; margin-top: 14px;
+}
+.section-heading, .panel-heading, .chart-controls, .pagination { display: flex; justify-content: space-between; align-items: center; gap: 12px; }
+.section-heading h2, .trade-panel h3, .timeline h4 { margin: 0; }
+.section-heading p, .panel-heading p { margin: 3px 0 0; color: var(--muted); }
+.source-switch, .chart-controls > div { display: flex; gap: 5px; }
+button, input, select { background: #111820; color: var(--text); border: 1px solid var(--border); border-radius: 4px; padding: 6px 8px; }
+button { cursor: pointer; } button:disabled { opacity: .45; cursor: default; }
+button.active { border-color: var(--accent); background: #173957; }
+.trade-filters { display: flex; flex-wrap: wrap; gap: 8px; align-items: end; margin: 12px 0; }
+.trade-filters label { display: flex; flex-direction: column; gap: 3px; color: var(--muted); font-size: 11px; }
+.trade-filters input, .trade-filters select { min-width: 115px; }
+.trade-table-wrap { overflow-x: auto; }
+.trade-table { width: 100%; border-collapse: collapse; min-width: 1180px; font-size: 12px; }
+.trade-table th, .trade-table td { border: 1px solid var(--border); padding: 6px 8px; text-align: left; white-space: nowrap; }
+.trade-table th { background: #0d1217; color: var(--muted); text-transform: uppercase; font-size: 10px; }
+.trade-table tbody tr { cursor: pointer; } .trade-table tbody tr:hover { background: #24313d; }
+.positive { color: #73d69b; } .negative { color: #ff8b7d; }
+.pagination { justify-content: center; margin-top: 10px; }
+.trade-panel { margin-top: 16px; border: 1px solid #4a6582; border-radius: 7px; padding: 14px; background: #141b22; }
+.diagnostic-grid { display: grid; grid-template-columns: repeat(auto-fit,minmax(145px,1fr)); gap: 7px; }
+.diagnostic-grid > div { background: var(--panel-alt); border: 1px solid var(--border); padding: 7px 9px; border-radius: 5px; }
+.diagnostic-grid dt { color: var(--muted); font-size: 10px; text-transform: uppercase; }
+.diagnostic-grid dd { margin: 2px 0 0; font-weight: 700; }
+.attribution { border-left: 3px solid var(--accent); padding-left: 10px; margin: 10px 0; }
+.attribution p { margin: 4px 0; overflow-wrap: anywhere; }
+.trade-chart { border: 1px solid var(--border); background: #0b1015; padding: 8px; overflow-x: auto; }
+.trade-chart svg { display: block; width: 100%; min-width: 650px; max-height: 360px; }
+.chart-bg { fill: #101820; stroke: #33404d; }.holding-band { fill: #4da3ff; opacity: .09; }
+.candle-up line, .candle-up rect { stroke: #53c985; fill: #53c985; }.candle-down line, .candle-down rect { stroke: #ef7567; fill: #ef7567; }
+.vwap-line { fill: none; stroke: #f4c95d; stroke-width: 1.5; }.stop-line { fill: none; stroke: #ff7edb; stroke-width: 2; stroke-dasharray: 5 3; }
+.buy-marker circle { fill: #36d17c; stroke: white; }.sell-marker circle { fill: #ff6257; stroke: white; }
+.signal-marker polygon { fill: #6fc7ff; stroke: white; }.buy-marker text, .sell-marker text, .signal-marker text, .axis-label { fill: #e8edf2; font-size: 10px; text-anchor: middle; }.axis-label { text-anchor: start; }
+.chart-controls { margin-bottom: 5px; }.chart-legend { display: flex; gap: 16px; color: var(--muted); font-size: 11px; }
+.legend-vwap { color: #f4c95d; }.legend-stop { color: #ff7edb; }.chart-note { color: var(--muted); font-size: 11px; }
+.chart-empty { padding: 36px; text-align: center; color: var(--muted); border: 1px dashed var(--border); }
+.timeline ol { list-style: none; padding: 0; margin: 8px 0; }.timeline li { display: grid; grid-template-columns: 185px 170px 1fr; gap: 8px; border-top: 1px solid var(--border); padding: 6px 0; }
+.timeline time { color: var(--muted); }
+
 .kpi-section h2,
 .health-section h2,
 .watchlist-section h2 {
@@ -401,4 +442,6 @@ code {
   .status-grid {
     grid-template-columns: 1fr;
   }
+  .section-heading, .panel-heading { align-items: flex-start; flex-direction: column; }
+  .timeline li { grid-template-columns: 1fr; gap: 2px; }
 }
