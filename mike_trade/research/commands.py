@@ -314,6 +314,17 @@ def register(subparsers: Any) -> None:
     listing.add_argument("--root", default=os.environ.get("MIKE_TRADE_RESEARCH_DIR", "research"))
     listing.set_defaults(func=list_data)
 
+    for action in ("plan", "preflight", "acquire-universe", "status", "verify"):
+        command = actions.add_parser(action, help=f"100-symbol universe {action}")
+        command.add_argument("--universe", default="config/research_universe_100_v1.json")
+        command.add_argument(
+            "--root", default=os.environ.get("MIKE_TRADE_RESEARCH_DIR", "research/data")
+        )
+        if action == "acquire-universe":
+            command.add_argument("--workers", type=int, default=1, choices=(1, 2))
+            command.add_argument("--requests-per-minute", type=int, default=20)
+        command.set_defaults(func=run_universe_data)
+
     backtest = subparsers.add_parser("research-backtest", help="run a VWAP lifecycle backtest")
     backtest.add_argument("--symbol", required=True)
     backtest.add_argument("--strategy", required=True, choices=("vwap_bounce", "vwap_breakdown"))
@@ -374,6 +385,51 @@ def _client() -> Any:
     from mike_trade.app import _AlpacaDataHttpClient
 
     return _AlpacaDataHttpClient(key, secret)
+
+
+def run_universe_data(args: argparse.Namespace) -> int:
+    from mike_trade.research.universe_acquisition import (
+        BoundedAlpacaClient,
+        Universe,
+        UniverseAcquisition,
+    )
+
+    operation = UniverseAcquisition(Universe.load(args.universe), args.root)
+    action = args.research_data_action
+    if action == "plan":
+        print(json.dumps(operation.plan(), sort_keys=True))
+        return 0
+    if action == "status":
+        print(json.dumps(operation.status(), sort_keys=True))
+        return 0
+    if action == "verify":
+        result = operation.verify()
+        print(json.dumps(result, sort_keys=True))
+        return 0 if result["ok"] else 1
+    client = _client()
+    try:
+        if action == "preflight":
+            result = operation.preflight(client)
+            print(json.dumps(result, sort_keys=True))
+            return 0
+        if action == "acquire-universe":
+            # Validate access and storage before creating acquisition state.
+            result = operation.preflight(client)
+            print(
+                json.dumps(
+                    {"preflight": "passed", "free_disk_bytes": result["free_disk_bytes"],
+                     "historical_api": result["historical_api"]},
+                    sort_keys=True,
+                ),
+                flush=True,
+            )
+            limited = BoundedAlpacaClient(client, requests_per_minute=args.requests_per_minute)
+            return operation.acquire(
+                limited, workers=args.workers, progress=lambda line: print(line, flush=True)
+            )
+        raise ValueError(f"unknown universe action: {action}")
+    finally:
+        client.close()
 
 
 def acquire_data(args: argparse.Namespace) -> int:

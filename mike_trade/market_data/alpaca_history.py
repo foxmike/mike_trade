@@ -132,13 +132,20 @@ def merge_bars(
 class AlpacaHistoricalBars:
     """Fetch historical bars using an injected object exposing ``get(path, params)``."""
 
-    def __init__(self, client: Any, *, max_pages: int = 20) -> None:
+    def __init__(self, client: Any, *, max_pages: int = 20, page_limit: int | None = None) -> None:
         if not callable(getattr(client, "get", None)):
             raise TypeError("client must expose get(path, params)")
         if isinstance(max_pages, bool) or not isinstance(max_pages, int) or max_pages < 1:
             raise ValueError("max_pages must be a positive integer")
+        if page_limit is not None and (
+            isinstance(page_limit, bool)
+            or not isinstance(page_limit, int)
+            or not 1 <= page_limit <= 10000
+        ):
+            raise ValueError("page_limit must be between 1 and 10000")
         self._client = client
         self.max_pages = max_pages
+        self.page_limit = page_limit
 
     def fetch_bars(
         self,
@@ -182,7 +189,10 @@ class AlpacaHistoricalBars:
             "feed": feed,
             "adjustment": adjustment.value,
         }
+        if self.page_limit is not None:
+            params["limit"] = self.page_limit
         token: str | None = None
+        seen_tokens: set[str] = set()
         bars: list[HistoricalBar] = []
         for _page in range(self.max_pages):
             if token is not None:
@@ -214,7 +224,7 @@ class AlpacaHistoricalBars:
                     or str(item_adjustment).lower() != adjustment.value
                 ):
                     raise BarProvenanceError("bar provenance differs from request")
-                bars.append(
+                bar = (
                     HistoricalBar(
                         symbol=symbol,
                         timestamp=_timestamp(item.get("t")),
@@ -231,9 +241,16 @@ class AlpacaHistoricalBars:
                         adjustment=adjustment,
                     )
                 )
+                # Alpaca documents an inclusive end; research requests use
+                # half-open windows so adjoining windows never overlap.
+                if start_utc <= bar.timestamp < end_utc:
+                    bars.append(bar)
             token = data.get("next_page_token")
             if not token:
                 break
+            if not isinstance(token, str) or token in seen_tokens:
+                raise PaginationLimitError("historical pagination token repeated or invalid")
+            seen_tokens.add(token)
         else:
             raise PaginationLimitError(f"historical response exceeds max_pages={self.max_pages}")
         return tuple(sorted(bars, key=lambda bar: bar.timestamp))

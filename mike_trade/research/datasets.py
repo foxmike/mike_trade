@@ -51,7 +51,8 @@ class HistoricalDatasetRepository:
         self.catalog_path = self.root / "catalog.duckdb"
 
     def snapshots(self) -> list[DatasetSnapshot]:
-        self.manifest_dir.mkdir(parents=True, exist_ok=True)
+        if not self.manifest_dir.is_dir():
+            return []
         result = []
         for path in sorted(self.manifest_dir.glob("*.json")):
             try:
@@ -145,9 +146,12 @@ class HistoricalDatasetRepository:
         feed: str,
         timeframe: str = "1m",
         adjustment: str = "raw",
+        asset_class: str = "us_equity",
         coverage_start: datetime | None = None,
         coverage_end: datetime | None = None,
     ) -> DatasetSnapshot:
+        if asset_class not in {"us_equity", "us_etf"}:
+            raise ValueError("asset_class must be us_equity or us_etf")
         rows_by_time: dict[datetime, HistoricalBar] = {}
         for bar in bars:
             if bar.symbol != symbol.upper() or bar.feed_id != feed.lower():
@@ -175,8 +179,17 @@ class HistoricalDatasetRepository:
         ]
         table = pa.Table.from_pylist(rows)
         canonical_rows = [{**row, "timestamp": row["timestamp"].isoformat()} for row in rows]
+        start = (coverage_start or ordered[0].timestamp).astimezone(UTC)
+        end = (coverage_end or ordered[-1].timestamp + timedelta(minutes=1)).astimezone(UTC)
+        if start > ordered[0].timestamp or end <= ordered[-1].timestamp:
+            raise ValueError("declared coverage does not contain all bars")
+        identity = {
+            "rows": canonical_rows,
+            "coverage_start": start.isoformat(),
+            "coverage_end": end.isoformat(),
+        }
         content = hashlib.sha256(
-            json.dumps(canonical_rows, sort_keys=True, separators=(",", ":")).encode()
+            json.dumps(identity, sort_keys=True, separators=(",", ":")).encode()
         ).hexdigest()
         dataset_id = (
             f"alpaca-{feed.lower()}-{symbol.upper()}-{timeframe}-{adjustment}-{content[:20]}"
@@ -185,25 +198,29 @@ class HistoricalDatasetRepository:
         self.manifest_dir.mkdir(parents=True, exist_ok=True)
         relative = Path("snapshots") / f"{dataset_id}.parquet"
         data_path = self.root / relative
-        if not data_path.exists():
-            with tempfile.NamedTemporaryFile(
-                dir=self.data_dir, suffix=".parquet", delete=False
-            ) as tmp:
-                temp = Path(tmp.name)
+        with tempfile.NamedTemporaryFile(
+            dir=self.data_dir, suffix=".parquet", delete=False
+        ) as tmp:
+            temp = Path(tmp.name)
+        try:
+            pq.write_table(table, temp, compression="zstd", version="2.6")
+            with temp.open("rb") as stream:
+                os.fsync(stream.fileno())
             try:
-                pq.write_table(table, temp, compression="zstd", version="2.6")
-                os.replace(temp, data_path)
-            finally:
-                temp.unlink(missing_ok=True)
+                os.link(temp, data_path)  # Never replace an immutable snapshot.
+                _fsync_dir(self.data_dir)
+            except FileExistsError:
+                if _sha256(temp) != _sha256(data_path):
+                    raise ValueError(f"conflicting existing dataset file: {dataset_id}") from None
+        finally:
+            temp.unlink(missing_ok=True)
         digest = _sha256(data_path)
-        start = (coverage_start or ordered[0].timestamp).astimezone(UTC)
-        end = (coverage_end or ordered[-1].timestamp + timedelta(minutes=1)).astimezone(UTC)
         manifest = DatasetSnapshot(
             dataset_id,
             "alpaca",
             feed.lower(),
             symbol.upper(),
-            "us_equity",
+            asset_class,
             timeframe,
             adjustment.lower(),
             datetime.now(UTC).isoformat(),
@@ -227,7 +244,18 @@ class HistoricalDatasetRepository:
                 )
                 + "\n"
             )
-            _atomic_text(path, payload)
+            try:
+                _atomic_new_text(path, payload)
+            except FileExistsError:
+                pass
+        recorded = DatasetSnapshot(**json.loads(path.read_text(encoding="utf-8")))
+        for name in (
+            "dataset_id", "feed", "symbol", "asset_class", "timeframe",
+            "adjustment", "start", "end", "bar_count", "sha256",
+        ):
+            if getattr(recorded, name) != getattr(manifest, name):
+                raise ValueError(f"conflicting existing dataset manifest: {dataset_id}")
+        manifest = recorded
         self._record_catalog(manifest)
         return manifest
 
@@ -386,8 +414,31 @@ def _atomic_text(path: Path, text: str) -> None:
             stream.flush()
             os.fsync(stream.fileno())
         os.replace(name, path)
+        _fsync_dir(path.parent)
     finally:
         Path(name).unlink(missing_ok=True)
+
+
+def _atomic_new_text(path: Path, text: str) -> None:
+    """Publish one immutable manifest without replacing an existing name."""
+    fd, name = tempfile.mkstemp(dir=path.parent, prefix=".tmp-")
+    try:
+        with os.fdopen(fd, "w", encoding="utf-8") as stream:
+            stream.write(text)
+            stream.flush()
+            os.fsync(stream.fileno())
+        os.link(name, path)
+        _fsync_dir(path.parent)
+    finally:
+        Path(name).unlink(missing_ok=True)
+
+
+def _fsync_dir(path: Path) -> None:
+    fd = os.open(path, os.O_RDONLY | os.O_DIRECTORY)
+    try:
+        os.fsync(fd)
+    finally:
+        os.close(fd)
 
 
 def _bar(row: dict[str, Any]) -> HistoricalBar:
