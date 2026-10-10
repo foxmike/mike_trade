@@ -1,6 +1,9 @@
-# BUY Strategies — Shipped Definitions and Reference Configuration
+# Strategies — Shipped Definitions and Reference Configuration
 
-This document describes the shipped BUY strategies only. It makes no claim
+Sections 1–7 describe the original reference strategies and the strategy
+contract; section 8 documents the technical strategy library (first batch of
+14 BUY and 14 SELL strategies) and section 9 is the implementation inventory
+of the candidate methods. It makes no claim
 about alpha, edge, or profitability. Nothing here is a profitability claim,
 and there are no confidence scores anywhere in the strategy contract,
 implementations, presets, or evaluations.
@@ -20,6 +23,8 @@ Each strategy declares one immutable `StrategySpec` (`mike_trade/strategies/base
 | `strategy_id` | Lowercase snake_case identifier (e.g. `vwap_bounce`). |
 | `version` | `MAJOR.MINOR.PATCH` semver string; numeric `version_key` orders versions. |
 | `side` | `StrategyRole.BUY` or `StrategyRole.SELL`. `BuyStrategy` subclasses must declare `BUY`. |
+| `category` | Stable classification identifier, e.g. `technical` (see §1.7). |
+| `sub_category` | Stable sub-classification identifier, e.g. `moving_average` (see §1.7). |
 | `reference_symbols` | Declared reference symbols (empty tuple for all three shipped BUY strategies). |
 | `required_timeframes` | Non-empty tuple of `CandleTimeframe` values the strategy reads. |
 | `warmup_bars` | Minimum completed bars before evaluation can signal (`int >= 0`). |
@@ -117,6 +122,40 @@ Each strategy declares one immutable `StrategySpec` (`mike_trade/strategies/base
   `StrategyRegistryError` (`not_found`), duplicates raise
   (`duplicate_registration`), and `validate_parameters` delegates to the
   spec's parameter schema.
+
+### 1.7 Classification: `category` and `sub_category`
+
+Every `StrategySpec` carries exactly two classification fields, both plain
+immutable strings on the class-level spec (no registry, metadata service or
+subclass hierarchy is involved, and neither field changes strategy behavior):
+
+- `category` must be one of: `technical`, `statistical`, `machine_learning`,
+  `deep_learning`, `reinforcement_learning`, `llm_ai`, `microstructure`,
+  `event_fundamental`, `relative_value`, `alternative_data`
+  (`STRATEGY_CATEGORIES` in `mike_trade/strategies/base.py`).
+- `sub_category` must, for `category == "technical"`, be one of: `momentum`,
+  `breakout`, `vwap`, `moving_average`, `mean_reversion`, `trend_following`,
+  `volatility`, `price_action`, `gap_trading`, `intraday_session`,
+  `oscillator`, `volume` (`TECHNICAL_SUB_CATEGORIES`). The other categories
+  have no sub-category vocabulary yet, so any lowercase snake_case identifier
+  is accepted for them until one is defined.
+
+Both fields are required and validated when the spec is built; an unknown
+`category`, or an unknown technical `sub_category`, raises `ValueError`.
+Assignments for the six original strategies:
+
+| Strategy | Role | `category` | `sub_category` |
+| :--- | :--- | :--- | :--- |
+| `vwap_bounce` | BUY | `technical` | `vwap` |
+| `momentum_breakout` | BUY | `technical` | `momentum` |
+| `opening_range_breakout` | BUY | `technical` | `breakout` |
+| `vwap_breakdown` | SELL | `technical` | `vwap` |
+| `momentum_reversal` | SELL | `technical` | `momentum` |
+| `rsi_reversal` | SELL | `technical` | `oscillator` |
+
+Strategy identifiers, parameter formats, signal behavior and trading
+semantics of these six are unchanged. The new library strategies of section 8
+are classified in their tables.
 
 ## 2. `opening_range_breakout` (BUY, 1.0.0)
 
@@ -487,6 +526,8 @@ identity:
   version: "1.0.0"
   description: "..."
   family: mean_reversion
+  category: technical
+  sub_category: vwap
   side: buy
   implementation_version: "1.0.0"
 provenance:
@@ -608,6 +649,8 @@ component that consumes or verifies the field.
 | `identity.version` | Version of formal trading rules; string | Yes | `MAJOR.MINOR.PATCH` | `StrategySpec.version`; deterministic signal IDs and registry key |
 | `identity.description` | Concise behavior summary; string | Yes | Non-empty | `StrategySpec.methodology`/review material |
 | `identity.family` | Strategy category; string | Yes | Existing or reviewed taxonomy such as `breakout`, `momentum`, `mean_reversion`, `trend_following`, `exit`, `risk_overlay` | Classification only; does not select code |
+| `identity.category` | Top-level classification; string | Yes | One of `STRATEGY_CATEGORIES` (§1.7) | `StrategySpec.category`; classification only, does not select code |
+| `identity.sub_category` | Sub-classification; string | Yes | For `technical`, one of `TECHNICAL_SUB_CATEGORIES` (§1.7) | `StrategySpec.sub_category`; classification only |
 | `identity.side` | Signal direction; enum | Yes | `buy`, `sell` | `StrategyRole.BUY`/`SELL`; class must be `BuyStrategy`/`SellStrategy` |
 | `identity.implementation_version` | Version of Python implementation; string | Yes | Semver | Recorded in implementation metadata; separate from rule version |
 | `provenance.source_type` | Kind of source evidence; enum | Yes | `book`, `video`, `article`, `textbook_reference`, `research_note`, `other` | Maps to `StrategySpec.source` and review provenance |
@@ -765,6 +808,8 @@ identity:
   version: "1.0.0"
   description: "BUY when a completed regular-session bar crosses above shared session VWAP."
   family: mean_reversion
+  category: technical
+  sub_category: vwap
   side: buy
   implementation_version: "1.0.0"
 provenance:
@@ -971,3 +1016,1148 @@ There is currently no repository-wide YAML strategy-schema loader; adding one
 is not required for this documentation standard. Runtime validation continues
 through the existing Python `StrategySpec`/`ParameterSchema`/`StrategyRegistry`
 mechanisms, which remain the compatibility boundary.
+
+## 8. Technical strategy library — first batch (14 BUY, 14 SELL)
+
+Each strategy is one complete Python class (`mike_trade/strategies/buy/` or
+`mike_trade/strategies/sell/`) that owns its calculation and its signal
+condition, is registered by the existing explicit calls (`build_runtime` in
+`mike_trade/app.py` and `_research_registry` in `mike_trade/research/commands.py`),
+and runs unchanged through the historical `BacktestRunner` and the SHADOW
+engine. The pure Decimal indicator functions they use live in the existing
+shared module `mike_trade/strategies/indicators/core.py`; the few guard helpers
+(stale/session/eligibility checks, crossing comparison, same-bar replay
+suppression) are plain functions in `mike_trade/strategies/closed_bar.py`. No
+filter, composition, declarative-rule or base-class framework was added.
+These are textbook definitions only: nothing here is an alpha or profitability
+claim and none of it was backtested for this change.
+
+Conventions that apply to every strategy below (any deviation is stated in the
+strategy's own interpretation notes):
+
+- **Interval.** Completed 1-minute bars only: `required_timeframes` and
+  `trigger_timeframe` are `1m`. 1m is the only interval available both to the
+  historical replay (1m/5m) and to the SHADOW stream (1m context only), so one
+  implementation serves both. Periods are bar counts at that interval.
+- **History and seeding.** Indicators run over the whole completed-bar history in
+  the context (bounded by the engine: 500 bars), oldest first. Windowed
+  indicators (SMA, Stochastic, Williams %R, CCI, Donchian, Aroon) are exact.
+  Recursive indicators use their published seeds at the start of that history:
+  EMA is seeded with the SMA of the first n closes (StockCharts); the MACD signal
+  line is seeded with the SMA of its first values; Wilder RSI and DMI use
+  Wilder's simple-sum seed then Wilder smoothing; Parabolic SAR follows
+  Wilder's recursion. A chart that started earlier can differ slightly in the
+  first bars after the seed because smoothing converges geometrically.
+- **Crossings.** `a` crosses above `b` on bar `t` when `a[t-1] <= b[t-1]` and
+  `a[t] > b[t]`; crossing below mirrors it (`>=` then `<`). For a level the
+  fixed convention is the same: the prior bar at or on the level, the latest bar
+  strictly beyond it. Evaluation is on the latest completed bar only, so no
+  future candle is read.
+- **Same trading date.** Indicators may span sessions like a continuous chart, but
+  the prior and latest bars of an edge must start on the same New York trading
+  date; otherwise the result is `INSUFFICIENT_DATA` and an overnight gap is never
+  read as an intraday crossing. Level rules are not affected.
+- **Eligibility and reasons.** Stale context → `STALE_DATA`; session not
+  `REGULAR` → `NOT_ELIGIBLE`; BUY additionally requires the engine-owned state
+  `eligibility == "WATCHING_BUY"` (read only) → `NOT_ELIGIBLE`; fewer completed
+  bars than the configured lookback, an undefined indicator value (for example a
+  flat range or zero deviation) or the overnight case → `INSUFFICIENT_DATA`;
+  otherwise `SIGNAL` or `NO_SIGNAL`. Invalid or inconsistent parameters raise
+  `ParameterValidationError` and never signal.
+- **Replay suppression.** The only strategy-owned state key is `last_signal_bar`
+  (ISO start of the bar that fired). The same completed bar never emits twice;
+  the signal id is the deterministic SHA-256 of strategy, version, symbol, side
+  and bar start. Edge rules rearm naturally on the next crossing; level rules
+  (`price_below_ema`, `price_below_sma`, `donchian_lower_channel_exit`) signal on
+  every completed bar while the condition holds, each with its own id.
+- **Warm-up.** `spec.warmup_bars` is the floor of the lookback over the allowed
+  parameter range (the replay and the SELL contract gate on this static value so
+  a small configured period is never blocked); the lookback of the configured
+  periods is enforced inside the rule. The tables state the lookback at the
+  defaults.
+- **Roles.** BUY strategies emit an entry signal only and add no stop, sizing,
+  target or order logic. SELL strategies extend the existing `SellRule` and emit an
+  advisory full exit of an owned long; position checks, minimum hold, arbitration
+  and the protective stop remain with the existing exit and stop machinery.
+- **No added confirmation.** No volume, trend, ADX or other filter is added to any
+  rule beyond what the cited definition states.
+
+### Overview
+
+| Identifier | Name | Role | Sub-category | Trigger | Default parameters |
+| :--- | :--- | :--- | :--- | :--- | :--- |
+| `sma_crossover` | SMA Crossover | BUY | `moving_average` | edge | fast_period=50, slow_period=200 |
+| `ema_crossover` | EMA Crossover | BUY | `moving_average` | edge | fast_period=10, slow_period=50 |
+| `macd_signal_crossover` | MACD Signal Crossover | BUY | `momentum` | edge | fast_period=12, slow_period=26, signal_period=9 |
+| `macd_zero_line_crossover` | MACD Zero-Line Crossover | BUY | `momentum` | edge | fast_period=12, slow_period=26 |
+| `rsi_centerline_crossover` | RSI Centerline Crossover | BUY | `oscillator` | edge | rsi_period=14 |
+| `rsi_oversold_reversal` | RSI Oversold Reversal | BUY | `oscillator` | edge | rsi_period=14, oversold=30 |
+| `donchian_channel_breakout` | Donchian Channel Breakout | BUY | `breakout` | edge | period=20 |
+| `stochastic_crossover` | Stochastic Crossover | BUY | `oscillator` | edge | k_period=14, k_smooth=3, d_period=3 |
+| `williams_r_reversion` | Williams %R Reversion | BUY | `oscillator` | edge | period=14, oversold=-80 |
+| `cci_zero_line_crossover` | CCI Zero-Line Crossover | BUY | `oscillator` | edge | period=20 |
+| `parabolic_sar` | Parabolic SAR | BUY | `trend_following` | edge | step=0.02, maximum=0.20 |
+| `dmi_crossover` | DMI Crossover | BUY | `trend_following` | edge | period=14 |
+| `aroon_trend` | Aroon Trend | BUY | `trend_following` | edge | period=25 |
+| `inside_bar_breakout` | Inside Bar Breakout | BUY | `price_action` | edge | - |
+| `macd_bearish_crossover` | MACD Bearish Crossover | SELL | `momentum` | edge | fast_period=12, slow_period=26, signal_period=9 |
+| `macd_zero_line_breakdown` | MACD Zero-Line Breakdown | SELL | `momentum` | edge | fast_period=12, slow_period=26 |
+| `ema_bearish_crossover` | EMA Bearish Crossover | SELL | `moving_average` | edge | fast_period=10, slow_period=50 |
+| `sma_bearish_crossover` | SMA Bearish Crossover | SELL | `moving_average` | edge | fast_period=50, slow_period=200 |
+| `price_below_ema` | Price Below EMA | SELL | `moving_average` | level | period=20 |
+| `price_below_sma` | Price Below SMA | SELL | `moving_average` | level | period=50 |
+| `rsi_centerline_breakdown` | RSI Centerline Breakdown | SELL | `oscillator` | edge | rsi_period=14 |
+| `stochastic_bearish_crossover` | Stochastic Bearish Crossover | SELL | `oscillator` | edge | k_period=14, k_smooth=3, d_period=3 |
+| `williams_r_reversal` | Williams %R Reversal | SELL | `oscillator` | edge | period=14, overbought=-20 |
+| `cci_zero_line_breakdown` | CCI Zero-Line Breakdown | SELL | `oscillator` | edge | period=20 |
+| `parabolic_sar_reversal` | Parabolic SAR Reversal | SELL | `trend_following` | edge | step=0.02, maximum=0.20 |
+| `dmi_bearish_crossover` | DMI Bearish Crossover | SELL | `trend_following` | edge | period=14 |
+| `aroon_bearish_reversal` | Aroon Bearish Reversal | SELL | `trend_following` | edge | period=25 |
+| `donchian_lower_channel_exit` | Donchian Lower Channel Exit | SELL | `breakout` | level | period=20 |
+
+
+### 8.1 `sma_crossover` — SMA Crossover (BUY, 1.0.0)
+
+| Item | Value |
+| :--- | :--- |
+| Strategy name | SMA Crossover |
+| Strategy identifier | `sma_crossover` (version `1.0.0`) |
+| Category / sub-category | `technical` / `moving_average` |
+| Role | BUY (long entry signal) |
+| Trigger | `EDGE_ON_CLOSED_BAR` on the latest completed 1-minute bar |
+| Supported candle intervals | 1m only (trigger and required timeframe) |
+| Required lookback | `slow_period + 1` completed bars (201 by default) |
+| Source / reference | StockCharts ChartSchool, 'Moving Averages - Simple and Exponential' (SMA/EMA formulas; price crossover: bearish when price moves below the average; two-moving-average crossover: bullish when the shorter average crosses above the longer, bearish when it crosses below). |
+
+| Parameter | Type | Default | Allowed range |
+| :--- | :--- | :--- | :--- |
+| `fast_period` | int | 50 | 2 to 200 |
+| `slow_period` | int | 200 | 3 to 400 |
+
+Constraint: `fast_period < slow_period` (otherwise the evaluation fails closed with `ParameterValidationError`).
+
+Indicator calculation:
+
+```text
+SMA(n)[t] = (close[t-n+1] + ... + close[t]) / n
+```
+
+Exact signal condition:
+
+```text
+SMA(fast)[t-1] <= SMA(slow)[t-1]  AND  SMA(fast)[t] > SMA(slow)[t]   ->  BUY
+```
+
+Interpretation decisions: The averages are the conventional 50/200 SMA (golden cross) applied to 1-minute closes.
+
+### 8.2 `ema_crossover` — EMA Crossover (BUY, 1.0.0)
+
+| Item | Value |
+| :--- | :--- |
+| Strategy name | EMA Crossover |
+| Strategy identifier | `ema_crossover` (version `1.0.0`) |
+| Category / sub-category | `technical` / `moving_average` |
+| Role | BUY (long entry signal) |
+| Trigger | `EDGE_ON_CLOSED_BAR` on the latest completed 1-minute bar |
+| Supported candle intervals | 1m only (trigger and required timeframe) |
+| Required lookback | `slow_period + 1` completed bars (51 by default); the whole supplied history seeds the EMA |
+| Source / reference | StockCharts ChartSchool, 'Moving Averages - Simple and Exponential' (SMA/EMA formulas; price crossover: bearish when price moves below the average; two-moving-average crossover: bullish when the shorter average crosses above the longer, bearish when it crosses below). |
+
+| Parameter | Type | Default | Allowed range |
+| :--- | :--- | :--- | :--- |
+| `fast_period` | int | 10 | 2 to 200 |
+| `slow_period` | int | 50 | 3 to 400 |
+
+Constraint: `fast_period < slow_period` (otherwise the evaluation fails closed with `ParameterValidationError`).
+
+Indicator calculation:
+
+```text
+EMA(n)[t] = (2 / (n + 1)) * close[t] + (1 - 2 / (n + 1)) * EMA(n)[t-1]
+EMA(n) is seeded with the SMA of the first n closes (StockCharts convention).
+```
+
+Exact signal condition:
+
+```text
+EMA(fast)[t-1] <= EMA(slow)[t-1]  AND  EMA(fast)[t] > EMA(slow)[t]   ->  BUY
+```
+
+Interpretation decisions: The published page gives 10/50 (and 5/35, 50/200) as example EMA pairs and no single default; 10/50 is used. With fast=12 and slow=26 this equals the MACD zero-line crossover. The EMA is seeded at the start of the supplied history, so early values are seed-dominated (a published convention, not a defect).
+
+### 8.3 `macd_signal_crossover` — MACD Signal Crossover (BUY, 1.0.0)
+
+| Item | Value |
+| :--- | :--- |
+| Strategy name | MACD Signal Crossover |
+| Strategy identifier | `macd_signal_crossover` (version `1.0.0`) |
+| Category / sub-category | `technical` / `momentum` |
+| Role | BUY (long entry signal) |
+| Trigger | `EDGE_ON_CLOSED_BAR` on the latest completed 1-minute bar |
+| Supported candle intervals | 1m only (trigger and required timeframe) |
+| Required lookback | `slow_period + signal_period` completed bars (35 by default) |
+| Source / reference | Gerald Appel's MACD as documented in StockCharts ChartSchool, 'MACD (Moving Average Convergence/Divergence Oscillator)' (MACD = 12-EMA - 26-EMA, signal = 9-EMA of MACD; signal-line and centerline crossovers). |
+
+| Parameter | Type | Default | Allowed range |
+| :--- | :--- | :--- | :--- |
+| `fast_period` | int | 12 | 2 to 100 |
+| `slow_period` | int | 26 | 3 to 200 |
+| `signal_period` | int | 9 | 2 to 100 |
+
+Constraint: `fast_period < slow_period` (otherwise the evaluation fails closed with `ParameterValidationError`).
+
+Indicator calculation:
+
+```text
+MACD[t]   = EMA(fast)[t] - EMA(slow)[t]            (closes; EMAs SMA-seeded)
+Signal[t] = EMA(signal) of MACD, SMA-seeded over its first `signal` values
+```
+
+Exact signal condition:
+
+```text
+MACD[t-1] <= Signal[t-1]  AND  MACD[t] > Signal[t]   ->  BUY   (bullish crossover)
+```
+
+Interpretation decisions: StockCharts does not state the EMA seeding; the SMA seed shared with the EMA indicator is used for all three EMAs.
+
+### 8.4 `macd_zero_line_crossover` — MACD Zero-Line Crossover (BUY, 1.0.0)
+
+| Item | Value |
+| :--- | :--- |
+| Strategy name | MACD Zero-Line Crossover |
+| Strategy identifier | `macd_zero_line_crossover` (version `1.0.0`) |
+| Category / sub-category | `technical` / `momentum` |
+| Role | BUY (long entry signal) |
+| Trigger | `EDGE_ON_CLOSED_BAR` on the latest completed 1-minute bar |
+| Supported candle intervals | 1m only (trigger and required timeframe) |
+| Required lookback | `slow_period + 1` completed bars (27 by default) |
+| Source / reference | Gerald Appel's MACD as documented in StockCharts ChartSchool, 'MACD (Moving Average Convergence/Divergence Oscillator)' (MACD = 12-EMA - 26-EMA, signal = 9-EMA of MACD; signal-line and centerline crossovers). |
+
+| Parameter | Type | Default | Allowed range |
+| :--- | :--- | :--- | :--- |
+| `fast_period` | int | 12 | 2 to 100 |
+| `slow_period` | int | 26 | 3 to 200 |
+
+Constraint: `fast_period < slow_period` (otherwise the evaluation fails closed with `ParameterValidationError`).
+
+Indicator calculation:
+
+```text
+MACD[t] = EMA(fast)[t] - EMA(slow)[t]            (closes; EMAs SMA-seeded)
+```
+
+Exact signal condition:
+
+```text
+MACD[t-1] <= 0  AND  MACD[t] > 0   ->  BUY   (bullish centerline crossover)
+```
+
+Interpretation decisions: The signal line is not used. With the default 12/26 this is the same event as an EMA(12)/EMA(26) crossover; both are kept as separately published strategies.
+
+### 8.5 `rsi_centerline_crossover` — RSI Centerline Crossover (BUY, 1.0.0)
+
+| Item | Value |
+| :--- | :--- |
+| Strategy name | RSI Centerline Crossover |
+| Strategy identifier | `rsi_centerline_crossover` (version `1.0.0`) |
+| Category / sub-category | `technical` / `oscillator` |
+| Role | BUY (long entry signal) |
+| Trigger | `EDGE_ON_CLOSED_BAR` on the latest completed 1-minute bar |
+| Supported candle intervals | 1m only (trigger and required timeframe) |
+| Required lookback | `rsi_period + 2` completed bars (16 by default) |
+| Source / reference | J. Welles Wilder, 'New Concepts in Technical Trading Systems' (1978) as documented in StockCharts ChartSchool, 'Relative Strength Index (RSI)' (14-period Wilder smoothing; 70/30 overbought/oversold; 50 centerline). |
+
+| Parameter | Type | Default | Allowed range |
+| :--- | :--- | :--- | :--- |
+| `rsi_period` | int | 14 | 2 to 100 |
+
+Indicator calculation:
+
+```text
+Wilder RSI = 100 - 100 / (1 + avg gain / avg loss); first averages are simple means
+of the first n changes, then avg = (previous avg * (n - 1) + current) / n.
+```
+
+Exact signal condition:
+
+```text
+RSI[t-1] <= 50  AND  RSI[t] > 50   ->  BUY   (centerline = 50)
+```
+
+Interpretation decisions: StockCharts names RSI 'centerline crossovers' as signals without stating the level in text; 50 is the oscillator's midpoint and is fixed (not a parameter).
+
+### 8.6 `rsi_oversold_reversal` — RSI Oversold Reversal (BUY, 1.0.0)
+
+| Item | Value |
+| :--- | :--- |
+| Strategy name | RSI Oversold Reversal |
+| Strategy identifier | `rsi_oversold_reversal` (version `1.0.0`) |
+| Category / sub-category | `technical` / `oscillator` |
+| Role | BUY (long entry signal) |
+| Trigger | `EDGE_ON_CLOSED_BAR` on the latest completed 1-minute bar |
+| Supported candle intervals | 1m only (trigger and required timeframe) |
+| Required lookback | `rsi_period + 2` completed bars (16 by default) |
+| Source / reference | J. Welles Wilder, 'New Concepts in Technical Trading Systems' (1978) as documented in StockCharts ChartSchool, 'Relative Strength Index (RSI)' (14-period Wilder smoothing; 70/30 overbought/oversold; 50 centerline). |
+
+| Parameter | Type | Default | Allowed range |
+| :--- | :--- | :--- | :--- |
+| `rsi_period` | int | 14 | 2 to 100 |
+| `oversold` | decimal | 30 | 1 to 50 |
+
+Indicator calculation:
+
+```text
+Wilder RSI as in the RSI Centerline Crossover strategy.
+```
+
+Exact signal condition:
+
+```text
+RSI[t-1] <= oversold  AND  RSI[t] > oversold   ->  BUY   (default oversold = 30)
+```
+
+Interpretation decisions: Wilder defines readings below 30 as oversold; the simple re-cross above the level is used as the reversal trigger (mirror of the existing rsi_reversal SELL). Wilder's failure-swing pattern is a different, multi-step rule and is not implemented.
+
+### 8.7 `donchian_channel_breakout` — Donchian Channel Breakout (BUY, 1.0.0)
+
+| Item | Value |
+| :--- | :--- |
+| Strategy name | Donchian Channel Breakout |
+| Strategy identifier | `donchian_channel_breakout` (version `1.0.0`) |
+| Category / sub-category | `technical` / `breakout` |
+| Role | BUY (long entry signal) |
+| Trigger | `EDGE_ON_CLOSED_BAR` on the latest completed 1-minute bar |
+| Supported candle intervals | 1m only (trigger and required timeframe) |
+| Required lookback | `period + 2` completed bars (22 by default) |
+| Source / reference | Richard Donchian's price channel as documented in StockCharts ChartSchool, 'Price Channels' (also called Donchian Channels; 20 default; the channel uses prices prior to the current period). |
+
+| Parameter | Type | Default | Allowed range |
+| :--- | :--- | :--- | :--- |
+| `period` | int | 20 | 2 to 400 |
+
+Indicator calculation:
+
+```text
+Upper[t] = highest high of bars t-n .. t-1   (the current bar is excluded)
+```
+
+Exact signal condition:
+
+```text
+close[t-1] <= Upper[t-1]  AND  close[t] > Upper[t]   ->  BUY
+```
+
+Interpretation decisions: The signal uses the completed bar's close breaking the channel built from the prior n bars (StockCharts: channels use prices prior to the current period); an intraday-touch variant is not used. Unlike momentum_breakout there is no volume confirmation.
+
+### 8.8 `stochastic_crossover` — Stochastic Crossover (BUY, 1.0.0)
+
+| Item | Value |
+| :--- | :--- |
+| Strategy name | Stochastic Crossover |
+| Strategy identifier | `stochastic_crossover` (version `1.0.0`) |
+| Category / sub-category | `technical` / `oscillator` |
+| Role | BUY (long entry signal) |
+| Trigger | `EDGE_ON_CLOSED_BAR` on the latest completed 1-minute bar |
+| Supported candle intervals | 1m only (trigger and required timeframe) |
+| Required lookback | `k_period + k_smooth + d_period - 1` completed bars (19 by default) |
+| Source / reference | George Lane's Stochastic Oscillator as documented in StockCharts ChartSchool, 'Stochastic Oscillator' (Full Stochastic 14,3,3; %K/%D signal-line cross). |
+
+| Parameter | Type | Default | Allowed range |
+| :--- | :--- | :--- | :--- |
+| `k_period` | int | 14 | 2 to 100 |
+| `k_smooth` | int | 3 | 1 to 20 |
+| `d_period` | int | 3 | 1 to 20 |
+
+Indicator calculation:
+
+```text
+raw %K = 100 * (close - lowest low(n)) / (highest high(n) - lowest low(n))
+%K = SMA(raw %K, k_smooth)        %D = SMA(%K, d_period)     (Full Stochastic 14,3,3)
+```
+
+Exact signal condition:
+
+```text
+%K[t-1] <= %D[t-1]  AND  %K[t] > %D[t]   ->  BUY   (bullish signal-line cross)
+```
+
+Interpretation decisions: No overbought/oversold qualification is applied (StockCharts defines the cross itself as the signal). A flat range (highest high == lowest low) leaves %K undefined and suppresses the signal.
+
+### 8.9 `williams_r_reversion` — Williams %R Reversion (BUY, 1.0.0)
+
+| Item | Value |
+| :--- | :--- |
+| Strategy name | Williams %R Reversion |
+| Strategy identifier | `williams_r_reversion` (version `1.0.0`) |
+| Category / sub-category | `technical` / `oscillator` |
+| Role | BUY (long entry signal) |
+| Trigger | `EDGE_ON_CLOSED_BAR` on the latest completed 1-minute bar |
+| Supported candle intervals | 1m only (trigger and required timeframe) |
+| Required lookback | `period + 1` completed bars (15 by default) |
+| Source / reference | Larry Williams' %R as documented in StockCharts ChartSchool, 'Williams %R' (formula, 14 default, -20/-80 levels); the -80/-20 re-cross trigger follows the cTrader and TrendSpider indicator documentation (sources differ on the trigger). |
+
+| Parameter | Type | Default | Allowed range |
+| :--- | :--- | :--- | :--- |
+| `period` | int | 14 | 2 to 100 |
+| `oversold` | decimal | -80 | -100 to -50 |
+
+Indicator calculation:
+
+```text
+%R = -100 * (highest high(n) - close) / (highest high(n) - lowest low(n))
+```
+
+Exact signal condition:
+
+```text
+%R[t-1] <= oversold  AND  %R[t] > oversold   ->  BUY   (default oversold = -80)
+```
+
+Interpretation decisions: StockCharts also describes a cross above -50 after an oversold reading, which needs an unspecified look-back; the single-step -80 re-cross documented by cTrader/TrendSpider is used. A flat range leaves %R undefined and suppresses the signal.
+
+### 8.10 `cci_zero_line_crossover` — CCI Zero-Line Crossover (BUY, 1.0.0)
+
+| Item | Value |
+| :--- | :--- |
+| Strategy name | CCI Zero-Line Crossover |
+| Strategy identifier | `cci_zero_line_crossover` (version `1.0.0`) |
+| Category / sub-category | `technical` / `oscillator` |
+| Role | BUY (long entry signal) |
+| Trigger | `EDGE_ON_CLOSED_BAR` on the latest completed 1-minute bar |
+| Supported candle intervals | 1m only (trigger and required timeframe) |
+| Required lookback | `period + 1` completed bars (21 by default) |
+| Source / reference | Donald Lambert's Commodity Channel Index as documented in StockCharts ChartSchool, 'Commodity Channel Index (CCI)' (20 periods, 0.015 constant; CCI positive favors bulls, negative favors bears). |
+
+| Parameter | Type | Default | Allowed range |
+| :--- | :--- | :--- | :--- |
+| `period` | int | 20 | 2 to 200 |
+
+Indicator calculation:
+
+```text
+TP = (high + low + close) / 3
+CCI = (TP - SMA(TP, n)) / (0.015 * mean absolute deviation of TP from SMA(TP, n))
+```
+
+Exact signal condition:
+
+```text
+CCI[t-1] <= 0  AND  CCI[t] > 0   ->  BUY
+```
+
+Interpretation decisions: StockCharts notes zero-line crossovers produce many whipsaws; no +100/-100 requirement is added. A zero mean deviation (flat typical price) leaves CCI undefined and suppresses the signal.
+
+### 8.11 `parabolic_sar` — Parabolic SAR (BUY, 1.0.0)
+
+| Item | Value |
+| :--- | :--- |
+| Strategy name | Parabolic SAR |
+| Strategy identifier | `parabolic_sar` (version `1.0.0`) |
+| Category / sub-category | `technical` / `trend_following` |
+| Role | BUY (long entry signal) |
+| Trigger | `EDGE_ON_CLOSED_BAR` on the latest completed 1-minute bar |
+| Supported candle intervals | 1m only (trigger and required timeframe) |
+| Required lookback | 3 completed bars minimum; the whole supplied history defines the SAR path |
+| Source / reference | J. Welles Wilder, 'New Concepts in Technical Trading Systems' (1978) as documented in StockCharts ChartSchool, 'Parabolic SAR' (AF 0.02 step, 0.20 maximum; prior-two-bar clamp; reversal when price penetrates SAR). |
+
+| Parameter | Type | Default | Allowed range |
+| :--- | :--- | :--- | :--- |
+| `step` | decimal | 0.02 | 0.001 to 0.5 |
+| `maximum` | decimal | 0.20 | 0.001 to 1 |
+
+Constraint: `maximum >= step` (otherwise the evaluation fails closed with `ParameterValidationError`).
+
+Indicator calculation:
+
+```text
+SAR[t] = SAR[t-1] + AF * (EP - SAR[t-1]);  AF starts at `step`, +step on each new EP,
+capped at `maximum`.  Uptrend: SAR never above the prior two lows (downtrend: never
+below the prior two highs).  Reversal when low < SAR (uptrend) or high > SAR
+(downtrend): new SAR = prior EP, new EP = the penetrating bar's extreme, AF = step.
+```
+
+Exact signal condition:
+
+```text
+trend[t-1] = down  AND  trend[t] = up   ->  BUY   (SAR flips below price)
+```
+
+Interpretation decisions: StockCharts and Wilder's text leave the starting trend open; the first trend is up if the second close >= the first (SAR = first low, EP = first high) else down. The SAR path depends on the supplied history, so it is evaluated over the whole history and only the latest flip is used. Penetration is strict (low < SAR / high > SAR).
+
+### 8.12 `dmi_crossover` — DMI Crossover (BUY, 1.0.0)
+
+| Item | Value |
+| :--- | :--- |
+| Strategy name | DMI Crossover |
+| Strategy identifier | `dmi_crossover` (version `1.0.0`) |
+| Category / sub-category | `technical` / `trend_following` |
+| Role | BUY (long entry signal) |
+| Trigger | `EDGE_ON_CLOSED_BAR` on the latest completed 1-minute bar |
+| Supported candle intervals | 1m only (trigger and required timeframe) |
+| Required lookback | `period + 2` completed bars (16 by default); the whole supplied history smooths the values |
+| Source / reference | J. Welles Wilder, 'New Concepts in Technical Trading Systems' (1978) as documented in StockCharts ChartSchool, 'Average Directional Index (ADX)' (14-period Wilder smoothing; +DI/-DI crossover buy and sell signals). |
+
+| Parameter | Type | Default | Allowed range |
+| :--- | :--- | :--- | :--- |
+| `period` | int | 14 | 2 to 100 |
+
+Indicator calculation:
+
+```text
+TR, +DM, -DM from the second bar; first smoothed value = sum of the first n raw values,
+then smoothed = previous - previous / n + current.
++DI = 100 * smoothed +DM / smoothed TR      -DI = 100 * smoothed -DM / smoothed TR
+```
+
+Exact signal condition:
+
+```text
++DI[t-1] <= -DI[t-1]  AND  +DI[t] > -DI[t]   ->  BUY
+```
+
+Interpretation decisions: Wilder/StockCharts also require ADX above 25 (many traders use 20) and place the initial stop at the signal bar's low. Neither is added here: the strategy is the plain +DI/-DI crossover and stops belong to the stop policy.
+
+### 8.13 `aroon_trend` — Aroon Trend (BUY, 1.0.0)
+
+| Item | Value |
+| :--- | :--- |
+| Strategy name | Aroon Trend |
+| Strategy identifier | `aroon_trend` (version `1.0.0`) |
+| Category / sub-category | `technical` / `trend_following` |
+| Role | BUY (long entry signal) |
+| Trigger | `EDGE_ON_CLOSED_BAR` on the latest completed 1-minute bar |
+| Supported candle intervals | 1m only (trigger and required timeframe) |
+| Required lookback | `period + 2` completed bars (27 by default) |
+| Source / reference | Tushar Chande's Aroon (1995) as documented in StockCharts ChartSchool, 'Aroon' (25 periods; Aroon-Up crossing above Aroon-Down is the first stage of an uptrend, the reverse of a downtrend). |
+
+| Parameter | Type | Default | Allowed range |
+| :--- | :--- | :--- | :--- |
+| `period` | int | 25 | 2 to 200 |
+
+Indicator calculation:
+
+```text
+Aroon-Up   = 100 * (n - bars since highest high) / n
+Aroon-Down = 100 * (n - bars since lowest low)  / n
+(extreme searched over the latest n + 1 bars; ties resolve to the most recent bar)
+```
+
+Exact signal condition:
+
+```text
+Up[t-1] <= Down[t-1]  AND  Up[t] > Down[t]   ->  BUY   (an uptrend emerges)
+```
+
+Interpretation decisions: StockCharts does not define the search window or ties; the Chande/TA-Lib convention (n + 1 bars, most recent tie) is used. The 50/70/100 strength levels are not required.
+
+### 8.14 `inside_bar_breakout` — Inside Bar Breakout (BUY, 1.0.0)
+
+| Item | Value |
+| :--- | :--- |
+| Strategy name | Inside Bar Breakout |
+| Strategy identifier | `inside_bar_breakout` (version `1.0.0`) |
+| Category / sub-category | `technical` / `price_action` |
+| Role | BUY (long entry signal) |
+| Trigger | `EDGE_ON_CLOSED_BAR` on the latest completed 1-minute bar |
+| Supported candle intervals | 1m only (trigger and required timeframe) |
+| Required lookback | 3 completed bars |
+| Source / reference | Inside-bar breakout as described in published trading documentation (TradingView 'Inside Bar Breakout' scripts and LuxAlgo 'Inside Bar Breakouts'): an inside bar has a lower high and higher low than the mother bar; a long breaks above the mother bar's high. Weakly standardized: no single authoritative rule exists. |
+
+Parameters: none.
+
+Indicator calculation:
+
+```text
+mother = bar[t-2], inside = bar[t-1], breakout = bar[t]
+inside bar: inside.high < mother.high AND inside.low > mother.low
+```
+
+Exact signal condition:
+
+```text
+inside bar at t-1  AND  close[t] > mother.high   ->  BUY
+```
+
+Interpretation decisions: Only the first bar after the inside bar can break out (no multi-bar inside sequences), the breakout is a completed close above the mother bar's high (not an intraday touch), and the three bars must share a New York trading date. The 'body-only' inside-bar variant is not used.
+
+### 8.15 `macd_bearish_crossover` — MACD Bearish Crossover (SELL, 1.0.0)
+
+| Item | Value |
+| :--- | :--- |
+| Strategy name | MACD Bearish Crossover |
+| Strategy identifier | `macd_bearish_crossover` (version `1.0.0`) |
+| Category / sub-category | `technical` / `momentum` |
+| Role | SELL (advisory full exit of an owned long) |
+| Trigger | `EDGE_ON_CLOSED_BAR` on the latest completed 1-minute bar |
+| Supported candle intervals | 1m only (trigger and required timeframe) |
+| Required lookback | `slow_period + signal_period` completed bars (35 by default) |
+| Source / reference | Gerald Appel's MACD as documented in StockCharts ChartSchool, 'MACD (Moving Average Convergence/Divergence Oscillator)' (MACD = 12-EMA - 26-EMA, signal = 9-EMA of MACD; signal-line and centerline crossovers). |
+
+| Parameter | Type | Default | Allowed range |
+| :--- | :--- | :--- | :--- |
+| `fast_period` | int | 12 | 2 to 100 |
+| `slow_period` | int | 26 | 3 to 200 |
+| `signal_period` | int | 9 | 2 to 100 |
+
+Constraint: `fast_period < slow_period` (otherwise the evaluation fails closed with `ParameterValidationError`).
+
+Indicator calculation:
+
+```text
+MACD[t]   = EMA(fast)[t] - EMA(slow)[t]            (closes; EMAs SMA-seeded)
+Signal[t] = EMA(signal) of MACD, SMA-seeded over its first `signal` values
+```
+
+Exact signal condition:
+
+```text
+MACD[t-1] >= Signal[t-1]  AND  MACD[t] < Signal[t]   ->  SELL   (bearish crossover)
+```
+
+Interpretation decisions: StockCharts does not state the EMA seeding; the SMA seed shared with the EMA indicator is used for all three EMAs.
+
+### 8.16 `macd_zero_line_breakdown` — MACD Zero-Line Breakdown (SELL, 1.0.0)
+
+| Item | Value |
+| :--- | :--- |
+| Strategy name | MACD Zero-Line Breakdown |
+| Strategy identifier | `macd_zero_line_breakdown` (version `1.0.0`) |
+| Category / sub-category | `technical` / `momentum` |
+| Role | SELL (advisory full exit of an owned long) |
+| Trigger | `EDGE_ON_CLOSED_BAR` on the latest completed 1-minute bar |
+| Supported candle intervals | 1m only (trigger and required timeframe) |
+| Required lookback | `slow_period + 1` completed bars (27 by default) |
+| Source / reference | Gerald Appel's MACD as documented in StockCharts ChartSchool, 'MACD (Moving Average Convergence/Divergence Oscillator)' (MACD = 12-EMA - 26-EMA, signal = 9-EMA of MACD; signal-line and centerline crossovers). |
+
+| Parameter | Type | Default | Allowed range |
+| :--- | :--- | :--- | :--- |
+| `fast_period` | int | 12 | 2 to 100 |
+| `slow_period` | int | 26 | 3 to 200 |
+
+Constraint: `fast_period < slow_period` (otherwise the evaluation fails closed with `ParameterValidationError`).
+
+Indicator calculation:
+
+```text
+MACD[t] = EMA(fast)[t] - EMA(slow)[t]            (closes; EMAs SMA-seeded)
+```
+
+Exact signal condition:
+
+```text
+MACD[t-1] >= 0  AND  MACD[t] < 0   ->  SELL   (bearish centerline crossover)
+```
+
+Interpretation decisions: The signal line is not used. With the default 12/26 this is the same event as an EMA(12)/EMA(26) bearish crossover; both are kept as separately published strategies.
+
+### 8.17 `ema_bearish_crossover` — EMA Bearish Crossover (SELL, 1.0.0)
+
+| Item | Value |
+| :--- | :--- |
+| Strategy name | EMA Bearish Crossover |
+| Strategy identifier | `ema_bearish_crossover` (version `1.0.0`) |
+| Category / sub-category | `technical` / `moving_average` |
+| Role | SELL (advisory full exit of an owned long) |
+| Trigger | `EDGE_ON_CLOSED_BAR` on the latest completed 1-minute bar |
+| Supported candle intervals | 1m only (trigger and required timeframe) |
+| Required lookback | `slow_period + 1` completed bars (51 by default); the whole supplied history seeds the EMA |
+| Source / reference | StockCharts ChartSchool, 'Moving Averages - Simple and Exponential' (SMA/EMA formulas; price crossover: bearish when price moves below the average; two-moving-average crossover: bullish when the shorter average crosses above the longer, bearish when it crosses below). |
+
+| Parameter | Type | Default | Allowed range |
+| :--- | :--- | :--- | :--- |
+| `fast_period` | int | 10 | 2 to 200 |
+| `slow_period` | int | 50 | 3 to 400 |
+
+Constraint: `fast_period < slow_period` (otherwise the evaluation fails closed with `ParameterValidationError`).
+
+Indicator calculation:
+
+```text
+EMA(n)[t] = (2 / (n + 1)) * close[t] + (1 - 2 / (n + 1)) * EMA(n)[t-1]
+EMA(n) is seeded with the SMA of the first n closes (StockCharts convention).
+```
+
+Exact signal condition:
+
+```text
+EMA(fast)[t-1] >= EMA(slow)[t-1]  AND  EMA(fast)[t] < EMA(slow)[t]   ->  SELL
+```
+
+Interpretation decisions: The published page gives 10/50 (and 5/35, 50/200) as example EMA pairs and no single default; 10/50 is used. The EMA is seeded at the start of the supplied history, so early values are seed-dominated.
+
+### 8.18 `sma_bearish_crossover` — SMA Bearish Crossover (SELL, 1.0.0)
+
+| Item | Value |
+| :--- | :--- |
+| Strategy name | SMA Bearish Crossover |
+| Strategy identifier | `sma_bearish_crossover` (version `1.0.0`) |
+| Category / sub-category | `technical` / `moving_average` |
+| Role | SELL (advisory full exit of an owned long) |
+| Trigger | `EDGE_ON_CLOSED_BAR` on the latest completed 1-minute bar |
+| Supported candle intervals | 1m only (trigger and required timeframe) |
+| Required lookback | `slow_period + 1` completed bars (201 by default) |
+| Source / reference | StockCharts ChartSchool, 'Moving Averages - Simple and Exponential' (SMA/EMA formulas; price crossover: bearish when price moves below the average; two-moving-average crossover: bullish when the shorter average crosses above the longer, bearish when it crosses below). |
+
+| Parameter | Type | Default | Allowed range |
+| :--- | :--- | :--- | :--- |
+| `fast_period` | int | 50 | 2 to 200 |
+| `slow_period` | int | 200 | 3 to 400 |
+
+Constraint: `fast_period < slow_period` (otherwise the evaluation fails closed with `ParameterValidationError`).
+
+Indicator calculation:
+
+```text
+SMA(n)[t] = (close[t-n+1] + ... + close[t]) / n
+```
+
+Exact signal condition:
+
+```text
+SMA(fast)[t-1] >= SMA(slow)[t-1]  AND  SMA(fast)[t] < SMA(slow)[t]   ->  SELL
+```
+
+Interpretation decisions: The averages are the conventional 50/200 SMA (death cross) applied to 1-minute closes.
+
+### 8.19 `price_below_ema` — Price Below EMA (SELL, 1.0.0)
+
+| Item | Value |
+| :--- | :--- |
+| Strategy name | Price Below EMA |
+| Strategy identifier | `price_below_ema` (version `1.0.0`) |
+| Category / sub-category | `technical` / `moving_average` |
+| Role | SELL (advisory full exit of an owned long) |
+| Trigger | `LEVEL_ON_CLOSED_BAR` on the latest completed 1-minute bar |
+| Supported candle intervals | 1m only (trigger and required timeframe) |
+| Required lookback | `period` completed bars (20 by default); the whole supplied history seeds the EMA |
+| Source / reference | StockCharts ChartSchool, 'Moving Averages - Simple and Exponential' (SMA/EMA formulas; price crossover: bearish when price moves below the average; two-moving-average crossover: bullish when the shorter average crosses above the longer, bearish when it crosses below). |
+
+| Parameter | Type | Default | Allowed range |
+| :--- | :--- | :--- | :--- |
+| `period` | int | 20 | 2 to 400 |
+
+Indicator calculation:
+
+```text
+EMA(n)[t] = (2 / (n + 1)) * close[t] + (1 - 2 / (n + 1)) * EMA(n)[t-1]  (SMA-seeded)
+```
+
+Exact signal condition:
+
+```text
+close[t] < EMA(n)[t]   ->  SELL   (level condition, not an edge)
+```
+
+Interpretation decisions: A level (state) rule, so it signals on every completed bar that closes below the EMA while a position is held; a deterministic per-bar signal id keeps replays idempotent. StockCharts describes price moving below an MA as the bearish signal but gives no single period; 20 is used.
+
+### 8.20 `price_below_sma` — Price Below SMA (SELL, 1.0.0)
+
+| Item | Value |
+| :--- | :--- |
+| Strategy name | Price Below SMA |
+| Strategy identifier | `price_below_sma` (version `1.0.0`) |
+| Category / sub-category | `technical` / `moving_average` |
+| Role | SELL (advisory full exit of an owned long) |
+| Trigger | `LEVEL_ON_CLOSED_BAR` on the latest completed 1-minute bar |
+| Supported candle intervals | 1m only (trigger and required timeframe) |
+| Required lookback | `period` completed bars (50 by default) |
+| Source / reference | StockCharts ChartSchool, 'Moving Averages - Simple and Exponential' (SMA/EMA formulas; price crossover: bearish when price moves below the average; two-moving-average crossover: bullish when the shorter average crosses above the longer, bearish when it crosses below). |
+
+| Parameter | Type | Default | Allowed range |
+| :--- | :--- | :--- | :--- |
+| `period` | int | 50 | 2 to 400 |
+
+Indicator calculation:
+
+```text
+SMA(n)[t] = (close[t-n+1] + ... + close[t]) / n
+```
+
+Exact signal condition:
+
+```text
+close[t] < SMA(n)[t]   ->  SELL   (level condition, not an edge)
+```
+
+Interpretation decisions: A level (state) rule, so it signals on every completed bar that closes below the SMA while a position is held; a deterministic per-bar signal id keeps replays idempotent. StockCharts describes price moving below an MA as the bearish signal but gives no single period; 50 (its medium-term example) is used.
+
+### 8.21 `rsi_centerline_breakdown` — RSI Centerline Breakdown (SELL, 1.0.0)
+
+| Item | Value |
+| :--- | :--- |
+| Strategy name | RSI Centerline Breakdown |
+| Strategy identifier | `rsi_centerline_breakdown` (version `1.0.0`) |
+| Category / sub-category | `technical` / `oscillator` |
+| Role | SELL (advisory full exit of an owned long) |
+| Trigger | `EDGE_ON_CLOSED_BAR` on the latest completed 1-minute bar |
+| Supported candle intervals | 1m only (trigger and required timeframe) |
+| Required lookback | `rsi_period + 2` completed bars (16 by default) |
+| Source / reference | J. Welles Wilder, 'New Concepts in Technical Trading Systems' (1978) as documented in StockCharts ChartSchool, 'Relative Strength Index (RSI)' (14-period Wilder smoothing; 70/30 overbought/oversold; 50 centerline). |
+
+| Parameter | Type | Default | Allowed range |
+| :--- | :--- | :--- | :--- |
+| `rsi_period` | int | 14 | 2 to 100 |
+
+Indicator calculation:
+
+```text
+Wilder RSI = 100 - 100 / (1 + avg gain / avg loss); first averages are simple means
+of the first n changes, then avg = (previous avg * (n - 1) + current) / n.
+```
+
+Exact signal condition:
+
+```text
+RSI[t-1] >= 50  AND  RSI[t] < 50   ->  SELL   (centerline = 50)
+```
+
+Interpretation decisions: StockCharts names RSI 'centerline crossovers' as signals without stating the level in text; 50 is the oscillator's midpoint and is fixed (not a parameter).
+
+### 8.22 `stochastic_bearish_crossover` — Stochastic Bearish Crossover (SELL, 1.0.0)
+
+| Item | Value |
+| :--- | :--- |
+| Strategy name | Stochastic Bearish Crossover |
+| Strategy identifier | `stochastic_bearish_crossover` (version `1.0.0`) |
+| Category / sub-category | `technical` / `oscillator` |
+| Role | SELL (advisory full exit of an owned long) |
+| Trigger | `EDGE_ON_CLOSED_BAR` on the latest completed 1-minute bar |
+| Supported candle intervals | 1m only (trigger and required timeframe) |
+| Required lookback | `k_period + k_smooth + d_period - 1` completed bars (19 by default) |
+| Source / reference | George Lane's Stochastic Oscillator as documented in StockCharts ChartSchool, 'Stochastic Oscillator' (Full Stochastic 14,3,3; %K/%D signal-line cross). |
+
+| Parameter | Type | Default | Allowed range |
+| :--- | :--- | :--- | :--- |
+| `k_period` | int | 14 | 2 to 100 |
+| `k_smooth` | int | 3 | 1 to 20 |
+| `d_period` | int | 3 | 1 to 20 |
+
+Indicator calculation:
+
+```text
+raw %K = 100 * (close - lowest low(n)) / (highest high(n) - lowest low(n))
+%K = SMA(raw %K, k_smooth)        %D = SMA(%K, d_period)     (Full Stochastic 14,3,3)
+```
+
+Exact signal condition:
+
+```text
+%K[t-1] >= %D[t-1]  AND  %K[t] < %D[t]   ->  SELL   (bearish signal-line cross)
+```
+
+Interpretation decisions: No overbought/oversold qualification is applied (StockCharts defines the cross itself as the signal). A flat range leaves %K undefined and suppresses the signal.
+
+### 8.23 `williams_r_reversal` — Williams %R Reversal (SELL, 1.0.0)
+
+| Item | Value |
+| :--- | :--- |
+| Strategy name | Williams %R Reversal |
+| Strategy identifier | `williams_r_reversal` (version `1.0.0`) |
+| Category / sub-category | `technical` / `oscillator` |
+| Role | SELL (advisory full exit of an owned long) |
+| Trigger | `EDGE_ON_CLOSED_BAR` on the latest completed 1-minute bar |
+| Supported candle intervals | 1m only (trigger and required timeframe) |
+| Required lookback | `period + 1` completed bars (15 by default) |
+| Source / reference | Larry Williams' %R as documented in StockCharts ChartSchool, 'Williams %R' (formula, 14 default, -20/-80 levels); the -80/-20 re-cross trigger follows the cTrader and TrendSpider indicator documentation (sources differ on the trigger). |
+
+| Parameter | Type | Default | Allowed range |
+| :--- | :--- | :--- | :--- |
+| `period` | int | 14 | 2 to 100 |
+| `overbought` | decimal | -20 | -50 to 0 |
+
+Indicator calculation:
+
+```text
+%R = -100 * (highest high(n) - close) / (highest high(n) - lowest low(n))
+```
+
+Exact signal condition:
+
+```text
+%R[t-1] >= overbought  AND  %R[t] < overbought   ->  SELL   (default overbought = -20)
+```
+
+Interpretation decisions: Sources differ on the sell trigger; the cross back below -20 after an overbought reading (cTrader/TrendSpider) is used. StockCharts' cross below -50 after an overbought reading needs an unspecified look-back and is not used. A flat range leaves %R undefined and suppresses the signal.
+
+### 8.24 `cci_zero_line_breakdown` — CCI Zero-Line Breakdown (SELL, 1.0.0)
+
+| Item | Value |
+| :--- | :--- |
+| Strategy name | CCI Zero-Line Breakdown |
+| Strategy identifier | `cci_zero_line_breakdown` (version `1.0.0`) |
+| Category / sub-category | `technical` / `oscillator` |
+| Role | SELL (advisory full exit of an owned long) |
+| Trigger | `EDGE_ON_CLOSED_BAR` on the latest completed 1-minute bar |
+| Supported candle intervals | 1m only (trigger and required timeframe) |
+| Required lookback | `period + 1` completed bars (21 by default) |
+| Source / reference | Donald Lambert's Commodity Channel Index as documented in StockCharts ChartSchool, 'Commodity Channel Index (CCI)' (20 periods, 0.015 constant; CCI positive favors bulls, negative favors bears). |
+
+| Parameter | Type | Default | Allowed range |
+| :--- | :--- | :--- | :--- |
+| `period` | int | 20 | 2 to 200 |
+
+Indicator calculation:
+
+```text
+TP = (high + low + close) / 3
+CCI = (TP - SMA(TP, n)) / (0.015 * mean absolute deviation of TP from SMA(TP, n))
+```
+
+Exact signal condition:
+
+```text
+CCI[t-1] >= 0  AND  CCI[t] < 0   ->  SELL
+```
+
+Interpretation decisions: StockCharts notes zero-line crossovers produce many whipsaws; no +100/-100 requirement is added. A zero mean deviation leaves CCI undefined and suppresses the signal.
+
+### 8.25 `parabolic_sar_reversal` — Parabolic SAR Reversal (SELL, 1.0.0)
+
+| Item | Value |
+| :--- | :--- |
+| Strategy name | Parabolic SAR Reversal |
+| Strategy identifier | `parabolic_sar_reversal` (version `1.0.0`) |
+| Category / sub-category | `technical` / `trend_following` |
+| Role | SELL (advisory full exit of an owned long) |
+| Trigger | `EDGE_ON_CLOSED_BAR` on the latest completed 1-minute bar |
+| Supported candle intervals | 1m only (trigger and required timeframe) |
+| Required lookback | 3 completed bars minimum; the whole supplied history defines the SAR path |
+| Source / reference | J. Welles Wilder, 'New Concepts in Technical Trading Systems' (1978) as documented in StockCharts ChartSchool, 'Parabolic SAR' (AF 0.02 step, 0.20 maximum; prior-two-bar clamp; reversal when price penetrates SAR). |
+
+| Parameter | Type | Default | Allowed range |
+| :--- | :--- | :--- | :--- |
+| `step` | decimal | 0.02 | 0.001 to 0.5 |
+| `maximum` | decimal | 0.20 | 0.001 to 1 |
+
+Constraint: `maximum >= step` (otherwise the evaluation fails closed with `ParameterValidationError`).
+
+Indicator calculation:
+
+```text
+SAR[t] = SAR[t-1] + AF * (EP - SAR[t-1]);  AF starts at `step`, +step on each new EP,
+capped at `maximum`.  Uptrend: SAR never above the prior two lows (downtrend: never
+below the prior two highs).  Reversal when low < SAR (uptrend) or high > SAR
+(downtrend): new SAR = prior EP, new EP = the penetrating bar's extreme, AF = step.
+```
+
+Exact signal condition:
+
+```text
+trend[t-1] = up  AND  trend[t] = down   ->  SELL   (SAR flips above price)
+```
+
+Interpretation decisions: StockCharts and Wilder's text leave the starting trend open; the first trend is up if the second close >= the first (SAR = first low, EP = first high) else down. The SAR path depends on the supplied history, so it is evaluated over the whole history and only the latest flip is used. Penetration is strict (low < SAR / high > SAR).
+
+### 8.26 `dmi_bearish_crossover` — DMI Bearish Crossover (SELL, 1.0.0)
+
+| Item | Value |
+| :--- | :--- |
+| Strategy name | DMI Bearish Crossover |
+| Strategy identifier | `dmi_bearish_crossover` (version `1.0.0`) |
+| Category / sub-category | `technical` / `trend_following` |
+| Role | SELL (advisory full exit of an owned long) |
+| Trigger | `EDGE_ON_CLOSED_BAR` on the latest completed 1-minute bar |
+| Supported candle intervals | 1m only (trigger and required timeframe) |
+| Required lookback | `period + 2` completed bars (16 by default); the whole supplied history smooths the values |
+| Source / reference | J. Welles Wilder, 'New Concepts in Technical Trading Systems' (1978) as documented in StockCharts ChartSchool, 'Average Directional Index (ADX)' (14-period Wilder smoothing; +DI/-DI crossover buy and sell signals). |
+
+| Parameter | Type | Default | Allowed range |
+| :--- | :--- | :--- | :--- |
+| `period` | int | 14 | 2 to 100 |
+
+Indicator calculation:
+
+```text
+TR, +DM, -DM from the second bar; first smoothed value = sum of the first n raw values,
+then smoothed = previous - previous / n + current.
++DI = 100 * smoothed +DM / smoothed TR      -DI = 100 * smoothed -DM / smoothed TR
+```
+
+Exact signal condition:
+
+```text
+-DI[t-1] <= +DI[t-1]  AND  -DI[t] > +DI[t]   ->  SELL   (-DI crosses above +DI)
+```
+
+Interpretation decisions: Wilder/StockCharts also require ADX above 25 (many traders use 20) and place the initial stop at the signal bar's high. Neither is added here: the strategy is the plain -DI/+DI crossover and stops belong to the stop policy.
+
+### 8.27 `aroon_bearish_reversal` — Aroon Bearish Reversal (SELL, 1.0.0)
+
+| Item | Value |
+| :--- | :--- |
+| Strategy name | Aroon Bearish Reversal |
+| Strategy identifier | `aroon_bearish_reversal` (version `1.0.0`) |
+| Category / sub-category | `technical` / `trend_following` |
+| Role | SELL (advisory full exit of an owned long) |
+| Trigger | `EDGE_ON_CLOSED_BAR` on the latest completed 1-minute bar |
+| Supported candle intervals | 1m only (trigger and required timeframe) |
+| Required lookback | `period + 2` completed bars (27 by default) |
+| Source / reference | Tushar Chande's Aroon (1995) as documented in StockCharts ChartSchool, 'Aroon' (25 periods; Aroon-Up crossing above Aroon-Down is the first stage of an uptrend, the reverse of a downtrend). |
+
+| Parameter | Type | Default | Allowed range |
+| :--- | :--- | :--- | :--- |
+| `period` | int | 25 | 2 to 200 |
+
+Indicator calculation:
+
+```text
+Aroon-Up   = 100 * (n - bars since highest high) / n
+Aroon-Down = 100 * (n - bars since lowest low)  / n
+(extreme searched over the latest n + 1 bars; ties resolve to the most recent bar)
+```
+
+Exact signal condition:
+
+```text
+Down[t-1] <= Up[t-1]  AND  Down[t] > Up[t]   ->  SELL   (a downtrend emerges)
+```
+
+Interpretation decisions: StockCharts does not define the search window or ties; the Chande/TA-Lib convention (n + 1 bars, most recent tie) is used. The 50/70/100 strength levels are not required.
+
+### 8.28 `donchian_lower_channel_exit` — Donchian Lower Channel Exit (SELL, 1.0.0)
+
+| Item | Value |
+| :--- | :--- |
+| Strategy name | Donchian Lower Channel Exit |
+| Strategy identifier | `donchian_lower_channel_exit` (version `1.0.0`) |
+| Category / sub-category | `technical` / `breakout` |
+| Role | SELL (advisory full exit of an owned long) |
+| Trigger | `LEVEL_ON_CLOSED_BAR` on the latest completed 1-minute bar |
+| Supported candle intervals | 1m only (trigger and required timeframe) |
+| Required lookback | `period + 1` completed bars (21 by default) |
+| Source / reference | Richard Donchian's price channel as documented in StockCharts ChartSchool, 'Price Channels' (also called Donchian Channels; 20 default; the channel uses prices prior to the current period). |
+
+| Parameter | Type | Default | Allowed range |
+| :--- | :--- | :--- | :--- |
+| `period` | int | 20 | 2 to 400 |
+
+Indicator calculation:
+
+```text
+Lower[t] = lowest low of bars t-n .. t-1   (the current bar is excluded)
+```
+
+Exact signal condition:
+
+```text
+close[t] < Lower[t]   ->  SELL   (level condition, not an edge)
+```
+
+Interpretation decisions: An exit rule evaluated as a level: a completed close below the prior-n-bar low exits an owned long. The channel length defaults to the published 20; shorter exit channels (for example the Turtle System 1 exit of 10 bars) are available through `period`. The close, not an intraday touch, is compared.
+
+### Sources
+
+- StockCharts ChartSchool: [Moving Averages — Simple and Exponential](https://chartschool.stockcharts.com/table-of-contents/technical-indicators-and-overlays/technical-overlays/moving-averages-simple-and-exponential),
+  [MACD](https://chartschool.stockcharts.com/table-of-contents/technical-indicators-and-overlays/technical-indicators/macd-moving-average-convergence-divergence-oscillator),
+  [RSI](https://chartschool.stockcharts.com/table-of-contents/technical-indicators-and-overlays/technical-indicators/relative-strength-index-rsi),
+  [Stochastic Oscillator](https://chartschool.stockcharts.com/table-of-contents/technical-indicators-and-overlays/technical-indicators/stochastic-oscillator-fast-slow-and-full),
+  [Williams %R](https://chartschool.stockcharts.com/table-of-contents/technical-indicators-and-overlays/technical-indicators/williams-r),
+  [CCI](https://chartschool.stockcharts.com/table-of-contents/technical-indicators-and-overlays/technical-indicators/commodity-channel-index-cci),
+  [Parabolic SAR](https://chartschool.stockcharts.com/table-of-contents/technical-indicators-and-overlays/technical-overlays/parabolic-sar),
+  [ADX / DMI](https://chartschool.stockcharts.com/table-of-contents/technical-indicators-and-overlays/technical-indicators/average-directional-index-adx),
+  [Aroon](https://chartschool.stockcharts.com/table-of-contents/technical-indicators-and-overlays/technical-indicators/aroon),
+  [Price Channels (Donchian)](https://chartschool.stockcharts.com/table-of-contents/technical-indicators-and-overlays/technical-overlays/price-channels),
+  [Bollinger Bands](https://chartschool.stockcharts.com/table-of-contents/technical-indicators-and-overlays/technical-overlays/bollinger-bands).
+- Original publications named by those pages: J. Welles Wilder, *New Concepts in
+  Technical Trading Systems* (1978) for RSI, Parabolic SAR and DMI/ADX; Gerald
+  Appel (MACD); George Lane (Stochastic); Larry Williams (%R); Donald Lambert
+  (CCI, 1980); Tushar Chande (Aroon, 1995); Richard Donchian (price channels).
+- Weaker, vendor/community documentation (used only where StockCharts gives no
+  trigger): cTrader and TrendSpider indicator documentation for the Williams %R
+  −80/−20 re-cross; TradingView community scripts and LuxAlgo, "Inside Bar
+  Breakouts" for the inside-bar rule. These are flagged in the individual
+  interpretation notes.
+
+
+## 9. Implementation inventory of candidate methods
+
+The inventory is documentation only; it is not a runtime configuration
+mechanism and nothing reads it. Status values:
+
+- `implemented` — a faithful strategy class exists and is registered.
+- `existing_equivalent` — an already shipped strategy covers the method.
+- `requires_source_definition` — no sufficiently precise published rule could be
+  established; deliberately not implemented rather than invented.
+- `pending` — not yet attempted.
+
+### 9.1 First batch (30 requested methods)
+
+| # | Candidate | Role | Status | Identifier / note |
+| :--- | :--- | :--- | :--- | :--- |
+| 1 | SMA Crossover | BUY | implemented | `sma_crossover` |
+| 2 | EMA Crossover | BUY | implemented | `ema_crossover` |
+| 3 | MACD Signal Crossover | BUY | implemented | `macd_signal_crossover` |
+| 4 | MACD Zero-Line Crossover | BUY | implemented | `macd_zero_line_crossover` |
+| 5 | RSI Centerline Crossover | BUY | implemented | `rsi_centerline_crossover` |
+| 6 | RSI Oversold Reversal | BUY | implemented | `rsi_oversold_reversal` |
+| 7 | Bollinger Band Mean Reversion | BUY | requires_source_definition | See §9.2 |
+| 8 | Donchian Channel Breakout | BUY | implemented | `donchian_channel_breakout` (distinct from `momentum_breakout`: no volume filter, channel excludes the current bar) |
+| 9 | Stochastic Crossover | BUY | implemented | `stochastic_crossover` |
+| 10 | Williams %R Reversion | BUY | implemented | `williams_r_reversion` |
+| 11 | CCI Zero-Line Crossover | BUY | implemented | `cci_zero_line_crossover` |
+| 12 | Parabolic SAR | BUY | implemented | `parabolic_sar` |
+| 13 | DMI Crossover | BUY | implemented | `dmi_crossover` |
+| 14 | Aroon Trend | BUY | implemented | `aroon_trend` |
+| 15 | Inside Bar Breakout | BUY | implemented | `inside_bar_breakout` |
+| 1 | MACD Bearish Crossover | SELL | implemented | `macd_bearish_crossover` |
+| 2 | MACD Zero-Line Breakdown | SELL | implemented | `macd_zero_line_breakdown` |
+| 3 | EMA Bearish Crossover | SELL | implemented | `ema_bearish_crossover` |
+| 4 | SMA Bearish Crossover | SELL | implemented | `sma_bearish_crossover` |
+| 5 | Price Below EMA | SELL | implemented | `price_below_ema` (level rule) |
+| 6 | Price Below SMA | SELL | implemented | `price_below_sma` (level rule) |
+| 7 | RSI Centerline Breakdown | SELL | implemented | `rsi_centerline_breakdown` |
+| 8 | Stochastic Bearish Crossover | SELL | implemented | `stochastic_bearish_crossover` |
+| 9 | Williams %R Reversal | SELL | implemented | `williams_r_reversal` |
+| 10 | CCI Zero-Line Breakdown | SELL | implemented | `cci_zero_line_breakdown` |
+| 11 | Parabolic SAR Reversal | SELL | implemented | `parabolic_sar_reversal` |
+| 12 | DMI Bearish Crossover | SELL | implemented | `dmi_bearish_crossover` |
+| 13 | Aroon Bearish Reversal | SELL | implemented | `aroon_bearish_reversal` |
+| 14 | Donchian Lower Channel Exit | SELL | implemented | `donchian_lower_channel_exit` (level rule) |
+| 15 | Bollinger Middle Band Exit | SELL | requires_source_definition | See §9.2 |
+
+First-batch totals: 28 `implemented` (14 BUY, 14 SELL), 2
+`requires_source_definition`.
+
+### 9.2 Methods that need a source definition
+
+- **Bollinger Band Mean Reversion (BUY).** The band formulas are published
+  (20-period SMA ± 2 standard deviations of closes; StockCharts does not say
+  whether the deviation is the population or sample form), but StockCharts states
+  that band "tags" are not signals, gives no mean-reversion entry rule, and says
+  the bands should be combined with other indicators, which would be an added
+  confirmation condition. Vendor and community implementations disagree on the
+  trigger (enter on a close below the lower band, on the re-cross back above it,
+  or after a W-bottom with confirmation). A canonical entry trigger and the
+  deviation form must be chosen from a cited source before implementation.
+- **Bollinger Middle Band Exit (SELL).** Published usage splits into opposite
+  rules: take profit when price returns *up* to the middle band after a
+  mean-reversion entry, versus exit when price closes *down through* the middle
+  band that acts as trend support. The right rule depends on which entry it is
+  paired with and on the source chosen for the previous item.
+
+### 9.3 Existing strategies (classification only)
+
+| Strategy | Role | `category` / `sub_category` |
+| :--- | :--- | :--- |
+| `vwap_bounce` | BUY | `technical` / `vwap` |
+| `momentum_breakout` | BUY | `technical` / `momentum` |
+| `opening_range_breakout` | BUY | `technical` / `breakout` |
+| `vwap_breakdown` | SELL | `technical` / `vwap` |
+| `momentum_reversal` | SELL | `technical` / `momentum` |
+| `rsi_reversal` | SELL | `technical` / `oscillator` |
+
+These six are mapped to inventory candidates as `existing_equivalent` only when
+the matching candidate name is recorded; the full candidate list is not in the
+repository (see §9.4), so no mapping is asserted here.
+
+### 9.4 Remaining candidates
+
+The original inventory is 106 BUY and 50 SELL candidate methods. The list of
+candidate names was not present in the repository when the first batch was
+written, so only the 30 methods named in the batch request are itemized above.
+Assuming those 30 belong to the original inventory, **91 BUY and 35 SELL
+candidates remain `pending`**; each should be appended to §9.1 by name, with its
+status, when the candidate list is added. Strategies from books, videos,
+individual traders or in-house research will be added as separate, separately
+named implementations and are not part of this batch.

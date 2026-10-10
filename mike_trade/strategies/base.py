@@ -51,11 +51,43 @@ __all__ = [
     "ReasonCode",
     "TriggerKind",
     "StrategySpec",
+    "STRATEGY_CATEGORIES",
+    "TECHNICAL_SUB_CATEGORIES",
     "StrategyEvaluation",
     "make_signal_id",
     "BuyStrategy",
     "SellStrategy",
 ]
+
+#: Stable ``StrategySpec.category`` identifiers.
+STRATEGY_CATEGORIES: tuple[str, ...] = (
+    "technical",
+    "statistical",
+    "machine_learning",
+    "deep_learning",
+    "reinforcement_learning",
+    "llm_ai",
+    "microstructure",
+    "event_fundamental",
+    "relative_value",
+    "alternative_data",
+)
+
+#: Stable ``StrategySpec.sub_category`` identifiers for ``category == "technical"``.
+TECHNICAL_SUB_CATEGORIES: tuple[str, ...] = (
+    "momentum",
+    "breakout",
+    "vwap",
+    "moving_average",
+    "mean_reversion",
+    "trend_following",
+    "volatility",
+    "price_action",
+    "gap_trading",
+    "intraday_session",
+    "oscillator",
+    "volume",
+)
 
 _STRATEGY_ID_RE = re.compile(r"^[a-z][a-z0-9]*(?:_[a-z0-9]+)*$")
 _SEMVER_RE = re.compile(r"^(0|[1-9]\d*)\.(0|[1-9]\d*)\.(0|[1-9]\d*)$")
@@ -329,11 +361,19 @@ class TriggerKind(Enum):
 
 @dataclass(frozen=True, slots=True)
 class StrategySpec:
-    """Immutable, versioned description of one strategy's contract."""
+    """Immutable, versioned description of one strategy's contract.
+
+    ``category`` is one of :data:`STRATEGY_CATEGORIES`.  ``sub_category`` is one of
+    :data:`TECHNICAL_SUB_CATEGORIES` when the category is ``technical``; the other
+    categories have no sub-category vocabulary yet, so any snake_case identifier is
+    accepted for them.  Both are plain, stable strings.
+    """
 
     strategy_id: str
     version: str
     side: StrategyRole
+    category: str
+    sub_category: str
     reference_symbols: tuple[str, ...]
     required_timeframes: tuple[CandleTimeframe, ...]
     warmup_bars: int
@@ -355,6 +395,19 @@ class StrategySpec:
         object.__setattr__(self, "version", _require_semver(self.version))
         if not isinstance(self.side, StrategyRole):
             raise ValueError(f"side must be StrategyRole; got {type(self.side).__name__}")
+        category = _require_identifier(self.category, field="category")
+        if category not in STRATEGY_CATEGORIES:
+            raise ValueError(
+                f"category must be one of {list(STRATEGY_CATEGORIES)!r}; got {category!r}"
+            )
+        sub_category = _require_identifier(self.sub_category, field="sub_category")
+        if category == "technical" and sub_category not in TECHNICAL_SUB_CATEGORIES:
+            raise ValueError(
+                f"technical sub_category must be one of {list(TECHNICAL_SUB_CATEGORIES)!r}; "
+                f"got {sub_category!r}"
+            )
+        object.__setattr__(self, "category", category)
+        object.__setattr__(self, "sub_category", sub_category)
 
         if not isinstance(self.reference_symbols, tuple):
             raise ValueError("reference_symbols must be a tuple")

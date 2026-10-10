@@ -40,6 +40,8 @@ def spec() -> StrategySpec:
         strategy_id="test_sell",
         version="1.0.0",
         side=StrategyRole.SELL,
+        category="technical",
+        sub_category="momentum",
         reference_symbols=("AAPL",),
         required_timeframes=(CandleTimeframe.M5,),
         warmup_bars=2,

@@ -69,6 +69,8 @@ def make_spec(
         strategy_id=strategy_id,
         version=version,
         side=side,
+        category="technical",
+        sub_category="momentum",
         reference_symbols=("SPY",),
         required_timeframes=(CandleTimeframe.M5, CandleTimeframe.M15),
         warmup_bars=20,

@@ -475,6 +475,34 @@ def _research_registry() -> Any:
     from mike_trade.strategies.buy.momentum_breakout import MomentumBreakoutBuy
     from mike_trade.strategies.buy.opening_range_breakout import OpeningRangeBreakoutBuy
     from mike_trade.strategies.buy.vwap_bounce import VwapBounceBuy
+    from mike_trade.strategies.buy.aroon_trend import AroonTrendBuy
+    from mike_trade.strategies.buy.cci_zero_line_crossover import CciZeroLineCrossoverBuy
+    from mike_trade.strategies.buy.dmi_crossover import DmiCrossoverBuy
+    from mike_trade.strategies.buy.donchian_channel_breakout import DonchianChannelBreakoutBuy
+    from mike_trade.strategies.buy.ema_crossover import EmaCrossoverBuy
+    from mike_trade.strategies.buy.inside_bar_breakout import InsideBarBreakoutBuy
+    from mike_trade.strategies.buy.macd_signal_crossover import MacdSignalCrossoverBuy
+    from mike_trade.strategies.buy.macd_zero_line_crossover import MacdZeroLineCrossoverBuy
+    from mike_trade.strategies.buy.parabolic_sar import ParabolicSarBuy
+    from mike_trade.strategies.buy.rsi_centerline_crossover import RsiCenterlineCrossoverBuy
+    from mike_trade.strategies.buy.rsi_oversold_reversal import RsiOversoldReversalBuy
+    from mike_trade.strategies.buy.sma_crossover import SmaCrossoverBuy
+    from mike_trade.strategies.buy.stochastic_crossover import StochasticCrossoverBuy
+    from mike_trade.strategies.buy.williams_r_reversion import WilliamsRReversionBuy
+    from mike_trade.strategies.sell.aroon_bearish_reversal import AroonBearishReversalSell
+    from mike_trade.strategies.sell.cci_zero_line_breakdown import CciZeroLineBreakdownSell
+    from mike_trade.strategies.sell.dmi_bearish_crossover import DmiBearishCrossoverSell
+    from mike_trade.strategies.sell.donchian_lower_channel_exit import DonchianLowerChannelExitSell
+    from mike_trade.strategies.sell.ema_bearish_crossover import EmaBearishCrossoverSell
+    from mike_trade.strategies.sell.macd_bearish_crossover import MacdBearishCrossoverSell
+    from mike_trade.strategies.sell.macd_zero_line_breakdown import MacdZeroLineBreakdownSell
+    from mike_trade.strategies.sell.parabolic_sar_reversal import ParabolicSarReversalSell
+    from mike_trade.strategies.sell.price_below_ema import PriceBelowEmaSell
+    from mike_trade.strategies.sell.price_below_sma import PriceBelowSmaSell
+    from mike_trade.strategies.sell.rsi_centerline_breakdown import RsiCenterlineBreakdownSell
+    from mike_trade.strategies.sell.sma_bearish_crossover import SmaBearishCrossoverSell
+    from mike_trade.strategies.sell.stochastic_bearish_crossover import StochasticBearishCrossoverSell
+    from mike_trade.strategies.sell.williams_r_reversal import WilliamsRReversalSell
     from mike_trade.strategies.registry import StrategyRegistry
     from mike_trade.strategies.sell.momentum_reversal import MomentumReversalSell
     from mike_trade.strategies.sell.rsi_reversal import RsiReversalSell
@@ -488,6 +516,34 @@ def _research_registry() -> Any:
         VwapBreakdownSell,
         MomentumReversalSell,
         RsiReversalSell,
+        AroonTrendBuy,
+        CciZeroLineCrossoverBuy,
+        DmiCrossoverBuy,
+        DonchianChannelBreakoutBuy,
+        EmaCrossoverBuy,
+        InsideBarBreakoutBuy,
+        MacdSignalCrossoverBuy,
+        MacdZeroLineCrossoverBuy,
+        ParabolicSarBuy,
+        RsiCenterlineCrossoverBuy,
+        RsiOversoldReversalBuy,
+        SmaCrossoverBuy,
+        StochasticCrossoverBuy,
+        WilliamsRReversionBuy,
+        AroonBearishReversalSell,
+        CciZeroLineBreakdownSell,
+        DmiBearishCrossoverSell,
+        DonchianLowerChannelExitSell,
+        EmaBearishCrossoverSell,
+        MacdBearishCrossoverSell,
+        MacdZeroLineBreakdownSell,
+        ParabolicSarReversalSell,
+        PriceBelowEmaSell,
+        PriceBelowSmaSell,
+        RsiCenterlineBreakdownSell,
+        SmaBearishCrossoverSell,
+        StochasticBearishCrossoverSell,
+        WilliamsRReversalSell,
     ):
         registry.register(cls)
     return registry

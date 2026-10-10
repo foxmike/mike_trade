@@ -1,0 +1,178 @@
+"""MACD Zero-Line Crossover BUY.
+
+* Strategy: MACD Zero-Line Crossover
+* Identifier: ``macd_zero_line_crossover`` (v1.0.0)
+* Category / sub-category: ``technical`` / ``momentum``
+* Role: BUY (long entry signal only)
+* Source: Gerald Appel's MACD as documented in StockCharts ChartSchool, 'MACD (Moving Average
+  Convergence/Divergence Oscillator)' (MACD = 12-EMA - 26-EMA, signal = 9-EMA of MACD;
+  signal-line and centerline crossovers).
+
+Calculation (completed 1-minute bars, oldest first)::
+
+    MACD[t] = EMA(fast)[t] - EMA(slow)[t]            (closes; EMAs SMA-seeded)
+
+Signal (edge, evaluated once per completed bar `t` with prior bar `t-1`)::
+
+    MACD[t-1] <= 0  AND  MACD[t] > 0   ->  BUY   (bullish centerline crossover)
+
+Parameters: `fast_period` (default 12), `slow_period` (default 26); fast_period <
+slow_period. Lookback: `slow_period + 1` completed bars (27 by default). Interval: completed
+1-minute bars (trigger and only required timeframe; the one interval served to both the
+historical replay and the SHADOW stream).
+
+Interpretation decisions: The signal line is not used. With the default 12/26 this is the
+same event as an EMA(12)/EMA(26) crossover; both are kept as separately published
+strategies.
+
+Indicators run over the completed-bar history supplied by the context, which may span
+sessions like a continuous chart. The crossing itself must occur between two bars of the
+same New York trading date, so an overnight gap never signals. Regular session only; stale
+or non-regular-session contexts never signal. Entry signal only: no stops, sizing or orders
+(protective stops belong to the existing stop policy). No additional confirmation condition
+is applied.
+"""
+
+from __future__ import annotations
+
+from collections.abc import Mapping
+from decimal import Decimal
+from typing import TYPE_CHECKING
+
+from mike_trade.domain.strategy_types import StrategyRole
+from mike_trade.strategies.base import (
+    BuyStrategy,
+    ParameterKind,
+    ParameterSchema,
+    ParameterSpec,
+    StrategyEvaluation,
+    StrategySpec,
+    TriggerKind,
+)
+from mike_trade.strategies.closed_bar import (
+    REASON_CODES,
+    STATE_LAST_SIGNAL_BAR,
+    TIMEFRAME,
+    closed_bars,
+    crossed_above,
+    difference,
+    finish,
+    gate,
+    insufficient,
+    known,
+    require_param,
+    same_session,
+)
+from mike_trade.strategies.indicators.core import ema
+
+if TYPE_CHECKING:
+    from mike_trade.market_data.context import MarketContext
+
+__all__ = [
+    "STRATEGY_ID",
+    "STRATEGY_VERSION",
+    "DEFAULT_FAST_PERIOD",
+    "DEFAULT_SLOW_PERIOD",
+    "WARMUP_BARS",
+    "MacdZeroLineCrossoverBuy",
+]
+
+STRATEGY_ID = "macd_zero_line_crossover"
+STRATEGY_VERSION = "1.0.0"
+
+DEFAULT_FAST_PERIOD = 12
+DEFAULT_SLOW_PERIOD = 26
+#: Floor of the history requirement over the allowed parameter range; the replay and the
+#: SELL contract gate on this static value, so the requirement of the configured periods
+#: (27 completed bars at the defaults) is enforced dynamically in the rule.
+WARMUP_BARS = 4
+
+ZERO = Decimal("0")
+
+_SPEC = StrategySpec(
+    strategy_id=STRATEGY_ID,
+    version=STRATEGY_VERSION,
+    side=StrategyRole.BUY,
+    category="technical",
+    sub_category="momentum",
+    reference_symbols=(),
+    required_timeframes=(TIMEFRAME,),
+    warmup_bars=WARMUP_BARS,
+    completed_bars_only=True,
+    requires_volume=False,
+    trigger_kind=TriggerKind.EDGE_ON_CLOSED_BAR,
+    trigger_timeframe=TIMEFRAME,
+    parameter_schema=ParameterSchema(
+        (
+            ParameterSpec(
+                "fast_period", ParameterKind.INT, default=DEFAULT_FAST_PERIOD,
+                min_value=2, max_value=100,
+                description=(
+                    "Fast EMA length of closes. Default "
+                    f"{DEFAULT_FAST_PERIOD}."
+                ),
+            ),
+            ParameterSpec(
+                "slow_period", ParameterKind.INT, default=DEFAULT_SLOW_PERIOD,
+                min_value=3, max_value=200,
+                description=(
+                    "Slow EMA length of closes; must exceed fast_period. Default "
+                    f"{DEFAULT_SLOW_PERIOD}."
+                ),
+            ),
+        )
+    ),
+    persistent_state_keys=(STATE_LAST_SIGNAL_BAR,),
+    methodology=(
+        "BUY when the MACD line (fast EMA minus slow EMA) crosses above zero on a "
+        "completed bar. Restates a published textbook definition; no alpha or "
+        "profitability claim."
+    ),
+    source=(
+        "Gerald Appel's MACD as documented in StockCharts ChartSchool, 'MACD (Moving "
+        "Average Convergence/Divergence Oscillator)' (MACD = 12-EMA - 26-EMA, signal = "
+        "9-EMA of MACD; signal-line and centerline crossovers). Not backtested here."
+    ),
+    execution_limitations=(
+        "Entry signal only: no sizing, stops, targets, or order submission.",
+        "Long entries only; regular session only; completed 1-minute bars only.",
+        "The prior and latest bars of the crossing must share a New York trading date.",
+    ),
+    reason_codes=REASON_CODES,
+)
+
+
+class MacdZeroLineCrossoverBuy(BuyStrategy):
+    """BUY when the MACD line (fast EMA minus slow EMA) crosses above zero on a completed
+    bar."""
+
+    spec = _SPEC
+
+    def evaluate(
+        self,
+        context: MarketContext,
+        params: Mapping[str, object],
+        state: Mapping[str, object],
+    ) -> StrategyEvaluation:
+        validated = self.spec.parameter_schema.validate(params)
+        fast_period = validated["fast_period"]
+        slow_period = validated["slow_period"]
+        assert isinstance(fast_period, int)
+        assert isinstance(slow_period, int)
+        require_param(fast_period < slow_period, "fast_period < slow_period", "fast_period")
+
+        early = gate(self.spec, context, state)
+        if early is not None:
+            return early
+        bars = closed_bars(context, slow_period + 1)
+        if bars is None or not same_session(bars[-2], bars[-1]):
+            return insufficient(self.spec, context)
+
+        closes = [bar.close for bar in bars]
+        fast, slow = ema(closes, fast_period), ema(closes, slow_period)
+        macd_prior = difference(fast[-2], slow[-2])
+        macd_latest = difference(fast[-1], slow[-1])
+        if not known(macd_prior, macd_latest):
+            return insufficient(self.spec, context)
+        triggered = crossed_above(macd_prior, ZERO, macd_latest, ZERO)
+        return finish(self.spec, context, bars[-1], state, triggered)

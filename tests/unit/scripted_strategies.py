@@ -47,6 +47,8 @@ def make_strategy(strategy_id: str, side: StrategyRole) -> type:
         strategy_id=strategy_id,
         version="1.0.0",
         side=side,
+        category="technical",
+        sub_category="momentum",
         reference_symbols=(),
         required_timeframes=(CandleTimeframe.M1,),
         warmup_bars=1,
