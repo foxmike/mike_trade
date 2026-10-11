@@ -1,0 +1,43 @@
+/* Trade inspection page layout (component-scoped). */
+
+.tx-nav { display: flex; flex-wrap: wrap; align-items: center; gap: 8px 12px; margin-bottom: 10px; }
+.tx-nav .tx-nav-spacer { flex: 1; }
+.tx-nav .hint { margin: 0; }
+.tx-identity { font-family: var(--mono); font-size: 11.5px; color: var(--muted); }
+
+.tx-btn { color: var(--text); border: 1px solid var(--border-strong); border-radius: 5px; font-size: 12.5px; }
+.tx-btn:hover { background: #202b36; }
+.tx-summary { display: grid; grid-template-columns: repeat(auto-fit, minmax(150px, 1fr)); background: var(--panel); border: 1px solid var(--border); border-radius: 6px; overflow: hidden; margin: 0 0 10px; }
+.tx-summary > div { padding: 7px 10px; min-width: 0; box-shadow: 0 0 0 0.5px var(--border); }
+.tx-summary dt { color: var(--muted); font-size: 10.5px; text-transform: uppercase; letter-spacing: 0.06em; }
+.tx-summary dd { margin: 2px 0 0; font-weight: 600; font-variant-numeric: tabular-nums; overflow-wrap: anywhere; }
+.tx-summary .sub { display: block; color: var(--muted); font-weight: 400; font-size: 11px; }
+.tx-summary .pos dd { color: var(--ok-text); }
+.tx-summary .neg dd { color: var(--bad-text); }
+.tx-summary .wide { grid-column: span 2; }
+
+.tx-dir { display: inline-block; padding: 0 6px; border-radius: 3px; font-size: 11px; letter-spacing: 0.05em; margin-left: 6px; border: 1px solid var(--border-strong); }
+.tx-dir.LONG { color: var(--ok-text); border-color: var(--ok); }
+.tx-dir.SHORT { color: #ffb36b; border-color: #a35c14; }
+.tx-dir.UNKNOWN { color: var(--muted); }
+
+.tx-below { display: grid; grid-template-columns: minmax(0, 1fr); gap: 4px; margin-top: 14px; }
+.tx-click-row { cursor: pointer; }
+.tx-click-row:focus-visible { outline: 2px solid var(--accent); outline-offset: -2px; }
+.tx-click-row.active, .tx-timeline li.active { background: rgba(255, 215, 94, 0.10); }
+.tx-offchart { color: var(--muted); font-size: 10.5px; margin-left: 6px; }
+
+.tx-timeline { list-style: none; margin: 6px 0; padding: 0; }
+.tx-timeline li {
+  display: grid; grid-template-columns: 84px 210px minmax(0, 1fr); gap: 10px;
+  border-top: 1px solid var(--border); padding: 5px 6px; font-size: 12px; cursor: pointer;
+}
+.tx-timeline li:hover { background: #202b36; }
+.tx-timeline li:focus-visible { outline: 2px solid var(--accent); outline-offset: -2px; }
+.tx-timeline time { color: var(--muted); font-variant-numeric: tabular-nums; }
+.tx-timeline span { color: var(--muted); overflow-wrap: anywhere; }
+
+@media (max-width: 720px) {
+  .tx-summary .wide { grid-column: span 1; }
+  .tx-timeline li { grid-template-columns: 1fr; gap: 2px; }
+}
