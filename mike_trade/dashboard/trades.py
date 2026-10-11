@@ -73,6 +73,7 @@ class TradeRecord(_Model):
     holding_duration_seconds: Decimal | None = None
     data_provenance: str | None = None
     attribution_complete: bool
+    attribution_source: str = "EXPLICIT"
     #: "LONG" (BUY ... SELL) or "SHORT" (SELL_SHORT ... BUY_TO_COVER).  For a short the entry
     #: price is the average sale price, the exit price the average cover price, and the
     #: realized P&L is (entry - exit) x quantity net of fees.
@@ -171,6 +172,8 @@ class ResearchRun(_Model):
     strategies: list[dict[str, Any]] = []
     buy_strategies: list[str] = []
     sell_strategies: list[str] = []
+    short_strategies: list[str] = []
+    cover_strategies: list[str] = []
     stop_configuration: dict[str, Any] = {}
     run_purpose: str | None = None
     artifact_group: str | None = None
@@ -319,6 +322,8 @@ class TradeJournalService:
         self.research_root = Path(research_root)
         self.dataset_root = Path(dataset_root)
         self._now = now or (lambda: datetime.now(UTC))
+        self._catalog_cache: list[dict[str, Any]] | None = None
+        self._catalog_fingerprint: tuple[int, float] | None = None
 
     def _operational(self, account_id: str):
         try:
@@ -875,8 +880,16 @@ class TradeJournalService:
         """Index artifact pairs once per execution, collapsing copied legacy ledgers."""
         if not self.research_root.is_dir():
             return []
+        manifest_paths = sorted(self.research_root.rglob("*.manifest.json"))
+        try:
+            mtimes = [p.stat().st_mtime for p in manifest_paths]
+            fingerprint = (len(manifest_paths), sum(mtimes))
+            if self._catalog_cache is not None and self._catalog_fingerprint == fingerprint:
+                return self._catalog_cache
+        except OSError:
+            fingerprint = None
         groups: dict[tuple[str, str], list[dict[str, Any]]] = {}
-        for manifest_path in sorted(self.research_root.rglob("*.manifest.json")):
+        for manifest_path in manifest_paths:
             result_path = manifest_path.with_name(
                 manifest_path.name.replace(".manifest.json", ".results.json")
             )
@@ -930,6 +943,8 @@ class TradeJournalService:
                 "execution_identity_uncertain": execution_id is None,
                 "variant_count": len(groups_for_run),
             })
+        self._catalog_cache = catalog
+        self._catalog_fingerprint = fingerprint
         return catalog
 
     def _artifact_paths(self) -> dict[str, tuple[Path, Path]]:
@@ -997,12 +1012,13 @@ class TradeJournalService:
         folder_labels = [Path(label).parts[0] for label in locations if Path(label).parts]
         known_groups = {"acceptance-once", "parallel-bench", "reproduction", "r730-validation", "final-six", "initial-six"}
         group = next((label for label in folder_labels if label in known_groups), None)
-        if group is None:
-            group = next((label for label in folder_labels if label.startswith("r730-")), None)
-        config = manifest.get("configuration") or {}
-        collections = config.get("strategy_collections") or {}
-        buys = sorted({str(name) for row in collections.values() for name in row.get("buy", [])})
-        sells = sorted({str(name) for row in collections.values() for name in row.get("sell", [])})
+        from mike_trade.research.attribution import (
+            recover_run_strategies,
+            recover_stop_configuration,
+        )
+
+        buys, sells, shorts, covers = recover_run_strategies(manifest)
+        stop_cfg = recover_stop_configuration(manifest)
         net = final - starting if final is not None and starting is not None else sum(pnls, ZERO)
         purpose = manifest.get("run_purpose")
         return ResearchRun(
@@ -1024,7 +1040,9 @@ class TradeJournalService:
             strategies=self._strategy_rows(manifest),
             buy_strategies=buys,
             sell_strategies=sells,
-            stop_configuration=self._stop_configuration(manifest),
+            short_strategies=shorts,
+            cover_strategies=covers,
+            stop_configuration=stop_cfg,
             run_purpose=purpose,
             artifact_group=group,
             execution_mode="BACKTEST",
@@ -1077,12 +1095,20 @@ class TradeJournalService:
         )
 
     def _research_records(self, run_id: str) -> list[TradeRecord]:
+        from mike_trade.research.attribution import (
+            build_signal_indexes,
+            reconcile_trade_attribution,
+        )
+
         manifest, result = self._artifact(run_id)
         fills = list(result.get("fills", []))
         cycles = list(result.get("cycles", []))
         records = []
+        sig_idx, int_idx = build_signal_indexes(result)
         versions = {
-            str(x.get("name")): str(x.get("version")) for x in manifest.get("strategies", [])
+            str(x.get("name")): str(x.get("version"))
+            for x in manifest.get("strategies", [])
+            if isinstance(x, dict)
         }
         for idx, cycle in enumerate(cycles):
             opened = _time(cycle.get("opened_at"))
@@ -1111,19 +1137,9 @@ class TradeJournalService:
             sq, sp, sn, sf = _weighted(sells)
             realized = _realized_pnl(direction, bp, bq, bf, sq, sn, sf)
             basis = (bp or ZERO) * sq + (bf * (sq / bq if bq else ZERO) if bq else ZERO)
-            entry_strategy = cycle.get("entry_strategy") or (
-                buys[0].get("strategy") if buys else None
-            )
-            exit_strategy = cycle.get("exit_strategy") or (
-                sells[-1].get("strategy") if sells else None
-            )
-            exit_reason = cycle.get("exit_reason") or (
-                sells[-1].get("exit_reason") if sells else None
-            )
-            if exit_reason in ("STRATEGY_SELL", "STRATEGY_COVER"):
-                exit_reason = "STRATEGY_EXIT"
-            if exit_reason == "PROTECTIVE_STOP":
-                exit_strategy = None
+
+            attr = reconcile_trade_attribution(cycle, buys, sells, sig_idx, int_idx, versions)
+
             protection_mode = cycle.get("protection_mode")
             protection_mode = {
                 "FIXED": "FIXED_STOP",
@@ -1161,26 +1177,16 @@ class TradeJournalService:
                     if realized is not None and basis
                     else None,
                     position_status="CLOSED" if closed else ("PARTIALLY_CLOSED" if sq else "OPEN"),
-                    entry_strategy_id=entry_strategy,
-                    entry_strategy_version=cycle.get("entry_strategy_version")
-                    or versions.get(str(entry_strategy)),
-                    entry_signal_id=cycle.get("entry_signal_id")
-                    or (buys[0].get("signal_id") if buys else None),
-                    entry_signal_timestamp=_time(
-                        cycle.get("entry_signal_timestamp")
-                        or (buys[0].get("signal_time") if buys else None)
-                    ),
+                    entry_strategy_id=attr.entry_strategy_id,
+                    entry_strategy_version=attr.entry_strategy_version,
+                    entry_signal_id=attr.entry_signal_id,
+                    entry_signal_timestamp=_time(attr.entry_signal_timestamp),
                     entry_decision=cycle.get("entry_decision"),
-                    exit_strategy_id=exit_strategy,
-                    exit_strategy_version=cycle.get("exit_strategy_version")
-                    or versions.get(str(exit_strategy)),
-                    exit_signal_id=cycle.get("exit_signal_id")
-                    or (sells[-1].get("signal_id") if sells else None),
-                    exit_signal_timestamp=_time(
-                        cycle.get("exit_signal_timestamp")
-                        or (sells[-1].get("signal_time") if sells else None)
-                    ),
-                    exit_reason=exit_reason,
+                    exit_strategy_id=attr.exit_strategy_id,
+                    exit_strategy_version=attr.exit_strategy_version,
+                    exit_signal_id=attr.exit_signal_id,
+                    exit_signal_timestamp=_time(attr.exit_signal_timestamp),
+                    exit_reason=attr.exit_reason,
                     protective_stop_mode=protection_mode,
                     initial_stop_price=stop_prices[0]
                     if stop_prices
@@ -1192,10 +1198,8 @@ class TradeJournalService:
                     if opened
                     else None,
                     data_provenance=json.dumps(manifest.get("data_provenance", {}), sort_keys=True),
-                    attribution_complete=bool(
-                        entry_strategy
-                        and (cycle.get("entry_signal_id") or (buys and buys[0].get("signal_id")))
-                    ),
+                    attribution_complete=attr.attribution_complete,
+                    attribution_source=attr.attribution_source,
                     direction=direction,
                 )
             )
