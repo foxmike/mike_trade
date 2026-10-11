@@ -133,11 +133,16 @@ LIVE execution additionally requires PAPER-demonstrated combinations (see
   residual. Sell quantities are checked against the authoritative
   `known_position_qty` — oversells are rejected (`OversellRejected`),
   so a stop can never promise more shares than the position holds.
-- **Never downward:** trailing coverage ratchets in the favorable direction
-  only. A trailing stop is never moved to a worse (lower, for a long sale)
-  trigger; stepped-trailing replaces move the stop up or leave it in
+- **Never away from the market:** trailing coverage ratchets in the favorable
+  direction only. A long's stop sits below the market and is never moved lower;
+  a short's stop sits above the market, ratchets DOWN as price falls and is
+  never loosened upward on a rebound (fixed, native-trailing and stepped
+  trailing alike). Stepped-trailing replaces tighten the stop or leave it in
   place, and every replacement is recorded in the trailing-stop event
-  history (`make trail-history`).
+  history (`make trail-history`). Gaps fill at the gapped price (a short stop
+  gapped through fills at the higher gapped ask/open, never at the stop), and
+  slippage is adverse on both legs. A stop fill only ever closes the position;
+  it can never create a reverse position.
 - **Offline survival and its limits:** broker-held (native) stops survive
   an engine stop, crash, or restart — a normal stop never cancels them
   (§7). Limits: `DAY` time-in-force expires and leaves an overnight
@@ -159,6 +164,47 @@ LIVE execution additionally requires PAPER-demonstrated combinations (see
   (live confirmation on LIVE), `make trail-reconcile` (live confirmation
   on LIVE).
 
+## 4a. Short selling
+
+Short selling is the one order that can open unbounded risk, so it is
+**opt-in, fail-closed and never activated for LIVE**.
+
+- **Authorization:** `execution.short_selling_enabled: true` is required for
+  any SHORT strategy to be eligible (configuration refuses short strategies
+  without it, and refuses the switch for `account_mode: live`). SHADOW and
+  BACKTEST simulate shorts locally; PAPER additionally requires the provider
+  catalog's `short_selling_enabled` capability and a recorded paper
+  verification of the short-side order shapes (`docs/ALPACA.md` §6).
+- **Submission gate (`OrderSubmitter`):** a short entry is refused before
+  anything is persisted or sent unless the explicit switch, the broker's
+  `supports_short`, an account with `shorting_enabled` and buying power, and an
+  injected borrowability/margin/protection checker (exactly `True`) all hold.
+  Exits (cover, protective stop, manual, safety) never need it, so an open
+  short can always be closed.
+- **Collateral and buying power:** short-sale proceeds are restricted
+  collateral (`short_margin_multiplier` x proceeds, default 1.5), never
+  purchasing power; a short needs `(multiplier - 1) x notional` of own cash
+  even when margin is enabled, and available cash for any other entry excludes
+  the locked collateral. No unrestricted margin or leverage is enabled.
+- **Exposure:** per-symbol and total budgets, the optional
+  `max_gross_exposure`, the planned-loss cap and the session entry cap count
+  shorts exactly like longs; a short entry consumes the same entry-cycle slot.
+  Entry blocks never disable covers, protective stops, reconciliation, manual
+  closes or safety exits.
+- **No reversal:** every layer refuses an order that would reverse a position:
+  the order sides and cycle FSM, the SHADOW account and backtest simulator, the
+  persisted fill ledger (a mismatched fill is recorded as
+  `CRITICAL_DIRECTION_MISMATCH`/`CRITICAL_OVERCOVER` drift and not applied),
+  reconciliation (`POSITION_DIRECTION_MISMATCH`; opposite books are never
+  netted or adopted) and the Alpaca order service.
+- **Protection:** a short is protected by a stop ABOVE the market
+  (`BUY_TO_COVER`); a PAPER short whose protection cannot be established is not
+  opened, and a position port that cannot verify a short quantity leaves the
+  exit deferred rather than guessing.
+- **Borrow:** borrow fees are an explicit, estimated assumption
+  (`short_borrow_bps_per_day`, default 0) charged on cover; unverified borrow
+  availability or fees are never represented as confirmed.
+
 ## 5. Fail-closed conditions
 
 The system refuses rather than guesses. CLI exit codes are stable: `0` ok,
@@ -167,9 +213,9 @@ or unreachable, `5` unhealthy or check failed.
 
 - Unknown capability combinations resolve to `UNPROVEN` and raise
   `CapabilityUnavailable`; unknown legacy capability names fail closed
-  (`False`); structurally impossible descriptors (`short` side,
-  non-`simple` trailing class, notional replace) resolve to `UNSUPPORTED`
-  and can never be promoted.
+  (`False`); structurally impossible descriptors (non-`simple` trailing
+  class, notional replace) resolve to `UNSUPPORTED` and can never be promoted.
+  Short-side descriptors are `UNPROVEN` by default (fail closed).
 - Invalid strategy parameters never produce a signal (validation fails
   closed with explicit codes).
 - Missing credentials raise; paper never falls back to live variables and

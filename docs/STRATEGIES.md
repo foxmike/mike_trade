@@ -2467,8 +2467,8 @@ Strategy-level contract (unchanged `StrategySpec`/`ParameterSchema`/state conven
   `indicator_state` and resume it with `advance()` (a stored snapshot whose signature, version or
   structure does not match is discarded and re-seeded from the supplied history).
 * **Registration.** The six classes are registered in `app.build_runtime` and in the research registry.
-  `app._bind` rejects a SHORT/COVER strategy assigned to a BUY/SELL slot, and the long-only engine does not
-  consult these roles, so no short is traded today.
+  `app._bind` rejects a SHORT/COVER strategy assigned to a BUY/SELL slot (`STRATEGY_SIDE_MISMATCH`), and
+  configuration rejects a strategy listed in the wrong role.
 
 | Strategy ID | Role | Exact signal; default bars | State | Source |
 |---|---|---|---|---|
@@ -2484,15 +2484,24 @@ The EMA and Supertrend strategies require the latest two bars to be adjacent (a 
 hole leaves the extreme unknown. All are edge or level signals on completed M1 bars in the regular
 session, and none uses a stop, target or reversal.
 
-Interface the engine must provide before these roles can trade (not implemented here):
+### Engine integration (implemented)
 
-1. Per-symbol short cycle state with `state["eligibility"] = "WATCHING_SHORT"` when flat and short entry is
-   allowed (borrow/locate, margin, short-sale restriction and risk gates are engine concerns); consult
-   `StrategyRole.SHORT` strategies only then, and `StrategyRole.COVER` strategies only while a managed short
-   with a confirmed remainder exists (`portfolio.manager.consulted_roles` currently returns BUY or SELL only).
-2. Signal-action mapping `SHORT → SignalAction.ENTER_SHORT` and `COVER → SignalAction.COVER_SHORT`
-   (both already reserved in `domain/signals.py` but not in `ENABLED_SIGNAL_ACTIONS`).
-3. Arbitration and minimum-hold rules for COVER versus protective-stop and manual exits, which mirror
-   `EXIT_PRIORITY` for SELL; plus the short-side protective stop.
-4. Backtest runner and `app._bind` extension so configured SHORT/COVER collections are evaluated; the
-   runner currently partitions BUY and SELL classes only, and `app` refuses SHORT/COVER in BUY/SELL slots.
+The engine consults the four roles as follows (`docs/ARCHITECTURE.md`, bidirectional lifecycle):
+
+1. **Eligibility.** While flat the engine sets `state["eligibility"] = "WATCHING_BUY"` for BUY strategies and,
+   only when `execution.short_selling_enabled` is on, `"WATCHING_SHORT"` for SHORT strategies; BUY and SHORT
+   compete in one deterministic entry arbitration (LONG ranks first at an equal bar time, so both directions
+   are never authorized together). While a position is held only the exit role of its direction is consulted
+   (SELL for a long, COVER for a short; `portfolio.manager.PortfolioSnapshot.consulted_roles`).
+2. **Indicator continuity.** Every ineligible role is still evaluated advance-only (eligibility cleared, any
+   signal discarded) so its recursive state never stops advancing; this extends the c9a4423 continuity fix to
+   all four roles in SHADOW and BACKTEST.
+3. **Signals and arbitration.** `SHORT → SignalAction.ENTER_SHORT` and `COVER → SignalAction.COVER_SHORT` are
+   valid signals; COVER ranks with SELL as `ExitSource.STRATEGY_COVER` below the protective, manual, risk and
+   forced exits and is subject to the same minimum hold; a protective stop always overrides it.
+4. **Execution and accounting.** `SELL_SHORT` opens and `BUY_TO_COVER` closes a short, with a short-side
+   protective stop above the market; proceeds are restricted collateral and shorts count against every
+   exposure ceiling (`docs/SAFETY_AND_RISK.md` §4a).
+5. **Configuration.** A symbol may list `short_strategies` / `cover_strategies` (singular spellings supported);
+   BACKTEST/research take `short_strategies`, `cover_strategies`, `short_selling_enabled` and
+   `short_borrow_bps_per_day` (`docs/OPERATIONS.md`, "Short selling").

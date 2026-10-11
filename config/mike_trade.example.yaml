@@ -43,7 +43,10 @@
 # Fractional plus native trailing fails closed until demonstrated in Alpaca
 # paper (see provider catalog capability flags).
 #
-# Long-only: short_selling_enabled stays false; margin stays disabled.
+# Short selling is opt-in and fails closed: `short_selling_enabled: true` is required before any
+# SHORT strategy can trade, is refused for `account_mode: live`, and needs a provider-catalog
+# capability for PAPER. Margin stays disabled unless explicitly enabled; short-sale proceeds are
+# restricted collateral, never buying power. Default: false (long-only).
 schema_version: 1
 service:
   timezone: America/New_York
@@ -100,7 +103,12 @@ risk:
 #     buy_strategies: [vwap_bounce_default, momentum_default]
 #     sell_strategies: [vwap_breakdown_default]   # may be [] (stop_policy still applies)
 # `buy_strategy: x` is shorthand for `buy_strategies: [x]`; use one spelling per
-# side. A plugin may appear once per symbol and side.
+# side. A plugin may appear once per symbol and side. A symbol may also list independent
+# `short_strategies` / `cover_strategies` (strategies declared with `side: short|cover`);
+# these require `execution.short_selling_enabled: true`. SELL never closes a short and COVER
+# never closes a long; there is no automatic reversal.
+#     short_strategies: [short_ema]     # opens a short (needs short_selling_enabled)
+#     cover_strategies: [cover_ema]     # closes a short (may be []; stop_policy still applies)
 symbols:
   SPY:
     enabled: true

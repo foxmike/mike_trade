@@ -171,9 +171,25 @@ never auto-promotes live; a live promotion needs a separate explicit
 | `notional` sizing with `submit` | **blocked** (`UNPROVEN`) | **blocked** (`UNPROVEN`) | Fails closed until demonstrated in paper |
 | Stop-price / trailing (`trail_price` / `trail_percent`) / `oto` replace; quantity-based replace generally | **blocked** (`UNPROVEN`) | **blocked** (`UNPROVEN`) | Fails closed until demonstrated in paper |
 | Extended TIFs (`opg`, `cls`, `ioc`, `fok`); fractional `gtc` | **blocked** (`UNPROVEN`) | **blocked** (`UNPROVEN`) | Fails closed until demonstrated in paper |
-| `short` side (any combination) | **blocked** (`UNSUPPORTED`) | **blocked** (`UNSUPPORTED`) | Structural: long-only desk; can never be promoted |
+| `short_entry_sell` (short sale: whole-share `market`/`limit`, `simple`, `day`/`gtc`, side `short`) | **blocked** (`UNPROVEN`) | **blocked** (`UNPROVEN`) | Fails closed until a paper verification is recorded; LIVE is never configured for shorting. Whole shares only (fractional short sales are refused) |
+| Standalone whole-share `stop` / `trailing_stop` **buy** (protective cover), `simple` | **blocked** (`UNPROVEN`) | **blocked** (`UNPROVEN`) | Short-side protection (`standalone_stop_buy_to_cover`, `standalone_trailing_stop_buy_to_cover`); a short needs it proven before it can be opened |
 | `trailing_stop` with order class other than `simple` | **blocked** (`UNSUPPORTED`) | **blocked** (`UNSUPPORTED`) | Structural: standalone trailing stops only |
 | `notional` + `replace` (any combination) | **blocked** (`UNSUPPORTED`) | **blocked** (`UNSUPPORTED`) | Structural: provider rejects notional replace |
+
+Short-side position effect (`AlpacaOrderService.submit_order` /
+`_check_position_effect`): Alpaca sends a short sale as `sell` and a cover as
+`buy`, so the order service validates each order against the verified broker
+position (`known_position_qty` magnitude + `known_position_side`): a short
+entry requires a flat symbol, a cover requires a verified short and cannot
+exceed it, a `sell` against a short and a `buy` entry against any position are
+refused (never netted or reversed), and each requires the matching capability.
+The app's Alpaca adapter queries the symbol's current position before **every**
+order. A short entry additionally requires `execution.short_selling_enabled`
+(PAPER only), a margin-enabled account that may short with buying power, a
+`shortable` + `marginable` + easy-to-borrow asset (`borrow_status`, never a
+stale or unverified value), and an injected borrowability/margin/protection
+check. Borrow availability and fees that cannot be verified are never reported
+as confirmed.
 
 Fractional restrictions fail closed: fractional and notional sizing require
 a fractionable asset and `DAY` time-in-force, sell quantities are checked

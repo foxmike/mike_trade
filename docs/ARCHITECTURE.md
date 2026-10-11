@@ -264,8 +264,54 @@ credentials.
   rewritten. Every automated live long position requires broker-held
   protective coverage when the configured provider capability supports it;
   protection begins after confirmed positive fill, covers actual remaining
-  quantity, never moves downward for a long, and is coordinated with
-  discretionary exits so overlapping sells cannot create a short.
+  quantity, never moves away from the market (a long's stop only rises, a
+  short's stop only falls), and is coordinated with discretionary exits so an
+  exit can never exceed, reverse or overlap the position it closes.
+
+### Bidirectional lifecycle (LONG and SHORT)
+
+```text
+FLAT -> BUY_PENDING   -> LONG  -> SELL_PENDING  -> FLAT      (BUY, SELL)
+FLAT -> SHORT_PENDING -> SHORT -> COVER_PENDING -> FLAT      (SHORT, COVER)
+```
+
+- **Four roles, one position per symbol.** Each strategy has exactly one role
+  (`StrategyRole.BUY|SELL|SHORT|COVER`). While flat, BUY and (when authorized)
+  SHORT strategies compete for the single entry through
+  `signals.decisions.arbitrate_entry_decisions` (stable
+  `(bar time, direction, strategy_id, signal_id)` order; at an equal bar time
+  a LONG ranks first, so both directions are never authorized together). While
+  a position is held only the exit role of its direction acts: SELL closes a
+  long (`ExitSource.STRATEGY_SELL`), COVER closes a short
+  (`ExitSource.STRATEGY_COVER`); protective, manual, risk and forced exits
+  outrank both and close either direction.
+- **Indicator continuity for every role.** An ineligible role is still
+  evaluated advance-only (its eligibility flag cleared so the strategy gate
+  blocks any signal, and any signal it would raise is discarded), so a
+  recursive indicator never stops advancing and is never reseeded from a
+  bounded window. This holds for BUY-while-held, SELL-while-flat,
+  SHORT-while-held-or-unauthorized and COVER-while-flat, in both SHADOW
+  (`app.VwapReferenceLifecycle`) and BACKTEST (`backtest.runner`).
+- **Direction on the cycle.** `portfolio.cycles.PositionCycle.direction`
+  derives the entry and exit sides (`BUY`/`SELL` or
+  `SELL_SHORT`/`BUY_TO_COVER`); a fill whose side does not match is refused,
+  so no event sequence can reverse a position. Positions, the fill ledger,
+  reconciliation, the close coordinator and the order service all carry the
+  direction and refuse any order that could open, add to or reverse the
+  opposite position.
+- **Position accounting.** Quantity is always a positive magnitude plus an
+  explicit direction. A short's sale proceeds are credited to cash but are
+  *restricted collateral* (`short_margin_multiplier` x proceeds, default 1.5):
+  they are never buying power, only `(multiplier - 1) x notional` of own cash
+  funds a short, and equity subtracts the short's market liability. Realized
+  P&L is `(entry - cover) x quantity` less fees and an explicit, *estimated*
+  borrow-cost assumption (`short_borrow_bps_per_day`, default 0; real borrow
+  fees are never presented as known). Exposure ceilings (per-symbol, total,
+  `max_gross_exposure`, the daily entry cap) count longs and shorts alike.
+- **Order sides.** `OrderSide` is `BUY`, `SELL`, `SELL_SHORT`,
+  `BUY_TO_COVER`; Alpaca transports a short sale as `sell` and a cover as
+  `buy`, so the position effect is derived from the verified broker position,
+  never from the broker word alone.
 
 ## 8. Non-Goals
 
@@ -285,5 +331,5 @@ Explicitly out of scope unless separately approved:
   mandatory ML/LLM decision-path inference; no browser broker automation; no
   exchange/microsecond smart routing; no capital transfers; no mandatory
   notifications; no earnings/economic blackout automation; no automatic live
-  short selling (initial active trading is long-only; type/capability
-  boundaries may anticipate future short/cover without enabling it).
+  LIVE short selling (short selling exists as an opt-in, fail-closed
+  capability in SHADOW/BACKTEST and PAPER; it is never activated for LIVE).
