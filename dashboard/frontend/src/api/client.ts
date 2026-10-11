@@ -20,7 +20,12 @@ function resolveSignal(option?: SignalOption): AbortSignal | undefined {
   return candidate ?? undefined;
 }
 
-async function getJson<T>(path: string, signal?: SignalOption): Promise<T> {
+/** Exported for the v2 research API adapter; GET only, same as every route here. */
+export async function getJson<T>(path: string, signal?: SignalOption): Promise<T> {
+  return getJsonInternal<T>(path, signal);
+}
+
+async function getJsonInternal<T>(path: string, signal?: SignalOption): Promise<T> {
   let response: Response;
   try {
     response = await fetch(path, { method: "GET", signal: resolveSignal(signal) });
