@@ -3,6 +3,8 @@
 import { useQuery, type UseQueryResult } from "@tanstack/react-query";
 import {
   getAccountDetail,
+  getActivity,
+  getCockpit,
   getHealth,
   getKpis,
   getStatus,
@@ -11,6 +13,9 @@ import {
   getTrades,
   getWatchlist,
   listAccounts,
+  type ActivityFilters,
+  type ActivityResponse,
+  type CockpitResponse,
   type AccountDetailResponse,
   type AccountStatus,
   type HealthResponse,
@@ -189,6 +194,33 @@ export function useResearchTradeInspection(
         catalog.getRunTrade(selectionId as string, tradeId as string, signal),
       ),
     enabled: selectionId !== undefined && tradeId !== undefined,
+    retry: 1,
+  });
+}
+
+// ---------------------------------------------------------------------------
+// Operations cockpit (symbol pipeline) + activity timeline
+// ---------------------------------------------------------------------------
+
+export function useCockpit(accountId: string | null): UseQueryResult<CockpitResponse> {
+  return useQuery({
+    queryKey: ["cockpit", accountId],
+    queryFn: ({ signal }) => getCockpit(accountId as string, signal),
+    enabled: accountId !== null,
+    refetchInterval: POLL_INTERVAL_MS,
+    retry: 1,
+  });
+}
+
+export function useActivity(
+  accountId: string | null,
+  filters: ActivityFilters,
+): UseQueryResult<ActivityResponse> {
+  return useQuery({
+    queryKey: ["activity", accountId, filters],
+    queryFn: ({ signal }) => getActivity(accountId as string, filters, signal),
+    enabled: accountId !== null,
+    staleTime: 10000,
     retry: 1,
   });
 }

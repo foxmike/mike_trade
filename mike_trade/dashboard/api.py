@@ -31,6 +31,7 @@ from __future__ import annotations
 
 import json
 import os
+import re
 import sqlite3
 from collections.abc import Callable, Iterator, Mapping
 from contextlib import contextmanager
@@ -590,6 +591,137 @@ class HealthResponse(_Model):
     errors: list[ActionableError]
 
 
+# ---- operations cockpit & activity (read-only projections) ----------------
+
+
+class StrategyInstanceState(_Model):
+    """One configured strategy instance with its recorded engine state."""
+
+    instance_id: str
+    role: str
+    strategy_key: str
+    strategy_version: str | None = None
+    enabled: bool
+    # Recorded pipeline stage: derived strictly from persisted evidence
+    # (strategy_state, strategy_evaluations, signals+decisions, open orders,
+    # positions).  NOT a guess from unrelated tables.
+    stage: str
+    stage_detail: str | None = None
+    stage_as_of: UtcDatetime | None = None
+    engine_state: str | None = None
+    armed: bool | None = None
+    rearm_required: bool | None = None
+    last_signal_bar: UtcDatetime | None = None
+
+
+class PipelineCycle(_Model):
+    cycle_id: str
+    state: str
+    direction: str | None = None
+    entry_strategy_key: str | None = None
+    opened_at: UtcDatetime | None = None
+
+
+class PipelineOrder(_Model):
+    broker_order_id: str
+    client_order_id: str | None = None
+    purpose: str | None = None
+    side: str
+    order_type: str | None = None
+    status: str
+    quantity: Decimal | None = None
+    filled_quantity: Decimal | None = None
+    limit_price: Decimal | None = None
+    stop_price: Decimal | None = None
+    submitted_at: UtcDatetime | None = None
+    updated_at: UtcDatetime | None = None
+    is_open: bool
+
+
+class PipelineProtection(_Model):
+    protection_order_id: str
+    cycle_id: str
+    kind: str | None = None
+    status: str
+    stop_price: Decimal | None = None
+    high_water_mark: Decimal | None = None
+    covered_quantity: Decimal | None = None
+    remaining_quantity: Decimal | None = None
+    coverage_gap: bool
+    updated_at: UtcDatetime | None = None
+
+
+class SymbolPipeline(_Model):
+    """Per-symbol trading pipeline state from the persisted engine tables."""
+
+    symbol: str
+    configured: bool
+    phase: str
+    direction: str | None = None
+    buy_strategies: list[str]
+    sell_strategies: list[str]
+    short_strategies: list[str]
+    cover_strategies: list[str]
+    instances: list[StrategyInstanceState]
+    last_evaluation: EvaluationSummary | None = None
+    last_signal: SignalSummary | None = None
+    cycle: PipelineCycle | None = None
+    position_quantity: Decimal | None = None
+    position_entry_price: Decimal | None = None
+    unrealized_pnl: Decimal | None = None
+    pending_orders: list[PipelineOrder]
+    pending_entry_orders: int
+    pending_exit_orders: int
+    reserved_budget: Decimal | None = None
+    cooldown_until: UtcDatetime | None = None
+    lockout_until: UtcDatetime | None = None
+    block_reasons: list[str]
+    protections: list[PipelineProtection]
+    last_activity_at: UtcDatetime | None = None
+
+
+class CockpitResponse(_Model):
+    account_id: str
+    mode: str
+    engine_state: EngineStateName
+    server_time: UtcDatetime
+    entries_allowed: bool
+    entries_blocked_reasons: list[str]
+    symbols: list[SymbolPipeline]
+
+
+class ActivityEntry(_Model):
+    """One timeline event from the recorded operational history."""
+
+    at: UtcDatetime
+    category: Literal[
+        "SYSTEM", "STRATEGY", "EVALUATION", "SIGNAL", "ORDER", "FILL",
+        "PROTECTION", "LIFECYCLE",
+    ]
+    event_type: str
+    symbol: str | None = None
+    strategy_key: str | None = None
+    strategy_role: str | None = None
+    cycle_id: str | None = None
+    ref_id: str | None = None
+    side: str | None = None
+    quantity: Decimal | None = None
+    price: Decimal | None = None
+    stop_price: Decimal | None = None
+    disposition: str | None = None
+    summary: str
+    payload: dict[str, Any] = {}
+
+
+class ActivityResponse(_Model):
+    account_id: str
+    mode: str
+    engine_state: EngineStateName
+    server_time: UtcDatetime
+    entries: list[ActivityEntry]
+    next_before: UtcDatetime | None = None
+
+
 # ------------------------------------------------------------------ pure helpers
 
 
@@ -636,6 +768,16 @@ def _json_dict(text: str | None) -> dict[str, Any]:
 
 def _dt(text: str | None) -> datetime | None:
     return None if text is None else schema.from_db_timestamp(text)
+
+
+def _iso(text: object) -> datetime | None:
+    """Parse an ISO-8601 timestamp stored inside a JSON payload (schema-extracted)."""
+    if text is None or not isinstance(text, str) or not text:
+        return None
+    try:
+        return datetime.fromisoformat(text)
+    except ValueError:
+        return None
 
 
 def _req(text: str) -> datetime:
@@ -1468,6 +1610,647 @@ class DashboardReadService:
             signal_id=row[0], action=row[1], reference_price=_dec(row[2]), reason=row[3],
             generated_at=_req(row[4]), disposition=disposition, disposition_reason=row[6])
 
+    # ---- /cockpit (symbol pipeline & strategy activity) ----------------------
+
+    def cockpit(self, account_id: str) -> CockpitResponse:
+        with self._open(account_id) as ctx:
+            f = self._facts(ctx)
+            q = ctx.conn.execute
+            configured = self._symbol_settings(ctx)
+            symbols = self._watch_symbols(ctx, configured)
+            positions = {p.symbol: p for p in self._positions(ctx)}
+            protections = projections.protections(ctx.conn, ctx.scope, now=ctx.now, limit=500)
+
+            pipelines: list[SymbolPipeline] = []
+            for symbol in symbols:
+                position = positions.get(symbol)
+                sym_protections = [p for p in protections if p.symbol == symbol
+                                   and p.status in _LIVE_PROTECTION]
+                protection_status = next((p.status for p in sym_protections), None)
+                pipelines.append(self._symbol_pipeline(
+                    ctx, f, symbol, symbol in configured, configured.get(symbol, SymbolSettings()),
+                    position, sym_protections, protection_status))
+        return CockpitResponse(
+            account_id=ctx.scope, mode=ctx.mode, engine_state=f.state, server_time=ctx.now,
+            entries_allowed=not f.reasons, entries_blocked_reasons=list(f.reasons),
+            symbols=pipelines)
+
+    def _symbol_pipeline(
+        self, ctx: _Ctx, f: _Facts, symbol: str, is_configured: bool, cfg: SymbolSettings,
+        position: projections.PositionView | None,
+        sym_protections: list[projections.ProtectionView],
+        protection_status: str | None,
+    ) -> SymbolPipeline:
+        q = ctx.conn.execute
+        scope, now = ctx.scope, ctx.now
+
+        # configured strategy instances per role
+        instance_rows = q(
+            "SELECT instance_id, strategy_key, strategy_version, role, enabled "
+            "FROM strategy_instances WHERE account_scope_id = ? AND symbol = ? "
+            "ORDER BY role, strategy_key", (scope, symbol)).fetchall()
+        buys = [r[1] for r in instance_rows if r[3] == "BUY" and r[4]]
+        sells = [r[1] for r in instance_rows if r[3] == "SELL" and r[4]]
+        shorts = [r[1] for r in instance_rows if r[3] == "SHORT" and r[4]]
+        covers = [r[1] for r in instance_rows if r[3] == "COVER" and r[4]]
+
+        # persisted engine state per instance
+        state_by_instance = {
+            r[0]: r for r in q(
+                "SELECT instance_id, state_json, armed, rearm_required, updated_at "
+                "FROM strategy_state WHERE account_scope_id = ? AND symbol = ?",
+                (scope, symbol)).fetchall()
+        }
+
+        # latest evaluation + latest signal for the symbol
+        last_eval_row = q(
+            "SELECT e.evaluated_at, e.status, e.reason, e.bar_time, i.strategy_key, i.role "
+            "FROM strategy_evaluations e LEFT JOIN strategy_instances i "
+            "ON i.account_scope_id = e.account_scope_id AND i.instance_id = e.instance_id "
+            "WHERE e.account_scope_id = ? AND e.symbol = ? "
+            "ORDER BY e.evaluated_at DESC LIMIT 1", (scope, symbol)).fetchone()
+        last_evaluation = (
+            EvaluationSummary(
+                evaluated_at=_req(last_eval_row[0]), status=last_eval_row[1],
+                reason=last_eval_row[2], strategy_key=last_eval_row[4], role=last_eval_row[5],
+                bar_time=_dt(last_eval_row[3]))
+            if last_eval_row else None)
+        last_signal = self._last_signal(ctx, symbol)
+
+        # open lifecycle cycle (engine truth, both directions)
+        cycle_row = q(
+            "SELECT cycle_id, state, direction, entry_strategy_key, opened_at, updated_at "
+            "FROM position_cycles WHERE account_scope_id = ? AND symbol = ? "
+            "AND state IN ('PENDING_ENTRY','OPEN','EXITING') "
+            "ORDER BY updated_at DESC LIMIT 1", (scope, symbol)).fetchone()
+        cycle = (
+            PipelineCycle(cycle_id=cycle_row[0], state=cycle_row[1], direction=cycle_row[2],
+                          entry_strategy_key=cycle_row[3], opened_at=_dt(cycle_row[4]))
+            if cycle_row else None)
+
+        # broker orders for the symbol with intent purpose attribution
+        order_rows = q(
+            "SELECT b.broker_order_id, b.client_order_id, i.purpose, b.side, b.order_type, "
+            "b.status, b.quantity, b.filled_quantity, b.limit_price, b.stop_price, "
+            "b.submitted_at, b.updated_at FROM broker_orders b "
+            "LEFT JOIN order_intents i ON i.account_scope_id = b.account_scope_id "
+            "AND i.intent_id = b.intent_id WHERE b.account_scope_id = ? AND b.symbol = ? "
+            "ORDER BY b.updated_at DESC LIMIT 50", (scope, symbol)).fetchall()
+        orders = [
+            PipelineOrder(
+                broker_order_id=r[0], client_order_id=r[1], purpose=r[2], side=r[3],
+                order_type=r[4], status=r[5], quantity=_dec(r[6]), filled_quantity=_dec(r[7]),
+                limit_price=_dec(r[8]), stop_price=_dec(r[9]), submitted_at=_dt(r[10]),
+                updated_at=_dt(r[11]), is_open=r[5] in projections._OPEN_ORDER)
+            for r in order_rows
+        ]
+        pending = [o for o in orders if o.is_open]
+        entry_sides = {"BUY", "SELL_SHORT"}
+        exit_sides = {"SELL", "BUY_TO_COVER"}
+        pending_entry = [o for o in pending if (o.purpose or "").upper() in ("ENTRY", "")
+                         or (not o.purpose and o.side.upper() in entry_sides)]
+        pending_exit = [o for o in pending if (o.purpose or "").upper() in
+                        ("EXIT", "STRATEGY_EXIT", "PROTECTIVE_STOP", "TRAILING_STOP")
+                        or (not o.purpose and o.side.upper() in exit_sides)]
+
+        reserved = sum((schema.decimal_from_db(r[0]) for r in q(
+            "SELECT r.amount FROM budget_reservations r JOIN position_cycles c "
+            "ON c.account_scope_id = r.account_scope_id AND c.cycle_id = r.cycle_id "
+            "WHERE r.account_scope_id = ? AND r.state = 'ACTIVE' AND c.symbol = ?",
+            (scope, symbol)).fetchall()), _ZERO)
+
+        # cooldown / lockout from the authoritative gate tables
+        cooldown_until = _dt(q(
+            "SELECT MAX(cooldown_until) FROM entry_cooldowns WHERE account_scope_id = ? "
+            "AND symbol = ? AND cleared_at IS NULL AND cooldown_until > ?",
+            (scope, symbol, schema.to_db_timestamp(now))).fetchone()[0])
+        lockout_until = _dt(q(
+            "SELECT MAX(locked_until) FROM entry_lockouts WHERE account_scope_id = ? "
+            "AND symbol = ? AND cleared_at IS NULL AND locked_until IS NOT NULL",
+            (scope, symbol)).fetchone()[0])
+        block_reasons: list[str] = []
+        if cooldown_until is not None:
+            block_reasons.append("COOLDOWN")
+        if lockout_until is not None:
+            block_reasons.append("LOCKOUT")
+        if f.state == "OFFLINE":
+            block_reasons.append("engine_offline")
+        elif f.state == "PAUSED":
+            block_reasons.append("paused")
+        if f.kill_switch:
+            block_reasons.append("kill_switch")
+        for reason in f.reasons:
+            if reason not in ("LOCKOUT", "COOLDOWN"):
+                block_reasons.append(reason)
+        block_reasons = list(dict.fromkeys(block_reasons))
+
+        protections = [
+            PipelineProtection(
+                protection_order_id=p.protection_order_id, cycle_id=p.cycle_id, kind=p.kind,
+                status=p.status, stop_price=p.stop_price, high_water_mark=p.high_water_mark,
+                covered_quantity=p.covered_quantity, remaining_quantity=p.remaining_quantity,
+                coverage_gap=p.coverage_gap, updated_at=p.as_of)
+            for p in sym_protections
+        ]
+
+        # per-instance stage: only recorded evidence, newest first
+        instances: list[StrategyInstanceState] = []
+        for r in instance_rows:
+            instance_id, key, version, role, enabled = r[0], r[1], r[2], r[3], bool(r[4])
+            state_row = state_by_instance.get(instance_id)
+            engine_state_value: str | None = None
+            stage_as_of: datetime | None = None
+            if state_row is not None:
+                state_payload = _json_dict(state_row[1])
+                eligibility = state_payload.get("eligibility")
+                engine_state_value = str(eligibility) if eligibility else None
+                stage_as_of = _dt(state_row[4])
+            instances.append(self._instance_stage(
+                ctx, symbol, instance_id, role, key, version, enabled,
+                state_row, engine_state_value, stage_as_of, pending))
+
+        # phase reuses the engine's own naming (watchlist-compatible)
+        phase = self._phase(f, cycle.state if cycle else None, position, protection_status, ())
+        last_activity = q(
+            "SELECT MAX(occurred_at) FROM domain_events WHERE account_scope_id = ? "
+            "AND (json_extract(payload_json, '$.data.symbol') = ? OR stream_id LIKE '%' || ?)",
+            (scope, symbol, f":{symbol}")).fetchone()[0]
+
+        return SymbolPipeline(
+            symbol=symbol, configured=is_configured, phase=phase,
+            direction=cycle.direction if cycle else None,
+            buy_strategies=buys, sell_strategies=sells, short_strategies=shorts,
+            cover_strategies=covers, instances=instances,
+            last_evaluation=last_evaluation, last_signal=last_signal, cycle=cycle,
+            position_quantity=position.quantity if position else None,
+            position_entry_price=position.average_entry_price if position else None,
+            unrealized_pnl=position.unrealized_pl if position else None,
+            pending_orders=pending, pending_entry_orders=len(pending_entry),
+            pending_exit_orders=len(pending_exit),
+            reserved_budget=reserved if reserved else None,
+            cooldown_until=cooldown_until, lockout_until=lockout_until,
+            block_reasons=block_reasons, protections=protections,
+            last_activity_at=_dt(last_activity) if last_activity else None,
+        )
+
+    def _instance_stage(
+        self, ctx: _Ctx, symbol: str, instance_id: str, role: str, strategy_key: str,
+        version: str | None, enabled: bool, state_row: Any, engine_state_value: str | None,
+        stage_as_of: datetime | None, pending: list[PipelineOrder],
+    ) -> StrategyInstanceState:
+        """Pipeline stage strictly from recorded evidence for this instance."""
+        q = ctx.conn.execute
+        scope = ctx.scope
+
+        # 1. a pending order matching this instance's role for the symbol
+        role_sides = {"BUY": "BUY", "SELL": "SELL", "SHORT": "SELL_SHORT",
+                      "COVER": "BUY_TO_COVER"}.get(role.upper())
+        for order in pending:
+            if order.side.upper() == (role_sides or "") and (
+                    (order.purpose or "").upper() in ("ENTRY", "EXIT", "STRATEGY_EXIT")):
+                return StrategyInstanceState(
+                    instance_id=instance_id, role=role, strategy_key=strategy_key,
+                    strategy_version=version, enabled=enabled, engine_state=engine_state_value,
+                    armed=bool(state_row[2]) if state_row else None,
+                    rearm_required=bool(state_row[3]) if state_row else None,
+                    stage="ORDER_SUBMITTED",
+                    stage_detail=f"{order.side} {order.quantity} {symbol} "
+                                 f"{order.order_type or ''}".strip(),
+                    stage_as_of=order.submitted_at,
+                    last_signal_bar=_iso(_json_dict(state_row[1]).get("last_signal_bar"))
+                    if state_row else None)
+
+        # 2. an open position entered by this strategy
+        if role.upper() in ("BUY", "SHORT"):
+            entry = q(
+                "SELECT c.cycle_id, c.state, p.average_entry_price, p.quantity, c.updated_at "
+                "FROM position_cycles c LEFT JOIN positions p "
+                "ON p.account_scope_id = c.account_scope_id AND p.cycle_id = c.cycle_id "
+                "WHERE c.account_scope_id = ? AND c.symbol = ? AND c.entry_strategy_key = ? "
+                "AND c.state IN ('PENDING_ENTRY','OPEN','EXITING') "
+                "ORDER BY c.updated_at DESC LIMIT 1", (scope, symbol, strategy_key)).fetchone()
+            if entry is not None:
+                return StrategyInstanceState(
+                    instance_id=instance_id, role=role, strategy_key=strategy_key,
+                    strategy_version=version, enabled=enabled, engine_state=engine_state_value,
+                    armed=bool(state_row[2]) if state_row else None,
+                    rearm_required=bool(state_row[3]) if state_row else None,
+                    stage="ORDER_FILLED",
+                    stage_detail=(f"cycle {entry[1]} qty {entry[4] if entry[4] is not None else '—'}"
+                                  + (f" @ {entry[2]}" if entry[2] is not None else "")),
+                    stage_as_of=_dt(entry[4]),
+                    last_signal_bar=_iso(_json_dict(state_row[1]).get("last_signal_bar"))
+                    if state_row else None)
+
+        # 3. the instance's latest signal and its recorded decision
+        signal_row = q(
+            "SELECT s.signal_id, s.action, s.reference_price, s.reason, s.generated_at, "
+            "d.outcome, d.reason FROM signals s LEFT JOIN decisions d "
+            "ON d.account_scope_id = s.account_scope_id AND d.signal_id = s.signal_id "
+            "WHERE s.account_scope_id = ? AND s.instance_id = ? "
+            "ORDER BY s.generated_at DESC LIMIT 1", (scope, instance_id)).fetchone()
+        if signal_row is not None:
+            summary = self._signal_model(signal_row)
+            if summary.disposition == "REJECTED":
+                return StrategyInstanceState(
+                    instance_id=instance_id, role=role, strategy_key=strategy_key,
+                    strategy_version=version, enabled=enabled, engine_state=engine_state_value,
+                    armed=bool(state_row[2]) if state_row else None,
+                    rearm_required=bool(state_row[3]) if state_row else None,
+                    stage="SIGNAL_REJECTED",
+                    stage_detail=summary.disposition_reason or summary.reason,
+                    stage_as_of=summary.generated_at,
+                    last_signal_bar=_iso(_json_dict(state_row[1]).get("last_signal_bar"))
+                    if state_row else None)
+            return StrategyInstanceState(
+                instance_id=instance_id, role=role, strategy_key=strategy_key,
+                strategy_version=version, enabled=enabled, engine_state=engine_state_value,
+                armed=bool(state_row[2]) if state_row else None,
+                rearm_required=bool(state_row[3]) if state_row else None,
+                stage="SIGNAL_PRODUCED",
+                stage_detail=f"{summary.action} @ {summary.reference_price} ({summary.reason})"
+                if summary.reference_price is not None else summary.reason,
+                stage_as_of=summary.generated_at,
+                last_signal_bar=_iso(_json_dict(state_row[1]).get("last_signal_bar"))
+                if state_row else None)
+
+        # 4. the instance's latest evaluation (NO SIGNAL is not a rejection)
+        eval_row = q(
+            "SELECT e.evaluated_at, e.status, e.reason FROM strategy_evaluations e "
+            "WHERE e.account_scope_id = ? AND e.instance_id = ? "
+            "ORDER BY e.evaluated_at DESC LIMIT 1", (scope, instance_id)).fetchone()
+        if eval_row is not None:
+            status = str(eval_row[1])
+            stage = "NO_SIGNAL" if status.upper() in ("NO_SIGNAL", "NO-SIGNAL") else f"EVALUATED_{status}"
+            return StrategyInstanceState(
+                instance_id=instance_id, role=role, strategy_key=strategy_key,
+                strategy_version=version, enabled=enabled, engine_state=engine_state_value,
+                armed=bool(state_row[2]) if state_row else None,
+                rearm_required=bool(state_row[3]) if state_row else None,
+                stage=stage, stage_detail=eval_row[2], stage_as_of=_dt(eval_row[0]),
+                last_signal_bar=_iso(_json_dict(state_row[1]).get("last_signal_bar"))
+                if state_row else None)
+
+        # 5. recorded engine state (e.g. WATCHING_BUY) — carries its as-of time
+        if engine_state_value is not None:
+            return StrategyInstanceState(
+                instance_id=instance_id, role=role, strategy_key=strategy_key,
+                strategy_version=version, enabled=enabled, engine_state=engine_state_value,
+                armed=bool(state_row[2]) if state_row else None,
+                rearm_required=bool(state_row[3]) if state_row else None,
+                stage=engine_state_value, stage_detail="last recorded engine state",
+                stage_as_of=stage_as_of,
+                last_signal_bar=_iso(_json_dict(state_row[1]).get("last_signal_bar"))
+                if state_row else None)
+
+        # 6. nothing recorded for this instance
+        return StrategyInstanceState(
+            instance_id=instance_id, role=role, strategy_key=strategy_key,
+            strategy_version=version, enabled=enabled, engine_state=None, armed=None,
+            rearm_required=None, stage="NOT_EVALUATED", stage_detail=None, stage_as_of=None,
+            last_signal_bar=None)
+
+    # ---- /activity (operational event timeline) -------------------------------
+
+    _DOMAIN_CATEGORIES: Mapping[str, str] = {
+        "RunConfigRecorded": "SYSTEM",
+        "ShadowAccountCreated": "SYSTEM",
+        "StrategyStateSaved": "STRATEGY",
+        "ShadowOrderSubmitted": "ORDER",
+        "ShadowOrderReplaced": "ORDER",
+        "ShadowOrderCanceled": "ORDER",
+        "ShadowFillRecorded": "FILL",
+    }
+
+    @staticmethod
+    def _domain_category(event_type: str) -> str:
+        known = DashboardReadService._DOMAIN_CATEGORIES.get(event_type)
+        if known is not None:
+            return known
+        upper = event_type.upper()
+        if "FILL" in upper:
+            return "FILL"
+        if "ORDER" in upper:
+            return "ORDER"
+        if "SIGNAL" in upper:
+            return "SIGNAL"
+        if "PROTECT" in upper or "STOP" in upper:
+            return "PROTECTION"
+        if "CYCLE" in upper or "POSITION" in upper:
+            return "LIFECYCLE"
+        if "STRATEGY" in upper or "STATE" in upper:
+            return "STRATEGY"
+        return "SYSTEM"
+
+    @staticmethod
+    def _domain_summary(event_type: str, data: Mapping[str, Any], state: Mapping[str, Any],
+                        stream_hint: Mapping[str, str] | None = None) -> str:
+        purpose = str(data.get("purpose") or "").upper()
+        side = str(data.get("side") or "").upper()
+        quantity = data.get("quantity")
+        symbol = data.get("symbol")
+        price = data.get("price")
+        stop = data.get("stop_price")
+        order_type = str(data.get("order_type") or "").upper()
+        strategy = data.get("strategy_key")
+        hint = stream_hint or {}
+        if event_type == "ShadowOrderSubmitted":
+            label = {"ENTRY": "Entry order", "PROTECTIVE_STOP": "Protective stop order",
+                     "STRATEGY_EXIT": "Exit order", "EXIT": "Exit order"}.get(purpose, "Order")
+            parts = [label, side, str(quantity or ""), str(symbol or ""), order_type]
+            if stop is not None:
+                parts.append(f"stop {stop}")
+            if strategy:
+                parts.append(f"strategy {strategy}")
+            return " ".join(part for part in parts if part)
+        if event_type == "ShadowFillRecorded":
+            return (f"Fill {side} {quantity} {symbol} @ {price}"
+                    + (f" (fee {data.get('fee')})" if data.get("fee") is not None else ""))
+        if event_type == "ShadowOrderReplaced":
+            record = data.get("shadow_stop_record")
+            if stop is not None:
+                return f"Protective stop replaced — stop now {stop}"
+            if isinstance(record, dict) and record.get("covered_quantity") is not None:
+                return (f"Protective stop record updated (covered {record.get('covered_quantity')}"
+                        + (f", stop {record.get('stop_price')}"
+                           if record.get("stop_price") is not None else "") + ")")
+            return "Order replaced"
+        if event_type == "ShadowOrderCanceled":
+            return f"Order canceled ({side} {symbol})".replace(" (None None)", "").replace(" ()", "")
+        if event_type == "StrategyStateSaved":
+            eligibility = state.get("eligibility")
+            subject = " ".join(part for part in (hint.get("strategy_key"), hint.get("role"),
+                                                 hint.get("symbol")) if part)
+            if eligibility is not None:
+                return f"{subject}: engine state {eligibility}".strip(": ") if subject \
+                    else f"Engine strategy state: {eligibility}"
+            return f"{subject}: engine strategy state saved" if subject \
+                else "Engine strategy state saved"
+        if event_type == "RunConfigRecorded":
+            return "Run configuration recorded"
+        if event_type == "ShadowAccountCreated":
+            return "Shadow account created"
+        return event_type
+
+    @staticmethod
+    def _stream_hint(scope: str, stream_type: str, stream_id: str) -> dict[str, str]:
+        """Symbol/strategy/role parsed from the event stream id when present."""
+        hint: dict[str, str] = {}
+        if stream_type == "strategy_state" and stream_id.startswith(f"{scope}:"):
+            parts = stream_id[len(scope) + 1:].split(":")
+            # <pair>:<role>:<symbol>[:<symbol>] (strategy_state streams)
+            if len(parts) >= 3:
+                hint["pair"] = parts[0]
+                hint["role"] = parts[1].upper()
+                hint["strategy_key"] = parts[0]
+                hint["symbol"] = parts[2]
+        return hint
+
+    def activity(
+        self, account_id: str, *, symbol: str | None = None, category: str | None = None,
+        strategy: str | None = None, since: datetime | None = None,
+        until: datetime | None = None, before: datetime | None = None, limit: int = 100,
+    ) -> ActivityResponse:
+        fetch = max(1, min(int(limit), 500))
+        symbol = symbol.strip().upper() if symbol else None
+        category = category.strip().upper() if category else None
+        strategy = strategy.strip() if strategy else None
+        with self._open(account_id) as ctx:
+            f = self._facts(ctx)
+            entries = self._domain_activity(
+                ctx, fetch, symbol=symbol, since=since, until=until, before=before)
+            entries += self._table_activity(
+                ctx, fetch, symbol=symbol, since=since, until=until, before=before)
+        entries.sort(key=lambda entry: (entry.at, entry.event_type), reverse=True)
+        if category is not None:
+            entries = [e for e in entries if e.category == category]
+        if strategy is not None:
+            entries = [e for e in entries
+                       if (e.strategy_key or "").lower() == strategy.lower()]
+        entries = entries[:fetch]
+        next_before = entries[-1].at if len(entries) >= fetch else None
+        return ActivityResponse(
+            account_id=ctx.scope, mode=ctx.mode, engine_state=f.state, server_time=ctx.now,
+            entries=entries, next_before=next_before)
+
+    def _domain_activity(
+        self, ctx: _Ctx, fetch: int, *, symbol: str | None, since: datetime | None,
+        until: datetime | None, before: datetime | None,
+    ) -> list[ActivityEntry]:
+        sql = ("SELECT event_seq, event_type, occurred_at, stream_type, stream_id, payload_json "
+               "FROM domain_events WHERE account_scope_id = ?")
+        params: list[object] = [ctx.scope]
+        if symbol is not None:
+            sql += (" AND (json_extract(payload_json, '$.data.symbol') = ?"
+                    " OR json_extract(payload_json, '$.data.cycle_id') LIKE ?"
+                    " OR stream_id LIKE ?)")
+            params += [symbol, f"{symbol}-%", f"%:{symbol}%"]
+        if since is not None:
+            sql += " AND occurred_at >= ?"
+            params.append(schema.to_db_timestamp(_utc(since)))
+        if until is not None:
+            sql += " AND occurred_at <= ?"
+            params.append(schema.to_db_timestamp(_utc(until)))
+        if before is not None:
+            sql += " AND occurred_at < ?"
+            params.append(schema.to_db_timestamp(_utc(before)))
+        sql += " ORDER BY occurred_at DESC, event_seq DESC LIMIT ?"
+        params.append(fetch)
+        entries: list[ActivityEntry] = []
+        for seq, event_type, occurred, stream_type, stream_id, payload_text in ctx.conn.execute(
+                sql, params).fetchall():
+            payload = _json_dict(payload_text)
+            raw_data = payload.get("data")
+            data: dict[str, Any] = raw_data if isinstance(raw_data, dict) else {}
+            raw_state = payload.get("state")
+            state: dict[str, Any] = raw_state if isinstance(raw_state, dict) else {}
+            hint = self._stream_hint(ctx.scope, str(stream_type), str(stream_id))
+            # symbol resolution order: payload data, cycle id prefix, stream id, filter
+            symbol_value: str | None = None
+            if data.get("symbol"):
+                symbol_value = str(data["symbol"]).upper()
+            elif data.get("cycle_id"):
+                symbol_value = str(data["cycle_id"]).split("-", 1)[0].upper()
+            elif data.get("broker_order_id"):
+                marker = re.search(r"-stop-([A-Z]{1,6})-", str(data["broker_order_id"]))
+                symbol_value = marker.group(1) if marker else None
+            elif hint.get("symbol"):
+                symbol_value = hint["symbol"].upper()
+            strategy_value = data.get("strategy_key")
+            role_value = data.get("role") or hint.get("role")
+            if not strategy_value and stream_type == "strategy_state" and stream_id:
+                # resolve the pair/role stream to the registered strategy instance;
+                # strategy_state stream ids carry the symbol twice (<instance>:<symbol>)
+                candidates = [str(stream_id)]
+                stripped = str(stream_id).rsplit(":", 1)[0]
+                if stripped and stripped not in candidates:
+                    candidates.append(stripped)
+                inst = ctx.conn.execute(
+                    "SELECT strategy_key, role, symbol FROM strategy_instances "
+                    f"WHERE account_scope_id = ? AND instance_id IN "
+                    f"({', '.join('?' for _ in candidates)})",
+                    (ctx.scope, *candidates)).fetchone()
+                if inst is not None:
+                    strategy_value, role_value, inst_symbol = inst[0], inst[1], inst[2]
+                    symbol_value = symbol_value or (str(inst_symbol).upper() if inst_symbol else None)
+            ref_id = (data.get("broker_order_id") or data.get("fill_id")
+                      or data.get("signal_id") or (str(seq) if not data else None))
+            detail_payload: dict[str, Any] = {"stream_type": stream_type, "stream_id": stream_id}
+            if data:
+                detail_payload["data"] = {k: v for k, v in data.items() if k != "assumptions"}
+            if state:
+                detail_payload["state"] = state
+            entries.append(ActivityEntry(
+                at=_req(occurred),
+                category=self._domain_category(str(event_type)),  # type: ignore[arg-type]
+                event_type=str(event_type),
+                symbol=symbol_value,
+                strategy_key=strategy_value,
+                strategy_role=role_value,
+                cycle_id=data.get("cycle_id"), ref_id=ref_id,
+                side=data.get("side"), quantity=_dec(data.get("quantity")),
+                price=_dec(data.get("price")), stop_price=_dec(data.get("stop_price")),
+                disposition=None,
+                summary=self._domain_summary(
+                    str(event_type), data, state,
+                    {"strategy_key": str(strategy_value), "role": str(role_value or ""),
+                     "symbol": str(symbol_value or "")}
+                if stream_type == "strategy_state" else hint),
+                payload=detail_payload,
+            ))
+        return entries
+
+    def _table_activity(
+        self, ctx: _Ctx, fetch: int, *, symbol: str | None, since: datetime | None,
+        until: datetime | None, before: datetime | None,
+    ) -> list[ActivityEntry]:
+        """Events from the structured ledger tables (populated on broker modes)."""
+        entries: list[ActivityEntry] = []
+        scope = ctx.scope
+
+        def windowed(sql: str, params: list[object], at_expr: str) -> tuple[str, list[object]]:
+            if since is not None:
+                sql += f" AND {at_expr} >= ?"
+                params.append(schema.to_db_timestamp(_utc(since)))
+            if until is not None:
+                sql += f" AND {at_expr} <= ?"
+                params.append(schema.to_db_timestamp(_utc(until)))
+            if before is not None:
+                sql += f" AND {at_expr} < ?"
+                params.append(schema.to_db_timestamp(_utc(before)))
+            return sql, params
+
+        # signals + recorded decisions
+        sql = ("SELECT s.generated_at, s.signal_id, s.symbol, s.action, s.reason, "
+               "i.strategy_key, i.role, d.outcome, d.reason FROM signals s "
+               "LEFT JOIN decisions d ON d.account_scope_id = s.account_scope_id "
+               "AND d.signal_id = s.signal_id "
+               "LEFT JOIN strategy_instances i ON i.account_scope_id = s.account_scope_id "
+               "AND i.instance_id = s.instance_id WHERE s.account_scope_id = ?")
+        params: list[object] = [scope]
+        if symbol is not None:
+            sql += " AND s.symbol = ?"
+            params.append(symbol)
+        sql, params = windowed(sql, params, "s.generated_at")
+        sql += " ORDER BY s.generated_at DESC LIMIT ?"
+        params.append(fetch)
+        for at, signal_id, sym, action, reason, key, role, outcome, dreason in ctx.conn.execute(
+                sql, params).fetchall():
+            disposition = ("UNDECIDED" if outcome is None
+                           else "ACCEPTED" if str(outcome).upper() in _ACCEPTED_OUTCOMES
+                           else "REJECTED")
+            entries.append(ActivityEntry(
+                at=_req(at), category="SIGNAL", event_type=f"SIGNAL_{disposition}",
+                symbol=sym, strategy_key=key, strategy_role=role, ref_id=signal_id,
+                side=action, disposition=disposition,
+                summary=(f"Signal {action} {sym} — {disposition.lower()}"
+                         + (f": {dreason or reason}" if (dreason or reason) else "")),
+                payload={"signal_id": signal_id, "action": action, "reason": reason,
+                         "decision_outcome": outcome, "decision_reason": dreason}))
+
+        # strategy evaluations with an explicit recorded status
+        sql = ("SELECT e.evaluated_at, e.status, e.reason, e.symbol, e.bar_time, "
+               "i.strategy_key, i.role FROM strategy_evaluations e "
+               "LEFT JOIN strategy_instances i ON i.account_scope_id = e.account_scope_id "
+               "AND i.instance_id = e.instance_id WHERE e.account_scope_id = ?")
+        params = [scope]
+        if symbol is not None:
+            sql += " AND e.symbol = ?"
+            params.append(symbol)
+        sql, params = windowed(sql, params, "e.evaluated_at")
+        sql += " ORDER BY e.evaluated_at DESC LIMIT ?"
+        params.append(fetch)
+        for at, status, reason, sym, bar_time, key, role in ctx.conn.execute(sql, params).fetchall():
+            entries.append(ActivityEntry(
+                at=_req(at), category="EVALUATION", event_type=f"EVALUATION_{status}",
+                symbol=sym, strategy_key=key, strategy_role=role,
+                summary=(f"{key or 'Strategy'} evaluated {sym or ''}: {status}"
+                         + (f" ({reason})" if reason else "")),
+                payload={"status": status, "reason": reason, "bar_time": bar_time}))
+
+        # fills
+        sql = ("SELECT filled_at, fill_id, symbol, side, quantity, price, fee, cycle_id "
+               "FROM fills WHERE account_scope_id = ?")
+        params = [scope]
+        if symbol is not None:
+            sql += " AND symbol = ?"
+            params.append(symbol)
+        sql, params = windowed(sql, params, "filled_at")
+        sql += " ORDER BY filled_at DESC LIMIT ?"
+        params.append(fetch)
+        for at, fill_id, sym, side, quantity, price, fee, cycle_id in ctx.conn.execute(
+                sql, params).fetchall():
+            entries.append(ActivityEntry(
+                at=_req(at), category="FILL", event_type="FILL_RECORDED", symbol=sym,
+                cycle_id=cycle_id, ref_id=fill_id, side=side, quantity=_dec(quantity),
+                price=_dec(price),
+                summary=f"Fill {side} {quantity} {sym} @ {price} (fee {fee})",
+                payload={"fill_id": fill_id, "fee": fee, "cycle_id": cycle_id}))
+
+        # broker order events (status transitions)
+        sql = ("SELECT e.occurred_at, e.broker_order_id, e.event_type, e.status, "
+               "b.symbol, b.side, b.quantity FROM broker_order_events e "
+               "LEFT JOIN broker_orders b ON b.account_scope_id = e.account_scope_id "
+               "AND b.broker_order_id = e.broker_order_id "
+               "WHERE e.account_scope_id = ?")
+        params = [scope]
+        if symbol is not None:
+            sql += " AND b.symbol = ?"
+            params.append(symbol)
+        sql, params = windowed(sql, params, "e.occurred_at")
+        sql += " ORDER BY e.occurred_at DESC LIMIT ?"
+        params.append(fetch)
+        for at, order_id, event_type, status, sym, side, quantity in ctx.conn.execute(
+                sql, params).fetchall():
+            entries.append(ActivityEntry(
+                at=_req(at), category="ORDER", event_type=str(event_type or "ORDER_EVENT"),
+                symbol=sym, ref_id=order_id, side=side, quantity=_dec(quantity),
+                summary=f"Order {order_id[:24]}… → {status or event_type}",
+                payload={"status": status, "broker_order_id": order_id}))
+
+        # trailing-stop / protection events
+        sql = ("SELECT t.occurred_at, t.event_type, t.previous_stop_price, t.new_stop_price, "
+               "c.symbol, t.cycle_id FROM trailing_stop_events t "
+               "LEFT JOIN position_cycles c ON c.account_scope_id = t.account_scope_id "
+               "AND c.cycle_id = t.cycle_id WHERE t.account_scope_id = ?")
+        params = [scope]
+        if symbol is not None:
+            sql += " AND c.symbol = ?"
+            params.append(symbol)
+        sql, params = windowed(sql, params, "t.occurred_at")
+        sql += " ORDER BY t.occurred_at DESC LIMIT ?"
+        params.append(fetch)
+        for at, event_type, previous, new, sym, cycle_id in ctx.conn.execute(sql, params).fetchall():
+            entries.append(ActivityEntry(
+                at=_req(at), category="PROTECTION",
+                event_type=str(event_type or "TRAILING_STOP_EVENT"),
+                symbol=sym, cycle_id=cycle_id, stop_price=_dec(new),
+                summary=(f"Protective stop {sym or ''} {previous or '—'} → {new or '—'}").strip(),
+                payload={"previous_stop_price": previous, "new_stop_price": new,
+                         "cycle_id": cycle_id}))
+
+        return entries
+
     # ---- /symbols/{symbol} ---------------------------------------------------------
 
     def symbol_detail(self, account_id: str, symbol: str) -> SymbolDetailResponse:
@@ -1906,6 +2689,21 @@ def create_api_router(service: DashboardReadService) -> APIRouter:
     @router.get("/accounts/{account_id}/symbols/{symbol}", response_model=SymbolDetailResponse)
     def symbol_detail(account_id: str, symbol: str) -> Any:
         return guarded(lambda: service.symbol_detail(account_id, symbol))
+
+    @router.get("/accounts/{account_id}/cockpit", response_model=CockpitResponse)
+    def cockpit(account_id: str) -> Any:
+        return guarded(lambda: service.cockpit(account_id))
+
+    @router.get("/accounts/{account_id}/activity", response_model=ActivityResponse)
+    def activity(
+        account_id: str, symbol: str | None = None, category: str | None = None,
+        strategy: str | None = None, since: datetime | None = None,
+        until: datetime | None = None, before: datetime | None = None,
+        limit: int = Query(100, ge=1, le=500),
+    ) -> Any:
+        return guarded(lambda: service.activity(
+            account_id, symbol=symbol, category=category, strategy=strategy,
+            since=since, until=until, before=before, limit=limit))
 
     @router.get("/accounts/{account_id}/detail", response_model=DetailResponse)
     def detail(account_id: str) -> Any:
