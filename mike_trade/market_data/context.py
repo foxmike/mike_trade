@@ -43,6 +43,7 @@ from mike_trade.market_data.candles import (
     ClockLike,
     PriceBasis,
 )
+from mike_trade.market_data.session_reference import SessionReference
 from mike_trade.research.service import ResearchContext
 from mike_trade.scheduling import calendar as _nyse
 from mike_trade.scheduling.calendar import Session, SessionStatus
@@ -65,6 +66,7 @@ __all__ = [
     "IndicatorInput",
     "IndicatorSpec",
     "CalendarLike",
+    "SessionReferenceSource",
     "NyseCalendar",
     "QuoteSnapshot",
     "TradeSnapshot",
@@ -187,6 +189,12 @@ class CalendarLike(Protocol):
     def session_status(self, at_utc: datetime) -> SessionStatus: ...
 
     def session_id(self, at_utc: datetime) -> str | None: ...
+
+
+class SessionReferenceSource(Protocol):
+    """Point-in-time session-reference provider used by the context builder."""
+
+    def reference(self, symbol: str, as_of: datetime) -> SessionReference | None: ...
 
 
 class NyseCalendar:
@@ -416,6 +424,7 @@ class MarketContext:
     developing_candles: Mapping[CandleTimeframe, Candle] | None = None
     completed_bars_only: bool = True
     research: ResearchContext | None = None
+    session_reference: SessionReference | None = None
 
     def __post_init__(self) -> None:
         symbol = _symbol(self.symbol)
@@ -455,6 +464,15 @@ class MarketContext:
             raise _invalid("latest_trade must be TradeSnapshot or None")
         if self.research is not None and not isinstance(self.research, ResearchContext):
             raise _invalid("research must be ResearchContext or None")
+        if self.session_reference is not None and not isinstance(
+            self.session_reference, SessionReference
+        ):
+            raise _invalid("session_reference must be SessionReference or None")
+        if (
+            self.session_reference is not None
+            and self.session_id != self.session_reference.current_session_id
+        ):
+            raise _invalid("session_reference current session must match session_id")
 
         closed = self._freeze_closed(self.candles, symbol, as_of)
         developing = self._freeze_developing(self.developing_candles, symbol)
@@ -628,6 +646,7 @@ class ContextBuilder:
         indicator_specs: Mapping[str, IndicatorSpec] | None = None,
         max_age: timedelta = timedelta(seconds=60),
         candle_limit: int | None = None,
+        session_references: SessionReferenceSource | None = None,
     ) -> None:
         if not isinstance(max_age, timedelta) or max_age <= _ZERO:
             raise _invalid("max_age must be a positive timedelta")
@@ -649,6 +668,11 @@ class ContextBuilder:
         self._specs = MappingProxyType(specs)
         self._max_age = max_age
         self._candle_limit = candle_limit
+        if session_references is not None and not callable(
+            getattr(session_references, "reference", None)
+        ):
+            raise _invalid("session_references must expose reference(symbol, as_of)")
+        self._session_references = session_references
         self._versions: dict[str, int] = {}
         self._last_as_of: dict[str, datetime] = {}
 
@@ -761,6 +785,11 @@ class ContextBuilder:
             developing_candles=developing,
             completed_bars_only=completed_bars_only,
             research=research,
+            session_reference=(
+                self._session_references.reference(symbol, as_of)
+                if self._session_references is not None
+                else None
+            ),
         )
         self._versions[symbol] = context.version
         self._last_as_of[symbol] = as_of

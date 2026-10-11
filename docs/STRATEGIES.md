@@ -2345,9 +2345,31 @@ All six are entry signals only. They do not size positions, submit orders, set
 stops or targets, use developing candles, or inspect prices after the triggering
 bar. `last_signal_bar` suppresses replay of the same completed bar.
 
-Gap, previous-close, previous-day-high, and previous-day-low candidates remain
-deferred. The bounded 500-bar context and default 60-bar live warmup do not expose
-confirmed previous-session OHLC fields and may retain pre-market or only partial
-prior-session observations. Those references cannot be reconstructed safely from
-the oldest available candle, so no gap is inferred and no previous-day extreme is
-calculated.
+## 15. Session-reference and gap BUY strategies (6 BUY)
+
+`MarketContext.session_reference` is an immutable point-in-time reference assembled
+outside strategies from the same completed RAW M1 stream used by SHADOW and BACKTEST.
+The previous-session OHLC is present only after every expected regular-session minute
+was observed for the actual preceding exchange session. The exchange calendar supplies
+holidays, early closes, New York time, and DST conversion. Extended-hours bars never
+enter the values. A partial session, missing minute, skipped trading session, mixed feed,
+or unavailable reference yields `INSUFFICIENT_DATA`; the bounded strategy candle window
+is never used to guess prior OHLC. Current-session open comes only from the exact 09:30 ET
+bar. Alpaca warmup discards a still-forming REST minute before aggregation.
+
+| Strategy ID | Exact BUY rule | Defaults; warmup | Published source |
+|---|---|---|---|
+| `gap_and_go` | Current regular open is strictly above the confirmed prior close by `min_gap_percent`; a completed close by 10:00 ET crosses the opening-range high. | 1-minute opening range, 4% minimum gap; 2 bars. | Warrior Trading, *Day Trading Course Class 12*, Gap and Go / one-minute ORB. |
+| `gap_fill` | Current open gaps strictly below the prior close by `min_gap_percent`; consecutive completed closes cross back above the current open, confirming the fade toward the unfilled prior close. | 0% minimum gap; 2 adjacent current-session bars. | Stock Market Watch, “Gap Fill Trading Strategy.” |
+| `gap_reversal` | Current open gaps strictly below the prior close; after the opening range, a completed close crosses its high and also closes above the completed-bar session VWAP. | 15-minute range, 0% minimum gap; 16 bars. | BreakPoint, “Gap Down Trading Strategy,” gap-down recovery setup. |
+| `previous_close_reclaim` | After a gap down, after 10:00 through 11:00 ET a completed M1 close crosses the prior close, closes above VWAP, and has at least `volume_multiplier` × first-30-minute average volume. | 0.5% gap, 1.5× volume; 31 bars. | FinWiz, “Red to Green Move.” |
+| `previous_day_high_breakout` | Consecutive completed current-session closes cross from at-or-below to strictly above the confirmed prior regular-session high. | No parameters; 2 adjacent bars. | TradeIQ, Martin Luke prior-day-high intraday entry tactic. |
+| `previous_day_low_reversal` | A completed current-session candle trades at/below the confirmed prior regular-session low and closes strictly back above it. | No parameters; 1 bar. | Finetiq Ideas, prior-day extreme raid-and-reclaim / Trader Vic intraday return-above-level variant. |
+
+`gap_continuation` and `opening_gap_breakout` are inventory aliases of
+`gap_and_go`: under the selected published long rule all three are the same gap-up
+opening-range breakout, so separate classes would duplicate a signal. `gap_exhaustion`
+remains blocked: a defensible downside-exhaustion BUY needs confirmed multi-session/daily
+downtrend context (and commonly abnormal-volume context), while the deliberately narrow
+contract exposes only one completed prior session. None of these entry primitives sizes a
+position, places an order, or defines an exit.
