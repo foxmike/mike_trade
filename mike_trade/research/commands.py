@@ -526,6 +526,21 @@ def _research_registry() -> Any:
     from mike_trade.strategies.buy.resistance_breakout import ResistanceBreakoutBuy
     from mike_trade.strategies.buy.supertrend import SupertrendBuy
     from mike_trade.strategies.buy.volatility_squeeze_breakout import VolatilitySqueezeBreakoutBuy
+    from mike_trade.strategies.buy.obv_breakout import ObvBreakoutBuy
+    from mike_trade.strategies.buy.accumulation_distribution_breakout import AccumulationDistributionBreakoutBuy
+    from mike_trade.strategies.buy.volume_price_trend_breakout import VolumePriceTrendBreakoutBuy
+    from mike_trade.strategies.buy.tsi_momentum import TsiMomentumBuy
+    from mike_trade.strategies.buy.stochastic_rsi import StochasticRsiBuy
+    from mike_trade.strategies.buy.ultimate_oscillator import UltimateOscillatorBuy
+    from mike_trade.strategies.buy.holy_grail_pullback import HolyGrailPullbackBuy
+    from mike_trade.strategies.buy.rsi2_trend_pullback import Rsi2TrendPullbackBuy
+    from mike_trade.strategies.buy.z_score_mean_reversion import ZScoreMeanReversionBuy
+    from mike_trade.strategies.buy.double_bottom_reversal import DoubleBottomReversalBuy
+    from mike_trade.strategies.buy.inverse_head_and_shoulders import InverseHeadAndShouldersBuy
+    from mike_trade.strategies.buy.ascending_triangle_breakout import AscendingTriangleBreakoutBuy
+    from mike_trade.strategies.buy.trendline_breakout import TrendlineBreakoutBuy
+    from mike_trade.strategies.buy.triangle_breakout import TriangleBreakoutBuy
+    from mike_trade.strategies.buy.bull_flag_breakout import BullFlagBreakoutBuy
     from mike_trade.strategies.sell.aroon_bearish_reversal import AroonBearishReversalSell
     from mike_trade.strategies.sell.cci_zero_line_breakdown import CciZeroLineBreakdownSell
     from mike_trade.strategies.sell.cci_bearish_reversal import CciBearishReversalSell
@@ -623,6 +638,21 @@ def _research_registry() -> Any:
         MiddayRangeBreakoutBuy,
         AfternoonBreakoutBuy,
         PowerHourMomentumBuy,
+        ObvBreakoutBuy,
+        AccumulationDistributionBreakoutBuy,
+        VolumePriceTrendBreakoutBuy,
+        TsiMomentumBuy,
+        StochasticRsiBuy,
+        UltimateOscillatorBuy,
+        HolyGrailPullbackBuy,
+        Rsi2TrendPullbackBuy,
+        ZScoreMeanReversionBuy,
+        DoubleBottomReversalBuy,
+        InverseHeadAndShouldersBuy,
+        AscendingTriangleBreakoutBuy,
+        TrendlineBreakoutBuy,
+        TriangleBreakoutBuy,
+        BullFlagBreakoutBuy,
         AroonBearishReversalSell,
         CciZeroLineBreakdownSell,
         DmiBearishCrossoverSell,
