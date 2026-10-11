@@ -9,7 +9,7 @@ import tempfile
 from collections.abc import Iterable
 from contextlib import contextmanager
 from dataclasses import dataclass
-from datetime import UTC, datetime, timedelta
+from datetime import UTC, date, datetime, timedelta
 from decimal import Decimal
 from pathlib import Path
 from typing import Any
@@ -19,6 +19,12 @@ import pyarrow as pa
 import pyarrow.parquet as pq
 
 from mike_trade.market_data.alpaca_history import Adjustment, AlpacaHistoricalBars, HistoricalBar
+from mike_trade.market_data.candles import NY, Candle
+from mike_trade.market_data.session_candles import (
+    SessionCandleError,
+    daily_candle_from_bar,
+    settled_daily_candles,
+)
 
 
 @dataclass(frozen=True, slots=True)
@@ -103,7 +109,7 @@ class HistoricalDatasetRepository:
                 "WHERE timestamp >= ? AND timestamp < ? ORDER BY timestamp",
                 [str(path), start.astimezone(UTC), end.astimezone(UTC)],
             ).to_arrow_table()
-            return tuple(_bar(row) for row in table.to_pylist())
+            return tuple(_bar(row, snapshot.feed) for row in table.to_pylist())
         finally:
             connection.close()
 
@@ -128,7 +134,7 @@ class HistoricalDatasetRepository:
         connection = duckdb.connect(":memory:")
         try:
             return tuple(
-                _bar(row)
+                _bar(row, chosen.feed)
                 for row in connection.execute(
                     "SELECT * FROM read_parquet(?) ORDER BY timestamp", [str(path)]
                 )
@@ -385,6 +391,97 @@ class HistoricalDatasetRepository:
         return manifests
 
 
+    # ------------------------------------------------------------------ daily history
+
+    def acquire_daily(
+        self,
+        client: Any,
+        symbols: Iterable[str],
+        start: date,
+        end: date,
+        *,
+        feed: str = "iex",
+        adjustment: str = "raw",
+        now: datetime | None = None,
+    ) -> list[DatasetSnapshot]:
+        """Acquire completed RAW daily bars for ``start <= session date <= end`` as snapshots.
+
+        Same immutable, content-addressed ``1d`` snapshots as the 1-minute datasets.  Only RAW
+        daily bars are accepted (they must match the RAW 1-minute basis; adjusted history would
+        embed later corporate actions).  A bar for a session that has not settled at acquisition
+        time is dropped, so a developing day can never be persisted as a completed one.
+        """
+        if adjustment.lower() != "raw":
+            raise ValueError("daily history must be acquired with adjustment='raw'")
+        if start > end:
+            raise ValueError("start must not be after end")
+        acquired_at = (now or datetime.now(UTC)).astimezone(UTC)
+        window_start = datetime.combine(start, datetime.min.time(), NY).astimezone(UTC)
+        window_end = datetime.combine(end + timedelta(days=1), datetime.min.time(), NY).astimezone(
+            UTC
+        )
+        adapter = AlpacaHistoricalBars(client, max_pages=50)
+        manifests: list[DatasetSnapshot] = []
+        for symbol in dict.fromkeys(s.upper() for s in symbols):
+            cached = [
+                snap
+                for snap in self.snapshots()
+                if snap.symbol == symbol and snap.feed == feed.lower()
+                and snap.adjustment == "raw" and snap.timeframe == "1d"
+                and datetime.fromisoformat(snap.start) <= window_start
+                and datetime.fromisoformat(snap.end) >= window_end
+            ]
+            if cached:
+                manifests.append(max(cached, key=lambda item: item.acquired_at))
+                continue
+            fetched = adapter.fetch_bars(
+                symbol, "1d", window_start, window_end, feed=feed, adjustment=Adjustment.RAW
+            )
+            # rejects mis-stamped / non-session bars and drops a still-developing day
+            keep = {c.start for c in settled_daily_candles(fetched, now=acquired_at)}
+            settled = [bar for bar in fetched if session_open_of(bar) in keep]
+            if not settled:
+                raise ValueError(f"{symbol}: no settled daily bars in {start}..{end}")
+            manifests.append(
+                self.persist(
+                    symbol, settled, feed=feed, timeframe="1d", adjustment="raw",
+                    coverage_start=window_start, coverage_end=window_end,
+                )
+            )
+        self.sync_catalog()
+        return manifests
+
+    def daily_candles(
+        self, symbol: str, start: date, end: date, *, feed: str = "iex"
+    ) -> tuple[Candle, ...]:
+        """Completed RAW D1 candles for ``start..end`` from an immutable ``1d`` snapshot.
+
+        Raises when no snapshot declares coverage of the whole range (coverage is declared at
+        acquisition, so a quiet or holiday stretch is never mistaken for missing data).
+        """
+        window_start = datetime.combine(start, datetime.min.time(), NY).astimezone(UTC)
+        window_end = datetime.combine(end + timedelta(days=1), datetime.min.time(), NY).astimezone(
+            UTC
+        )
+        bars = self.available(
+            symbol, window_start, window_end, feed=feed, adjustment="raw", timeframe="1d"
+        )
+        if not bars:
+            raise ValueError(
+                f"no immutable daily (1d) snapshot covers {symbol.upper()} {start}..{end}; "
+                "run `research-data acquire --timeframe 1d`"
+            )
+        try:
+            return tuple(daily_candle_from_bar(bar) for bar in bars)
+        except SessionCandleError as exc:
+            raise ValueError(f"{symbol.upper()}: invalid daily snapshot: {exc}") from exc
+
+
+def session_open_of(bar: HistoricalBar) -> datetime:
+    """The regular-session open (UTC) of a provider daily bar's trading date."""
+    return daily_candle_from_bar(bar).start
+
+
 def _validate_bar(bar: HistoricalBar) -> None:
     if bar.timestamp.tzinfo is None or bar.timestamp.utcoffset() is None:
         raise ValueError("bar timestamp must be timezone-aware")
@@ -441,7 +538,7 @@ def _fsync_dir(path: Path) -> None:
         os.close(fd)
 
 
-def _bar(row: dict[str, Any]) -> HistoricalBar:
+def _bar(row: dict[str, Any], feed: str = "iex") -> HistoricalBar:
     return HistoricalBar(
         row["symbol"],
         row["timestamp"],
@@ -452,7 +549,7 @@ def _bar(row: dict[str, Any]) -> HistoricalBar:
         Decimal(row["volume"]),
         None if row["vwap"] is None else Decimal(row["vwap"]),
         None if row["trade_count"] is None else Decimal(row["trade_count"]),
-        "iex",
+        feed,
         Adjustment.RAW,
     )
 

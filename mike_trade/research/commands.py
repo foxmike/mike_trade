@@ -315,6 +315,41 @@ def _cached_snapshot_bars(
     )
 
 
+def _daily_history(
+    repo: HistoricalDatasetRepository,
+    registry: Any,
+    symbol: str,
+    start: datetime,
+    end: datetime,
+    strategy_params: Mapping[str, Mapping[str, Any]],
+) -> tuple[Any, str | None]:
+    """Completed RAW D1 history (point-in-time store) for strategies that require it.
+
+    Returns ``(None, None)`` when no selected strategy needs D1/W1, leaving the M1 backtest
+    path untouched.  Otherwise loads an immutable ``1d`` snapshot covering the lookback before
+    ``start`` (plus a margin for weekly aggregation and missing-session checks) through ``end``.
+    """
+    from mike_trade.market_data.candles import NY, CandleTimeframe
+    from mike_trade.market_data.session_candles import SessionCandleStore
+    from mike_trade.scheduling.calendar import previous_session
+
+    needed = 0
+    for strategy_id, params in strategy_params.items():
+        history = registry.get(strategy_id).required_history(params)
+        for frame, count in history.items():
+            needed = max(needed, count if frame is CandleTimeframe.D1 else 5 * count + 5)
+    if needed == 0:
+        return None, None
+    first = start.astimezone(NY).date()
+    for _ in range(needed + 10):
+        first = previous_session(first).session_date
+    last = end.astimezone(NY).date()
+    candles = repo.daily_candles(symbol, first, last)
+    store = SessionCandleStore()
+    store.ingest_daily(symbol, candles)
+    return store, store.fingerprint()[:20]
+
+
 def _moment(text: str) -> datetime:
     value = datetime.fromisoformat(text.replace("Z", "+00:00"))
     if value.tzinfo is None:
@@ -331,6 +366,10 @@ def register(subparsers: Any) -> None:
     acquire.add_argument("--end", required=True, help="exclusive ISO timestamp")
     acquire.add_argument("--feed", default="iex", choices=("iex", "sip", "delayed_sip"))
     acquire.add_argument("--adjustment", default="raw", choices=("raw", "split", "dividend", "all"))
+    acquire.add_argument(
+        "--timeframe", default="1m", choices=("1m", "1d"),
+        help="1m: minute bars; 1d: completed RAW daily bars (the D1/W1 strategy history)",
+    )
     acquire.add_argument("--root", default=os.environ.get("MIKE_TRADE_RESEARCH_DIR", "research"))
     acquire.set_defaults(func=acquire_data)
     listing = actions.add_parser("list", help="list immutable datasets")
@@ -461,14 +500,27 @@ def acquire_data(args: argparse.Namespace) -> int:
         raise ValueError("--start must precede --end")
     client = _client()
     try:
-        snapshots = HistoricalDatasetRepository(args.root).acquire(
-            client,
-            (s.strip() for s in args.symbols.split(",") if s.strip()),
-            start,
-            end,
-            feed=args.feed,
-            adjustment=args.adjustment,
-        )
+        symbols = [s.strip() for s in args.symbols.split(",") if s.strip()]
+        if getattr(args, "timeframe", "1m") == "1d":
+            from mike_trade.market_data.candles import NY
+
+            snapshots = HistoricalDatasetRepository(args.root).acquire_daily(
+                client,
+                symbols,
+                start.astimezone(NY).date(),
+                (end - timedelta(microseconds=1)).astimezone(NY).date(),
+                feed=args.feed,
+                adjustment=args.adjustment,
+            )
+        else:
+            snapshots = HistoricalDatasetRepository(args.root).acquire(
+                client,
+                symbols,
+                start,
+                end,
+                feed=args.feed,
+                adjustment=args.adjustment,
+            )
     finally:
         client.close()
     for snapshot in snapshots:
@@ -707,6 +759,9 @@ def _research_registry() -> Any:
         ShortBearishMomentumDivergence,
     )
 
+    from mike_trade.strategies.buy.cup_and_handle import CupAndHandleBuy
+    from mike_trade.strategies.buy.volatility_contraction_pattern import VolatilityContractionPatternBuy
+
     registry = StrategyRegistry()
     for cls in (
         VwapBounceBuy,
@@ -885,6 +940,8 @@ def _research_registry() -> Any:
         ObvBreakdownSell,
         ShootingStarReversalSell,
         SupertrendBearishFlipSell,
+        VolatilityContractionPatternBuy,
+        CupAndHandleBuy,
     ):
         registry.register(cls)
     return registry
@@ -1097,6 +1154,9 @@ def _run_one(
                 f"parameters supplied for strategy outside lifecycle pair: {strategy_id}"
             )
         strategy_params[strategy_id].update(values)
+    session_candles, daily_dataset = _daily_history(
+        repo, registry, symbol, start, end, strategy_params
+    )
     stop_config: dict[str, Any] = (
         {"protective_trailing_percent": "1.5"}
         if protective_stop is None
@@ -1149,6 +1209,7 @@ def _run_one(
         PeriodRole.RESEARCH,
         {
             "dataset_id": snapshot.dataset_id,
+            **({"daily_dataset_id": daily_dataset} if daily_dataset else {}),
             "mode": "BACKTEST",
             "lifecycle": lifecycle,
             "focus_strategy": strategy_name,
@@ -1176,7 +1237,10 @@ def _run_one(
         result_directory=results,
     )
     result = asyncio.run(
-        BacktestRunner(registry, feed, clock, sim, intent_factory=intent_factory).run(request)
+        BacktestRunner(
+            registry, feed, clock, sim, intent_factory=intent_factory,
+            session_candles=session_candles,
+        ).run(request)
     )
     metrics = compute_metrics(result, starting_capital=starting_capital, seed=seed)
     bar_open = {bar.timestamp: bar.open for bar in bars}

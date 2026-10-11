@@ -172,6 +172,7 @@ SESSION_BUY = {
     "afternoon_breakout", "high_of_day_momentum", "midday_range_breakout",
     "opening_drive", "opening_range_retest", "power_hour_momentum",
 }
+DAILY_PATTERN_BUY = {"volatility_contraction_pattern", "cup_and_handle"}
 GAP_BUY = {
     "gap_and_go", "gap_fill", "gap_reversal", "previous_close_reclaim",
     "previous_day_high_breakout", "previous_day_low_reversal",
@@ -629,12 +630,12 @@ def test_new_strategy_metadata_registration_and_role(strategy_id: str) -> None:
 def test_registry_inventory_counts() -> None:
     buys = {cls.spec.strategy_id for cls in REGISTRY.list_strategies(StrategyRole.BUY)}
     sells = {cls.spec.strategy_id for cls in REGISTRY.list_strategies(StrategyRole.SELL)}
-    assert buys == set(NEW_BUY) | EXTENSION_BUY | BATCH2_BUY | BATCH3_BUY | BATCH4_BUY | SESSION_BUY | GAP_BUY | BACKLOG_BUY_A | BACKLOG_BUY_B | {
+    assert buys == set(NEW_BUY) | EXTENSION_BUY | BATCH2_BUY | BATCH3_BUY | BATCH4_BUY | SESSION_BUY | GAP_BUY | DAILY_PATTERN_BUY | BACKLOG_BUY_A | BACKLOG_BUY_B | {
         k for k, v in EXISTING.items() if v[0] == "BUY"}
     assert sells == set(NEW_SELL) | EXTENSION_SELL | BATCH2_SELL | BATCH3_SELL | BATCH5_SELL | {
         k for k, v in EXISTING.items() if v[0] == "SELL"}
     assert (len(NEW_BUY), len(NEW_SELL)) == (14, 14)
-    assert (len(buys), len(sells)) == (80, 40)
+    assert (len(buys), len(sells)) == (82, 40)
     assert not buys & sells
 
 

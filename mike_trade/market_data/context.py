@@ -43,6 +43,7 @@ from mike_trade.market_data.candles import (
     ClockLike,
     PriceBasis,
 )
+from mike_trade.market_data.session_candles import SessionCandleSource
 from mike_trade.market_data.session_reference import SessionReference
 from mike_trade.research.service import ResearchContext
 from mike_trade.scheduling import calendar as _nyse
@@ -647,6 +648,7 @@ class ContextBuilder:
         max_age: timedelta = timedelta(seconds=60),
         candle_limit: int | None = None,
         session_references: SessionReferenceSource | None = None,
+        session_candles: SessionCandleSource | None = None,
     ) -> None:
         if not isinstance(max_age, timedelta) or max_age <= _ZERO:
             raise _invalid("max_age must be a positive timedelta")
@@ -673,6 +675,11 @@ class ContextBuilder:
         ):
             raise _invalid("session_references must expose reference(symbol, as_of)")
         self._session_references = session_references
+        if session_candles is not None and not callable(
+            getattr(session_candles, "get_completed_candles", None)
+        ):
+            raise _invalid("session_candles must expose get_completed_candles(...)")
+        self._session_candles = session_candles
         self._versions: dict[str, int] = {}
         self._last_as_of: dict[str, datetime] = {}
 
@@ -744,13 +751,12 @@ class ContextBuilder:
                 context={"indicators": tuple(unknown)},
             )
 
-        closed = {
-            tf: self._candles.get_completed_candles(symbol, tf, self._candle_limit)
-            for tf in timeframes
-        }
+        closed = {tf: self._completed(symbol, tf, as_of) for tf in timeframes}
         developing: dict[CandleTimeframe, Candle] = {}
         if not completed_bars_only:
             for tf in timeframes:
+                if tf.is_session_based:
+                    continue  # a developing day/week is never decision input
                 candle = self._candles.get_developing_candle(symbol, tf)
                 if candle is not None:
                     developing[tf] = candle
@@ -794,6 +800,19 @@ class ContextBuilder:
         self._versions[symbol] = context.version
         self._last_as_of[symbol] = as_of
         return context
+
+    def _completed(
+        self, symbol: str, timeframe: CandleTimeframe, as_of: datetime
+    ) -> tuple[Candle, ...]:
+        """Completed candles of one timeframe: intraday from the builder, D1/W1 as known at as_of."""
+        if not timeframe.is_session_based:
+            return self._candles.get_completed_candles(symbol, timeframe, self._candle_limit)
+        if self._session_candles is None:
+            raise _invalid(
+                f"{timeframe.value} candles were requested but no session_candles source is "
+                "configured"
+            )
+        return self._session_candles.get_completed_candles(symbol, timeframe, None, as_of=as_of)
 
     def _freshness(
         self,
