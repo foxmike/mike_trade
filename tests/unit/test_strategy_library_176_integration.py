@@ -45,7 +45,7 @@ from mike_trade.strategies.indicators.vwap_bands import (
 from mike_trade.strategies.registry import StrategyRegistry
 
 REGISTRY = _research_registry()
-EXPECTED = {StrategyRole.BUY: 87, StrategyRole.SELL: 41, StrategyRole.SHORT: 28, StrategyRole.COVER: 28}
+EXPECTED = {StrategyRole.BUY: 93, StrategyRole.SELL: 43, StrategyRole.SHORT: 28, StrategyRole.COVER: 28}
 BACKLOG_BUYS = ("bollinger_band_mean_reversion", "vwap_pullback", "support_bounce",
                 "vwap_band_reversion", "intraday_consolidation_breakout")
 
@@ -69,14 +69,14 @@ def production_registry(tmp_path) -> list[type]:
 # ---------------------------------------------------------------------------- registration
 
 
-def test_exactly_184_unique_strategies_in_both_registries(tmp_path) -> None:
+def test_exactly_192_unique_strategies_in_both_registries(tmp_path) -> None:
     research_ids = [c.spec.strategy_id for c in REGISTRY.list_strategies()]
     assert {role: len(REGISTRY.list_strategies(role)) for role in StrategyRole} == EXPECTED
-    assert len(research_ids) == len(set(research_ids)) == 184
+    assert len(research_ids) == len(set(research_ids)) == 192
 
     production = production_registry(tmp_path)
     production_ids = [c.spec.strategy_id for c in production]
-    assert len(production) == len(set(production)) == 184  # no class registered twice
+    assert len(production) == len(set(production)) == 192  # no class registered twice
     assert len(production_ids) == len(set(production_ids))  # (the registry would also reject it)
     assert {role: sum(c.spec.side is role for c in production) for role in StrategyRole} == EXPECTED
     # production / research parity: the very same classes

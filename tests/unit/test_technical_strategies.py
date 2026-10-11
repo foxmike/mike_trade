@@ -187,6 +187,14 @@ FINAL_PATTERN_BUY = {"gap_exhaustion", "bull_pennant_breakout"}
 BACKLOG_BUY_D = {
     "relative_volume_momentum", "moving_average_compression",
 }
+FINAL_MOMENTUM_BUY = {"momentum_continuation", "rsi_momentum"}
+FINAL_REVERSAL_BUY = {
+    "intraday_exhaustion_reversal", "volume_dry_up_pullback",
+}
+DAILY_WEEKLY_BUY = {"volatility_contraction_pattern", "cup_and_handle"}
+FINAL_REVERSAL_SELL = {
+    "volatility_expansion_reversal", "volume_climax_exit",
+}
 BATCH3_SELL = {
     "adx_trend_weakening", "bollinger_upper_band_reversal", "failed_breakout_exit",
     "lower_low_confirmation", "opening_range_breakdown", "stochastic_rsi_reversal",
@@ -650,6 +658,9 @@ def test_registry_inventory_counts() -> None:
         | BACKLOG_BUY_C
         | BACKLOG_BUY_D
         | FINAL_PATTERN_BUY
+        | FINAL_MOMENTUM_BUY
+        | FINAL_REVERSAL_BUY
+        | DAILY_WEEKLY_BUY
         | {k for k, v in EXISTING.items() if v[0] == "BUY"}
     )
     assert sells == (
@@ -659,10 +670,11 @@ def test_registry_inventory_counts() -> None:
         | BATCH3_SELL
         | BATCH5_SELL
         | BACKLOG_SELL_D
+        | FINAL_REVERSAL_SELL
         | {k for k, v in EXISTING.items() if v[0] == "SELL"}
     )
     assert (len(NEW_BUY), len(NEW_SELL)) == (14, 14)
-    assert (len(buys), len(sells)) == (87, 41)
+    assert (len(buys), len(sells)) == (93, 43)
     assert not buys & sells
 
 

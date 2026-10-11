@@ -290,6 +290,10 @@ from mike_trade.strategies.buy.moving_average_compression import (
 )
 from mike_trade.strategies.buy.momentum_continuation import MomentumContinuationBuy
 from mike_trade.strategies.buy.rsi_momentum import RsiMomentumBuy
+from mike_trade.strategies.buy.intraday_exhaustion_reversal import (
+    IntradayExhaustionReversalBuy,
+)
+from mike_trade.strategies.buy.volume_dry_up_pullback import VolumeDryUpPullbackBuy
 from mike_trade.strategies.indicators.core import VWAPCalculator
 from mike_trade.strategies.presets.pairs import resolve_pair_preset
 from mike_trade.strategies.registry import StrategyRegistry
@@ -336,6 +340,10 @@ from mike_trade.strategies.sell.ichimoku_bearish_exit import IchimokuBearishExit
 from mike_trade.strategies.sell.obv_breakdown import ObvBreakdownSell
 from mike_trade.strategies.sell.shooting_star_reversal import ShootingStarReversalSell
 from mike_trade.strategies.sell.supertrend_bearish_flip import SupertrendBearishFlipSell
+from mike_trade.strategies.sell.volatility_expansion_reversal import (
+    VolatilityExpansionReversalSell,
+)
+from mike_trade.strategies.sell.volume_climax_exit import VolumeClimaxExitSell
 from mike_trade.strategies.short.short_bearish_engulfing import ShortBearishEngulfing
 from mike_trade.strategies.short.short_shooting_star_reversal import ShortShootingStarReversal
 from mike_trade.strategies.short.short_double_top_breakdown import ShortDoubleTopBreakdown
@@ -2788,6 +2796,8 @@ def build_runtime(
         BullPennantBreakoutBuy,
         MomentumContinuationBuy,
         RsiMomentumBuy,
+        IntradayExhaustionReversalBuy,
+        VolumeDryUpPullbackBuy,
         AroonBearishReversalSell,
         CciZeroLineBreakdownSell,
         DmiBearishCrossoverSell,
@@ -2826,6 +2836,8 @@ def build_runtime(
         ShootingStarReversalSell,
         SupertrendBearishFlipSell,
         HighVolumeReversalSell,
+        VolatilityExpansionReversalSell,
+        VolumeClimaxExitSell,
     ):
         registry.register(strategy_cls)
     strategies = supplied.get("strategies", registry)

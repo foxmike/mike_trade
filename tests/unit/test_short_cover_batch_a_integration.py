@@ -100,16 +100,16 @@ def _make_context(bars: list[Candle]) -> MarketContext:
     )
 
 
-def test_combined_184_strategy_registration_and_distribution() -> None:
-    """Verify that the registry contains exactly 184 strategies with 87 BUY, 41 SELL, 28 SHORT, 28 COVER."""
+def test_combined_192_strategy_registration_and_distribution() -> None:
+    """Verify that the registry contains exactly 192 strategies with the expected roles."""
     counts = {role: len(REGISTRY.list_strategies(role)) for role in StrategyRole}
     assert counts == {
-        StrategyRole.BUY: 87,
-        StrategyRole.SELL: 41,
+        StrategyRole.BUY: 93,
+        StrategyRole.SELL: 43,
         StrategyRole.SHORT: 28,
         StrategyRole.COVER: 28,
     }
-    assert len(REGISTRY.list_strategies()) == 184
+    assert len(REGISTRY.list_strategies()) == 192
 
     # Verify all 30 Batch A strategies are present in registry
     registered_ids = {c.spec.strategy_id for c in REGISTRY.list_strategies()}

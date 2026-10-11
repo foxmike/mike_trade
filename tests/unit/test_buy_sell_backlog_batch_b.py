@@ -134,12 +134,12 @@ def test_batch_b_strategies_registered_in_production_and_research() -> None:
 
     counts = {r: len(REGISTRY.list_strategies(r)) for r in StrategyRole}
     assert counts == {
-        StrategyRole.BUY: 87,
-        StrategyRole.SELL: 41,
+        StrategyRole.BUY: 93,
+        StrategyRole.SELL: 43,
         StrategyRole.SHORT: 28,
         StrategyRole.COVER: 28,
     }
-    assert len(REGISTRY.list_strategies()) == 184
+    assert len(REGISTRY.list_strategies()) == 192
 
 
 def test_vwap_reclaim_equivalence_with_vwap_bounce() -> None:
