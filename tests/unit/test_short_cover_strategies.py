@@ -28,6 +28,16 @@ D = Decimal
 OPEN = datetime(2026, 10, 8, 9, 30, tzinfo=ZoneInfo("America/New_York")).astimezone(UTC)
 REGISTRY = _research_registry()
 SHORTS = ("short_ema_bearish_crossover", "short_supertrend_bearish_flip", "short_donchian_breakdown")
+ALL_SHORTS = SHORTS + (
+    "short_sma_bearish_crossover", "short_macd_bearish_crossover",
+    "short_macd_zero_line_breakdown", "short_rsi_centerline_breakdown",
+    "short_dmi_bearish_crossover", "short_aroon_bearish_reversal",
+    "short_parabolic_sar_bearish_reversal", "short_ichimoku_bearish_breakdown",
+    "short_opening_range_breakdown", "short_vwap_breakdown",
+    "short_bollinger_lower_band_breakdown", "short_keltner_channel_breakdown",
+    "short_obv_breakdown", "short_cci_zero_line_breakdown",
+    "short_adx_bearish_trend_confirmation",
+)
 COVERS = ("cover_ema_bullish_crossover", "cover_supertrend_bullish_flip", "cover_donchian_breakout")
 ARMED = {"short": {"eligibility": "WATCHING_SHORT"}, "cover": {}}
 
@@ -89,10 +99,10 @@ def test_roles_are_independent_and_registered() -> None:
     assert [r.value for r in StrategyRole] == ["BUY", "SELL", "SHORT", "COVER"]
     counts = {r: len(REGISTRY.list_strategies(r)) for r in StrategyRole}
     assert counts == {StrategyRole.BUY: 75, StrategyRole.SELL: 40,
-                      StrategyRole.SHORT: 3, StrategyRole.COVER: 3}
-    assert len(REGISTRY.list_strategies()) == 121
+                      StrategyRole.SHORT: 18, StrategyRole.COVER: 3}
+    assert len(REGISTRY.list_strategies()) == 136
     source = inspect.getsource(app.build_runtime)
-    for ids, role, base in ((SHORTS, StrategyRole.SHORT, ShortStrategy),
+    for ids, role, base in ((ALL_SHORTS, StrategyRole.SHORT, ShortStrategy),
                             (COVERS, StrategyRole.COVER, CoverStrategy)):
         assert {c.spec.strategy_id for c in REGISTRY.list_strategies(role)} == set(ids)
         for strategy_id in ids:

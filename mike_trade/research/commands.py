@@ -534,6 +534,39 @@ def _research_registry() -> Any:
     from mike_trade.strategies.short.short_ema_bearish_crossover import ShortEmaBearishCrossover
     from mike_trade.strategies.short.short_supertrend_bearish_flip import ShortSupertrendBearishFlip
     from mike_trade.strategies.short.short_donchian_breakdown import ShortDonchianBreakdown
+    from mike_trade.strategies.short.short_sma_bearish_crossover import ShortSmaBearishCrossover
+    from mike_trade.strategies.short.short_macd_bearish_crossover import ShortMacdBearishCrossover
+    from mike_trade.strategies.short.short_macd_zero_line_breakdown import (
+        ShortMacdZeroLineBreakdown,
+    )
+    from mike_trade.strategies.short.short_rsi_centerline_breakdown import (
+        ShortRsiCenterlineBreakdown,
+    )
+    from mike_trade.strategies.short.short_dmi_bearish_crossover import ShortDmiBearishCrossover
+    from mike_trade.strategies.short.short_aroon_bearish_reversal import ShortAroonBearishReversal
+    from mike_trade.strategies.short.short_parabolic_sar_bearish_reversal import (
+        ShortParabolicSarBearishReversal,
+    )
+    from mike_trade.strategies.short.short_ichimoku_bearish_breakdown import (
+        ShortIchimokuBearishBreakdown,
+    )
+    from mike_trade.strategies.short.short_opening_range_breakdown import (
+        ShortOpeningRangeBreakdown,
+    )
+    from mike_trade.strategies.short.short_vwap_breakdown import ShortVwapBreakdown
+    from mike_trade.strategies.short.short_bollinger_lower_band_breakdown import (
+        ShortBollingerLowerBandBreakdown,
+    )
+    from mike_trade.strategies.short.short_keltner_channel_breakdown import (
+        ShortKeltnerChannelBreakdown,
+    )
+    from mike_trade.strategies.short.short_obv_breakdown import ShortObvBreakdown
+    from mike_trade.strategies.short.short_cci_zero_line_breakdown import (
+        ShortCciZeroLineBreakdown,
+    )
+    from mike_trade.strategies.short.short_adx_bearish_trend_confirmation import (
+        ShortAdxBearishTrendConfirmation,
+    )
     from mike_trade.strategies.cover.cover_ema_bullish_crossover import CoverEmaBullishCrossover
     from mike_trade.strategies.cover.cover_supertrend_bullish_flip import CoverSupertrendBullishFlip
     from mike_trade.strategies.cover.cover_donchian_breakout import CoverDonchianBreakout
@@ -690,6 +723,21 @@ def _research_registry() -> Any:
         ShortEmaBearishCrossover,
         ShortSupertrendBearishFlip,
         ShortDonchianBreakdown,
+        ShortSmaBearishCrossover,
+        ShortMacdBearishCrossover,
+        ShortMacdZeroLineBreakdown,
+        ShortRsiCenterlineBreakdown,
+        ShortDmiBearishCrossover,
+        ShortAroonBearishReversal,
+        ShortParabolicSarBearishReversal,
+        ShortIchimokuBearishBreakdown,
+        ShortOpeningRangeBreakdown,
+        ShortVwapBreakdown,
+        ShortBollingerLowerBandBreakdown,
+        ShortKeltnerChannelBreakdown,
+        ShortObvBreakdown,
+        ShortCciZeroLineBreakdown,
+        ShortAdxBearishTrendConfirmation,
         CoverEmaBullishCrossover,
         CoverSupertrendBullishFlip,
         CoverDonchianBreakout,
