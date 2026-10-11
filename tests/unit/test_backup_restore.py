@@ -154,7 +154,7 @@ def test_manifest_contents(tmp_path: Path) -> None:
     assert manifest.sha256 == _sha256(Path(manifest.backup_path))
     assert payload["sha256"] == manifest.sha256
     assert manifest.size_bytes == Path(manifest.backup_path).stat().st_size
-    assert manifest.schema_version == 1
+    assert manifest.schema_version == 2
 
 
 def test_byte_flip_detected_by_verify(tmp_path: Path) -> None:

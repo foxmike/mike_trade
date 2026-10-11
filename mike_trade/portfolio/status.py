@@ -104,6 +104,8 @@ class SymbolTradingStatus:
     last_transition_reason: str
     updated_at: datetime
     stale: bool
+    #: "LONG" or "SHORT": the direction of the cycle's position (or entry in flight).
+    direction: str = "LONG"
 
     def to_json_dict(self) -> dict[str, Any]:
         """Return a JSON-compatible mapping, retaining exact Decimal strings."""
@@ -202,6 +204,7 @@ def build_symbol_status(
         last_transition_reason=cycle.last_transition_reason,
         updated_at=updated_at,
         stale=stale,
+        direction=cycle.direction.value,
     )
 
 
