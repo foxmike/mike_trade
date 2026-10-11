@@ -75,9 +75,11 @@ def run(
     capital: str = "100000",
     result_dir: Path,
     assumptions: ExecutionAssumptions | None = None,
+    registry=None,
+    bar_events=None,
 ) -> BacktestResult:
     clock = ReplayClock(OPEN)
-    feed = HistoricalReplayFeed(events(bars), PROV, clock=clock, seed=3)
+    feed = HistoricalReplayFeed(bar_events or events(bars), PROV, clock=clock, seed=3)
     sim = HistoricalExecutionSimulator(feed, clock, assumptions or ExecutionAssumptions())
 
     def factory(evaluation, context, request):  # noqa: ANN001
@@ -103,7 +105,7 @@ def run(
         starting_capital=D(capital), strategy_ids=strategy_ids, strategy_params=params,
         context_history_bars=50, result_directory=result_dir,
     )
-    runner = BacktestRunner(build_bidirectional_registry(), feed, clock, sim,
+    runner = BacktestRunner(registry or build_bidirectional_registry(), feed, clock, sim,
                             intent_factory=factory)
     return asyncio.run(runner.run(request))
 
@@ -374,3 +376,71 @@ def test_a_long_stop_still_sits_below_entry_and_is_unchanged(tmp_path):
                  config=FIXED, result_dir=tmp_path)
     assert result.protection_events[0]["stop_price"] == D("98.00")
     assert only(result, "SELL")["price"] == D("98") and "direction" not in only(result, "SELL")
+
+
+# ------------------------------------------------ the REAL strategies, end to end
+
+
+def _real_registry():
+    from mike_trade.strategies.cover.cover_ema_bullish_crossover import CoverEmaBullishCrossover
+    from mike_trade.strategies.registry import StrategyRegistry
+    from mike_trade.strategies.short.short_ema_bearish_crossover import ShortEmaBearishCrossover
+
+    registry = StrategyRegistry()
+    registry.register(ShortEmaBearishCrossover)
+    registry.register(CoverEmaBullishCrossover)
+    return registry
+
+
+def _wave(n: int = 400) -> list[Bar]:
+    import math
+
+    closes = [D(f"{100 + 4 * math.sin(2 * math.pi * i / 60):.2f}") for i in range(n)]
+    return [(str(c), str(c), str(c), str(c)) for c in closes]
+
+
+REAL_PARAMS = {
+    "short_ema_bearish_crossover": {"fast_period": 3, "slow_period": 8},
+    "cover_ema_bullish_crossover": {"fast_period": 3, "slow_period": 8},
+}
+REAL_IDS = ("short_ema_bearish_crossover", "cover_ema_bullish_crossover")
+
+
+def test_the_real_short_and_cover_strategies_trade_repeated_short_round_trips(tmp_path):
+    result = run(_wave(), REAL_IDS, REAL_PARAMS, config=SHORT_ON, registry=_real_registry(),
+                 result_dir=tmp_path)
+    order = sides(result)
+    assert len(order) >= 4 and set(order) == {"SELL_SHORT", "BUY_TO_COVER"}
+    # strictly alternating entry / exit, always a full-position cover, never a long
+    assert order[0::2] == ["SELL_SHORT"] * len(order[0::2])
+    assert order[1::2] == ["BUY_TO_COVER"] * len(order[1::2])
+    shorts, covers_ = fills(result, "SELL_SHORT"), fills(result, "BUY_TO_COVER")
+    for opened, closed in zip(shorts, covers_):
+        assert opened["quantity"] == closed["quantity"] and opened["time"] < closed["time"]
+    metrics = compute_metrics(result, starting_capital=D("100000"), bootstrap_samples=0)
+    assert {t["direction"] for t in metrics.trades} == {"SHORT"}
+    assert result.equity_curve[-1]["equity"] == D("100000") + sum(
+        (t["pnl"] for t in metrics.trades), D(0))   # flat at the end: cash == equity == capital + P&L
+
+
+def test_the_real_short_run_is_deterministic_and_authorization_gated(tmp_path):
+    first = run(_wave(), REAL_IDS, REAL_PARAMS, config=SHORT_ON, registry=_real_registry(),
+                result_dir=tmp_path / "a")
+    again = run(_wave(), REAL_IDS, REAL_PARAMS, config=SHORT_ON, registry=_real_registry(),
+                result_dir=tmp_path / "b")
+    # ``results_hash`` embeds a per-execution UUID; determinism is the content-addressed run id
+    # plus every recorded ledger being identical
+    assert first.run_id == again.run_id
+    for name in ("fills", "intents", "decisions", "cycles", "equity_curve", "evaluations",
+                 "protection_events"):
+        assert getattr(first, name) == getattr(again, name), name
+    gated = run(_wave(), REAL_IDS, REAL_PARAMS, registry=_real_registry(),
+                result_dir=tmp_path / "c")  # no short_selling_enabled
+    assert gated.fills == ()
+
+
+def test_a_real_cover_strategy_never_covers_before_a_short_exists(tmp_path):
+    result = run(_wave(), ("cover_ema_bullish_crossover",),
+                 {"cover_ema_bullish_crossover": {"fast_period": 3, "slow_period": 8}},
+                 config=SHORT_ON, registry=_real_registry(), result_dir=tmp_path)
+    assert result.fills == ()  # its crossovers fire constantly but a cover needs a short held
