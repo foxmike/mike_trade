@@ -5,7 +5,7 @@
 
 import { useMemo, useState } from "react";
 import { useNavigate } from "react-router";
-import { useResearchRuns } from "../../state/queries";
+import { useResearchDatasets, useResearchRuns } from "../../state/queries";
 import {
   EmptyState,
   ErrorBanner,
@@ -105,6 +105,7 @@ export default function ResearchPage() {
   );
 
   const runsQuery = useResearchRuns(appliedQuery);
+  const datasetsQuery = useResearchDatasets();
   const options = useRunFilterOptions(runsQuery.data?.runs);
 
   const patch = (partial: Partial<RunQuery>) =>
@@ -132,6 +133,42 @@ export default function ResearchPage() {
         title="Research Lab"
         subtitle="Backtest run explorer — historical datasets, backtest runs and the live watchlist are kept separate"
       />
+
+      {datasetsQuery.data ? (
+        <div className="panel">
+          <h2>Historical dataset inventory</h2>
+          <dl className="kv-grid kv-compact">
+            <div><dt>Universe</dt><dd>{datasetsQuery.data.universe_id}</dd></div>
+            <div><dt>Universe symbols</dt><dd>{datasetsQuery.data.total_universe_symbols}</dd></div>
+            <div><dt>Datasets available</dt><dd>{datasetsQuery.data.available_dataset_symbols}</dd></div>
+            <div><dt>Datasets missing</dt><dd>{datasetsQuery.data.missing_dataset_symbols}</dd></div>
+            <div><dt>Symbols backtested</dt><dd>{datasetsQuery.data.backtested_symbols}</dd></div>
+          </dl>
+          <TechnicalDetails summary="Inspect universe availability">
+            <div className="table-wrap">
+              <table className="data-table">
+                <thead><tr><th>Symbol</th><th>Dataset</th><th>Backtests</th><th>Status</th></tr></thead>
+                <tbody>
+                  {datasetsQuery.data.symbols.map((member) => (
+                    <tr key={member.symbol}>
+                      <td className="cell-symbol">{member.symbol}</td>
+                      <td>{member.dataset_id ?? "Missing"}</td>
+                      <td>{member.backtest_run_count}</td>
+                      <td>{member.status}</td>
+                    </tr>
+                  ))}
+                </tbody>
+              </table>
+            </div>
+          </TechnicalDetails>
+        </div>
+      ) : null}
+      {datasetsQuery.isError ? (
+        <ErrorBanner
+          title="Dataset inventory unavailable"
+          message={datasetsQuery.error instanceof Error ? datasetsQuery.error.message : "Dataset inventory load failed"}
+        />
+      ) : null}
 
       <div className="filter-bar">
         <label>
@@ -290,7 +327,7 @@ export default function ResearchPage() {
               {flavor === "v1"
                 ? "Served from the existing /api/research endpoints; filters, sorting and pagination are applied client-side over the complete run list."
                 : "Served from the new /api/v2/research endpoints with server-side pagination and filtering."}
-              {" "}Dataset inventory and dataset verification arrive with the research-indexing backend workstream.
+              {" "}The dataset inventory above is independent of the completed-run catalog.
             </p>
           </TechnicalDetails>
         </div>

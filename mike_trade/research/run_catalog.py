@@ -77,6 +77,7 @@ class ResearchRunQuery:
     max_drawdown: float | None = None
     window_start: datetime | None = None
     window_end: datetime | None = None
+    execution_date: str | None = None
     sort_by: str = "execution_at"
     sort_order: str = "desc"
 
@@ -575,6 +576,10 @@ class ResearchRunCatalog:
                     where_clauses.append("run_purpose = ?")
                     params.append(query.run_purpose.strip())
 
+                if query.stop_policy:
+                    where_clauses.append("lower(stop_configuration_json) LIKE ?")
+                    params.append(f"%{query.stop_policy.strip().lower()}%")
+
                 if query.status:
                     where_clauses.append("status = ?")
                     params.append(query.status.strip())
@@ -603,6 +608,10 @@ class ResearchRunCatalog:
                     where_clauses.append("window_end <= ?")
                     params.append(query.window_end.astimezone(UTC))
 
+                if query.execution_date:
+                    where_clauses.append("CAST(execution_at AS DATE) = CAST(? AS DATE)")
+                    params.append(query.execution_date.strip())
+
                 if query.search:
                     search_term = f"%{query.search.strip().lower()}%"
                     where_clauses.append("""(
@@ -628,8 +637,10 @@ class ResearchRunCatalog:
                     "net_pnl": "net_pnl_num",
                     "return_percent": "return_percent_num",
                     "win_rate": "win_rate_num",
+                    "profit_factor": "profit_factor_num",
                     "max_drawdown": "max_drawdown_num",
                     "trade_count": "completed_trade_count",
+                    "symbols": "array_to_string(symbols, ' ')",
                 }
                 order_col = sort_columns.get(query.sort_by, "execution_at")
                 order_dir = "DESC" if query.sort_order.lower() == "desc" else "ASC"
@@ -770,6 +781,11 @@ class ResearchRunCatalog:
             realized = None
             if bp is not None and sp is not None and sq > ZERO:
                 realized = (sp - bp) * sq
+            realized_return = (
+                realized / bn * Decimal("100")
+                if realized is not None and bn is not None and bn > ZERO
+                else None
+            )
 
             records.append({
                 "trade_id": cycle_id,
@@ -788,6 +804,9 @@ class ResearchRunCatalog:
                 "entry_notional": str(bn) if bn is not None else None,
                 "exit_notional": str(sn) if sn is not None else None,
                 "realized_pnl": str(realized) if realized is not None else None,
+                "realized_return_percent": (
+                    str(realized_return) if realized_return is not None else None
+                ),
                 "position_status": (
                     "CLOSED" if closed else ("PARTIALLY_CLOSED" if sq > ZERO else "OPEN")
                 ),

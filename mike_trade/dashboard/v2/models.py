@@ -155,6 +155,8 @@ class ResearchTradeListResponse(_V2Model):
     total: int
     total_pages: int
     items: list[ResearchTradeItemResponse]
+    available_entry_strategies: list[str] = Field(default_factory=list)
+    available_exit_reasons: list[str] = Field(default_factory=list)
 
 
 class ResearchCompareRequest(_V2Model):

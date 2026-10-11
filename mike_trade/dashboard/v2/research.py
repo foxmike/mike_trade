@@ -56,12 +56,15 @@ def create_research_v2_router(
     @router.get("/datasets", response_model=UniverseResponse)
     def get_datasets() -> UniverseResponse:
         """Return inventory of the 100-stock universe and Parquet snapshots."""
+        # The inventory is independently navigable, so it must initialize the run
+        # index even when the operator has not opened the run list first.
+        run_catalog.query_runs(ResearchRunQuery(page=1, page_size=1))
         # Query backtest run counts per symbol from DuckDB
         con = run_catalog._get_connection()
         try:
             rows = con.execute("""
-                SELECT unnest(symbols) as sym, count(*) as cnt, max(selection_id) as last_run
-                FROM research_runs_index
+                SELECT sym, count(*) as cnt, max(selection_id) as last_run
+                FROM research_runs_index, UNNEST(symbols) AS expanded(sym)
                 GROUP BY sym
             """).fetchall()
             backtested_counts = {str(r[0]).upper(): int(r[1]) for r in rows}
@@ -132,9 +135,10 @@ def create_research_v2_router(
         max_drawdown: float | None = Query(None, description="Maximum drawdown %"),
         window_start: str | None = Query(None, description="Historical window start filter"),
         window_end: str | None = Query(None, description="Historical window end filter"),
+        execution_date: str | None = Query(None, description="Execution date (YYYY-MM-DD)"),
         sort_by: str = Query(
             "execution_at",
-            pattern="^(execution_at|created_at|net_pnl|return_percent|win_rate|max_drawdown|trade_count)$",
+            pattern="^(execution_at|created_at|net_pnl|return_percent|win_rate|profit_factor|max_drawdown|trade_count|symbols)$",
         ),
         sort_order: str = Query("desc", pattern="^(asc|desc)$"),
     ) -> ResearchRunListResponse:
@@ -159,6 +163,7 @@ def create_research_v2_router(
             max_drawdown=max_drawdown,
             window_start=_parse_filter_time(window_start),
             window_end=_parse_filter_time(window_end),
+            execution_date=execution_date,
             sort_by=sort_by,
             sort_order=sort_order,
         )
@@ -285,7 +290,14 @@ def create_research_v2_router(
         position_status: str | None = Query(None, description="Filter by status (CLOSED, OPEN)"),
         entry_strategy: str | None = Query(None, description="Filter by entry strategy"),
         exit_strategy: str | None = Query(None, description="Filter by exit strategy"),
-        sort_by: str = Query("entry_timestamp", description="Sort column"),
+        exit_filter: str | None = Query(None, description="Filter by exit strategy or reason"),
+        outcome: str | None = Query(None, pattern="^(WIN|LOSS)$"),
+        date_from: str | None = Query(None, description="Minimum entry timestamp"),
+        date_to: str | None = Query(None, description="Maximum entry timestamp"),
+        sort_by: str = Query(
+            "entry_timestamp",
+            pattern="^(entry_timestamp|exit_timestamp|symbol|realized_pnl|holding_duration)$",
+        ),
         sort_order: str = Query("desc", pattern="^(asc|desc)$"),
     ) -> ResearchTradeListResponse:
         """Return server-side paginated trade records for a run with recovered attribution."""
@@ -314,6 +326,34 @@ def create_research_v2_router(
             strat = exit_strategy.strip()
             filtered = [t for t in filtered if t.get("exit_strategy_id") == strat]
 
+        if exit_filter:
+            value = exit_filter.strip()
+            filtered = [
+                t for t in filtered
+                if t.get("exit_strategy_id") == value or t.get("exit_reason") == value
+            ]
+
+        if outcome:
+            filtered = [
+                t
+                for t in filtered
+                if t.get("realized_pnl") is not None
+                and (
+                    Decimal(t["realized_pnl"]) > 0
+                    if outcome == "WIN"
+                    else Decimal(t["realized_pnl"]) < 0
+                )
+            ]
+
+        if date_from:
+            filtered = [
+                t for t in filtered if (t.get("entry_timestamp") or "") >= date_from
+            ]
+        if date_to:
+            filtered = [
+                t for t in filtered if (t.get("entry_timestamp") or "") <= date_to
+            ]
+
         reverse = sort_order.lower() == "desc"
         if sort_by == "entry_timestamp":
             filtered.sort(key=lambda t: t.get("entry_timestamp") or "", reverse=reverse)
@@ -321,6 +361,18 @@ def create_research_v2_router(
             filtered.sort(key=lambda t: t.get("exit_timestamp") or "", reverse=reverse)
         elif sort_by == "realized_pnl":
             filtered.sort(key=lambda t: Decimal(t.get("realized_pnl") or "0"), reverse=reverse)
+        elif sort_by == "symbol":
+            filtered.sort(key=lambda t: t.get("symbol") or "", reverse=reverse)
+        elif sort_by == "holding_duration":
+            def holding_seconds(trade: dict[str, Any]) -> float:
+                opened = _parse_filter_time(trade.get("entry_timestamp"))
+                closed = _parse_filter_time(trade.get("exit_timestamp"))
+                return (closed - opened).total_seconds() if opened and closed else -1.0
+
+            filtered.sort(
+                key=holding_seconds,
+                reverse=reverse,
+            )
 
         total = len(filtered)
         limit = max(1, min(500, page_size))
@@ -339,6 +391,12 @@ def create_research_v2_router(
             total=total,
             total_pages=total_pages,
             items=[ResearchTradeItemResponse(**t) for t in paginated],
+            available_entry_strategies=sorted(
+                {str(t["entry_strategy_id"]) for t in trades if t.get("entry_strategy_id")}
+            ),
+            available_exit_reasons=sorted(
+                {str(t["exit_reason"]) for t in trades if t.get("exit_reason")}
+            ),
         )
 
     @router.get("/runs/{run_id}/trades/{trade_id}")
