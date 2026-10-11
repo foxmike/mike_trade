@@ -288,6 +288,8 @@ from mike_trade.strategies.buy.relative_volume_momentum import (
 from mike_trade.strategies.buy.moving_average_compression import (
     MovingAverageCompressionBuy,
 )
+from mike_trade.strategies.buy.momentum_continuation import MomentumContinuationBuy
+from mike_trade.strategies.buy.rsi_momentum import RsiMomentumBuy
 from mike_trade.strategies.indicators.core import VWAPCalculator
 from mike_trade.strategies.presets.pairs import resolve_pair_preset
 from mike_trade.strategies.registry import StrategyRegistry
@@ -2784,6 +2786,8 @@ def build_runtime(
         MovingAverageCompressionBuy,
         GapExhaustionBuy,
         BullPennantBreakoutBuy,
+        MomentumContinuationBuy,
+        RsiMomentumBuy,
         AroonBearishReversalSell,
         CciZeroLineBreakdownSell,
         DmiBearishCrossoverSell,
