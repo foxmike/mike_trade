@@ -21,8 +21,10 @@ Policy (first valid exit, no voting)
   candidate is REJECTED as superseded (``SUPERSEDED_BY_HIGHER_PRIORITY`` when
   the winner has a strictly better priority, ``SUPERSEDED_BY_TIE_BREAK`` when
   the priorities are equal).
-* A flat, unmanaged (or merely adopted), or non-long position selects nothing;
-  a SELL never becomes a short or an opposite-side order.
+* A flat or unmanaged (or merely adopted) position selects nothing.  A strategy SELL only
+  ever closes a LONG and a strategy COVER only ever closes a SHORT (``NOT_LONG`` /
+  ``NOT_SHORT`` otherwise); neither becomes the opposite position or an opposite-side order.
+  Non-strategy exits (stop, manual, risk, forced) close either direction.
 * Pending exit: ``pending_exit_source`` names the source of an exit that is
   already working (including a broker-held stop fill in progress). Any
   candidate that is not of strictly higher priority than it is rejected with
@@ -36,12 +38,13 @@ Policy (first valid exit, no voting)
   pass the signal ids it has already seen as ``seen_signal_ids``.
 
 Entry arbitration (:func:`arbitrate_entry_decisions`) is the BUY-side
-counterpart: any number of configured BUY strategies may signal for one symbol
-on one tick, and at most one entry is selected. The tie-break is the stable
-``(completed-bar timestamp, strategy_id, signal_id)`` order, independent of
-configuration or arrival order. A held position or an entry order that is still
-working rejects every candidate, so simultaneous BUY signals can neither
-duplicate a purchase nor scale an existing position. The operational lifecycle
+counterpart: any number of configured BUY *and SHORT* strategies may signal for one
+symbol on one tick, and at most one entry (of one direction) is selected. The tie-break is
+the stable ``(completed-bar timestamp, direction rank, strategy_id, signal_id)`` order,
+independent of configuration or arrival order; at an equal bar time a LONG entry ranks
+before a SHORT entry, so both directions are never authorized together. A held position
+(either direction) or an entry order that is still working rejects every candidate, so
+simultaneous signals can neither duplicate an entry, scale a position nor reverse one. The operational lifecycle
 and the historical backtester both call these two pure functions.
 """
 
@@ -96,6 +99,7 @@ class DecisionReason(Enum):
     POSITION_FLAT = "POSITION_FLAT"
     NOT_MANAGED = "NOT_MANAGED"
     NOT_LONG = "NOT_LONG"
+    NOT_SHORT = "NOT_SHORT"
     SYMBOL_MISMATCH = "SYMBOL_MISMATCH"
     CYCLE_MISMATCH = "CYCLE_MISMATCH"
     DUPLICATE_SIGNAL = "DUPLICATE_SIGNAL"
@@ -156,7 +160,7 @@ class ExitCandidate:
             object.__setattr__(self, "strategy_id", _text(self.strategy_id, "strategy_id"))
             object.__setattr__(self, "version", _text(self.version, "version"))
         elif self.strategy_id is not None or self.version is not None:
-            raise ValueError("strategy_id/version are only valid for STRATEGY_SELL")
+            raise ValueError("strategy_id/version are only valid for strategy exits")
         if self.position_cycle_id is not None:
             object.__setattr__(
                 self, "position_cycle_id", _text(self.position_cycle_id, "position_cycle_id")
@@ -329,7 +333,7 @@ def arbitrate_exit_decisions(
     evaluation_time: datetime,
     minimum_hold: timedelta = timedelta(0),
     entry_filled_at: datetime | None = None,
-    direction: PositionDirection = PositionDirection.LONG,
+    direction: PositionDirection | None = None,
     pending_exit_source: ExitSource | None = None,
     seen_signal_ids: Collection[str] = frozenset(),
 ) -> ArbitrationResult:
@@ -340,7 +344,8 @@ def arbitrate_exit_decisions(
     required whenever a STRATEGY_SELL candidate is present and ``minimum_hold``
     is positive. ``pending_exit_source`` is the source of an exit already in
     flight, if any. ``seen_signal_ids`` are ids already consumed on earlier
-    ticks (see ``signals.rearm``).
+    ticks (see ``signals.rearm``).  ``direction`` is optional: when given it names the
+    direction of the exit role being arbitrated and must equal the position's direction.
     """
     symbol = _text(symbol, "symbol").upper()
     evaluated_at = _utc(evaluation_time, "evaluation_time")
@@ -348,7 +353,7 @@ def arbitrate_exit_decisions(
         raise ValueError("minimum_hold must be a non-negative timedelta")
     if position is not None and not isinstance(position, Position):
         raise ValueError("position must be a Position or None")
-    if not isinstance(direction, PositionDirection):
+    if direction is not None and not isinstance(direction, PositionDirection):
         raise ValueError("direction must be PositionDirection")
     if pending_exit_source is not None and not isinstance(pending_exit_source, ExitSource):
         raise ValueError("pending_exit_source must be ExitSource or None")
@@ -376,8 +381,12 @@ def arbitrate_exit_decisions(
             raise ValueError("position symbol does not match symbol")
         if position.management is not ManagementStatus.MANAGED or position.cycle_id is None:
             position_reasons.append(DecisionReason.NOT_MANAGED)
-        if direction is not PositionDirection.LONG:
-            position_reasons.append(DecisionReason.NOT_LONG)
+        if direction is not None and direction is not position.direction:
+            position_reasons.append(
+                DecisionReason.NOT_LONG
+                if direction is PositionDirection.LONG
+                else DecisionReason.NOT_SHORT
+            )
 
     seen = set(seen_signal_ids)
     # (candidate, reasons) in tie-break order; empty reasons means valid.
@@ -392,6 +401,18 @@ def arbitrate_exit_decisions(
             and candidate.position_cycle_id != position.cycle_id
         ):
             reasons.append(DecisionReason.CYCLE_MISMATCH)
+        if position is not None:
+            # A SELL strategy never closes a short; a COVER strategy never closes a long.
+            if (
+                candidate.source is ExitSource.STRATEGY_SELL
+                and position.direction is not PositionDirection.LONG
+            ):
+                reasons.append(DecisionReason.NOT_LONG)
+            elif (
+                candidate.source is ExitSource.STRATEGY_COVER
+                and position.direction is not PositionDirection.SHORT
+            ):
+                reasons.append(DecisionReason.NOT_SHORT)
         if candidate.signal_id in seen:
             reasons.append(DecisionReason.DUPLICATE_SIGNAL)
         seen.add(candidate.signal_id)
@@ -476,15 +497,18 @@ class EntryDecisionReason(Enum):
 
 @dataclass(frozen=True, slots=True)
 class EntryCandidate:
-    """One BUY strategy signal for a symbol on one tick."""
+    """One BUY (LONG) or SHORT strategy signal for a symbol on one tick."""
 
     signal_id: str
     strategy_id: str
     version: str
     symbol: str
     bar_time: datetime | None = None
+    direction: PositionDirection = PositionDirection.LONG
 
     def __post_init__(self) -> None:
+        if not isinstance(self.direction, PositionDirection):
+            raise ValueError("direction must be PositionDirection")
         object.__setattr__(self, "signal_id", _text(self.signal_id, "signal_id"))
         object.__setattr__(self, "strategy_id", _text(self.strategy_id, "strategy_id"))
         object.__setattr__(self, "version", _text(self.version, "version"))
@@ -492,9 +516,14 @@ class EntryCandidate:
         if self.bar_time is not None:
             object.__setattr__(self, "bar_time", _utc(self.bar_time, "bar_time"))
 
-    def sort_key(self) -> tuple[datetime, str, str]:
-        """Stable tie-break: bar time, strategy_id, signal_id."""
-        return (self.bar_time or _MIN_TIME, self.strategy_id, self.signal_id)
+    def sort_key(self) -> tuple[datetime, int, str, str]:
+        """Stable tie-break: bar time, direction (LONG first), strategy_id, signal_id."""
+        return (
+            self.bar_time or _MIN_TIME,
+            0 if self.direction is PositionDirection.LONG else 1,
+            self.strategy_id,
+            self.signal_id,
+        )
 
 
 @dataclass(frozen=True, slots=True)
@@ -509,11 +538,12 @@ class EntryDecisionRecord:
     reason: EntryDecisionReason
     bar_time: datetime | None
     superseded_by: str | None = None
+    direction: PositionDirection = PositionDirection.LONG
 
     def to_dict(self) -> dict[str, object]:
         return {
             "schema_version": DECISION_SCHEMA_VERSION,
-            "side": "BUY",
+            "side": "BUY" if self.direction is PositionDirection.LONG else "SHORT",
             "signal_id": self.signal_id,
             "strategy_id": self.strategy_id,
             "version": self.version,
@@ -544,9 +574,10 @@ class EntryArbitrationResult:
             raise ValueError("selected must be the SELECTED record, or None")
 
     def to_dict(self) -> dict[str, object]:
+        directions = {record.direction for record in self.records}
         return {
             "schema_version": DECISION_SCHEMA_VERSION,
-            "side": "BUY",
+            "side": "BUY" if directions <= {PositionDirection.LONG} else "ENTRY",
             "symbol": self.symbol,
             "evaluated_at": _iso(self.evaluated_at),
             "selected_signal_id": None if self.selected is None else self.selected.signal_id,
@@ -563,10 +594,10 @@ def arbitrate_entry_decisions(
     entry_pending: bool = False,
     seen_signal_ids: Collection[str] = frozenset(),
 ) -> EntryArbitrationResult:
-    """Select at most one long entry and record every candidate's fate.
+    """Select at most one entry (long or short) and record every candidate's fate.
 
-    ``position_open`` is true when the symbol already holds a managed long (the
-    one-position-per-symbol lifecycle); ``entry_pending`` is true while an
+    ``position_open`` is true when the symbol already holds a managed position of
+    either direction (the one-position-per-symbol lifecycle); ``entry_pending`` is true while an
     earlier entry order is still working. Either rejects every candidate, so
     multiple BUY signals can never duplicate or scale a position. Otherwise the
     first valid candidate in ``EntryCandidate.sort_key`` order is selected and
@@ -608,6 +639,7 @@ def arbitrate_entry_decisions(
             EntryDecisionRecord(
                 candidate.signal_id, candidate.strategy_id, candidate.version,
                 candidate.symbol, outcome, reason, candidate.bar_time, superseded_by,
+                candidate.direction,
             )
         )
     selected = next((r for r in records if r.outcome is DecisionOutcome.SELECTED), None)

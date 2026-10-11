@@ -10,6 +10,7 @@ from decimal import Decimal as D
 import pytest
 
 from mike_trade.domain.protection import ProtectionKind
+from mike_trade.domain.trading import PositionDirection
 from mike_trade.risk.stop_config import normalize_stop_spec, protection_policy_for_entry
 from mike_trade.signals.decisions import (
     DecisionOutcome,
@@ -22,8 +23,9 @@ NOW = datetime(2026, 10, 8, 14, 0, tzinfo=UTC)
 BAR = NOW - timedelta(minutes=1)
 
 
-def cand(strategy: str, *, bar: datetime = BAR, signal: str | None = None, symbol: str = "SPY"):
-    return EntryCandidate(signal or f"sig-{strategy}", strategy, "1.0.0", symbol, bar)
+def cand(strategy: str, *, bar: datetime = BAR, signal: str | None = None, symbol: str = "SPY",
+         direction: PositionDirection = PositionDirection.LONG):
+    return EntryCandidate(signal or f"sig-{strategy}", strategy, "1.0.0", symbol, bar, direction)
 
 
 def arbitrate(candidates, **kw):
@@ -124,3 +126,57 @@ def test_stepped_trailing_resolves_percent_steps_on_the_entry_price():
 def test_invalid_stop_specs_fail_closed(spec):
     with pytest.raises(ValueError):
         normalize_stop_spec(spec)
+
+
+# ------------------------------------------------------------------ BUY vs SHORT
+
+
+def short(strategy: str, **kw):
+    return cand(strategy, direction=PositionDirection.SHORT, **kw)
+
+
+def test_buy_and_short_compete_but_only_one_direction_is_ever_authorized():
+    buy, sht = cand("zeta_buy"), short("alpha_short")
+    for ordering in ([buy, sht], [sht, buy]):
+        result = arbitrate(ordering)
+        selected = [r for r in result.records if r.outcome is DecisionOutcome.SELECTED]
+        assert len(selected) == 1
+        # equal bar time: the LONG entry ranks first even though the SHORT id sorts earlier
+        assert selected[0].strategy_id == "zeta_buy"
+        assert selected[0].direction is PositionDirection.LONG
+        loser = next(r for r in result.records if r.strategy_id == "alpha_short")
+        assert loser.reason is EntryDecisionReason.SUPERSEDED_BY_TIE_BREAK
+        assert result.to_dict()["side"] == "ENTRY"
+
+
+def test_an_earlier_completed_bar_wins_regardless_of_direction():
+    older_short = short("any_short", bar=BAR - timedelta(minutes=1))
+    result = arbitrate([cand("a_buy"), older_short])
+    assert result.selected.strategy_id == "any_short"
+    assert result.selected.direction is PositionDirection.SHORT
+
+
+def test_multiple_short_strategies_select_exactly_one_in_any_input_order():
+    base = [short("short_b"), short("short_a"), short("short_c")]
+    for seed in range(10):
+        shuffled = list(base)
+        random.Random(seed).shuffle(shuffled)
+        result = arbitrate(shuffled)
+        assert result.selected.strategy_id == "short_a"
+        assert sum(r.outcome is DecisionOutcome.SELECTED for r in result.records) == 1
+
+
+@pytest.mark.parametrize("kwargs, reason", [
+    ({"position_open": True}, EntryDecisionReason.POSITION_OPEN),
+    ({"entry_pending": True}, EntryDecisionReason.ENTRY_ALREADY_PENDING),
+])
+def test_a_held_position_or_pending_entry_blocks_every_direction(kwargs, reason):
+    result = arbitrate([cand("a_buy"), short("a_short")], **kwargs)
+    assert result.selected is None
+    assert {r.reason for r in result.records} == {reason}
+
+
+def test_long_only_records_keep_the_legacy_buy_label():
+    assert arbitrate([cand("a_buy")]).to_dict()["side"] == "BUY"
+    assert arbitrate([cand("a_buy")]).to_dict()["records"][0]["side"] == "BUY"
+    assert arbitrate([short("a_short")]).to_dict()["records"][0]["side"] == "SHORT"
