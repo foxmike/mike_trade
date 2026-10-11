@@ -45,7 +45,7 @@ const NAV_ITEMS: NavItem[] = [
   { to: "/research", label: "Research Lab", group: "Research" },
   { to: "/trades", label: "Trade Explorer", group: "Trades" },
   { to: "/health", label: "Health", group: "System" },
-  { to: "/market", label: "Market Monitor", group: "System", planned: true },
+  { to: "/market", label: "Market Monitor", group: "System" },
   { to: "/config", label: "Configuration & Control", group: "System", planned: true },
 ];
 

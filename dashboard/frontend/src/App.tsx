@@ -13,6 +13,7 @@ import TradeInspectionPage from "./features/trades/TradeInspectionPage";
 import SymbolDetailPage from "./features/symbols/SymbolDetailPage";
 import AccountDetailPage from "./features/account/AccountDetailPage";
 import HealthPage from "./features/health/HealthPage";
+import MarketPage from "./features/market/MarketPage";
 import PlannedPage from "./features/placeholder/PlannedPage";
 
 export default function App() {
@@ -30,15 +31,7 @@ export default function App() {
           <Route path="/trades/:tradeId" element={<TradeInspectionPage />} />
           <Route path="/symbols/:symbol" element={<SymbolDetailPage />} />
           <Route path="/health" element={<HealthPage />} />
-          <Route
-            path="/market"
-            element={
-              <PlannedPage
-                title="Market Monitor"
-                description="The five-state market risk monitor (NORMAL / WARNING / CRASH / STABILIZING / RECOVERY) with benchmark ETF metrics and transition history."
-              />
-            }
-          />
+          <Route path="/market" element={<MarketPage />} />
           <Route
             path="/config"
             element={
