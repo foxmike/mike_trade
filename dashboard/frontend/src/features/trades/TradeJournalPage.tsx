@@ -23,7 +23,7 @@ export default function TradeJournalPage() {
   const [filters, setFilters] = useState<TradeFilters>({ ...DEFAULT_TRADE_FILTERS });
 
   // Backtest run selection: explicit ?run= wins, otherwise first run.
-  const runsQuery = useResearchRuns({ page: 1, pageSize: 1000, sort: "execution_at", direction: "desc" });
+  const runsQuery = useResearchRuns({ page: 1, pageSize: 100, sort: "execution_at", direction: "desc" });
   const runs = runsQuery.data?.runs ?? [];
   const runParam = params.get("run");
   const [chosenRun, setChosenRun] = useState<string>("");
@@ -78,7 +78,7 @@ export default function TradeJournalPage() {
     <div className="page page-wide">
       <PageHeader
         title="Trade Explorer"
-        subtitle="Unified trade journal — account cycles and backtest trades · timestamps in America/New_York · interactive charting arrives with the Trade Explorer workstream"
+        subtitle="Unified trade journal — account cycles and backtest trades · timestamps in America/New_York · click any trade for interactive candlestick charting and fill inspection"
       />
 
       <div className="source-switch">
@@ -123,33 +123,42 @@ export default function TradeJournalPage() {
       ) : null}
 
       {source === "account" && selectedAccountId === null ? (
-        <p className="hint">Select an account in the header to browse its trade journal.</p>
-      ) : null}
-
-      <Section
-        title={source === "account" ? `Account trades${accounts.length > 0 ? ` (${selectedAccountId ?? ""})` : ""}` : "Backtest trades"}
-      >
-        <TradeFilterBar
-          filters={filters}
-          onPatch={patchFilter}
-          availableEntryStrategies={list?.available_entry_strategies ?? []}
-          availableExitReasons={list?.available_exit_reasons ?? []}
-        />
-        {error !== null ? (
-          <ErrorBanner
-            title="Trade list unavailable"
-            message={error instanceof Error ? error.message : "Unable to load trades"}
+        <div className="state-block state-empty">
+          <p>No operational account selected.</p>
+          <p className="hint">
+            Select an account in the header to browse its trade journal, or switch to{" "}
+            <button type="button" className="link-button" onClick={() => setSource("backtest")}>
+              Backtest trades
+            </button>{" "}
+            to inspect historical research runs.
+          </p>
+        </div>
+      ) : (
+        <Section
+          title={source === "account" ? `Account trades${accounts.length > 0 ? ` (${selectedAccountId ?? ""})` : ""}` : "Backtest trades"}
+        >
+          <TradeFilterBar
+            filters={filters}
+            onPatch={patchFilter}
+            availableEntryStrategies={list?.available_entry_strategies ?? []}
+            availableExitReasons={list?.available_exit_reasons ?? []}
           />
-        ) : null}
-        <TradesTable
-          list={list}
-          filters={filters}
-          onPatch={patchFilter}
-          loading={loading}
-          emptyMessage="No trades match these filters."
-          onOpen={openTrade}
-        />
-      </Section>
+          {error !== null ? (
+            <ErrorBanner
+              title="Trade list unavailable"
+              message={error instanceof Error ? error.message : "Unable to load trades"}
+            />
+          ) : null}
+          <TradesTable
+            list={list}
+            filters={filters}
+            onPatch={patchFilter}
+            loading={loading}
+            emptyMessage="No trades match these filters."
+            onOpen={openTrade}
+          />
+        </Section>
+      )}
     </div>
   );
 }

@@ -364,7 +364,21 @@ export default function TradeInspectionPage() {
         </div>
       ) : null}
 
-      {query.isPending && !query.isError ? <Loading label="Loading trade inspection…" /> : null}
+      {source === "account" && selectedAccountId === null ? (
+        <div className="state-block state-empty">
+          <p>No operational account selected.</p>
+          <p className="hint">
+            Select an account in the header to inspect this operational trade, or return to{" "}
+            <Link className="link-button" to="/trades">
+              Trade Explorer
+            </Link>.
+          </p>
+        </div>
+      ) : null}
+
+      {query.isPending && !query.isError && !(source === "account" && selectedAccountId === null) ? (
+        <Loading label="Loading trade inspection…" />
+      ) : null}
       {query.isError ? (
         <ErrorBanner
           title="Trade inspection unavailable"

@@ -6,6 +6,7 @@ import hashlib
 import json
 import os
 import threading
+import time
 from collections import OrderedDict
 from dataclasses import dataclass
 from datetime import UTC, datetime
@@ -448,6 +449,7 @@ class ResearchRunCatalog:
             self.catalog_path = Path(catalog_path).resolve()
         self._lock = threading.Lock()
         self._con: duckdb.DuckDBPyConnection | None = None
+        self._last_sync_time: float = 0.0
         self._trade_cache: OrderedDict[
             tuple[str, float, float], list[dict[str, Any]]
         ] = OrderedDict()
@@ -828,11 +830,21 @@ class ResearchRunCatalog:
 
                 return indexed_count
             finally:
+                self._last_sync_time = time.monotonic()
                 self._release(con)
 
     # ------------------------------------------------------------------ querying
 
+    def refresh(self, min_interval_seconds: float = 5.0) -> int:
+        """Explicit throttled incremental refresh to discover newly written research runs."""
+        now = time.monotonic()
+        with self._lock:
+            if now - self._last_sync_time < min_interval_seconds:
+                return 0
+        return self.sync()
+
     def _ensure_indexed(self) -> None:
+        row_count = 0
         with self._lock:
             con = self._get_connection()
             try:
@@ -841,6 +853,10 @@ class ResearchRunCatalog:
                 self._release(con)
         if row_count == 0:
             self.sync()
+        else:
+            now = time.monotonic()
+            if now - self._last_sync_time > 10.0:
+                self.sync()
 
     @staticmethod
     def _build_where(query: ResearchRunQuery) -> tuple[str, list[Any]]:

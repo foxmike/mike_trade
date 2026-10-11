@@ -4,6 +4,7 @@
 import type { TradeFilters, TradeListResponse, TradeRecord } from "../../api/client";
 import { Pagination } from "../../components/ui";
 import { dateTimeEt, money, percent, quantity } from "../../lib/format";
+import "./trades.css";
 
 export const DEFAULT_TRADE_FILTERS: TradeFilters = {
   page: 1,
@@ -140,7 +141,14 @@ export function TradesTable({
                   }}
                 >
                   <td>{trade.entry_timestamp === null ? <span className="unavailable">Unavailable</span> : dateTimeEt(trade.entry_timestamp)}</td>
-                  <td className="cell-symbol">{trade.symbol}</td>
+                  <td className="cell-symbol">
+                    {trade.symbol}
+                    {trade.direction ? (
+                      <span className={`tx-dir ${trade.direction.toUpperCase()}`}>
+                        {trade.direction.toUpperCase()}
+                      </span>
+                    ) : null}
+                  </td>
                   <td>{trade.execution_mode}</td>
                   <td>
                     {trade.entry_strategy_id === null ? (

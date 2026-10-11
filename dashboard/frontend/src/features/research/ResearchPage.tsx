@@ -3,8 +3,11 @@
  * SHADOW watchlist. View, filters, sort and paging are URL state, so Back
  * from an experiment returns to the exact list position. */
 
+import { useState } from "react";
+import { useQueryClient } from "@tanstack/react-query";
 import "./research.css";
 import { PageHeader } from "../../components/ui";
+import { refreshResearchCatalog } from "../../api/research";
 import CompareTab from "./CompareTab";
 import ExplorerTab from "./ExplorerTab";
 import PerformanceTab from "./PerformanceTab";
@@ -14,12 +17,52 @@ import { LAB_VIEWS } from "./urlState";
 
 export default function ResearchPage() {
   const lab = useLabState();
+  const queryClient = useQueryClient();
+  const [refreshing, setRefreshing] = useState(false);
+  const [refreshNotice, setRefreshNotice] = useState<string | null>(null);
+
+  const handleRefresh = async () => {
+    try {
+      setRefreshing(true);
+      const res = await refreshResearchCatalog(true);
+      await queryClient.invalidateQueries({
+        predicate: (query) => {
+          const key = query.queryKey[0];
+          return (
+            typeof key === "string" &&
+            (key.startsWith("lab-") || key.startsWith("research"))
+          );
+        },
+      });
+      setRefreshNotice(`Catalog refreshed (${res.indexed_runs} runs indexed)`);
+      setTimeout(() => setRefreshNotice(null), 4000);
+    } catch (err) {
+      setRefreshNotice(err instanceof Error ? err.message : "Refresh failed");
+      setTimeout(() => setRefreshNotice(null), 5000);
+    } finally {
+      setRefreshing(false);
+    }
+  };
 
   return (
     <div className="page page-wide rl">
       <PageHeader
         title="Research Lab"
         subtitle="Historical backtests and datasets — separate from the live SHADOW watchlist and operational trading"
+        actions={
+          <div style={{ display: "flex", alignItems: "center", gap: "10px" }}>
+            {refreshNotice ? <span className="hint">{refreshNotice}</span> : null}
+            <button
+              type="button"
+              className="button"
+              onClick={() => void handleRefresh()}
+              disabled={refreshing}
+              title="Trigger incremental catalog discovery for newly added research runs"
+            >
+              {refreshing ? "Refreshing…" : "↻ Refresh catalog"}
+            </button>
+          </div>
+        }
       />
       <div className="rl-tabs" role="tablist" aria-label="Research Lab views">
         {LAB_VIEWS.map((view) => (

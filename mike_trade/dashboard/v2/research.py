@@ -158,6 +158,16 @@ def create_research_v2_router(
             duckdb_catalog_available=inv.duckdb_catalog_available,
         )
 
+    @router.get("/refresh")
+    def refresh_catalog(force: bool = False) -> dict[str, Any]:
+        """Trigger incremental refresh of research run index to discover newly completed runs."""
+        count = run_catalog.sync(force=force)
+        return {
+            "status": "ok",
+            "indexed_runs": count,
+            "refreshed_at": datetime.now(UTC).isoformat(),
+        }
+
     @router.get("/runs", response_model=ResearchRunListResponse)
     def list_runs(
         filters: Annotated[dict[str, Any], Depends(_run_filters)],

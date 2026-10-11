@@ -461,5 +461,13 @@ def test_research_api_v2_endpoints(tmp_path: Path) -> None:
     assert len(comp_data["runs"]) == 2
     assert "symbols_union" in comp_data["comparative_metrics"]
 
+    # 6. GET /api/v2/research/refresh
+    resp_refresh = client.get("/api/v2/research/refresh")
+    assert resp_refresh.status_code == 200
+    refresh_data = resp_refresh.json()
+    assert refresh_data["status"] == "ok"
+    assert refresh_data["indexed_runs"] >= 1
+    assert "refreshed_at" in refresh_data
+
     # Nonexistent run 404
     assert client.get("/api/v2/research/runs/nonexistent").status_code == 404

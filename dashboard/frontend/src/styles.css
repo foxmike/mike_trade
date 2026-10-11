@@ -547,11 +547,33 @@ button:disabled { opacity: 0.45; cursor: default; }
 button.active { border-color: var(--accent); background: var(--accent-dim); }
 button:focus-visible, input:focus-visible, select:focus-visible { outline: 2px solid var(--accent); outline-offset: 1px; }
 
-.button {
+a {
+  color: var(--accent);
+  text-decoration: none;
+}
+a:hover {
+  text-decoration: underline;
+}
+
+.button, a.button {
   display: inline-block;
   padding: 5px 12px;
   text-decoration: none;
   background: var(--panel-alt);
+  color: var(--text);
+  border: 1px solid var(--border);
+  border-radius: 6px;
+  font: inherit;
+  font-size: 12.5px;
+  cursor: pointer;
+  box-sizing: border-box;
+}
+
+.button:hover, a.button:hover {
+  background: #202b36;
+  border-color: var(--border-strong);
+  color: var(--text);
+  text-decoration: none;
 }
 
 .link-button {

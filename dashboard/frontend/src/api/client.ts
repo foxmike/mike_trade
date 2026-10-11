@@ -441,6 +441,7 @@ export interface HealthResponse {
 export interface TradeRecord {
   trade_id: string; execution_mode: string; account_id: string; scenario_id: string | null;
   research_run_id: string | null; symbol: string; cycle_id: string;
+  direction?: string | null;
   entry_timestamp: string | null; exit_timestamp: string | null;
   entry_price: string | null; exit_price: string | null; filled_quantity: string;
   exited_quantity: string; open_quantity: string; entry_notional: string | null;

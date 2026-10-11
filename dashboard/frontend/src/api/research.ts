@@ -405,7 +405,7 @@ class V2Catalog implements ResearchCatalog {
   async listRuns(query: RunQuery = {}, signal?: AbortSignal): Promise<RunListResult> {
     const params = runFilterParams(query);
     if (query.page) params.set("page", String(query.page));
-    if (query.pageSize) params.set("page_size", String(query.pageSize));
+    if (query.pageSize) params.set("page_size", String(Math.min(500, Math.max(1, query.pageSize))));
     if (query.sort) params.set("sort_by", query.sort);
     if (query.direction) params.set("sort_order", query.direction);
     const suffix = params.toString();
@@ -430,7 +430,7 @@ class V2Catalog implements ResearchCatalog {
   async listRunTrades(selectionId: string, filters: TradeFilters, signal?: AbortSignal): Promise<TradeListResponse> {
     const params = new URLSearchParams();
     if (filters.page) params.set("page", String(filters.page));
-    if (filters.pageSize) params.set("page_size", String(filters.pageSize));
+    if (filters.pageSize) params.set("page_size", String(Math.min(500, Math.max(1, filters.pageSize))));
     if (filters.symbol) params.set("symbol", filters.symbol);
     if (filters.dateFrom) params.set("date_from", filters.dateFrom);
     if (filters.dateTo) params.set("date_to", filters.dateTo);
@@ -755,7 +755,7 @@ export function getRunJournal(
 ): Promise<JournalResponse> {
   const params = new URLSearchParams();
   if (query.page) params.set("page", String(query.page));
-  if (query.pageSize) params.set("page_size", String(query.pageSize));
+  if (query.pageSize) params.set("page_size", String(Math.min(500, Math.max(1, query.pageSize))));
   if (query.symbol) params.set("symbol", query.symbol);
   if (query.entryStrategy) params.set("entry_strategy", query.entryStrategy);
   if (query.exitReason) params.set("exit_filter", query.exitReason);
@@ -776,5 +776,15 @@ export function compareRunIds(selectionIds: string[], signal?: AbortSignal): Pro
   for (const id of selectionIds) params.append("run_id", id);
   return getJson<CompareResponse>(`/api/v2/research/runs/compare?${params.toString()}`, signal).then(
     (body) => ({ ...body, runs: body.runs.map(normalizeRun) }),
+  );
+}
+
+export function refreshResearchCatalog(
+  force = false,
+  signal?: AbortSignal,
+): Promise<{ status: string; indexed_runs: number; refreshed_at: string }> {
+  return getJson<{ status: string; indexed_runs: number; refreshed_at: string }>(
+    `/api/v2/research/refresh${force ? "?force=true" : ""}`,
+    signal,
   );
 }

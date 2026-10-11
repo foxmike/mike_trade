@@ -5,7 +5,7 @@
  * next poll — the same rule as the previous dashboard. */
 
 import { useEffect, useState } from "react";
-import { NavLink, Outlet, useNavigate } from "react-router";
+import { NavLink, Outlet, useLocation, useNavigate } from "react-router";
 import { useStatus } from "../state/queries";
 import { useSelectedAccount } from "../state/AccountContext";
 import {
@@ -237,8 +237,21 @@ function Header() {
   );
 }
 
+function isAccountRequired(pathname: string): boolean {
+  if (
+    pathname.startsWith("/research") ||
+    pathname.startsWith("/market") ||
+    pathname.startsWith("/trades")
+  ) {
+    return false;
+  }
+  return true;
+}
+
 export default function AppShell() {
   const { selectedAccountId, accountsLoading } = useSelectedAccount();
+  const location = useLocation();
+  const accountRequired = isAccountRequired(location.pathname);
 
   return (
     <div className="console-shell">
@@ -246,12 +259,12 @@ export default function AppShell() {
       <div className="console-main">
         <Header />
         <main className="console-content">
-          {selectedAccountId === null && accountsLoading ? (
+          {accountRequired && selectedAccountId === null && accountsLoading ? (
             <Loading label="Loading accounts…" />
-          ) : selectedAccountId === null ? (
+          ) : accountRequired && selectedAccountId === null ? (
             <div className="state-block state-empty">
               <p>No account selected.</p>
-              <p className="hint">Select an account in the header to begin monitoring.</p>
+              <p className="hint">Select an account in the header to begin monitoring operations.</p>
             </div>
           ) : (
             <Outlet />
