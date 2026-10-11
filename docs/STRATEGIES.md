@@ -2283,3 +2283,41 @@ Supertrend and cumulative OBV/Accumulation-Distribution methods remain deferred 
 their recursive/cumulative continuity is not available to an independent strategy module;
 Ichimoku remains deferred pending explicit displaced-span point-in-time semantics. Support
 Breakdown is already covered by `donchian_lower_channel_exit` and is not duplicated.
+
+## 13. Technical strategy batch 3 (16 BUY)
+
+All methods are long-entry, edge-triggered on completed M1 bars, with the section 8 and 11
+conventions unchanged: adjacent latest/prior bars (a missing minute gives `INSUFFICIENT_DATA`),
+regular session, BUY eligibility, `required_bars(params)` as the exact parameter-specific
+requirement and `spec.warmup_bars` as its value at the defaults. Recursive indicators (EMA,
+Wilder ATR/ADX, KAMA, RSI, MACD, Supertrend) are resumed from the strategy's own persisted
+`indicator_state` via the shared `advance()` mechanism, so their values do not depend on the
+candle window; the calculators added for them live in `indicators/extended.py` (every
+calculator has `snapshot()`/`restore()`), and the finite-window helpers in
+`indicators/windows.py`. Neither module changes the shared indicators. The registered library
+now contains 48 BUY and 24 SELL methods.
+
+| Strategy ID | Category | Exact signal; default bars | Source and interpretation |
+|---|---|---|---|
+| `adx_trend_following` | trend_following | ADX(14) crosses above 25 and +DI > -DI; 29 | Wilder / StockCharts ADX. First ADX = mean of first n DX; a flat window has no DI and DX = 0. |
+| `supertrend` | trend_following | Supertrend turns from down to up (close above the final upper band of hl2 + 3 × ATR10); 11 | Olivier Seban; TradingView `ta.supertrend`. First ATR bar starts down (convention). |
+| `ichimoku_cloud_breakout` | trend_following | Close crosses above max(Span A, Span B) as plotted at the bar; 79 | Hosoda / StockCharts: spans from the 9/26/52 windows ending 26 bars earlier, so no later bar is read. Fixed settings; Chikou unused. |
+| `atr_expansion_breakout` | volatility | close − prior close > 2 × Wilder ATR14 of the prior bar; 15 | Wilder / Kaufman volatility-breakout idea, M1 close-to-close adaptation. |
+| `bollinger_squeeze` | volatility | Close crosses above the upper band (20, 2σ) with BandWidth at its 125-bar low on some bar of the previous 5; 149 | Bollinger's Squeeze. The 125-bar look-back is this strategy's parameter. |
+| `volatility_squeeze_breakout` | breakout | Bollinger(20,2) inside Keltner(SMA20 ± 1.5 × SMA TR) on the prior bar, not on this bar, momentum > 0; 39 | John Carter's TTM Squeeze (StockCharts); momentum = linear-regression value of close − mean(mid-range, SMA). |
+| `ema_pullback` | moving_average | EMA13 > EMA26, EMA26 rising, low ≤ EMA13, close > EMA26, previous low > previous EMA13; 27 | Elder's value zone. |
+| `moving_average_ribbon` | moving_average | min(EMA 3,5,8,10,12,15) crosses above max(EMA 30,35,40,45,50,60); 61 | Guppy Multiple Moving Average. |
+| `adaptive_moving_average` | moving_average | Close crosses above KAMA(10,2,30); 11 | Kaufman; SMA seed per StockCharts. |
+| `keltner_channel_reversion` | mean_reversion | Prior close < lower band and close > lower band (EMA20 − 2 × ATR10); 21 | Raschke EMA/ATR Keltner; fades a lower-band excursion. |
+| `connors_rsi_mean_reversion` | mean_reversion | ConnorsRSI(3,2,100) crosses below 10; 103 | Connors / StockCharts. PercentRank uses the previous 100 changes. No trend filter. |
+| `elder_impulse_system` | momentum | EMA13 and MACD(12,26,9) histogram both rise after a bar where they did not; 36 | Elder's Impulse System (the MACD-histogram momentum candidate). |
+| `ease_of_movement` | volume | SMA14 of Arms' EMV crosses above zero; 16 | Arms / StockCharts. Zero range → 0; zero volume → `INSUFFICIENT_DATA`. |
+| `hammer_reversal` | price_action | Hammer (lower shadow ≥ 2 × body, upper ≤ 10% of range) after a 5-bar decline, then a close above its high; 8 | Nison, shadow limits as TA-Lib; confirmation is mandatory by design. |
+| `higher_high_higher_low` | price_action | Bar that confirms a swing low above the previous one while the last two swing highs rise (2-bar fractals, 50-bar window); 51 | Dow theory / Williams fractals; entry is `strength` bars after the low. |
+| `resistance_breakout` | price_action | Close crosses above the latest confirmed swing high of the prior 50 bars; 51 | Edwards & Magee / Murphy; most recent pivot, not the highest. |
+
+Deferred candidates and the reason for each are recorded in
+[`TECHNICAL_STRATEGY_INVENTORY.md`](TECHNICAL_STRATEGY_INVENTORY.md). Operationally,
+SHADOW's `market_data.warmup_bars` (60 in the example configuration) fetches only that many
+bars at start-up, so the 79-, 103- and 149-bar strategies stay `INSUFFICIENT_DATA` until live
+bars accumulate, unless the setting is raised to cover them.
