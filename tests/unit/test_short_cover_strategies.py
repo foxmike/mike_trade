@@ -89,12 +89,12 @@ def test_roles_are_independent_and_registered() -> None:
     assert [r.value for r in StrategyRole] == ["BUY", "SELL", "SHORT", "COVER"]
     counts = {r: len(REGISTRY.list_strategies(r)) for r in StrategyRole}
     assert counts == {StrategyRole.BUY: 75, StrategyRole.SELL: 40,
-                      StrategyRole.SHORT: 3, StrategyRole.COVER: 3}
-    assert len(REGISTRY.list_strategies()) == 121
+                      StrategyRole.SHORT: 3, StrategyRole.COVER: 18}
+    assert len(REGISTRY.list_strategies()) == 136  # COVER Batch A adds 15 (test_cover_batch_a)
     source = inspect.getsource(app.build_runtime)
     for ids, role, base in ((SHORTS, StrategyRole.SHORT, ShortStrategy),
                             (COVERS, StrategyRole.COVER, CoverStrategy)):
-        assert {c.spec.strategy_id for c in REGISTRY.list_strategies(role)} == set(ids)
+        assert {c.spec.strategy_id for c in REGISTRY.list_strategies(role)} >= set(ids)
         for strategy_id in ids:
             cls = REGISTRY.get(strategy_id)
             assert cls.spec.side is role and issubclass(cls, base)
