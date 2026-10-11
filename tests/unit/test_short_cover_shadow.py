@@ -607,3 +607,88 @@ async def test_shadow_and_backtest_act_on_the_same_signal_bars_for_the_same_cand
     backtest_index = [int((t - OPEN).total_seconds() // 60) for t, _ in backtest_orders]
     assert [side.value for _, side in shadow_orders] == [side for _, side in backtest_orders]
     assert shadow_index == backtest_index and len(shadow_index) >= 4
+
+
+# ------------------------------------------------------------------ accounting report
+
+
+@pytest.mark.parametrize("close_price, gross", [("144", "114"), ("156", "-114")])
+async def test_the_ledger_report_reconciles_with_zero_residual_after_a_short_round_trip(
+    tmp_path, close_price, gross
+):
+    from mike_trade.reporting.accounting import ReportPeriod, build_account_ledger_report
+
+    clock = Clock()
+    runtime, shadow = await start(tmp_path, clock, symbol(
+        shorts=[("short_alpha", {"fire_at": 3})], covers=[("cover_alpha", {"fire_at": 6})]))
+    try:
+        for version in range(1, 5):
+            await step(runtime, clock, version, bid="150", ask="150.1")
+        for version in range(5, 8):
+            await step(runtime, clock, version, bid=close_price, ask=str(D(close_price) + D("0.1")))
+        assert "SPY" not in shadow.account.state.positions
+        report = build_account_ledger_report(
+            shadow.account.scope, ReportPeriod.LIFETIME, clock.value, shadow_ledger=shadow.ledger)
+        state = shadow.account.state
+        # 19 sh: short @150.00, cover @(close + 0.10): gross = (150 - cover) x 19
+        assert state.realized_pnl == (D("150") - (D(close_price) + D("0.1"))) * 19
+        assert report.ending_cash == state.cash
+        assert report.net_realized_pnl == state.realized_pnl
+        assert report.residual == D("0") and report.reconciled is True
+    finally:
+        await runtime.stop()
+
+
+async def test_the_ledger_report_values_an_open_short_as_a_liability_at_the_marks(tmp_path):
+    from mike_trade.reporting.accounting import ReportPeriod, build_account_ledger_report
+
+    clock = Clock()
+    runtime, shadow = await start(tmp_path, clock, symbol(
+        shorts=[("short_alpha", {"fire_at": 3})], covers=[("cover_alpha", {"fire_at": 99})]))
+    try:
+        for version in range(1, 5):
+            await step(runtime, clock, version, bid="150", ask="150.1")
+        marks = {"SPY": D("140")}
+        report = build_account_ledger_report(
+            shadow.account.scope, ReportPeriod.LIFETIME, clock.value,
+            shadow_ledger=shadow.ledger, marks=marks)
+        account = shadow.account
+        assert report.ending_equity == account.equity(marks)      # cash - 19 x 140
+        assert report.ending_equity == D("50000") + (D("150") - D("140")) * 19
+        assert report.residual == D("0") and report.reconciled is True
+        # the proceeds are restricted: reported buying power excludes the locked collateral
+        assert report.account_buying_power == account.state.cash - account.state.restricted_collateral()
+    finally:
+        await runtime.stop()
+
+
+# ------------------------------------------------------------ restrictions apply to both
+
+
+async def test_the_session_entry_cap_is_shared_by_longs_and_shorts(tmp_path):
+    clock = Clock()
+    # the scenario allows 3 entry cycles a session: long, short, long use them all
+    runtime, shadow = await start(tmp_path, clock, symbol(
+        buys=[("buy_alpha", {"fire_at": 3, "fire_every": 10})],
+        sells=[("sell_alpha", {"fire_at": 6, "fire_every": 10})],
+        shorts=[("short_alpha", {"fire_at": 8, "fire_every": 10})],
+        covers=[("cover_alpha", {"fire_at": 10, "fire_every": 10})]))
+    try:
+        refusals = []
+        for version in range(1, 21):  # through the 4th entry attempt (a SHORT at bar 18)
+            actions = await step(runtime, clock, version, seconds=120)
+            refusals += [a for a in actions if a.startswith("ENTRY_REFUSED")]
+        entries = [f for f in fills_of(shadow) if f[0].is_entry]
+        # cycles: BUY@3, SHORT@8, BUY@13, then the 4th entry (SHORT@18) hits the shared cap
+        assert [f[0] for f in entries] == [OrderSide.BUY, OrderSide.SELL_SHORT, OrderSide.BUY]
+        assert shadow.account.state.filled_entry_cycles("SPY", _session_of(clock.value)) == 3
+        assert len(refusals) == 1 and refusals[0].startswith("ENTRY_REFUSED:SHORT:")
+        assert "SPY" not in shadow.account.state.positions
+    finally:
+        await runtime.stop()
+
+
+def _session_of(moment):
+    from mike_trade.brokers.shadow.account import _session_date
+
+    return _session_date(moment)
