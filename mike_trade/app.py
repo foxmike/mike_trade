@@ -55,10 +55,13 @@ from mike_trade.execution.coordinator import (
 )
 from mike_trade.market_data.cache import MarketDataCache, MarketDataUpdate
 from mike_trade.market_data.candles import (
+    Candle,
     CandleBuilder,
     CandleOrigin,
+    CandleStatus,
     CandleTimeframe,
     MinuteBar,
+    PriceBasis,
 )
 from mike_trade.market_data.context import (
     ContextBuilder,
@@ -66,6 +69,7 @@ from mike_trade.market_data.context import (
     IndicatorSpec,
     MarketContext,
 )
+from mike_trade.market_data.session_reference import SessionReferenceTracker
 from mike_trade.observability.logging import configure_logging, get_logger
 from mike_trade.persistence.maintenance import check_integrity, checkpoint
 from mike_trade.persistence.repositories import (
@@ -126,6 +130,9 @@ from mike_trade.strategies.buy.engulfing_candle_reversal import EngulfingCandleR
 from mike_trade.strategies.buy.awesome_oscillator import AwesomeOscillatorBuy
 from mike_trade.strategies.buy.hull_moving_average import HullMovingAverageBuy
 from mike_trade.strategies.buy.high_of_day_momentum import HighOfDayMomentumBuy
+from mike_trade.strategies.buy.gap_and_go import GapAndGoBuy
+from mike_trade.strategies.buy.gap_fill import GapFillBuy
+from mike_trade.strategies.buy.gap_reversal import GapReversalBuy
 from mike_trade.strategies.buy.keltner_channel_breakout import KeltnerChannelBreakoutBuy
 from mike_trade.strategies.buy.linear_regression_trend import LinearRegressionTrendBuy
 from mike_trade.strategies.buy.moving_average_envelope import MovingAverageEnvelopeBuy
@@ -146,6 +153,9 @@ from mike_trade.strategies.buy.opening_range_breakout import OpeningRangeBreakou
 from mike_trade.strategies.buy.opening_range_retest import OpeningRangeRetestBuy
 from mike_trade.strategies.buy.parabolic_sar import ParabolicSarBuy
 from mike_trade.strategies.buy.power_hour_momentum import PowerHourMomentumBuy
+from mike_trade.strategies.buy.previous_close_reclaim import PreviousCloseReclaimBuy
+from mike_trade.strategies.buy.previous_day_high_breakout import PreviousDayHighBreakoutBuy
+from mike_trade.strategies.buy.previous_day_low_reversal import PreviousDayLowReversalBuy
 from mike_trade.strategies.buy.rsi_centerline_crossover import RsiCenterlineCrossoverBuy
 from mike_trade.strategies.buy.rsi_oversold_reversal import RsiOversoldReversalBuy
 from mike_trade.strategies.buy.sma_crossover import SmaCrossoverBuy
@@ -518,6 +528,7 @@ class ProductionMarketData:
             timeframes=(CandleTimeframe.M1,), max_history=500,
             session_open=time(9, 30),
         )
+        self.session_references = SessionReferenceTracker()
         specs = {
             "vwap": IndicatorSpec(
                 CandleTimeframe.M1, VWAPCalculator, IndicatorInput.SESSION_BAR
@@ -532,6 +543,7 @@ class ProductionMarketData:
             clock=clock,
             indicator_specs=specs,
             max_age=max_age,
+            session_references=self.session_references,
         )
         self.running = False
         self.closed = False
@@ -658,7 +670,7 @@ class AlpacaProductionMarketData(ProductionMarketData):
             return {
                 symbol: history.fetch_bars(
                     symbol, "1Min", start, now, feed=self.feed, adjustment="raw"
-                )[-(self.warmup_bars + 1):]
+                )
                 for symbol in self._symbols
             }
 
@@ -667,7 +679,35 @@ class AlpacaProductionMarketData(ProductionMarketData):
         finally:
             client.close()
         for symbol, bars in result.items():
-            for bar in bars:
+            completed_bars = tuple(
+                bar
+                for bar in bars
+                if cast(Any, bar).timestamp + timedelta(minutes=1) <= now
+            )
+            for bar in completed_bars:
+                item = cast(Any, bar)
+                self.session_references.add_bar(
+                    Candle(
+                        symbol=symbol,
+                        timeframe=CandleTimeframe.M1,
+                        start=item.timestamp,
+                        end=item.timestamp + timedelta(minutes=1),
+                        open=item.open,
+                        high=item.high,
+                        low=item.low,
+                        close=item.close,
+                        volume=Decimal(item.volume),
+                        feed_id=item.feed_id,
+                        consolidated=item.feed_id == "sip",
+                        origin=CandleOrigin.HISTORICAL_REST,
+                        price_basis=PriceBasis.RAW,
+                        status=CandleStatus.CLOSED,
+                        trade_count=(
+                            int(item.trade_count) if item.trade_count is not None else None
+                        ),
+                    )
+                )
+            for bar in completed_bars[-(self.warmup_bars + 1):]:
                 item = cast(Any, bar)
                 self.candles.on_minute_bar(
                     MinuteBar(
@@ -789,6 +829,8 @@ class AlpacaProductionMarketData(ProductionMarketData):
             )
         )
         closed = [bar for bar in ingested.closed if bar.timeframe is CandleTimeframe.M1]
+        for bar in closed:
+            self.session_references.add_bar(bar)
         if not closed or self._scheduler is None or self._lifecycle is None:
             return
         latest = closed[-1]
@@ -2234,6 +2276,12 @@ def build_runtime(
         TrendlineBreakoutBuy,
         TriangleBreakoutBuy,
         BullFlagBreakoutBuy,
+        GapAndGoBuy,
+        GapFillBuy,
+        GapReversalBuy,
+        PreviousCloseReclaimBuy,
+        PreviousDayHighBreakoutBuy,
+        PreviousDayLowReversalBuy,
         AroonBearishReversalSell,
         CciZeroLineBreakdownSell,
         DmiBearishCrossoverSell,

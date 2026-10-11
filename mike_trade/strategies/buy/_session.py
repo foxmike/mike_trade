@@ -6,6 +6,7 @@ from datetime import date, datetime, time, timedelta
 from typing import TYPE_CHECKING
 
 from mike_trade.market_data.candles import Candle, CandleTimeframe
+from mike_trade.market_data.session_reference import SessionReference
 from mike_trade.scheduling.calendar import NEW_YORK, Session, session_for
 
 if TYPE_CHECKING:
@@ -14,6 +15,19 @@ if TYPE_CHECKING:
 MINUTE = timedelta(minutes=1)
 SESSION_OPEN = time(9, 30)
 SESSION_CLOSE = time(16, 0)
+
+
+def complete_session_reference(context: MarketContext) -> SessionReference | None:
+    """Return the current/previous session reference only when all prices exist."""
+    reference = context.session_reference
+    if (
+        reference is None
+        or reference.previous is None
+        or reference.current_open is None
+        or context.session_id != reference.current_session_id
+    ):
+        return None
+    return reference
 
 
 def current_session_bars(context: MarketContext) -> tuple[Session, tuple[Candle, ...]] | None:
@@ -41,6 +55,34 @@ def current_session_bars(context: MarketContext) -> tuple[Session, tuple[Candle,
         if bar.start != expected or bar.end != bar.start + MINUTE:
             return None
         expected = bar.end
+    return session, bars
+
+
+def latest_session_bars(
+    context: MarketContext, minimum: int
+) -> tuple[Session, tuple[Candle, ...]] | None:
+    """Return the latest adjacent M1 bars when all belong to the current session."""
+    supplied = context.candles.get(CandleTimeframe.M1, ())
+    if not supplied or len(supplied) < minimum:
+        return None
+    day = supplied[-1].start.astimezone(NEW_YORK).date()
+    try:
+        session = session_for(day)
+    except (TypeError, ValueError):
+        return None
+    bars = tuple(supplied[-minimum:])
+    if (
+        bars[-1] is not supplied[-1]
+        or any(
+            not (session.open_utc <= bar.start and bar.end <= session.close_utc)
+            for bar in bars
+        )
+        or any(
+            prior.end != latest.start
+            for prior, latest in zip(bars, bars[1:], strict=False)
+        )
+    ):
+        return None
     return session, bars
 
 

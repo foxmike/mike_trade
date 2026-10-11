@@ -487,6 +487,9 @@ def _research_registry() -> Any:
     from mike_trade.strategies.buy.awesome_oscillator import AwesomeOscillatorBuy
     from mike_trade.strategies.buy.hull_moving_average import HullMovingAverageBuy
     from mike_trade.strategies.buy.high_of_day_momentum import HighOfDayMomentumBuy
+    from mike_trade.strategies.buy.gap_and_go import GapAndGoBuy
+    from mike_trade.strategies.buy.gap_fill import GapFillBuy
+    from mike_trade.strategies.buy.gap_reversal import GapReversalBuy
     from mike_trade.strategies.buy.keltner_channel_breakout import KeltnerChannelBreakoutBuy
     from mike_trade.strategies.buy.linear_regression_trend import LinearRegressionTrendBuy
     from mike_trade.strategies.buy.moving_average_envelope import MovingAverageEnvelopeBuy
@@ -505,6 +508,9 @@ def _research_registry() -> Any:
     from mike_trade.strategies.buy.opening_range_retest import OpeningRangeRetestBuy
     from mike_trade.strategies.buy.parabolic_sar import ParabolicSarBuy
     from mike_trade.strategies.buy.power_hour_momentum import PowerHourMomentumBuy
+    from mike_trade.strategies.buy.previous_close_reclaim import PreviousCloseReclaimBuy
+    from mike_trade.strategies.buy.previous_day_high_breakout import PreviousDayHighBreakoutBuy
+    from mike_trade.strategies.buy.previous_day_low_reversal import PreviousDayLowReversalBuy
     from mike_trade.strategies.buy.rsi_centerline_crossover import RsiCenterlineCrossoverBuy
     from mike_trade.strategies.buy.rsi_oversold_reversal import RsiOversoldReversalBuy
     from mike_trade.strategies.buy.sma_crossover import SmaCrossoverBuy
@@ -667,6 +673,12 @@ def _research_registry() -> Any:
         TrendlineBreakoutBuy,
         TriangleBreakoutBuy,
         BullFlagBreakoutBuy,
+        GapAndGoBuy,
+        GapFillBuy,
+        GapReversalBuy,
+        PreviousCloseReclaimBuy,
+        PreviousDayHighBreakoutBuy,
+        PreviousDayLowReversalBuy,
         AroonBearishReversalSell,
         CciZeroLineBreakdownSell,
         DmiBearishCrossoverSell,

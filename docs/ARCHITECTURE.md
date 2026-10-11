@@ -165,6 +165,14 @@ execution/broker capability.
    feed provenance (IEX vs SIP), source/receive timestamps, freshness, and
    session flags. IEX provenance is preserved because IEX is not consolidated
    SIP.
+   The same completed RAW M1 stream also feeds a bounded `SessionReferenceTracker`.
+   It publishes the current exchange-session id/open and previous regular-session
+   OHLC through `MarketContext.session_reference` only after every calendar-expected
+   regular-session minute was observed. Premarket/after-hours bars are excluded;
+   missing minutes, missing intervening sessions, mixed feed identities, and partial
+   sessions leave prior OHLC unavailable. Alpaca SHADOW warmup and historical replay
+   use this same tracker, so the point-in-time definition is identical and no strategy
+   reconstructs a prior session from its rolling candle window.
 3. **One internal scheduler.** A single in-engine scheduler fires on completed
    bars during regular hours, enforces entry cutoff and optional
    end-of-day-close (disabled by default), and dispatches due evaluations.

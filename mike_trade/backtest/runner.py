@@ -53,6 +53,7 @@ from mike_trade.market_data.candles import (
     PriceBasis,
 )
 from mike_trade.market_data.context import ContextFreshness, MarketContext
+from mike_trade.market_data.session_reference import SessionReferenceTracker
 from mike_trade.risk.fixed_stop import ALPACA_EQUITY_TICK_RULES
 from mike_trade.risk.stop_config import normalize_stop_spec, protection_policy_for_entry
 from mike_trade.risk.trailing import (
@@ -777,6 +778,7 @@ class BacktestRunner:
             for strategy_id, initial in request.initial_strategy_state.items():
                 state[(symbol, strategy_id)].update(dict(initial))
         vwap_session: dict[str, tuple[str, Decimal, Decimal, Decimal | None]] = {}
+        session_references = SessionReferenceTracker()
         entries_by_session: dict[tuple[str, str], int] = defaultdict(int)
         rsi_values: dict[str, tuple[Decimal | None, Decimal | None]] = {}
 
@@ -1130,6 +1132,7 @@ class BacktestRunner:
                 )
             window[symbol].append(strategy_bar)
             strategy_candles[symbol][CandleTimeframe.M1].append(strategy_bar)
+            session_references.add_bar(strategy_bar)
             # Derive only fully completed, contiguous five-minute buckets aligned
             # to the regular-session open. The current 1m bar is available only
             # at its close, so no developing or future minute can enter the bucket.
@@ -1221,12 +1224,13 @@ class BacktestRunner:
                 provenance.is_consolidated,
                 PriceBasis.RAW,
                 session_status,
-                ev.available_at.astimezone(NEW_YORK).date().isoformat(),
+                session.session_id,
                 freshness,
                 {tf: tuple(bars) for tf, bars in strategy_candles[symbol].items() if bars},
                 {"vwap": latest_vwap, "vwap_prev": prior_vwap,
                  "rsi": rsi_values.get(symbol, (None, None))[0],
                  "rsi_prev": rsi_values.get(symbol, (None, None))[1]},
+                session_reference=session_references.reference(symbol, ev.available_at),
             )
 
             def evaluate(cls: type, record: bool = True) -> StrategyEvaluation | None:
