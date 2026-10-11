@@ -12,8 +12,10 @@
     "dev": "vite --host 127.0.0.1"
   },
   "dependencies": {
+    "@tanstack/react-query": "^5.104.2",
     "react": "19.2.8",
-    "react-dom": "19.2.8"
+    "react-dom": "19.2.8",
+    "react-router": "^8.4.0"
   },
   "devDependencies": {
     "@types/react": "19.2.17",
