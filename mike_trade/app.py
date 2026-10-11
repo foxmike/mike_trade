@@ -277,6 +277,8 @@ from mike_trade.strategies.buy.vwap_band_reversion import VWAPBandReversionBuy
 from mike_trade.strategies.buy.intraday_consolidation_breakout import (
     IntradayConsolidationBreakoutBuy,
 )
+from mike_trade.strategies.buy.momentum_continuation import MomentumContinuationBuy
+from mike_trade.strategies.buy.rsi_momentum import RsiMomentumBuy
 from mike_trade.strategies.indicators.core import VWAPCalculator
 from mike_trade.strategies.presets.pairs import resolve_pair_preset
 from mike_trade.strategies.registry import StrategyRegistry
@@ -2739,6 +2741,8 @@ def build_runtime(
         SupportBounceBuy,
         VWAPBandReversionBuy,
         IntradayConsolidationBreakoutBuy,
+        MomentumContinuationBuy,
+        RsiMomentumBuy,
         AroonBearishReversalSell,
         CciZeroLineBreakdownSell,
         DmiBearishCrossoverSell,

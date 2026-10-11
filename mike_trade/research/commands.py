@@ -641,6 +641,8 @@ def _research_registry() -> Any:
     from mike_trade.strategies.buy.intraday_consolidation_breakout import (
         IntradayConsolidationBreakoutBuy,
     )
+    from mike_trade.strategies.buy.momentum_continuation import MomentumContinuationBuy
+    from mike_trade.strategies.buy.rsi_momentum import RsiMomentumBuy
     from mike_trade.strategies.sell.aroon_bearish_reversal import AroonBearishReversalSell
     from mike_trade.strategies.sell.cci_zero_line_breakdown import CciZeroLineBreakdownSell
     from mike_trade.strategies.sell.cci_bearish_reversal import CciBearishReversalSell
@@ -848,6 +850,8 @@ def _research_registry() -> Any:
         SupportBounceBuy,
         VWAPBandReversionBuy,
         IntradayConsolidationBreakoutBuy,
+        MomentumContinuationBuy,
+        RsiMomentumBuy,
         AroonBearishReversalSell,
         CciZeroLineBreakdownSell,
         DmiBearishCrossoverSell,
