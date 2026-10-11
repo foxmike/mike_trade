@@ -100,16 +100,16 @@ def _make_context(bars: list[Candle]) -> MarketContext:
     )
 
 
-def test_combined_151_strategy_registration_and_distribution() -> None:
-    """Verify that the registry contains exactly 151 strategies with 75 BUY, 40 SELL, 18 SHORT, 18 COVER."""
+def test_combined_171_strategy_registration_and_distribution() -> None:
+    """Verify that the registry contains exactly 171 strategies with 75 BUY, 40 SELL, 28 SHORT, 28 COVER."""
     counts = {role: len(REGISTRY.list_strategies(role)) for role in StrategyRole}
     assert counts == {
         StrategyRole.BUY: 75,
         StrategyRole.SELL: 40,
-        StrategyRole.SHORT: 18,
-        StrategyRole.COVER: 18,
+        StrategyRole.SHORT: 28,
+        StrategyRole.COVER: 28,
     }
-    assert len(REGISTRY.list_strategies()) == 151
+    assert len(REGISTRY.list_strategies()) == 171
 
     # Verify all 30 Batch A strategies are present in registry
     registered_ids = {c.spec.strategy_id for c in REGISTRY.list_strategies()}
@@ -139,7 +139,7 @@ def test_production_build_runtime_registration_has_all_151_strategies() -> None:
 
 
 def test_concurrent_runtime_composition_of_all_shorts_and_covers(tmp_path) -> None:
-    """Verify that all 18 SHORT and 18 COVER strategies can compose together in SHADOW runtime."""
+    """Verify that all 28 SHORT and 28 COVER strategies can compose together in SHADOW runtime."""
     from mike_trade.app import (
         AppSettings,
         ShadowScenarioSettings,
@@ -168,8 +168,8 @@ def test_concurrent_runtime_composition_of_all_shorts_and_covers(tmp_path) -> No
     )
     runtime = build_runtime(settings)
     collections = runtime.lifecycle.collections("SPY")
-    assert len(collections.shorts) == 18
-    assert len(collections.covers) == 18
+    assert len(collections.shorts) == 28
+    assert len(collections.covers) == 28
     assert [b.strategy_id for b in collections.shorts] == sorted(all_shorts)
     assert [b.strategy_id for b in collections.covers] == sorted(all_covers)
 

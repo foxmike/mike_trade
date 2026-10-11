@@ -213,9 +213,9 @@ def test_production_and_research_registration_counts_and_roles() -> None:
         StrategyRole.BUY: 75,
         StrategyRole.SELL: 40,
         StrategyRole.SHORT: 28,
-        StrategyRole.COVER: 18,
+        StrategyRole.COVER: 28,
     }
-    assert len(REGISTRY.list_strategies()) == 161
+    assert len(REGISTRY.list_strategies()) == 171
     source = inspect.getsource(app.build_runtime)
     for strategy_id in BATCH_A:
         cls = REGISTRY.get(strategy_id)

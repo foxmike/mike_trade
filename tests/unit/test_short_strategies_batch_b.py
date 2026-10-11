@@ -208,9 +208,9 @@ def test_registration_and_contract() -> None:
         StrategyRole.BUY: 75,
         StrategyRole.SELL: 40,
         StrategyRole.SHORT: 28,
-        StrategyRole.COVER: 3,
+        StrategyRole.COVER: 28,
     }
-    assert len(REGISTRY.list_strategies()) == 146
+    assert len(REGISTRY.list_strategies()) == 171
     source = inspect.getsource(app.build_runtime)
     for strategy_id in IDS:
         cls = REGISTRY.get(strategy_id)

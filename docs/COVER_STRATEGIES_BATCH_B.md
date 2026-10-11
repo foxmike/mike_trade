@@ -4,7 +4,7 @@ Ten more **COVER** strategies: candlestick, chart-pattern, structure, volume and
 an open short. Like Batch A (`docs/COVER_STRATEGIES_BATCH_A.md`) they extend `CoverStrategy`, declare
 `StrategyRole.COVER`, and only report *"an existing short position should be closed."* They never open
 a long, never start a short, never submit an order and never reverse a position. With Batch B the
-library holds **75 BUY, 40 SELL, 3 SHORT and 28 COVER = 146** strategies. No profitability is claimed;
+library holds **75 BUY, 40 SELL, 28 SHORT and 28 COVER = 171** strategies. No profitability is claimed;
 each rule restates a published or documented definition, mostly reusing the BUY rule it mirrors.
 
 ## What the engine owns (and the strategies do not)
