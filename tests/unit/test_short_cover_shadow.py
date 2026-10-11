@@ -29,7 +29,7 @@ from mike_trade.runtime import ExecutionMode
 
 
 async def start(tmp_path: Path, clock: Clock, settings: dict, *, name="t.sqlite3",
-                cash="50000", short=True, **scenario):
+                cash="50000", short=True, real=False, **scenario):
     config = ShadowScenarioSettings(
         name=SCENARIO, starting_cash=D(cash), per_symbol_budget=D("3000"),
         total_budget=D("20000"), max_entry_cycles_per_session=3, consecutive_loss_limit=3,
@@ -38,7 +38,10 @@ async def start(tmp_path: Path, clock: Clock, settings: dict, *, name="t.sqlite3
     runtime = build_runtime(
         AppSettings(mode=ExecutionMode.SHADOW, db_path=tmp_path / name,
                     shadow_scenarios=(config,), **settings),
-        overrides={"clock": clock, "strategies": build_bidirectional_registry()})
+        # ``real``: use the production registry (the six real SHORT/COVER strategies) instead
+        # of the scripted doubles
+        overrides={"clock": clock} if real
+        else {"clock": clock, "strategies": build_bidirectional_registry()})
     await runtime.start()
     return runtime, runtime.broker.scenarios[SCENARIO]  # type: ignore[attr-defined]
 
@@ -484,3 +487,123 @@ async def test_a_short_its_stop_and_strategy_state_survive_a_restart(tmp_path):
         assert [f[0] for f in fills_of(shadow)] == [OrderSide.SELL_SHORT, OrderSide.BUY_TO_COVER]
     finally:
         await runtime.stop()
+
+
+# ------------------------------------------------ the REAL strategies, end to end (SHADOW)
+
+
+def _wave_closes(n: int = 240) -> list[D]:
+    import math
+
+    return [D(f"{100 + 4 * math.sin(2 * math.pi * i / 60):.2f}") for i in range(n)]
+
+
+def _history_context(closes: list[D], index: int, clock_value, window: int = 60):
+    """A MarketContext whose M1 window holds the closes up to ``index`` (spread 0.10)."""
+    from mike_trade.market_data.candles import (
+        Candle,
+        CandleOrigin,
+        CandleStatus,
+        CandleTimeframe,
+        PriceBasis,
+    )
+    from mike_trade.market_data.context import ContextFreshness, MarketContext, QuoteSnapshot
+    from mike_trade.scheduling.calendar import SessionStatus
+
+    lo = max(0, index + 1 - window)
+    bars = tuple(
+        Candle("SPY", CandleTimeframe.M1, clock_value - timedelta(minutes=index - i + 1),
+               clock_value - timedelta(minutes=index - i), closes[i], closes[i], closes[i],
+               closes[i], D("100"), "iex", False, CandleOrigin.REPLAY, PriceBasis.RAW,
+               CandleStatus.CLOSED)
+        for i in range(lo, index + 1))
+    close = closes[index]
+    return MarketContext(
+        symbol="SPY", as_of=clock_value, version=index + 1, feed_id="iex", consolidated=False,
+        price_basis=PriceBasis.RAW, session_status=SessionStatus.REGULAR,
+        session_id=f"XNYS-{clock_value.date().isoformat()}",
+        freshness=ContextFreshness(clock_value, timedelta(0), timedelta(seconds=90), False, None),
+        candles={CandleTimeframe.M1: bars}, indicators={},
+        latest_quote=QuoteSnapshot("SPY", close - D("0.05"), close + D("0.05"), D("100"),
+                                   D("100"), clock_value, clock_value, "iex"))
+
+
+async def _run_real(tmp_path, name, *, stop=None):
+    clock = Clock()
+    params = {"fast_period": 3, "slow_period": 8}
+    runtime, shadow = await start(tmp_path, clock, symbol(
+        shorts=[("short_ema_bearish_crossover", params)],
+        covers=[("cover_ema_bullish_crossover", params)], stop=stop), name=name, real=True)
+    closes = _wave_closes()
+    submitted = []
+    try:
+        for index in range(len(closes)):
+            clock.value += timedelta(minutes=1)
+            before = set(shadow.account.state.orders)
+            await runtime.lifecycle.process(
+                {"SPY": _history_context(closes, index, clock.value)})
+            # strategy-originated orders only (the engine's own protective stops are excluded)
+            submitted += [(clock.value, shadow.account.state.orders[o].side)
+                          for o in shadow.account.state.orders
+                          if o not in before and shadow.account.state.orders[o].purpose
+                          is not OrderPurpose.PROTECTIVE_STOP]
+        fills = fills_of(shadow)
+        state = shadow.account.state
+        result = (fills, state.cash, state.realized_pnl, dict(state.positions) and True, submitted)
+    finally:
+        await runtime.stop()
+    return result, closes
+
+
+async def test_the_real_strategies_trade_short_round_trips_in_shadow(tmp_path):
+    (fills, cash, realized, still_open, _), _closes = await _run_real(tmp_path, "real.sqlite3")
+    sides_ = [f[0] for f in fills]
+    assert len(sides_) >= 4 and set(sides_) == {OrderSide.SELL_SHORT, OrderSide.BUY_TO_COVER}
+    assert sides_[0::2] == [OrderSide.SELL_SHORT] * len(sides_[0::2])
+    assert sides_[1::2] == [OrderSide.BUY_TO_COVER] * len(sides_[1::2])
+    assert all(a[1] == b[1] for a, b in zip(fills[0::2], fills[1::2]))  # full-position covers
+    assert not still_open or sides_[-1] is OrderSide.SELL_SHORT
+
+
+async def test_the_real_short_run_is_deterministic_in_shadow(tmp_path):
+    (first, *_), _ = await _run_real(tmp_path, "a.sqlite3")
+    (again, *_), _ = await _run_real(tmp_path, "b.sqlite3")
+    assert first == again
+
+
+async def test_shadow_and_backtest_act_on_the_same_signal_bars_for_the_same_candles(tmp_path):
+    """Strategy evaluation is engine independent: the same candles produce the same decisions.
+
+    Execution differs by design (SHADOW fills at the quote, BACKTEST at the next bar open), so
+    only the *bars on which orders are submitted* are compared, not prices or accounts.
+    """
+    import asyncio
+
+    from test_short_cover_engine import (
+        OPEN,
+        REAL_IDS,
+        REAL_PARAMS,
+        SHORT_ON,
+        _real_registry,
+        run,
+    )
+
+    # an inert 40% stop in both engines: only strategy decisions can differ
+    (_fills, _cash, _realized, _open, shadow_orders), closes = await _run_real(
+        tmp_path, "parity.sqlite3", stop={"type": "fixed", "stop_percent": D("40")})
+    bars = [(str(c), str(c), str(c), str(c)) for c in closes]
+    backtest = await asyncio.get_running_loop().run_in_executor(
+        None, lambda: run(
+            bars, REAL_IDS, REAL_PARAMS,
+            # the same limits SHADOW's scenario applies: 3 entries a session, a 60 s minimum hold
+            config={**SHORT_ON, "protective_stop": {"type": "fixed", "stop_percent": "40"},
+                    "max_entry_cycles_per_session": 3, "minimum_hold_seconds": 60},
+            registry=_real_registry(), result_dir=tmp_path / "bt"))
+    backtest_orders = [(row["signal_bar_time"], row["side"]) for row in backtest.intents]
+    # SHADOW submits during the context whose newest completed bar is the signal bar; express
+    # both engines as "index of the signal bar" so their different clocks are comparable
+    start = Clock().value
+    shadow_index = [int((when - start).total_seconds() // 60) - 1 for when, _ in shadow_orders]
+    backtest_index = [int((t - OPEN).total_seconds() // 60) for t, _ in backtest_orders]
+    assert [side.value for _, side in shadow_orders] == [side for _, side in backtest_orders]
+    assert shadow_index == backtest_index and len(shadow_index) >= 4
