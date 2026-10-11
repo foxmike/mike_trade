@@ -8,11 +8,10 @@ from __future__ import annotations
 
 import json
 from collections.abc import Mapping
+from datetime import UTC, datetime
 from pathlib import Path
 from tempfile import NamedTemporaryFile
 from typing import Any, Protocol
-
-from datetime import UTC, datetime
 
 from mike_trade.persistence.schema import to_db_timestamp
 
@@ -146,6 +145,33 @@ class SqliteMarketStatusRepository:
                 "observed_at = excluded.observed_at, details_json = excluded.details_json",
                 (scope_id, status, ts, ts, text),
             )
+            conn.execute(
+                "CREATE TABLE IF NOT EXISTS market_status_transitions ("
+                "account_scope_id TEXT NOT NULL, "
+                "from_state TEXT NOT NULL, "
+                "to_state TEXT NOT NULL, "
+                "transition_at TEXT NOT NULL, "
+                "reason TEXT NOT NULL, "
+                "metrics_json TEXT NOT NULL, "
+                "recorded_at TEXT NOT NULL, "
+                "PRIMARY KEY (account_scope_id, transition_at, from_state, to_state))"
+            )
+            for t in document.get("transitions", []):
+                conn.execute(
+                    "INSERT OR IGNORE INTO market_status_transitions "
+                    "(account_scope_id, from_state, to_state, transition_at, "
+                    "reason, metrics_json, recorded_at) "
+                    "VALUES (?, ?, ?, ?, ?, ?, ?)",
+                    (
+                        scope_id,
+                        t["from_state"],
+                        t["to_state"],
+                        t["timestamp"],
+                        t["reason"],
+                        json.dumps(t.get("metrics_summary", {}), sort_keys=True, default=str),
+                        ts,
+                    ),
+                )
 
         if hasattr(self._session, "unit_of_work"):
             with self._session.unit_of_work() as conn:
@@ -153,3 +179,33 @@ class SqliteMarketStatusRepository:
         else:
             conn = self._connection()
             _execute(conn)
+
+    def load_transitions(self, scope_id: str, limit: int = 100) -> list[dict[str, Any]]:
+        conn = self._connection()
+        try:
+            rows = conn.execute(
+                "SELECT from_state, to_state, transition_at, reason, metrics_json "
+                "FROM market_status_transitions WHERE account_scope_id = ? "
+                "ORDER BY transition_at DESC LIMIT ?",
+                (scope_id, limit),
+            ).fetchall()
+            if rows:
+                return [
+                    {
+                        "from_state": r[0],
+                        "to_state": r[1],
+                        "timestamp": r[2],
+                        "reason": r[3],
+                        "metrics_summary": json.loads(r[4]) if r[4] else {},
+                    }
+                    for r in rows
+                ]
+        except Exception:
+            pass
+
+        doc = self.load(scope_id)
+        if doc and "transitions" in doc:
+            raw_transitions = list(doc["transitions"])
+            raw_transitions.reverse()
+            return raw_transitions[:limit]
+        return []

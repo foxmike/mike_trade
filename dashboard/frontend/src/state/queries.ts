@@ -26,6 +26,18 @@ import {
   type RunQuery,
   type RunListResult,
 } from "../api/research";
+import {
+  getMarketOverview,
+  getMarketBenchmarks,
+  getMarketTransitions,
+  getMarketBars,
+  getMarketConfig,
+  type MarketStatusOverview,
+  type BenchmarkSymbol,
+  type TransitionsList,
+  type MarketBarsResponse,
+  type ThresholdsConfig,
+} from "../api/market";
 
 export const POLL_INTERVAL_MS = 5000;
 
@@ -192,3 +204,56 @@ export function useResearchTradeInspection(
     retry: 1,
   });
 }
+
+export function useMarketOverview(accountId: string | null): UseQueryResult<MarketStatusOverview> {
+  return useQuery({
+    queryKey: ["market-overview", accountId],
+    queryFn: ({ signal }) => getMarketOverview(accountId, signal),
+    refetchInterval: POLL_INTERVAL_MS,
+    retry: 1,
+  });
+}
+
+export function useMarketBenchmarks(accountId: string | null): UseQueryResult<BenchmarkSymbol[]> {
+  return useQuery({
+    queryKey: ["market-benchmarks", accountId],
+    queryFn: ({ signal }) => getMarketBenchmarks(accountId, signal),
+    refetchInterval: POLL_INTERVAL_MS,
+    retry: 1,
+  });
+}
+
+export function useMarketTransitions(
+  accountId: string | null,
+  limit: number = 50,
+): UseQueryResult<TransitionsList> {
+  return useQuery({
+    queryKey: ["market-transitions", accountId, limit],
+    queryFn: ({ signal }) => getMarketTransitions(accountId, limit, signal),
+    refetchInterval: POLL_INTERVAL_MS,
+    retry: 1,
+  });
+}
+
+export function useMarketBars(
+  accountId: string | null,
+  symbol?: string | null,
+  limit: number = 120,
+): UseQueryResult<MarketBarsResponse> {
+  return useQuery({
+    queryKey: ["market-bars", accountId, symbol, limit],
+    queryFn: ({ signal }) => getMarketBars(accountId, symbol, limit, signal),
+    refetchInterval: POLL_INTERVAL_MS,
+    retry: 1,
+  });
+}
+
+export function useMarketConfig(): UseQueryResult<ThresholdsConfig> {
+  return useQuery({
+    queryKey: ["market-config"],
+    queryFn: ({ signal }) => getMarketConfig(signal),
+    staleTime: 60000,
+    retry: 1,
+  });
+}
+
