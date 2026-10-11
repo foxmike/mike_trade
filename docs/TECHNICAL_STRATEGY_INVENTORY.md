@@ -8,17 +8,17 @@ This is the authoritative reconciliation of the original 156 BUY/SELL candidates
 |---|---:|
 | Original BUY candidates | 106 |
 | Original SELL candidates | 50 |
-| Implemented BUY strategies | 31 |
+| Implemented BUY strategies | 37 |
 | Implemented SELL strategies | 15 |
 | Existing equivalents | 38 |
-| Pending candidates | 48 |
-| Deferred candidates | 24 |
+| Pending candidates | 33 |
+| Deferred candidates | 33 |
 
-The registered library contains 48 BUY and 32 SELL strategies after the general BUY and
-SELL batch-3 additions. There are 38 equivalent candidate rows; Volume Surge Breakout maps
-to `momentum_breakout` and Donchian Trend Following to `donchian_channel_breakout`; “RSI
-Reversal” and “RSI Overbought Exit” describe one existing rule, and NR4 uses the NR7
-implementation with period=4.
+The registered library contains 54 BUY and 32 SELL strategies after the general BUY,
+current-session BUY, and SELL batch-3 additions. There are 38 equivalent candidate rows;
+Volume Surge Breakout maps to `momentum_breakout` and Donchian Trend Following to
+`donchian_channel_breakout`; “RSI Reversal” and “RSI Overbought Exit” describe one existing
+rule, and NR4 uses the NR7 implementation with period=4.
 
 ## Candidate records
 
@@ -34,16 +34,16 @@ Each row records the original candidate name, role, original inventory group, su
 | Momentum Ignition | BUY | momentum | technical | momentum | PENDING | — | Source review pending; no candidate-specific source selected. | Candidate only; exact rule, source, overlap, and execution contract require review. |
 | Momentum Continuation | BUY | momentum | technical | momentum | PENDING | — | Source review pending; no candidate-specific source selected. | Candidate only; exact rule, source, overlap, and execution contract require review. |
 | Momentum Pullback | BUY | momentum | technical | momentum | REQUIRES_SOURCE_DEFINITION | — | Source review pending; no candidate-specific source selected. | Batch 3 review: no single published pullback/trigger definition; deferred rather than invented. |
-| High-of-Day Momentum | BUY | momentum | technical | momentum | REQUIRES_SOURCE_DEFINITION | — | Source review pending; no candidate-specific source selected. | Batch 3 review: no published exact rule, and a session high needs the full session's bars, which SHADOW's bounded warmup does not guarantee. |
+| High-of-Day Momentum | BUY | momentum | technical | momentum | IMPLEMENTED | high_of_day_momentum | Warrior Trading, Day Trading Guide, High of Day Momentum: https://media.warriortrading.com/2021/05/05144410/Warrior-Trading-Day-Trading-Guide-v2.pdf | Completed M1 close exceeds every earlier observed high of the same exact regular session; never uses the eventual day high. |
 | MACD Momentum | BUY | momentum | technical | momentum | IMPLEMENTED | elder_impulse_system | Alexander Elder, The New Trading for a Living (Impulse System). | Selected MACD-histogram momentum rule: EMA13 and MACD(12,26,9) histogram both rising after a non-green bar. Distinct from the MACD line crossovers. |
 | RSI Momentum | BUY | momentum | technical | momentum | REQUIRES_SOURCE_DEFINITION | — | Source review pending; no candidate-specific source selected. | Batch 3 review: the only candidate rules are a re-levelled rsi_centerline_crossover or Cardwell range-shift/positive-reversal patterns that need divergence semantics; deferred. |
 | TSI Momentum | BUY | momentum | technical | momentum | PENDING | — | Source review pending; no candidate-specific source selected. | EMA snapshot/restore and advance() now support continuity; exact TSI rule and compound smoothing still need design. |
 | Opening Range Breakout | BUY | breakout | technical | breakout | EXISTING_EQUIVALENT | opening_range_breakout | Existing module: mike_trade/strategies/buy/opening_range_breakout.py | Existing registered method; its source and exact signal are in its strategy module. |
-| Opening Range Retest | BUY | breakout | technical | breakout | REQUIRES_SOURCE_DEFINITION | — | Source review pending; no candidate-specific source selected. | Batch 3 review: no published exact retest tolerance or confirmation; session-opening reference required. |
+| Opening Range Retest | BUY | breakout | technical | breakout | IMPLEMENTED | opening_range_retest | Ninjacators, The Opening Range Strategy Guide: https://cdn.ninjacators.com/wp-content/uploads/20210723201351/The-Opening-Range-Strategy-Guide.pdf | First later retest that trades through the opening-range high and closes back above it after a completed close breakout. |
 | Donchian Channel Breakout | BUY | breakout | technical | breakout | EXISTING_EQUIVALENT | donchian_channel_breakout | Existing module: mike_trade/strategies/buy/donchian_channel_breakout.py | Existing registered method; its source and exact signal are in its strategy module. |
 | Bollinger Band Breakout | BUY | breakout | technical | breakout | IMPLEMENTED | bollinger_band_breakout | John Bollinger official: https://www.bollingerbands.com/bollinger-bands; StockCharts: https://chartschool.stockcharts.com/table-of-contents/technical-indicators-and-overlays/technical-overlays/bollinger-bands | New registered class; selected rule and source are documented in its module. |
 | Keltner Channel Breakout | BUY | breakout | technical | breakout | IMPLEMENTED | keltner_channel_breakout | Chester Keltner; StockCharts ChartSchool, Keltner Channels: https://chartschool.stockcharts.com/table-of-contents/technical-indicators-and-overlays/technical-overlays/keltner-channels | Original Keltner SMA typical-price/range version; close crosses upper channel. |
-| Previous Day High Breakout | BUY | breakout | technical | breakout | PENDING | — | Source review pending; no candidate-specific source selected. | Candidate only; exact rule, source, overlap, and execution contract require review. |
+| Previous Day High Breakout | BUY | breakout | technical | breakout | BLOCKED_BY_INFRASTRUCTURE | — | — | Requires a confirmed complete previous regular-session high; the bounded context exposes no previous-session OHLC reference and may contain only a partial prior session. |
 | Intraday Consolidation Breakout | BUY | breakout | technical | breakout | REQUIRES_SOURCE_DEFINITION | — | Source review pending; no candidate-specific source selected. | Batch 3 review: no published exact consolidation definition; needs a documented range/duration rule. |
 | Triangle Breakout | BUY | breakout | technical | breakout | PENDING | — | Source review pending; no candidate-specific source selected. | Candidate only; exact rule, source, overlap, and execution contract require review. |
 | Ascending Triangle Breakout | BUY | breakout | technical | breakout | PENDING | — | Source review pending; no candidate-specific source selected. | Candidate only; exact rule, source, overlap, and execution contract require review. |
@@ -104,20 +104,20 @@ Each row records the original candidate name, role, original inventory group, su
 | Resistance Breakout | BUY | price_action | technical | price_action | IMPLEMENTED | resistance_breakout | Edwards & Magee; Murphy ch. 4; Williams fractals. | Close crosses above the latest confirmed swing high of the prior 50 bars. |
 | Engulfing Candle Reversal | BUY | price_action | technical | price_action | IMPLEMENTED | engulfing_candle_reversal | StockCharts, Bullish Engulfing: https://chartschool.stockcharts.com/table-of-contents/chart-analysis/candlestick-charts/candlestick-bullish-reversal-patterns | New registered class; selected rule and source are documented in its module. |
 | Hammer Reversal | BUY | price_action | technical | price_action | IMPLEMENTED | hammer_reversal | Steve Nison, Japanese Candlestick Charting Techniques; TA-Lib CDLHAMMER shadow quantification. | Hammer after a decline (lower shadow >= 2 × body, upper <= 10% of range) confirmed by a next close above its high. |
-| Gap and Go | BUY | gap_trading | technical | gap_trading | PENDING | — | Source review pending; no candidate-specific source selected. | Candidate only; exact rule, source, overlap, and execution contract require review. |
-| Gap Fill | BUY | gap_trading | technical | gap_trading | PENDING | — | Source review pending; no candidate-specific source selected. | Candidate only; exact rule, source, overlap, and execution contract require review. |
-| Gap Reversal | BUY | gap_trading | technical | gap_trading | PENDING | — | Source review pending; no candidate-specific source selected. | Candidate only; exact rule, source, overlap, and execution contract require review. |
-| Gap Continuation | BUY | gap_trading | technical | gap_trading | PENDING | — | Source review pending; no candidate-specific source selected. | Candidate only; exact rule, source, overlap, and execution contract require review. |
-| Opening Gap Breakout | BUY | gap_trading | technical | gap_trading | PENDING | — | Source review pending; no candidate-specific source selected. | Candidate only; exact rule, source, overlap, and execution contract require review. |
-| Gap Exhaustion | BUY | gap_trading | technical | gap_trading | PENDING | — | Source review pending; no candidate-specific source selected. | Candidate only; exact rule, source, overlap, and execution contract require review. |
-| First Pullback Buy | BUY | intraday_session | technical | intraday_session | PENDING | — | Source review pending; no candidate-specific source selected. | Candidate only; exact rule, source, overlap, and execution contract require review. |
-| Opening Drive | BUY | intraday_session | technical | intraday_session | PENDING | — | Source review pending; no candidate-specific source selected. | Candidate only; exact rule, source, overlap, and execution contract require review. |
-| Morning Momentum Continuation | BUY | intraday_session | technical | intraday_session | PENDING | — | Source review pending; no candidate-specific source selected. | Candidate only; exact rule, source, overlap, and execution contract require review. |
-| Midday Range Breakout | BUY | intraday_session | technical | intraday_session | PENDING | — | Source review pending; no candidate-specific source selected. | Candidate only; exact rule, source, overlap, and execution contract require review. |
-| Afternoon Breakout | BUY | intraday_session | technical | intraday_session | PENDING | — | Source review pending; no candidate-specific source selected. | Candidate only; exact rule, source, overlap, and execution contract require review. |
-| Power Hour Momentum | BUY | intraday_session | technical | intraday_session | PENDING | — | Source review pending; no candidate-specific source selected. | Candidate only; exact rule, source, overlap, and execution contract require review. |
-| Previous Close Reclaim | BUY | intraday_session | technical | intraday_session | PENDING | — | Source review pending; no candidate-specific source selected. | Candidate only; exact rule, source, overlap, and execution contract require review. |
-| Previous Day Low Reversal | BUY | intraday_session | technical | intraday_session | PENDING | — | Source review pending; no candidate-specific source selected. | Candidate only; exact rule, source, overlap, and execution contract require review. |
+| Gap and Go | BUY | gap_trading | technical | gap_trading | BLOCKED_BY_INFRASTRUCTURE | — | — | Requires the confirmed previous regular-session close plus current regular-session open; neither is an explicit context reference and the bounded/warmed M1 history need not retain the prior close. |
+| Gap Fill | BUY | gap_trading | technical | gap_trading | BLOCKED_BY_INFRASTRUCTURE | — | — | Requires a confirmed previous regular-session close; the bounded/warmed M1 context may contain only pre-market bars and does not expose that reference. |
+| Gap Reversal | BUY | gap_trading | technical | gap_trading | BLOCKED_BY_INFRASTRUCTURE | — | — | Requires a confirmed overnight gap measured from the previous regular-session close, which the context does not guarantee. |
+| Gap Continuation | BUY | gap_trading | technical | gap_trading | BLOCKED_BY_INFRASTRUCTURE | — | — | Requires a confirmed overnight gap measured from the previous regular-session close, which the context does not guarantee. |
+| Opening Gap Breakout | BUY | gap_trading | technical | gap_trading | BLOCKED_BY_INFRASTRUCTURE | — | — | Requires a confirmed previous regular-session close and current open; the existing bounded context has no reliable prior-close field. |
+| Gap Exhaustion | BUY | gap_trading | technical | gap_trading | BLOCKED_BY_INFRASTRUCTURE | — | — | Requires a confirmed overnight gap measured from the previous regular-session close, which the context does not guarantee. |
+| First Pullback Buy | BUY | intraday_session | technical | intraday_session | REQUIRES_SOURCE_DEFINITION | — | — | Published interpretations disagree on the qualifying trend, pullback structure, and entry confirmation; no arbitrary composite was selected. |
+| Opening Drive | BUY | intraday_session | technical | intraday_session | IMPLEMENTED | opening_drive | Mike Bellafiore, The PlayBook; Swoopr, Opening Drive: https://www.getswoopr.com/technical-analysis/price-action/opening-drive/ | First configurable M1 bars are bullish with strictly rising closes and no post-first-bar trade below the session open. |
+| Morning Momentum Continuation | BUY | intraday_session | technical | intraday_session | REQUIRES_SOURCE_DEFINITION | — | — | Mechanical published variants reduce to the existing opening-range breakout or require an undefined pullback/volume continuation rule. |
+| Midday Range Breakout | BUY | intraday_session | technical | intraday_session | IMPLEMENTED | midday_range_breakout | TradingView, Lunch Range - Retracement Hunter: https://www.tradingview.com/script/ruTg53J8-Lunch-Range-Retracement-Hunter/ | Close crosses above the frozen completed 12:00-13:00 ET lunch-range high during the configured afternoon window. |
+| Afternoon Breakout | BUY | intraday_session | technical | intraday_session | IMPLEMENTED | afternoon_breakout | Alan S. Farley, The Master Swing Trader (McGraw-Hill, 2001). | During 13:00-15:00 ET, close crosses above the frozen first-hour regular-session high. |
+| Power Hour Momentum | BUY | intraday_session | technical | intraday_session | IMPLEMENTED | power_hour_momentum | Edgeful, Power Hour Breakout + Continuation: https://help.edgeful.com/en/articles/16100944-how-to-read-and-trade-the-power-hour-reports-breakout-continuation | On a bullish session, final-hour completed closes cross above the frozen pre-15:00 high. |
+| Previous Close Reclaim | BUY | intraday_session | technical | intraday_session | BLOCKED_BY_INFRASTRUCTURE | — | — | Requires a confirmed previous regular-session close; the bounded/warmed M1 context does not guarantee that exact bar. |
+| Previous Day Low Reversal | BUY | intraday_session | technical | intraday_session | BLOCKED_BY_INFRASTRUCTURE | — | — | Requires a confirmed complete previous regular-session low; partial bounded history cannot establish it. |
 | MACD Signal Crossover | BUY | oscillator | technical | oscillator | EXISTING_EQUIVALENT | macd_signal_crossover | Existing module: mike_trade/strategies/buy/macd_signal_crossover.py | Existing registered method; its source and exact signal are in its strategy module. |
 | MACD Zero-Line Crossover | BUY | oscillator | technical | oscillator | EXISTING_EQUIVALENT | macd_zero_line_crossover | Existing module: mike_trade/strategies/buy/macd_zero_line_crossover.py | Existing registered method; its source and exact signal are in its strategy module. |
 | RSI Centerline Crossover | BUY | oscillator | technical | oscillator | EXISTING_EQUIVALENT | rsi_centerline_crossover | Existing module: mike_trade/strategies/buy/rsi_centerline_crossover.py | Existing registered method; its source and exact signal are in its strategy module. |

@@ -115,6 +115,7 @@ from mike_trade.signals.decisions import (
 )
 from mike_trade.strategies.base import StrategyEvaluation
 from mike_trade.strategies.buy.aroon_trend import AroonTrendBuy
+from mike_trade.strategies.buy.afternoon_breakout import AfternoonBreakoutBuy
 from mike_trade.strategies.buy.cci_zero_line_crossover import CciZeroLineCrossoverBuy
 from mike_trade.strategies.buy.bollinger_band_breakout import BollingerBandBreakoutBuy
 from mike_trade.strategies.buy.cci_reversion import CciReversionBuy
@@ -124,6 +125,7 @@ from mike_trade.strategies.buy.chaikin_money_flow import ChaikinMoneyFlowBuy
 from mike_trade.strategies.buy.engulfing_candle_reversal import EngulfingCandleReversalBuy
 from mike_trade.strategies.buy.awesome_oscillator import AwesomeOscillatorBuy
 from mike_trade.strategies.buy.hull_moving_average import HullMovingAverageBuy
+from mike_trade.strategies.buy.high_of_day_momentum import HighOfDayMomentumBuy
 from mike_trade.strategies.buy.keltner_channel_breakout import KeltnerChannelBreakoutBuy
 from mike_trade.strategies.buy.linear_regression_trend import LinearRegressionTrendBuy
 from mike_trade.strategies.buy.moving_average_envelope import MovingAverageEnvelopeBuy
@@ -138,8 +140,12 @@ from mike_trade.strategies.buy.inside_bar_breakout import InsideBarBreakoutBuy
 from mike_trade.strategies.buy.macd_signal_crossover import MacdSignalCrossoverBuy
 from mike_trade.strategies.buy.macd_zero_line_crossover import MacdZeroLineCrossoverBuy
 from mike_trade.strategies.buy.momentum_breakout import MomentumBreakoutBuy
+from mike_trade.strategies.buy.midday_range_breakout import MiddayRangeBreakoutBuy
+from mike_trade.strategies.buy.opening_drive import OpeningDriveBuy
 from mike_trade.strategies.buy.opening_range_breakout import OpeningRangeBreakoutBuy
+from mike_trade.strategies.buy.opening_range_retest import OpeningRangeRetestBuy
 from mike_trade.strategies.buy.parabolic_sar import ParabolicSarBuy
+from mike_trade.strategies.buy.power_hour_momentum import PowerHourMomentumBuy
 from mike_trade.strategies.buy.rsi_centerline_crossover import RsiCenterlineCrossoverBuy
 from mike_trade.strategies.buy.rsi_oversold_reversal import RsiOversoldReversalBuy
 from mike_trade.strategies.buy.sma_crossover import SmaCrossoverBuy
@@ -2182,6 +2188,12 @@ def build_runtime(
         ResistanceBreakoutBuy,
         SupertrendBuy,
         VolatilitySqueezeBreakoutBuy,
+        OpeningDriveBuy,
+        OpeningRangeRetestBuy,
+        HighOfDayMomentumBuy,
+        MiddayRangeBreakoutBuy,
+        AfternoonBreakoutBuy,
+        PowerHourMomentumBuy,
         AroonBearishReversalSell,
         CciZeroLineBreakdownSell,
         DmiBearishCrossoverSell,

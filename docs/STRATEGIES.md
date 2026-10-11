@@ -2,8 +2,8 @@
 
 Sections 1–7 describe the original reference strategies and the strategy
 contract; section 8 documents the first technical batch and section 9 records
-its original candidate methods. Section 10 documents the finite-window
-strategy additions (10 further strategies). It makes no claim
+its original candidate methods. Sections 10–12 document later finite-window,
+indicator, and current-session strategy additions. It makes no claim
 about alpha, edge, or profitability. Nothing here is a profitability claim,
 and there are no confidence scores anywhere in the strategy contract,
 implementations, presets, or evaluations.
@@ -2265,7 +2265,7 @@ These advisory long exits use completed regular-session M1 bars and the existing
 `SellRule` contract. Edges require adjacent completed bars; structure and opening-range
 rules additionally require every candle used to define the pattern or range. Recursive
 ADX and Stochastic RSI calculations use persisted snapshot/restore state rather than a
-moving history seed. The registered library now contains 32 BUY and 32 SELL methods.
+moving history seed. The integrated library now contains 54 BUY and 32 SELL methods.
 
 | Strategy ID | Exact exit condition | Default parameters; history | Source interpretation |
 |---|---|---|---|
@@ -2294,8 +2294,8 @@ Wilder ATR/ADX, KAMA, RSI, MACD, Supertrend) are resumed from the strategy's own
 `indicator_state` via the shared `advance()` mechanism, so their values do not depend on the
 candle window; the calculators added for them live in `indicators/extended.py` (every
 calculator has `snapshot()`/`restore()`), and the finite-window helpers in
-`indicators/windows.py`. Neither module changes the shared indicators. The registered library
-now contains 48 BUY and 24 SELL methods.
+`indicators/windows.py`. Neither module changes the shared indicators. The integrated library
+now contains 54 BUY and 32 SELL methods.
 
 | Strategy ID | Category | Exact signal; default bars | Source and interpretation |
 |---|---|---|---|
@@ -2321,3 +2321,33 @@ Deferred candidates and the reason for each are recorded in
 SHADOW's `market_data.warmup_bars` (60 in the example configuration) fetches only that many
 bars at start-up, so the 79-, 103- and 149-bar strategies stay `INSUFFICIENT_DATA` until live
 bars accumulate, unless the setting is raised to cover them.
+
+## 14. Current-session BUY strategies (6 BUY)
+
+These methods operate only on completed regular-session M1 bars. Before using a
+session reference they require an exact contiguous series beginning at the NYSE
+open returned by the exchange calendar. A missing opening bar, any missing minute,
+or a partial rolling window yields `INSUFFICIENT_DATA`; no oldest-available candle
+is treated as a session boundary. New York wall-clock parameters are converted via
+the exchange timezone, so the same rules retain their 09:30–16:00 semantics across
+DST. Early closes naturally suppress windows that never open.
+
+| Strategy ID | Exact BUY rule | Defaults; warmup | Published source |
+|---|---|---|---|
+| `opening_drive` | Signal exactly at the end of the opening window when every bar is bullish, closes strictly rise, and no bar after the first trades below the session open. | 5-minute drive; 5 bars. | Mike Bellafiore, *The PlayBook*; Swoopr, “Opening Drive in Trading Explained.” |
+| `opening_range_retest` | After the first completed close above the opening-range high, signal on the first later bar that trades at/below that level and closes above it. A first retest closing at/below the level invalidates the setup. | 15-minute range; 17 bars minimum. | Ninjacators, *The Opening Range Strategy Guide*, breakout-and-retest method. |
+| `high_of_day_momentum` | During the entry window, the latest completed close must exceed every high observed earlier in the current session. | 10:00–15:30 ET; 31 bars. | Warrior Trading, *Day Trading Guide*, High of Day Momentum setup. |
+| `midday_range_breakout` | Consecutive completed closes cross above the frozen high of the complete lunch range. | Range 12:00–13:00, entries before 15:00 ET; 211 bars. | TradingView open-source “Lunch Range - Retracement Hunter.” |
+| `afternoon_breakout` | During the afternoon window, consecutive completed closes cross above the frozen high of the first regular-session hour. | First 60 minutes; entries 13:00–15:00 ET; 211 bars. | Alan S. Farley, *The Master Swing Trader*, first-hour/mid-afternoon breakout setup. |
+| `power_hour_momentum` | If the last pre-window close is above the session open, consecutive completed closes cross above the frozen pre-window high-of-day. | Window begins 15:00 ET; 331 bars. | Edgeful, “Power Hour Breakout + Continuation.” |
+
+All six are entry signals only. They do not size positions, submit orders, set
+stops or targets, use developing candles, or inspect prices after the triggering
+bar. `last_signal_bar` suppresses replay of the same completed bar.
+
+Gap, previous-close, previous-day-high, and previous-day-low candidates remain
+deferred. The bounded 500-bar context and default 60-bar live warmup do not expose
+confirmed previous-session OHLC fields and may retain pre-market or only partial
+prior-session observations. Those references cannot be reconstructed safely from
+the oldest available candle, so no gap is inferred and no previous-day extreme is
+calculated.
