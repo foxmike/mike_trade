@@ -280,6 +280,12 @@ from mike_trade.strategies.buy.first_pullback_buy import FirstPullbackBuy
 from mike_trade.strategies.buy.intraday_consolidation_breakout import (
     IntradayConsolidationBreakoutBuy,
 )
+from mike_trade.strategies.buy.relative_volume_momentum import (
+    RelativeVolumeMomentumBuy,
+)
+from mike_trade.strategies.buy.moving_average_compression import (
+    MovingAverageCompressionBuy,
+)
 from mike_trade.strategies.indicators.core import VWAPCalculator
 from mike_trade.strategies.presets.pairs import resolve_pair_preset
 from mike_trade.strategies.registry import StrategyRegistry
@@ -340,6 +346,7 @@ from mike_trade.strategies.short.short_bear_flag_breakdown import ShortBearFlagB
 from mike_trade.strategies.short.short_bearish_momentum_divergence import (
     ShortBearishMomentumDivergence,
 )
+from mike_trade.strategies.sell.high_volume_reversal import HighVolumeReversalSell
 
 __all__ = [
     "AppSettings",
@@ -2745,6 +2752,8 @@ def build_runtime(
         AnchoredVwapBreakoutBuy,
         FirstPullbackBuy,
         IntradayConsolidationBreakoutBuy,
+        RelativeVolumeMomentumBuy,
+        MovingAverageCompressionBuy,
         AroonBearishReversalSell,
         CciZeroLineBreakdownSell,
         DmiBearishCrossoverSell,
@@ -2782,6 +2791,7 @@ def build_runtime(
         ObvBreakdownSell,
         ShootingStarReversalSell,
         SupertrendBearishFlipSell,
+        HighVolumeReversalSell,
     ):
         registry.register(strategy_cls)
     strategies = supplied.get("strategies", registry)

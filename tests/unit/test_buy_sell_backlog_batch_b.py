@@ -134,12 +134,12 @@ def test_batch_b_strategies_registered_in_production_and_research() -> None:
 
     counts = {r: len(REGISTRY.list_strategies(r)) for r in StrategyRole}
     assert counts == {
-        StrategyRole.BUY: 83,
-        StrategyRole.SELL: 40,
+        StrategyRole.BUY: 85,
+        StrategyRole.SELL: 41,
         StrategyRole.SHORT: 28,
         StrategyRole.COVER: 28,
     }
-    assert len(REGISTRY.list_strategies()) == 179
+    assert len(REGISTRY.list_strategies()) == 182
 
 
 def test_vwap_reclaim_equivalence_with_vwap_bounce() -> None:
@@ -155,9 +155,9 @@ def test_vwap_reclaim_equivalence_with_vwap_bounce() -> None:
     assert bounce_cls.spec.side is StrategyRole.BUY
 
 
-def test_high_volume_reversal_status_unresolved() -> None:
-    """High Volume Reversal requires source definition and is not arbitrarily registered."""
-    assert "high_volume_reversal" not in {s.spec.strategy_id for s in REGISTRY.list_strategies()}
+def test_high_volume_reversal_status_resolved_in_batch_d() -> None:
+    """High Volume Reversal was unresolved in Batch B; resolved and implemented in Batch D."""
+    assert "high_volume_reversal" in {s.spec.strategy_id for s in REGISTRY.list_strategies()}
 
 
 # ==============================================================================

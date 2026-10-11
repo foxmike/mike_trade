@@ -205,12 +205,12 @@ def evaluate(
 def test_registration_and_contract() -> None:
     assert set(examples()) == set(IDS)
     assert {role: len(REGISTRY.list_strategies(role)) for role in StrategyRole} == {
-        StrategyRole.BUY: 80,
-        StrategyRole.SELL: 40,
+        StrategyRole.BUY: 85,
+        StrategyRole.SELL: 41,
         StrategyRole.SHORT: 28,
         StrategyRole.COVER: 28,
     }
-    assert len(REGISTRY.list_strategies()) == 176
+    assert len(REGISTRY.list_strategies()) == 182
     source = inspect.getsource(app.build_runtime)
     for strategy_id in IDS:
         cls = REGISTRY.get(strategy_id)
