@@ -2452,8 +2452,9 @@ position, places an order, or defines an exit.
 in the same `StrategyRegistry`, which keeps one `_SIDE_BASES` entry per role and rejects a class whose
 spec side does not match its base. A SELL signal is never an implicit SHORT and a COVER signal is never
 an implicit BUY; there is no automatic reversal. Signal ids are `make_signal_id(...)` over the
-role, so the same bar yields four distinct ids. The library holds 75 BUY, 40 SELL, 3 SHORT and 18 COVER
-strategies (15 COVER strategies were added by Batch A: `docs/COVER_STRATEGIES_BATCH_A.md`). The original 156-candidate inventory covers BUY and SELL candidates only and is unchanged.
+role, so the same bar yields four distinct ids. The library holds 75 BUY, 40 SELL, 3 SHORT and 28 COVER
+strategies (25 COVER strategies were added by Batches A and B: `docs/COVER_STRATEGIES_BATCH_A.md`,
+`docs/COVER_STRATEGIES_BATCH_B.md`). The original 156-candidate inventory covers BUY and SELL candidates only and is unchanged.
 
 Strategy-level contract (unchanged `StrategySpec`/`ParameterSchema`/state conventions):
 
