@@ -13,6 +13,7 @@ import hashlib
 import json
 import logging
 import os
+from collections import OrderedDict
 from collections.abc import Callable, Mapping, Sequence
 from dataclasses import dataclass, field
 from datetime import UTC, datetime, time, timedelta
@@ -90,6 +91,7 @@ from mike_trade.market_status import (
 )
 from mike_trade.observability.logging import configure_logging, get_logger
 from mike_trade.persistence.maintenance import check_integrity, checkpoint
+from mike_trade.persistence.market_bars import CompletedMarketBar, MarketBarRepository
 from mike_trade.persistence.repositories import (
     CashEquityRepository,
     RunConfigRepository,
@@ -670,6 +672,18 @@ class SQLitePersistence:
         # Domain mutation is owned by typed repositories/ledgers, never an untyped append.
         raise TypeError("use a typed persistence repository")
 
+    def persist_market_bars(self, bars: Sequence[CompletedMarketBar]) -> int:
+        """Persist one batch for every account scope using the authoritative writer."""
+        if self.session is None:
+            raise RuntimeError("database is not open")
+        recorded_at = self.clock.now()
+        return sum(
+            MarketBarRepository(self.session.bind_scope(scope.scope_id)).append_completed(
+                bars, recorded_at=recorded_at
+            )
+            for scope in self.scopes
+        )
+
     def flush(self) -> None:
         if self.session is not None:
             self.session.connection.execute("PRAGMA wal_checkpoint(PASSIVE)")
@@ -762,6 +776,7 @@ class ProductionMarketData:
         self._market_status_monitor: Any = None
         self._reference_symbols: tuple[str, ...] = ("SPY", "QQQ", "IWM")
         self._trading_symbols: tuple[str, ...] = ()
+        self._bar_persistence: object | None = None
 
     def bind_market_status(
         self,
@@ -776,6 +791,10 @@ class ProductionMarketData:
         self._trading_symbols = tuple(
             dict.fromkeys(s.strip().upper() for s in trading_symbols if s.strip())
         )
+
+    def bind_bar_persistence(self, persistence: object) -> None:
+        """Attach the runtime's authoritative persistence component."""
+        self._bar_persistence = persistence
 
     def configure_history(
         self, requirements: Mapping[str, Mapping[CandleTimeframe, int]]
@@ -901,6 +920,57 @@ class AlpacaProductionMarketData(ProductionMarketData):
         self._evaluations = 0
         self._events = 0
         self._logger = get_logger("mike_trade.market_data.alpaca")
+        self._bar_write_queue: asyncio.Queue[tuple[CompletedMarketBar, ...]] = (
+            asyncio.Queue(maxsize=256)
+        )
+        self._bar_writer_task: asyncio.Task[None] | None = None
+        self._pending_vwap: OrderedDict[
+            tuple[str, datetime, str], Decimal | None
+        ] = OrderedDict()
+
+    def _start_bar_writer(self) -> None:
+        if self._bar_persistence is None:
+            return
+        if self._bar_writer_task is None or self._bar_writer_task.done():
+            self._bar_writer_task = asyncio.create_task(
+                self._bar_writer_loop(), name="completed-market-bar-writer"
+            )
+
+    async def _bar_writer_loop(self) -> None:
+        while True:
+            batch = list(await self._bar_write_queue.get())
+            consumed = 1
+            try:
+                while len(batch) < 256:
+                    batch.extend(self._bar_write_queue.get_nowait())
+                    consumed += 1
+            except asyncio.QueueEmpty:
+                pass
+            try:
+                persist = getattr(self._bar_persistence, "persist_market_bars", None)
+                if not callable(persist):
+                    raise TypeError("bar persistence must expose persist_market_bars()")
+                persist(tuple(batch))
+            except Exception as exc:  # keep the bounded writer alive for later batches
+                self._logger.error(
+                    "Completed market-bar persistence failed",
+                    extra={"bars": len(batch), "error": f"{type(exc).__name__}: {exc}"},
+                )
+            finally:
+                for _ in range(consumed):
+                    self._bar_write_queue.task_done()
+
+    async def _queue_completed_bars(
+        self, bars: Sequence[CompletedMarketBar]
+    ) -> None:
+        if not bars or self._bar_persistence is None:
+            return
+        self._start_bar_writer()
+        await self._bar_write_queue.put(tuple(bars))
+
+    async def flush_market_bars(self) -> None:
+        if self._bar_writer_task is not None:
+            await self._bar_write_queue.join()
 
     def bind_engine(
         self,
@@ -1062,6 +1132,9 @@ class AlpacaProductionMarketData(ProductionMarketData):
                 for bar in bars
                 if cast(Any, bar).timestamp + timedelta(minutes=1) <= now
             )
+            warmup = _warmup_candle_bars(completed_bars, self.warmup_bars, now)
+            warmup_starts = {cast(Any, bar).timestamp for bar in warmup}
+            persisted: list[CompletedMarketBar] = []
             for bar in completed_bars:
                 item = cast(Any, bar)
                 c = Candle(
@@ -1083,13 +1156,16 @@ class AlpacaProductionMarketData(ProductionMarketData):
                         int(item.trade_count) if item.trade_count is not None else None
                     ),
                 )
+                if item.timestamp in warmup_starts:
+                    persisted.append(CompletedMarketBar.from_candle(c, vwap=item.vwap))
                 self.session_references.add_bar(c)
                 if (
                     self._market_status_monitor is not None
                     and symbol in self._reference_symbols
                 ):
                     self._market_status_monitor.add_bar(c)
-            for bar in _warmup_candle_bars(completed_bars, self.warmup_bars, now):
+            await self._queue_completed_bars(persisted)
+            for bar in warmup:
                 item = cast(Any, bar)
                 self.candles.on_minute_bar(
                     MinuteBar(
@@ -1108,6 +1184,7 @@ class AlpacaProductionMarketData(ProductionMarketData):
                         ),
                     )
                 )
+        await self.flush_market_bars()
         self._logger.info(
             "Alpaca historical warmup complete",
             extra={
@@ -1196,6 +1273,11 @@ class AlpacaProductionMarketData(ProductionMarketData):
 
     async def _on_bar(self, event: object) -> None:
         item = cast(Any, event)
+        vwap_key = (item.symbol.upper(), item.provider_source_ts, item.feed_id)
+        self._pending_vwap[vwap_key] = item.vwap
+        self._pending_vwap.move_to_end(vwap_key)
+        while len(self._pending_vwap) > 4096:
+            self._pending_vwap.popitem(last=False)
         ingested = self.candles.on_minute_bar(
             MinuteBar(
                 symbol=item.symbol,
@@ -1211,6 +1293,17 @@ class AlpacaProductionMarketData(ProductionMarketData):
             )
         )
         closed = [bar for bar in ingested.closed if bar.timeframe is CandleTimeframe.M1]
+        await self._queue_completed_bars(
+            tuple(
+                CompletedMarketBar.from_candle(
+                    bar,
+                    vwap=self._pending_vwap.pop(
+                        (bar.symbol, bar.start, bar.feed_id), None
+                    ),
+                )
+                for bar in closed
+            )
+        )
         for bar in closed:
             self.session_references.add_bar(bar)
             if (
@@ -1277,6 +1370,11 @@ class AlpacaProductionMarketData(ProductionMarketData):
         if task is not None:
             task.cancel()
             await asyncio.gather(task, return_exceptions=True)
+        await self.flush_market_bars()
+        writer, self._bar_writer_task = self._bar_writer_task, None
+        if writer is not None:
+            writer.cancel()
+            await asyncio.gather(writer, return_exceptions=True)
 
 
 def load_app_settings(
@@ -3097,6 +3195,10 @@ def build_runtime(
             reference_symbols=settings.market_status_reference_symbols,
             trading_symbols=settings.symbols,
         )
+
+    bind_bars = getattr(market_data, "bind_bar_persistence", None)
+    if callable(bind_bars):
+        bind_bars(persistence)
 
     if "broker" in supplied:
         broker = supplied["broker"]
