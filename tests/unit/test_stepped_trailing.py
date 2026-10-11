@@ -152,15 +152,48 @@ def test_invalid_entry_and_distance_too_wide():
         advance(initial_state(D("100"), p), D("0"), p)
 
 
-def test_short_side_rejected():
+def test_invalid_side_is_rejected_and_must_match_the_state():
     p = policy()
-    with pytest.raises(NotImplementedError):
-        initial_state(D("100"), p, side="SHORT")
     s = initial_state(D("100"), p)
-    with pytest.raises(NotImplementedError):
-        advance(s, D("99"), p, side="short")
     with pytest.raises(ValueError):
         advance(s, D("99"), p, side="FLAT")
+    with pytest.raises(ValueError):
+        initial_state(D("100"), p, side="SIDEWAYS")
+    with pytest.raises(ValueError, match="does not match"):
+        advance(s, D("99"), p, side="SHORT")  # a LONG state cannot be advanced as a short
+
+
+def test_short_stop_starts_above_entry_and_ratchets_down_only():
+    p = policy()  # distance $2, step $1
+    s = initial_state(D("100"), p, side="SHORT")
+    assert s.direction == "SHORT" and s.candidate_stop == D("102")
+    # price falls $3.50 -> three whole $1 steps: anchor 97, stop 99 (never above entry + dist)
+    s = advance(s, D("96.50"), p)
+    assert (s.high_watermark, s.ratchet_anchor, s.candidate_stop, s.steps_advanced) == (
+        D("96.50"), D("97"), D("99"), 3)
+    # a rebound (higher low) never loosens the stop, anchor or watermark
+    rebound = advance(s, D("99.90"), p)
+    assert (rebound.high_watermark, rebound.ratchet_anchor, rebound.candidate_stop) == (
+        D("96.50"), D("97"), D("99"))
+    assert rebound.steps_advanced == 0
+    # sub-step improvement does not reprice
+    assert advance(s, D("96.10"), p).candidate_stop == D("99")
+
+
+def test_short_should_replace_rounds_up_and_only_tightens_downward():
+    ceil = lambda v: ALPACA_EQUITY_TICK_RULES.ceil(v)  # noqa: E731
+    assert should_replace(D("99.004"), D("102"), ceil, side="SHORT") is True  # 99.01 < 102
+    assert should_replace(D("102"), D("102"), ceil, side="SHORT") is False   # no change
+    assert should_replace(D("103"), D("102"), ceil, side="SHORT") is False   # would loosen
+    with pytest.raises(ValueError, match="round up"):
+        should_replace(D("99.004"), D("102"), lambda v: v.quantize(D("0.01"), ROUND_FLOOR), side="SHORT")
+
+
+def test_short_state_invariants():
+    with pytest.raises(ValueError):
+        SteppedTrailingState(D("100"), D("100"), D("100"), D("99"), 0, "SHORT")  # stop below
+    with pytest.raises(ValueError):
+        SteppedTrailingState(D("100"), D("101"), D("100"), D("102"), 0, "SHORT")  # watermark up
 
 
 def test_state_is_frozen_and_validated():

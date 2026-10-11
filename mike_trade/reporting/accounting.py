@@ -40,7 +40,7 @@ Design choices (the task's decision budget):
 from __future__ import annotations
 
 from collections.abc import Iterable, Mapping, Sequence
-from dataclasses import dataclass, fields
+from dataclasses import dataclass, field, fields
 from datetime import UTC, date, datetime, time, timedelta
 from decimal import ROUND_HALF_EVEN, Decimal
 from enum import Enum
@@ -50,7 +50,7 @@ from mike_trade.brokers.shadow.account import ShadowAccountState
 from mike_trade.brokers.shadow.ledger import ShadowLedger
 from mike_trade.domain.accounts import AccountEnvironment, AccountScope
 from mike_trade.domain.errors import ModeIsolationError
-from mike_trade.domain.trading import BudgetPolicy, Fill, OrderSide
+from mike_trade.domain.trading import BudgetPolicy, Fill, OrderSide, PositionDirection
 from mike_trade.persistence.readstore import ReadStore
 from mike_trade.persistence.schema import (
     decimal_from_db,
@@ -352,40 +352,89 @@ class _Replay:
     basis_start: dict[str, Decimal]
     basis_end: dict[str, Decimal]
     window_fills: tuple[Fill, ...]
+    #: Direction of each open position at the window start / end.  ``basis_*`` are always
+    #: positive magnitudes (cost of a long, proceeds of a short); the *signed* basis, used to
+    #: value equity, is positive for longs and negative for shorts (a short is a liability).
+    direction_start: dict[str, PositionDirection] = field(default_factory=dict)
+    direction_end: dict[str, PositionDirection] = field(default_factory=dict)
+
+    @staticmethod
+    def _signed(
+        basis: Mapping[str, Decimal], direction: Mapping[str, PositionDirection]
+    ) -> Decimal:
+        return sum(
+            (
+                -value if direction.get(symbol) is PositionDirection.SHORT else value
+                for symbol, value in basis.items()
+            ),
+            _ZERO,
+        )
+
+    @property
+    def signed_basis_start(self) -> Decimal:
+        return self._signed(self.basis_start, self.direction_start)
+
+    @property
+    def signed_basis_end(self) -> Decimal:
+        return self._signed(self.basis_end, self.direction_end)
 
 
 def _replay_fills(fills: Sequence[Fill], start: datetime, end: datetime) -> _Replay:
-    """Average-cost replay.  Realized P&L counts only sells inside ``(start, end]``."""
-    held: dict[str, list[Decimal]] = {}  # symbol -> [quantity, total cost]
+    """Average-cost replay.  Realized P&L counts only closing fills inside ``(start, end]``.
+
+    A long is opened by BUY and closed by SELL (gain = proceeds - cost); a short is opened by
+    SELL_SHORT and closed by BUY_TO_COVER (gain = proceeds - cover cost).
+    """
+    held: dict[str, list[Any]] = {}  # symbol -> [quantity, total cost, direction]
 
     def basis() -> dict[str, Decimal]:
         return {s: v[1] for s, v in held.items() if v[0] > _ZERO}
+
+    def directions() -> dict[str, PositionDirection]:
+        return {s: v[2] for s, v in held.items() if v[0] > _ZERO}
 
     ordered = sorted(
         (f for f in fills if f.filled_at <= end), key=lambda f: f.filled_at
     )
     realized = _ZERO
     basis_start: dict[str, Decimal] | None = None
+    direction_start: dict[str, PositionDirection] | None = None
     in_window: list[Fill] = []
     for fill in ordered:
         if basis_start is None and fill.filled_at > start:
             basis_start = basis()
-        state = held.setdefault(fill.symbol, [_ZERO, _ZERO])
-        if fill.side is OrderSide.BUY:
+            direction_start = directions()
+        state = held.setdefault(fill.symbol, [_ZERO, _ZERO, fill.side.direction])
+        if fill.side.is_entry:
+            if state[0] > _ZERO and state[2] is not fill.side.direction:
+                raise ReportDataError(
+                    f"{fill.side.value} of {fill.symbol} against an open "
+                    f"{state[2].value} position would reverse it"
+                )
+            state[2] = fill.side.direction
             state[0] += fill.quantity
             state[1] += fill.quantity * fill.price
         else:
+            verb = "sell" if fill.side is OrderSide.SELL else "cover"
+            if state[0] > _ZERO and state[2] is not fill.side.direction:
+                raise ReportDataError(
+                    f"{verb} of {fill.symbol} does not match the open {state[2].value} position"
+                )
             if fill.quantity > state[0]:
                 raise ReportDataError(
-                    f"sell of {fill.quantity} {fill.symbol} exceeds held quantity {state[0]}"
+                    f"{verb} of {fill.quantity} {fill.symbol} exceeds held quantity {state[0]}"
                 )
-            # The closing sell takes the exact remaining cost, so no residue survives.
+            # The closing fill takes the exact remaining cost, so no residue survives.
             closing = fill.quantity == state[0]
             cost_out = state[1] if closing else state[1] * fill.quantity / state[0]
             state[0] -= fill.quantity
             state[1] -= cost_out
             if fill.filled_at > start:
-                realized += fill.quantity * fill.price - cost_out
+                realized += (
+                    fill.quantity * fill.price - cost_out
+                    if fill.side is OrderSide.SELL
+                    else cost_out - fill.quantity * fill.price  # short: proceeds - cover cost
+                )
         if fill.filled_at > start:
             in_window.append(fill)
     return _Replay(
@@ -393,6 +442,8 @@ def _replay_fills(fills: Sequence[Fill], start: datetime, end: datetime) -> _Rep
         basis_start=basis() if basis_start is None else basis_start,
         basis_end=basis(),
         window_fills=tuple(in_window),
+        direction_start=directions() if direction_start is None else direction_start,
+        direction_end=directions(),
     )
 
 
@@ -659,10 +710,10 @@ def _load_broker_facts(
         ending_cash=ending.cash,
         starting_equity=starting.equity,
         ending_equity=ending.equity,
-        starting_unrealized=(
-            starting.equity - starting.cash - sum(replay.basis_start.values(), _ZERO)
-        ),
-        ending_unrealized=ending.equity - ending.cash - sum(replay.basis_end.values(), _ZERO),
+        # equity - cash is the marked value of positions (negative for a short liability);
+        # unrealized P&L is that value minus the SIGNED cost basis.
+        starting_unrealized=starting.equity - starting.cash - replay.signed_basis_start,
+        ending_unrealized=ending.equity - ending.cash - replay.signed_basis_end,
         mark_source=f"equity_snapshots:{ending.source}",
         mark_as_of=ending.as_of,
         mark_stale=as_of - ending.as_of > max_mark_age,
@@ -733,8 +784,8 @@ def _load_shadow_facts(
     end_state = _shadow_state(events, scope, window_end)
 
     replay = _replay_fills(tuple(end_state.fills.values()), window_start, window_end)
-    basis_start = sum(replay.basis_start.values(), _ZERO)
-    basis_end = sum(replay.basis_end.values(), _ZERO)
+    basis_start = replay.signed_basis_start
+    basis_end = replay.signed_basis_end
 
     marks = {k.strip().upper(): v for k, v in (marks or {}).items()}
     unrealized = _ZERO
@@ -747,7 +798,11 @@ def _load_shadow_facts(
             basis = replay.basis_end.get(symbol)
             if basis is None:
                 raise ReportDataError(f"ledger position {symbol} has no matching fills")
-            unrealized += position.quantity * mark - basis
+            unrealized += (
+                position.quantity * mark - basis
+                if position.direction is PositionDirection.LONG
+                else basis - position.quantity * mark  # a short gains when the mark falls
+            )
 
     deposits = withdrawals = _ZERO
     for _, amount, _, _, at in end_state.adjustments:
@@ -767,7 +822,7 @@ def _load_shadow_facts(
     reserved: dict[str, Decimal] = {}
     for order in end_state.orders.values():
         price = order.limit_price if order.limit_price is not None else order.reference_price
-        if order.is_open and order.side is OrderSide.BUY and price is not None:
+        if order.is_open and order.side.is_entry and price is not None:
             reserved[order.symbol] = reserved.get(order.symbol, _ZERO) + order.remaining * price
 
     return _Facts(
@@ -782,7 +837,8 @@ def _load_shadow_facts(
         mark_source="shadow:quotes" if marks and not unmarked else "shadow:cost_basis",
         mark_as_of=as_of if marks else None,
         mark_stale=unmarked,
-        buying_power=end_state.cash,
+        # unrestricted cash: the proceeds of open shorts are locked collateral, not buying power
+        buying_power=end_state.cash - end_state.restricted_collateral(),
         replay=replay,
         confirmed_fees=_ZERO,
         unattributed_fees=_ZERO,

@@ -3,7 +3,7 @@
 Sections 1–7 describe the original reference strategies and the strategy
 contract; section 8 documents the first technical batch and section 9 records
 its original candidate methods. Sections 10–12 document later finite-window,
-indicator, and current-session strategy additions. It makes no claim
+indicator, and current-session strategy additions; section 18 adds the independent SHORT and COVER roles. It makes no claim
 about alpha, edge, or profitability. Nothing here is a profitability claim,
 and there are no confidence scores anywhere in the strategy contract,
 implementations, presets, or evaluations.
@@ -22,7 +22,7 @@ Each strategy declares one immutable `StrategySpec` (`mike_trade/strategies/base
 | :--- | :--- |
 | `strategy_id` | Lowercase snake_case identifier (e.g. `vwap_bounce`). |
 | `version` | `MAJOR.MINOR.PATCH` semver string; numeric `version_key` orders versions. |
-| `side` | `StrategyRole.BUY` or `StrategyRole.SELL`. `BuyStrategy` subclasses must declare `BUY`. |
+| `side` | `StrategyRole.BUY`, `SELL`, `SHORT` or `COVER` (§18). Each base class (`BuyStrategy`, `SellStrategy`, `ShortStrategy`, `CoverStrategy`) must be paired with its own role. |
 | `category` | Stable classification identifier, e.g. `technical` (see §1.7). |
 | `sub_category` | Stable sub-classification identifier, e.g. `moving_average` (see §1.7). |
 | `reference_symbols` | Declared reference symbols (empty tuple for all three shipped BUY strategies). |
@@ -2443,3 +2443,65 @@ remains blocked: a defensible downside-exhaustion BUY needs confirmed multi-sess
 downtrend context (and commonly abnormal-volume context), while the deliberately narrow
 contract exposes only one completed prior session. None of these entry primitives sizes a
 position, places an order, or defines an exit.
+
+## 18. SHORT and COVER roles (3 SHORT, 3 COVER)
+
+`StrategyRole` now has four independent roles: **BUY** opens a long, **SELL** closes a long,
+**SHORT** opens a short and **COVER** closes a short. They are separate strategy classes
+(`BuyStrategy`, `SellStrategy`, `ShortStrategy`, `CoverStrategy` in `strategies/base.py`) registered
+in the same `StrategyRegistry`, which keeps one `_SIDE_BASES` entry per role and rejects a class whose
+spec side does not match its base. A SELL signal is never an implicit SHORT and a COVER signal is never
+an implicit BUY; there is no automatic reversal. Signal ids are `make_signal_id(...)` over the
+role, so the same bar yields four distinct ids. The library holds 75 BUY, 40 SELL, 3 SHORT and 3 COVER
+strategies. The original 156-candidate inventory covers BUY and SELL candidates only and is unchanged.
+
+Strategy-level contract (unchanged `StrategySpec`/`ParameterSchema`/state conventions):
+
+* **Eligibility.** SHORT is armed like BUY: `closed_bar.gate()` returns `NOT_ELIGIBLE` unless the
+  engine-owned `state["eligibility"] == "WATCHING_SHORT"` (`ELIGIBILITY_WATCHING_SHORT`); the strategy only
+  reads it. COVER, like SELL, carries no eligibility key and relies on the engine consulting it only
+  while a managed short exists.
+* **No execution concerns.** A strategy never submits orders, sizes a position, borrows, or manages a
+  stop; `reference_price` is the signal bar's close and nothing else.
+* **State.** `last_signal_bar` suppresses a replay of the same completed bar; recursive strategies persist
+  `indicator_state` and resume it with `advance()` (a stored snapshot whose signature, version or
+  structure does not match is discarded and re-seeded from the supplied history).
+* **Registration.** The six classes are registered in `app.build_runtime` and in the research registry.
+  `app._bind` rejects a SHORT/COVER strategy assigned to a BUY/SELL slot (`STRATEGY_SIDE_MISMATCH`), and
+  configuration rejects a strategy listed in the wrong role.
+
+| Strategy ID | Role | Exact signal; default bars | State | Source |
+|---|---|---|---|---|
+| `short_ema_bearish_crossover` | SHORT | EMA(12) crosses below EMA(26): `fast[t-1] >= slow[t-1]` and `fast[t] < slow[t]`; 27 | EMA pair via `MACDCalculator(fast, slow, None)`, persisted | StockCharts moving averages; Appel 12/26 |
+| `short_supertrend_bearish_flip` | SHORT | Supertrend(ATR 10, ×3) direction up → down on the latest bar; 11 | ATR + band state via `SupertrendCalculator`, persisted | Seban; TradingView `ta.supertrend` |
+| `short_donchian_breakdown` | SHORT | `close[t] <` lowest low of bars `t-20 .. t-1` (signal bar excluded), level semantics; 21 | none (finite window) | Donchian; StockCharts Price Channels |
+| `cover_ema_bullish_crossover` | COVER | EMA(12) crosses above EMA(26); 27 | as the SHORT EMA pair | as above |
+| `cover_supertrend_bullish_flip` | COVER | Supertrend direction down → up; 11 | as the SHORT Supertrend | as above |
+| `cover_donchian_breakout` | COVER | `close[t] >` highest high of bars `t-20 .. t-1`; 21 | none (finite window) | as above |
+
+The EMA and Supertrend strategies require the latest two bars to be adjacent (a missing minute is
+`INSUFFICIENT_DATA`); the Donchian strategies require the whole `period + 1` window to be consecutive, since a
+hole leaves the extreme unknown. All are edge or level signals on completed M1 bars in the regular
+session, and none uses a stop, target or reversal.
+
+### Engine integration (implemented)
+
+The engine consults the four roles as follows (`docs/ARCHITECTURE.md`, bidirectional lifecycle):
+
+1. **Eligibility.** While flat the engine sets `state["eligibility"] = "WATCHING_BUY"` for BUY strategies and,
+   only when `execution.short_selling_enabled` is on, `"WATCHING_SHORT"` for SHORT strategies; BUY and SHORT
+   compete in one deterministic entry arbitration (LONG ranks first at an equal bar time, so both directions
+   are never authorized together). While a position is held only the exit role of its direction is consulted
+   (SELL for a long, COVER for a short; `portfolio.manager.PortfolioSnapshot.consulted_roles`).
+2. **Indicator continuity.** Every ineligible role is still evaluated advance-only (eligibility cleared, any
+   signal discarded) so its recursive state never stops advancing; this extends the c9a4423 continuity fix to
+   all four roles in SHADOW and BACKTEST.
+3. **Signals and arbitration.** `SHORT → SignalAction.ENTER_SHORT` and `COVER → SignalAction.COVER_SHORT` are
+   valid signals; COVER ranks with SELL as `ExitSource.STRATEGY_COVER` below the protective, manual, risk and
+   forced exits and is subject to the same minimum hold; a protective stop always overrides it.
+4. **Execution and accounting.** `SELL_SHORT` opens and `BUY_TO_COVER` closes a short, with a short-side
+   protective stop above the market; proceeds are restricted collateral and shorts count against every
+   exposure ceiling (`docs/SAFETY_AND_RISK.md` §4a).
+5. **Configuration.** A symbol may list `short_strategies` / `cover_strategies` (singular spellings supported);
+   BACKTEST/research take `short_strategies`, `cover_strategies`, `short_selling_enabled` and
+   `short_borrow_bps_per_day` (`docs/OPERATIONS.md`, "Short selling").

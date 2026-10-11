@@ -67,6 +67,8 @@ class ExitSource(Enum):
     HARD_RISK = "HARD_RISK"
     FORCED_LIQUIDATION = "FORCED_LIQUIDATION"
     STRATEGY_SELL = "STRATEGY_SELL"
+    #: Ordinary strategy exit of a SHORT (COVER role); same priority and hold rules as a SELL.
+    STRATEGY_COVER = "STRATEGY_COVER"
 
 
 # Lower numbers win arbitration. Safety and operator initiated exits precede
@@ -78,6 +80,7 @@ EXIT_PRIORITY: Mapping[ExitSource, int] = MappingProxyType(
         ExitSource.HARD_RISK: 2,
         ExitSource.FORCED_LIQUIDATION: 3,
         ExitSource.STRATEGY_SELL: 4,
+        ExitSource.STRATEGY_COVER: 4,
     }
 )
 
@@ -86,7 +89,7 @@ def min_hold_applies(source: ExitSource) -> bool:
     """Return whether ``source`` must honor the ordinary strategy hold period."""
     if not isinstance(source, ExitSource):
         raise ValueError("source must be ExitSource")
-    return source is ExitSource.STRATEGY_SELL
+    return source in (ExitSource.STRATEGY_SELL, ExitSource.STRATEGY_COVER)
 
 
 def _utc(value: datetime, field: str) -> datetime:

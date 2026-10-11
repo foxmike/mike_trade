@@ -78,6 +78,7 @@ from mike_trade.domain.trading import (
     OrderSide,
     OrderType,
     Position,
+    PositionDirection,
     TimeInForce,
 )
 from mike_trade.persistence.schema import decimal_from_db, from_db_timestamp
@@ -94,6 +95,10 @@ _ZERO = Decimal("0")
 _ONE_MICROSECOND = timedelta(microseconds=1)
 _OPEN_STATUSES = frozenset({BrokerOrderStatus.ACCEPTED, BrokerOrderStatus.PARTIALLY_FILLED})
 _SOURCE = "shadow:simulated;estimated=True;broker_confirmed=False"
+#: Regulation T style initial requirement for a short sale: the sale proceeds stay locked
+#: AND an equal-to-half-the-notional own-cash margin is required (150% of the notional).
+_DEFAULT_SHORT_MARGIN_MULTIPLIER = Decimal("1.5")
+_BPS = Decimal("10000")
 
 
 # --------------------------------------------------------------------------- helpers
@@ -190,7 +195,7 @@ def _policy_from_data(data: Mapping[str, object]) -> EntryEligibilityPolicy:
 
 @dataclass(frozen=True, slots=True)
 class ShadowPosition:
-    """An open long position; all derived values are estimates, never broker-confirmed."""
+    """An open long or short position; all derived values are estimates, never broker-confirmed."""
 
     symbol: str
     quantity: Decimal
@@ -207,6 +212,11 @@ class ShadowPosition:
     exit_fees: Decimal = _ZERO
     estimated: bool = True
     broker_confirmed: bool = False
+    #: LONG, or SHORT (``cost_basis`` is then the short-sale proceeds, ``exit_proceeds`` the
+    #: cost of covering so far).  Quantity is always a positive magnitude.
+    direction: PositionDirection = PositionDirection.LONG
+    #: Estimated stock-borrow cost already charged on partial covers (SHORT only).
+    borrow_cost: Decimal = _ZERO
 
     def __post_init__(self) -> None:
         _text(self.symbol, "symbol")
@@ -293,6 +303,8 @@ class ShadowAccountState:
     total_budget: Decimal = _ZERO
     margin_enabled: bool = False
     allow_fractional: bool = False
+    short_margin_multiplier: Decimal = _DEFAULT_SHORT_MARGIN_MULTIPLIER
+    short_borrow_bps_per_day: Decimal = _ZERO
     policy: EntryEligibilityPolicy | None = None
     simulator_version: str = SIMULATOR_VERSION
     assumptions: Mapping[str, str] = field(default_factory=dict)
@@ -345,6 +357,63 @@ class ShadowAccountState:
             ),
             start=_ZERO,
         )
+
+    def reserved_entry_notional(self) -> Decimal:
+        """Notional of every working entry order, long or short (exposure ceilings)."""
+        return sum(
+            (
+                order.remaining * order.reference_price
+                for order in self.open_orders()
+                if order.side.is_entry and order.reference_price is not None
+            ),
+            start=_ZERO,
+        )
+
+    def restricted_collateral(self) -> Decimal:
+        """Cash locked behind open shorts: never available to buy or short anything else.
+
+        Short-sale proceeds are credited to ``cash`` but are not purchasing power; the whole
+        ``short_margin_multiplier`` x entry proceeds stays restricted until the short is covered.
+        """
+        return sum(
+            (
+                self.short_margin_multiplier * position.cost_basis
+                for position in self.positions.values()
+                if position.direction is PositionDirection.SHORT
+            ),
+            start=_ZERO,
+        )
+
+    def reserved_cash(self) -> Decimal:
+        """Cash reserved by working entries: a buy reserves its notional, a short its margin."""
+        total = _ZERO
+        for order in self.open_orders():
+            if order.reference_price is None or not order.side.is_entry:
+                continue
+            notional = order.remaining * order.reference_price
+            total += (
+                notional
+                if order.side is OrderSide.BUY
+                else (self.short_margin_multiplier - 1) * notional
+            )
+        return total
+
+    def available_cash(self) -> Decimal:
+        """Unrestricted, unreserved cash: the real purchasing power of this account."""
+        return self.cash - self.restricted_collateral() - self.reserved_cash()
+
+    def borrow_cost(self, position: ShadowPosition, quantity: Decimal, at: datetime) -> Decimal:
+        """Estimated stock-borrow charge for covering ``quantity`` of a short at ``at``.
+
+        ``short_borrow_bps_per_day`` x entry proceeds of the covered share x calendar days
+        held.  It is an explicit *assumption* (default 0); real borrow fees are not known to
+        the simulator and are never presented as confirmed.
+        """
+        if position.direction is not PositionDirection.SHORT or self.short_borrow_bps_per_day <= _ZERO:
+            return _ZERO
+        days = max((_session_date(at) - _session_date(position.opened_at)).days, 0)
+        share = position.cost_basis * quantity / position.quantity
+        return share * self.short_borrow_bps_per_day * days / _BPS
 
     def entry_block(
         self, symbol: str, strategy_key: str | None, at: datetime
@@ -444,29 +513,53 @@ class ShadowAccountState:
         if str(data["client_order_id"]) in self.client_order_ids:
             raise _reject("duplicate_client_order_id", "client_order_id was already submitted")
         position = self.positions.get(symbol)
-        if side is OrderSide.SELL:
+        if side.is_exit:
+            verb = "sell" if side is OrderSide.SELL else "cover"
             if position is None:
-                raise _reject("no_position", f"cannot sell {symbol}: no position held (no shorts)")
+                raise _reject(
+                    "no_position",
+                    f"cannot sell {symbol}: no position held (no shorts)"
+                    if side is OrderSide.SELL
+                    else f"cannot cover {symbol}: no short position held",
+                )
+            if position.direction is not side.direction:
+                raise _reject(
+                    "wrong_direction",
+                    f"{side.value} cannot close the {position.direction.value} position in "
+                    f"{symbol}; no automatic reversal",
+                )
             if quantity > position.quantity:
                 raise _reject(
-                    "oversell", f"sell {quantity} exceeds held {position.quantity} of {symbol}"
+                    "oversell" if side is OrderSide.SELL else "overcover",
+                    f"{verb} {quantity} exceeds held {position.quantity} of {symbol}",
                 )
             if quantity < position.quantity:
                 raise _reject(
                     "partial_exit",
-                    f"planned partial exit of {symbol} is not allowed; sell all "
+                    f"planned partial exit of {symbol} is not allowed; {verb} all "
                     f"{position.quantity}",
                 )
             return
         if purpose is not OrderPurpose.ENTRY:
-            raise _reject("buy_must_be_entry", "BUY orders must have ENTRY purpose")
+            raise _reject("buy_must_be_entry", f"{side.value} orders must have ENTRY purpose")
         reference = _positive(_d(data, "reference_price"), "reference_price")
         strategy_key = data.get("strategy_key")
         assert self.policy is not None
         if position is not None:
-            code = "averaging_down" if reference < position.avg_cost else "pyramiding"
+            if position.direction is not side.direction:
+                raise _reject(
+                    "reversal",
+                    f"{symbol} holds a {position.direction.value} position; an opposite "
+                    "entry would reverse it",
+                )
+            worse = (
+                reference < position.avg_cost
+                if side is OrderSide.BUY
+                else reference > position.avg_cost
+            )
+            code = "averaging_down" if worse else "pyramiding"
             raise _reject(code, f"{symbol} already has an open position; additional entry refused")
-        if any(o.symbol == symbol and o.side is OrderSide.BUY for o in self.open_orders()):
+        if any(o.symbol == symbol and o.side.is_entry for o in self.open_orders()):
             raise _reject("pyramiding", f"{symbol} already has an open entry order")
         if self.policy.lockout_scope_by_strategy and strategy_key is None:
             raise _reject(
@@ -483,18 +576,30 @@ class ShadowAccountState:
                 f"entry {notional} exceeds per-symbol budget {self.per_symbol_budget}",
                 code="per_symbol_budget",
             )
-        reserved = self.reserved_buy_notional()
+        # Gross exposure ceiling: longs and shorts both count, so a short cannot sneak past it.
+        reserved = self.reserved_entry_notional()
         exposure = sum((p.cost_basis for p in self.positions.values()), start=_ZERO) + reserved
         if exposure + notional > self.total_budget:
             raise EntryBlockedError(
                 f"entry {notional} exceeds total budget {self.total_budget} (committed {exposure})",
                 code="total_budget",
             )
-        if not self.margin_enabled and notional > self.cash - reserved:
-            raise InsufficientBuyingPowerError(
-                f"entry {notional} exceeds available cash {self.cash - reserved}",
-                code="cash_negative",
-            )
+        available = self.available_cash()
+        if side is OrderSide.BUY:
+            if not self.margin_enabled and notional > available:
+                raise InsufficientBuyingPowerError(
+                    f"entry {notional} exceeds available cash {available}",
+                    code="cash_negative",
+                )
+        else:
+            # Short proceeds are restricted collateral, never buying power: the own-cash
+            # margin part must be available whether or not ``margin_enabled`` is set.
+            margin = (self.short_margin_multiplier - 1) * notional
+            if margin > available:
+                raise InsufficientBuyingPowerError(
+                    f"short entry margin {margin} exceeds available cash {available}",
+                    code="cash_negative",
+                )
 
     def _open_order(self, data: Mapping[str, object]) -> _Order:
         order = self.orders.get(str(data["broker_order_id"]))
@@ -512,7 +617,7 @@ class ShadowAccountState:
         if data.get("quantity") is not None:
             quantity = _positive(_d(data, "quantity"), "quantity")
             self._check_quantity(quantity)
-            if order.side is OrderSide.BUY:
+            if order.side.is_entry:
                 if quantity > order.quantity or quantity <= order.filled_quantity:
                     raise _reject(
                         "invalid_replace_quantity",
@@ -557,19 +662,41 @@ class ShadowAccountState:
         if quantity > order.remaining:
             raise _reject("overfill", f"fill {quantity} exceeds order remaining {order.remaining}")
         position = self.positions.get(symbol)
-        if side is OrderSide.SELL:
+        if side.is_exit:
             if position is None:
-                raise _reject("no_position", f"cannot sell {symbol}: no position held (no shorts)")
+                raise _reject(
+                    "no_position",
+                    f"cannot sell {symbol}: no position held (no shorts)"
+                    if side is OrderSide.SELL
+                    else f"cannot cover {symbol}: no short position held",
+                )
+            if position.direction is not side.direction:
+                raise _reject(
+                    "wrong_direction",
+                    f"{side.value} cannot close the {position.direction.value} position in {symbol}",
+                )
             if quantity > position.quantity:
                 raise _reject(
-                    "oversell", f"sell {quantity} exceeds held {position.quantity} of {symbol}"
+                    "oversell" if side is OrderSide.SELL else "overcover",
+                    f"{side.value.lower()} {quantity} exceeds held {position.quantity} of {symbol}",
                 )
             return
+        if position is not None and position.direction is not side.direction:
+            raise _reject("reversal", f"{symbol} holds an opposite position; fill refused")
         if position is not None and position.entry_order_id != order.broker_order_id:
             raise _reject("pyramiding", f"{symbol} already has a position from another order")
-        if not self.margin_enabled and self.cash - (quantity * price + fee) < _ZERO:
+        unrestricted = self.cash - self.restricted_collateral()
+        if side is OrderSide.BUY:
+            if not self.margin_enabled and unrestricted - (quantity * price + fee) < _ZERO:
+                raise InsufficientBuyingPowerError(
+                    f"fill cost {quantity * price + fee} would make cash negative",
+                    code="cash_negative",
+                )
+        elif unrestricted - (self.short_margin_multiplier - 1) * quantity * price - fee < _ZERO:
             raise InsufficientBuyingPowerError(
-                f"fill cost {quantity * price + fee} would make cash negative", code="cash_negative"
+                "short fill would exceed available margin: sale proceeds are restricted "
+                "collateral, not buying power",
+                code="cash_negative",
             )
 
     def _validate_lockout_clear(self, event: ShadowLedgerEvent) -> None:
@@ -590,6 +717,11 @@ class ShadowAccountState:
             self.total_budget = _d(data, "total_budget")
             self.margin_enabled = bool(data["margin_enabled"])
             self.allow_fractional = bool(data["allow_fractional"])
+            # Older ledgers predate shorting: absent keys keep the long-only-compatible defaults.
+            if data.get("short_margin_multiplier") is not None:
+                self.short_margin_multiplier = _d(data, "short_margin_multiplier")
+            if data.get("short_borrow_bps_per_day") is not None:
+                self.short_borrow_bps_per_day = _d(data, "short_borrow_bps_per_day")
             self.policy = _policy_from_data(data["policy"])
             self.simulator_version = event.simulator_version
             self.assumptions = dict(event.assumptions)
@@ -683,8 +815,11 @@ class ShadowAccountState:
             if order.filled_quantity == order.quantity
             else BrokerOrderStatus.PARTIALLY_FILLED
         )
-        if order.side is OrderSide.BUY:
-            self.cash -= quantity * price + fee
+        if order.side.is_entry:
+            if order.side is OrderSide.BUY:
+                self.cash -= quantity * price + fee
+            else:  # SELL_SHORT: proceeds are credited, but restricted_collateral() locks them
+                self.cash += quantity * price - fee
             position = self.positions.get(symbol)
             if position is None:
                 self.positions[symbol] = ShadowPosition(
@@ -698,6 +833,7 @@ class ShadowAccountState:
                     opened_at=filled_at,
                     entry_cost_total=quantity * price,
                     entry_fees_total=fee,
+                    direction=order.side.direction,
                 )
                 key = (symbol, _session_date(filled_at))
                 self.entry_cycles[key] = self.entry_cycles.get(key, 0) + 1
@@ -711,20 +847,30 @@ class ShadowAccountState:
                     entry_fees_total=position.entry_fees_total + fee,
                 )
             return
-        self.cash += quantity * price - fee
         position = self.positions[symbol]
+        long = position.direction is PositionDirection.LONG
+        borrow = self.borrow_cost(position, quantity, filled_at)
+        if long:
+            self.cash += quantity * price - fee
+        else:  # BUY_TO_COVER: pay the market, the fee and the estimated borrow charge
+            self.cash -= quantity * price + fee + borrow
         exit_proceeds = position.exit_proceeds + quantity * price
         exit_fees = position.exit_fees + fee
+        borrow_total = position.borrow_cost + borrow
         if quantity == position.quantity:
             # Closing fill: the cycle result comes from exact sums, never from divided parts.
-            cycle_pnl = (
-                exit_proceeds - position.entry_cost_total - position.entry_fees_total - exit_fees
+            gross = (
+                exit_proceeds - position.entry_cost_total
+                if long
+                else position.entry_cost_total - exit_proceeds
             )
+            cycle_pnl = gross - position.entry_fees_total - exit_fees - borrow_total
             self.realized_pnl += cycle_pnl - position.realized_pnl
         else:
             cost = position.cost_basis * quantity / position.quantity
             entry_fees = position.entry_fees * quantity / position.quantity
-            pnl = quantity * price - fee - cost - entry_fees
+            gross_part = quantity * price - cost if long else cost - quantity * price
+            pnl = gross_part - fee - entry_fees - borrow
             self.realized_pnl += pnl
             self.positions[symbol] = replace(
                 position,
@@ -734,6 +880,7 @@ class ShadowAccountState:
                 realized_pnl=position.realized_pnl + pnl,
                 exit_proceeds=exit_proceeds,
                 exit_fees=exit_fees,
+                borrow_cost=borrow_total,
             )
             return
         del self.positions[symbol]
@@ -778,6 +925,8 @@ class ShadowAccount:
         eligibility: EntryEligibilityPolicy,
         margin_enabled: bool = False,
         allow_fractional: bool = False,
+        short_margin_multiplier: Decimal = _DEFAULT_SHORT_MARGIN_MULTIPLIER,
+        short_borrow_bps_per_day: Decimal = _ZERO,
         simulator_version: str = SIMULATOR_VERSION,
         assumptions: Mapping[str, str] | None = None,
         feed: str | None = None,
@@ -796,6 +945,9 @@ class ShadowAccount:
             raise TypeError("eligibility must be an EntryEligibilityPolicy")
         if not isinstance(margin_enabled, bool) or not isinstance(allow_fractional, bool):
             raise TypeError("margin_enabled and allow_fractional must be bool")
+        # A short sale can never be cheaper than fully collateralised by its own proceeds.
+        _decimal(short_margin_multiplier, "short_margin_multiplier", minimum=Decimal("1"))
+        _decimal(short_borrow_bps_per_day, "short_borrow_bps_per_day")
         state = ShadowAccountState(scope=ledger.scope)
         account = cls(ledger, state)
         event = ShadowLedgerEvent(
@@ -809,6 +961,8 @@ class ShadowAccount:
                 "total_budget": total_budget,
                 "margin_enabled": margin_enabled,
                 "allow_fractional": allow_fractional,
+                "short_margin_multiplier": short_margin_multiplier,
+                "short_borrow_bps_per_day": short_borrow_bps_per_day,
                 "policy": _policy_to_data(eligibility),
             },
             simulator_version=simulator_version,
@@ -978,16 +1132,26 @@ class ShadowAccount:
         for symbol, position in self._state.positions.items():
             mark = marks.get(symbol)
             value = position.cost_basis if mark is None else position.quantity * mark
-            total += value - position.cost_basis - position.entry_fees
+            gross = (
+                value - position.cost_basis
+                if position.direction is PositionDirection.LONG
+                else position.cost_basis - value  # a short gains when the mark falls
+            )
+            total += gross - position.entry_fees
         return total
 
     def equity(self, quotes: Mapping[str, Decimal] | None = None) -> Decimal:
-        """Estimated equity: cash plus open positions marked to the supplied quotes."""
+        """Estimated equity: cash plus longs minus the liability of shorts, at the marks.
+
+        Short-sale proceeds sit in ``cash`` but are offset by the short's market liability,
+        so selling short never creates equity by itself.
+        """
         marks = self._marks(quotes)
         total = self._state.cash
         for symbol, position in self._state.positions.items():
             mark = marks.get(symbol)
-            total += position.cost_basis if mark is None else position.quantity * mark
+            value = position.cost_basis if mark is None else position.quantity * mark
+            total += value if position.direction is PositionDirection.LONG else -value
         return total
 
     # ---- BrokerPort
@@ -1003,7 +1167,7 @@ class ShadowAccount:
             supports_notional=False,
             supports_native_trailing_stop=False,
             supports_extended_hours=False,
-            supports_short=False,
+            supports_short=True,
             paper_verified_combinations=(
                 frozenset((name, True) for name in order_types) if fractional else frozenset()
             ),
@@ -1011,7 +1175,6 @@ class ShadowAccount:
 
     async def get_account(self) -> AccountSnapshot:
         state = self._state
-        reserved = state.reserved_buy_notional()
         unmarked = sorted(set(state.positions) - set(self._quotes))
         source = _SOURCE + (f";valued_at_cost={','.join(unmarked)}" if unmarked else "")
         equity = self.equity()
@@ -1020,9 +1183,11 @@ class ShadowAccount:
             as_of=self._ledger.now(),
             cash=state.cash,
             equity=equity,
-            buying_power=state.cash - reserved,
+            # Purchasing power excludes cash locked behind shorts and cash reserved by
+            # working entries; short-sale proceeds are never counted as available.
+            buying_power=state.available_cash(),
             portfolio_value=equity,
-            shorting_enabled=False,
+            shorting_enabled=True,
             source=source,
         )
 
@@ -1043,6 +1208,7 @@ class ShadowAccount:
                     market_value=None if mark is None else item.quantity * mark,
                     management=ManagementStatus.MANAGED,
                     cycle_id=item.cycle_id,
+                    direction=item.direction,
                 )
             )
         return positions
@@ -1078,7 +1244,7 @@ class ShadowAccount:
                 "shadow accounts do not support notional orders", code="notional_unsupported"
             )
         reference: Decimal | None = None
-        if intent.side is OrderSide.BUY:
+        if intent.side.is_entry:
             reference = intent.limit_price or intent.stop_price or self._quotes.get(intent.symbol)
             if reference is None:
                 raise _reject(

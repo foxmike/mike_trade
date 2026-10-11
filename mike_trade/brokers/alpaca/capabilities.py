@@ -163,7 +163,7 @@ class CapabilityDescriptor:
 
     ``sizing`` is ``whole`` (whole-share qty), ``fractional`` (fractional qty),
     or ``notional``. ``side`` is ``buy``, ``sell`` (long exit), or ``short``
-    (short sale, always unsupported on the long-only desk). ``operation`` is
+    (short sale). ``operation`` is
     ``submit`` or ``replace``.
     """
 
@@ -233,8 +233,6 @@ class CapabilityUnavailable(UnsupportedOrderCapabilityError):
 
 def _structural_status(descriptor: CapabilityDescriptor) -> CapabilityStatus | None:
     """Structural verdict, or None when the descriptor is structurally possible."""
-    if descriptor.side == "short":
-        return CapabilityStatus.UNSUPPORTED
     if descriptor.order_type == "trailing_stop" and descriptor.order_class != "simple":
         return CapabilityStatus.UNSUPPORTED
     if descriptor.operation == "replace" and descriptor.sizing == "notional":
@@ -244,8 +242,6 @@ def _structural_status(descriptor: CapabilityDescriptor) -> CapabilityStatus | N
 
 def _structural_reason(descriptor: CapabilityDescriptor) -> str | None:
     """Operator-readable reason for a structural UNSUPPORTED verdict."""
-    if descriptor.side == "short":
-        return "short selling is UNSUPPORTED: the desk trades long-only"
     if descriptor.order_type == "trailing_stop" and descriptor.order_class != "simple":
         return (
             "trailing_stop with order_class other than simple is never available: "
@@ -370,6 +366,9 @@ class BrokerCapabilities:
         Maps the order service's string capability names
         (``standalone_stop_sell:{whole|fractional}:{day|gtc}``,
         ``standalone_trailing_stop_sell:{whole|fractional}:{day|gtc}``,
+        ``short_entry_sell:{whole|fractional}:{day|gtc}:{market|limit}``,
+        ``standalone_stop_buy_to_cover:{whole|fractional}:{day|gtc}``,
+        ``standalone_trailing_stop_buy_to_cover:{whole|fractional}:{day|gtc}``,
         ``replace_{limit_price|stop_price|trail_price|trail_percent}``) onto
         descriptors. Unknown names fail closed (False). Legacy replace names
         resolve to True when any matching replace descriptor for that order
@@ -448,6 +447,38 @@ def _legacy_to_descriptor(capability: Any) -> CapabilityDescriptor | None:
             side="sell",
             operation="submit",
         )
+    if len(parts) == 3 and parts[0] in {
+        "standalone_stop_buy_to_cover",
+        "standalone_trailing_stop_buy_to_cover",
+    }:
+        # Short-side protection: a BUY stop / trailing stop that covers the short.
+        _, qty_word, tif = parts
+        if qty_word not in _LEGACY_QTY_WORDS or tif not in _LEGACY_TIF_WORDS:
+            return None
+        return CapabilityDescriptor(
+            order_type="stop" if parts[0] == "standalone_stop_buy_to_cover" else "trailing_stop",
+            order_class="simple",
+            sizing=qty_word,
+            time_in_force=tif,
+            side="buy",
+            operation="submit",
+        )
+    if len(parts) == 4 and parts[0] == "short_entry_sell":
+        _, qty_word, tif, order_type = parts
+        if (
+            qty_word not in _LEGACY_QTY_WORDS
+            or tif not in _LEGACY_TIF_WORDS
+            or order_type not in {"market", "limit"}
+        ):
+            return None
+        return CapabilityDescriptor(
+            order_type=order_type,
+            order_class="simple",
+            sizing=qty_word,
+            time_in_force=tif,
+            side="short",
+            operation="submit",
+        )
     if len(parts) == 1 and parts[0].startswith("replace_"):
         field = parts[0][len("replace_") :]
         order_type = _LEGACY_REPLACE_FIELDS.get(field)
@@ -476,8 +507,9 @@ def default_alpaca_capabilities() -> BrokerCapabilities:
     Everything else defaults to UNPROVEN (stop-only OTO, bracket/OCO,
     fractional stop or linked orders, fractional trailing stop, stop-price
     replace, trailing replace, OTO replace, fractional GTC, extended TIFs),
-    except the structural UNSUPPORTED rules (short selling, non-simple
-    trailing_stop, notional replace).
+    except structural UNSUPPORTED rules (non-simple trailing_stop and notional
+    replace). Short-selling combinations deliberately remain UNPROVEN until a
+    paper verification or explicit LIVE promotion is recorded.
     """
     entries: dict[tuple[str, tuple[str, str, str, str, str, str]], _Entry] = {}
     for env in (AlpacaEnvironment.PAPER, AlpacaEnvironment.LIVE):

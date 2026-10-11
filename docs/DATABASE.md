@@ -89,6 +89,16 @@ Read-only connections (`open_connection(..., read_only=True)`):
   including unknown applied versions), then applies each pending file
   atomically (`BEGIN IMMEDIATE` … insert into `schema_migrations` … commit)
   with rollback on failure.
+- `0002_bidirectional_sides.sql` widens the strategy `role` (`BUY`, `SELL`,
+  `SHORT`, `COVER`) and the order-intent / broker-order / fill `side`
+  (`BUY`, `SELL`, `SELL_SHORT`, `BUY_TO_COVER`) CHECK constraints. SQLite cannot
+  alter a CHECK in place and a table rebuild would have to recreate the
+  append-only `fills` triggers and every dependent foreign key, so it uses the
+  documented in-transaction `writable_schema` edit followed by
+  `PRAGMA writable_schema = RESET`: all existing rows, indexes, triggers and
+  foreign keys are preserved and the widened constraints apply to the same
+  connection immediately. `position_cycles`/`positions.direction` and
+  `signals.action` already allowed `SHORT`.
 - `schema_migrations` stores `(version, name, sha256, applied_at)`; `name`
   omits the numeric prefix and `.sql` suffix (for example `initial`).
 - `migration_status` (maintenance service) reports `applied_versions`,

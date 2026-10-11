@@ -70,8 +70,9 @@ be resolved before a GO).
   against the intended environment (see `docs/ALPACA.md` §1).
 - [ ] Capability matrix reviewed (`docs/ALPACA.md` §6): every protective
   combination intended for use is `PROVEN` for the target environment, not
-  `UNPROVEN`/`UNSUPPORTED`; structurally `UNSUPPORTED` combinations (short
-  side, non-`simple` trailing, notional+replace) are not used.
+  `UNPROVEN`/`UNSUPPORTED`; structurally `UNSUPPORTED` combinations
+  (non-`simple` trailing, notional+replace) are not used, and short-side
+  combinations are used only after a recorded paper verification (never LIVE).
 
 ## 6. Startup reconciliation clean with no drift
 

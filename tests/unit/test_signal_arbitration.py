@@ -208,10 +208,69 @@ def test_unmanaged_position_selects_nothing(management: ManagementStatus) -> Non
     assert all(DecisionReason.NOT_MANAGED in r.reason_codes for r in result.records)
 
 
-def test_short_direction_never_produces_an_exit() -> None:
+def short_position(quantity: str = "100") -> Position:
+    return Position(
+        account_scope_id="acct", symbol=SYMBOL, quantity=Decimal(quantity),
+        avg_entry_price=Decimal("100"), cost_basis=Decimal(quantity) * Decimal("100"),
+        as_of=NOW, management=ManagementStatus.MANAGED, cycle_id=CYCLE,
+        direction=PositionDirection.SHORT,
+    )
+
+
+def cover(strategy_id: str = "cover_ema_bullish_crossover", bar: datetime = BAR) -> ExitCandidate:
+    return ExitCandidate(
+        signal_id=make_signal_id(strategy_id, "1.0.0", SYMBOL, StrategyRole.COVER, bar),
+        source=ExitSource.STRATEGY_COVER, symbol=SYMBOL, strategy_id=strategy_id,
+        version="1.0.0", position_cycle_id=CYCLE, bar_time=bar,
+    )
+
+
+def test_a_role_must_match_the_position_it_closes() -> None:
+    # a SHORT-direction exit role against a long position selects nothing
     result = run([sell()], direction=PositionDirection.SHORT)
     assert result.selected is None
+    assert DecisionReason.NOT_SHORT in result.records[0].reason_codes
+    result = run([cover()], position=short_position(), direction=PositionDirection.LONG)
+    assert result.selected is None
     assert DecisionReason.NOT_LONG in result.records[0].reason_codes
+
+
+def test_a_sell_never_closes_a_short_and_a_cover_never_closes_a_long() -> None:
+    sold = run([sell()], position=short_position())
+    assert sold.selected is None
+    assert DecisionReason.NOT_LONG in sold.records[0].reason_codes
+    covered = run([cover()])  # default position is a long
+    assert covered.selected is None
+    assert DecisionReason.NOT_SHORT in covered.records[0].reason_codes
+
+
+def test_cover_closes_the_whole_short_and_is_subject_to_minimum_hold() -> None:
+    chosen = run([cover()], position=short_position("37"), minimum_hold=timedelta(0))
+    assert chosen.selected is not None and chosen.selected.quantity == Decimal("37")
+    assert chosen.selected.source is ExitSource.STRATEGY_COVER
+    held = run([cover()], position=short_position(), minimum_hold=HOLD,
+               entry_filled_at=NOW - timedelta(minutes=5))
+    assert held.selected is None
+    assert DecisionReason.MIN_HOLD_ACTIVE in held.records[0].reason_codes
+
+
+def test_protective_stop_closes_a_short_and_beats_a_cover_and_ignores_minimum_hold() -> None:
+    stop = safety(ExitSource.PROTECTIVE_STOP)
+    result = run([cover(), stop], position=short_position(), minimum_hold=HOLD,
+                 entry_filled_at=NOW - timedelta(minutes=1))
+    assert result.selected is not None and result.selected.signal_id == stop.signal_id
+    loser = record_for(result, cover().signal_id)
+    assert loser.reason_codes[0] is DecisionReason.MIN_HOLD_ACTIVE or (
+        DecisionReason.SUPERSEDED_BY_HIGHER_PRIORITY in loser.reason_codes)
+
+
+def test_multiple_cover_strategies_select_exactly_one_deterministically() -> None:
+    a, b, c = cover("cover_a"), cover("cover_b"), cover("cover_c")
+    forward = run([a, b, c], position=short_position())
+    backward = run([c, b, a], position=short_position())
+    assert forward.selected is not None and backward.selected is not None
+    assert forward.selected.signal_id == backward.selected.signal_id == a.signal_id
+    assert sum(r.outcome is DecisionOutcome.SELECTED for r in forward.records) == 1
 
 
 def test_pending_exit_rejects_overlapping_strategy_sell() -> None:

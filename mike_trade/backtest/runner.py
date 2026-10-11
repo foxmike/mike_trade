@@ -43,6 +43,7 @@ from mike_trade.domain.trading import (
     OrderSide,
     OrderType,
     Position,
+    PositionDirection,
     TimeInForce,
 )
 from mike_trade.market_data.candles import (
@@ -93,6 +94,16 @@ ZERO = Decimal("0")
 #: shared entry/exit arbitration, GTC post-fill protective stops (fixed, native
 #: trailing, stepped trailing), exit-reason recording, 500-bar shared context.
 LIFECYCLE_SEMANTICS_VERSION = "2"
+#: Runs whose strategy collections include SHORT or COVER strategies are produced under
+#: bidirectional lifecycle semantics ("3": adds the SHORT/COVER lifecycle, restricted short
+#: collateral, direction-aware stops and borrow-cost accounting).  Long-only runs keep "2" so
+#: their configuration hashes and artifacts are unchanged.
+BIDIRECTIONAL_LIFECYCLE_SEMANTICS_VERSION = "3"
+#: Regulation T style initial requirement: proceeds stay locked AND half the notional in
+#: own cash is required (150% of the short's notional).
+DEFAULT_SHORT_MARGIN_MULTIPLIER = Decimal("1.5")
+_BPS = Decimal("10000")
+_ENTRY_FILL_SIDES = frozenset({"BUY", "B", "SELL_SHORT"})
 
 #: Completed bars handed to every strategy; parity with the operational
 #: ``CandleBuilder(max_history=500)`` behind the shared ``MarketContext``.
@@ -205,8 +216,13 @@ def _dt(value: Any) -> datetime:
 
 
 def _trade_records(fills: Sequence[Mapping[str, Any]]) -> list[dict[str, Any]]:
-    """Pair long entries/exits FIFO, preserving costs and timestamps."""
-    queues: dict[str, list[dict[str, Any]]] = defaultdict(list)
+    """Pair entries with the opposite-side exits FIFO, preserving costs and timestamps.
+
+    ``BUY`` opens a long closed by ``SELL``; ``SELL_SHORT`` opens a short closed by
+    ``BUY_TO_COVER``.  A short's gross P&L is ``(entry - exit) x quantity`` and any estimated
+    borrow cost recorded on the cover fill is charged to the trade.
+    """
+    queues: dict[tuple[str, str], list[dict[str, Any]]] = defaultdict(list)
     trades: list[dict[str, Any]] = []
     ordered = sorted(fills, key=lambda f: _dt(f["time"]))
     for fill in ordered:
@@ -218,8 +234,9 @@ def _trade_records(fills: Sequence[Mapping[str, Any]]) -> list[dict[str, Any]]:
             _decimal(fill.get("fee", "0")),
         )
         at = _dt(fill["time"])
-        if side in ("BUY", "B"):
-            queues[symbol].append(
+        if side in ("BUY", "B", "SELL_SHORT"):
+            direction = "SHORT" if side == "SELL_SHORT" else "LONG"
+            queues[(symbol, direction)].append(
                 {
                     "qty": qty,
                     "price": price,
@@ -232,42 +249,55 @@ def _trade_records(fills: Sequence[Mapping[str, Any]]) -> list[dict[str, Any]]:
                 }
             )
             continue
-        if side not in ("SELL", "S"):
+        if side not in ("SELL", "S", "BUY_TO_COVER"):
             continue
+        direction = "SHORT" if side == "BUY_TO_COVER" else "LONG"
+        queue = queues[(symbol, direction)]
+        borrow = _decimal(fill.get("borrow_cost", "0"))
         remaining = qty
-        while remaining > ZERO and queues[symbol]:
-            lot = queues[symbol][0]
+        while remaining > ZERO and queue:
+            lot = queue[0]
             matched = min(remaining, lot["qty"])
             fraction = matched / qty
             entry_fee = (
                 lot["fee"] * (matched / (matched + lot["qty"] - matched)) if lot["qty"] else ZERO
             )
             exit_fee = fee * fraction
-            gross = (price - lot["price"]) * matched
-            pnl = gross - entry_fee - exit_fee
-            trades.append(
-                {
-                    "symbol": symbol,
-                    "entry_time": lot["time"],
-                    "exit_time": at,
-                    "entry_price": lot["price"],
-                    "exit_price": price,
-                    "quantity": matched,
-                    "gross_pnl": gross,
-                    "costs": entry_fee + exit_fee,
-                    "pnl": pnl,
-                    "hold_duration_seconds": Decimal(str((at - lot["time"]).total_seconds())),
-                    "mfe": (lot["high"] - lot["price"]) * matched,
-                    "mae": (lot["low"] - lot["price"]) * matched,
-                    "entry_strategy": lot.get("entry_strategy"),
-                    "exit_reason": fill.get("exit_reason"),
-                    "exit_strategy": fill.get("strategy"),
-                }
-            )
+            exit_borrow = borrow * fraction
+            if direction == "LONG":
+                gross = (price - lot["price"]) * matched
+                mfe = (lot["high"] - lot["price"]) * matched
+                mae = (lot["low"] - lot["price"]) * matched
+            else:  # a short gains when the price falls
+                gross = (lot["price"] - price) * matched
+                mfe = (lot["price"] - lot["low"]) * matched
+                mae = (lot["price"] - lot["high"]) * matched
+            pnl = gross - entry_fee - exit_fee - exit_borrow
+            trade = {
+                "symbol": symbol,
+                "entry_time": lot["time"],
+                "exit_time": at,
+                "entry_price": lot["price"],
+                "exit_price": price,
+                "quantity": matched,
+                "gross_pnl": gross,
+                "costs": entry_fee + exit_fee + exit_borrow,
+                "pnl": pnl,
+                "hold_duration_seconds": Decimal(str((at - lot["time"]).total_seconds())),
+                "mfe": mfe,
+                "mae": mae,
+                "entry_strategy": lot.get("entry_strategy"),
+                "exit_reason": fill.get("exit_reason"),
+                "exit_strategy": fill.get("strategy"),
+            }
+            if direction == "SHORT":
+                trade["direction"] = "SHORT"
+                trade["borrow_cost"] = exit_borrow
+            trades.append(trade)
             lot["qty"] -= matched
             remaining -= matched
             if lot["qty"] == ZERO:
-                queues[symbol].pop(0)
+                queue.pop(0)
     return trades
 
 
@@ -377,8 +407,12 @@ def compute_metrics(
         if holding:
             high = max(_decimal(b["high"]) for b in holding)
             low = min(_decimal(b["low"]) for b in holding)
-            t["mfe"] = max(ZERO, high - t["entry_price"]) * t["quantity"]
-            t["mae"] = min(ZERO, low - t["entry_price"]) * t["quantity"]
+            if t.get("direction") == "SHORT":
+                t["mfe"] = max(ZERO, t["entry_price"] - low) * t["quantity"]
+                t["mae"] = min(ZERO, t["entry_price"] - high) * t["quantity"]
+            else:
+                t["mfe"] = max(ZERO, high - t["entry_price"]) * t["quantity"]
+                t["mae"] = min(ZERO, low - t["entry_price"]) * t["quantity"]
         excursions.append(
             {"symbol": t["symbol"], "entry_time": t["entry_time"], "mfe": t["mfe"], "mae": t["mae"]}
         )
@@ -391,10 +425,13 @@ def compute_metrics(
             symbol = str(f["symbol"]).upper()
             qty, price = _decimal(f["quantity"]), _decimal(f["price"])
             marks[symbol] = price
-            exposure[symbol] += qty if str(f["side"]).upper() in ("BUY", "B") else -qty
+            # signed exposure: BUY / BUY_TO_COVER add, SELL / SELL_SHORT subtract
+            exposure[symbol] += (
+                qty if str(f["side"]).upper() in ("BUY", "B", "BUY_TO_COVER") else -qty
+            )
             peak_exposure = max(
                 peak_exposure,
-                sum((max(ZERO, q) * marks.get(s, ZERO) for s, q in exposure.items()), ZERO),
+                sum((abs(q) * marks.get(s, ZERO) for s, q in exposure.items()), ZERO),
             )
         denom = max((_decimal(p.get("equity", capital)) for p in equity), default=capital)
         utilization = min(Decimal(1), peak_exposure / denom) if denom else ZERO
@@ -435,10 +472,12 @@ class _SymbolPlan:
     buys: tuple[type, ...]
     sells: tuple[type, ...]
     params: Mapping[str, Mapping[str, Any]]
+    shorts: tuple[type, ...] = ()
+    covers: tuple[type, ...] = ()
 
     @property
     def all(self) -> tuple[type, ...]:
-        return self.buys + self.sells
+        return self.buys + self.sells + self.shorts + self.covers
 
 
 @dataclass(slots=True)
@@ -451,10 +490,15 @@ class _Protection:
     entry_reference: Decimal
     current_stop: Decimal
     stepped: SteppedTrailingState | None = None
+    direction: PositionDirection = PositionDirection.LONG
 
 
 def _floor_stop(price: Decimal) -> Decimal:
     return ALPACA_EQUITY_TICK_RULES.floor(price)
+
+
+def _ceil_stop(price: Decimal) -> Decimal:
+    return ALPACA_EQUITY_TICK_RULES.ceil(price)
 
 
 def _stop_spec_from_config(config: Mapping[str, Any]) -> dict[str, Any] | None:
@@ -574,6 +618,8 @@ class BacktestRunner:
                 tuple(c for c in ordered if c.spec.side is StrategyRole.BUY),
                 tuple(c for c in ordered if c.spec.side is StrategyRole.SELL),
                 params,
+                tuple(c for c in ordered if c.spec.side is StrategyRole.SHORT),
+                tuple(c for c in ordered if c.spec.side is StrategyRole.COVER),
             )
         return plans
 
@@ -652,12 +698,24 @@ class BacktestRunner:
                 "symbols": sorted(request.symbols),
                 "window_start": request.window_start,
                 "window_end": request.window_end,
-                "lifecycle_semantics": LIFECYCLE_SEMANTICS_VERSION,
+                "lifecycle_semantics": (
+                    BIDIRECTIONAL_LIFECYCLE_SEMANTICS_VERSION
+                    if any(p.shorts or p.covers for p in plans.values())
+                    else LIFECYCLE_SEMANTICS_VERSION
+                ),
                 "context_history_bars": request.context_history_bars,
                 "strategy_collections": {
                     s: {
                         "buy": [c.spec.strategy_id for c in p.buys],
                         "sell": [c.spec.strategy_id for c in p.sells],
+                        **(
+                            {
+                                "short": [c.spec.strategy_id for c in p.shorts],
+                                "cover": [c.spec.strategy_id for c in p.covers],
+                            }
+                            if p.shorts or p.covers
+                            else {}
+                        ),
                         "params": p.params,
                     }
                     for s, p in sorted(plans.items())
@@ -751,9 +809,69 @@ class BacktestRunner:
         cycles: list[dict[str, Any]] = []
         equity_curve: list[dict[str, Any]] = []
         cash = request.starting_capital
-        quantities: dict[str, Decimal] = defaultdict(lambda: ZERO)
+        quantities: dict[str, Decimal] = defaultdict(lambda: ZERO)  # position magnitude
         costs: dict[str, Decimal] = defaultdict(lambda: ZERO)
+        directions: dict[str, PositionDirection] = {}  # direction of each open position
         marks: dict[str, Decimal] = {}
+        # Short-selling controls (fail closed): shorting is opt-in per run, proceeds are
+        # restricted collateral, and borrow cost is an explicit estimated assumption.
+        short_authorized = bool(request.config.get("short_selling_enabled", False))
+        margin_multiplier = Decimal(
+            str(request.config.get("short_margin_multiplier", DEFAULT_SHORT_MARGIN_MULTIPLIER))
+        )
+        if margin_multiplier < Decimal(1):
+            raise ValueError("short_margin_multiplier must be >= 1")
+        borrow_bps_per_day = Decimal(str(request.config.get("short_borrow_bps_per_day", "0")))
+        if borrow_bps_per_day < ZERO:
+            raise ValueError("short_borrow_bps_per_day must be >= 0")
+        max_gross_exposure = (
+            Decimal(str(request.config["max_gross_exposure"]))
+            if request.config.get("max_gross_exposure") is not None
+            else None
+        )
+        has_short_strategies = any(p.shorts or p.covers for p in plans.values())
+
+        def is_short(symbol: str) -> bool:
+            return directions.get(symbol) is PositionDirection.SHORT
+
+        def restricted_collateral() -> Decimal:
+            """Cash locked behind open shorts: never available to buy or short anything."""
+            return sum(
+                (margin_multiplier * costs[s] for s in list(directions) if is_short(s)), ZERO
+            )
+
+        def portfolio_equity() -> Decimal:
+            """Cash plus longs minus the market liability of shorts (marks, else cost)."""
+            total = cash
+            for sym, qty in quantities.items():
+                if qty <= ZERO:
+                    continue
+                value = qty * marks.get(sym, ZERO)
+                total += -value if is_short(sym) else value
+            return total
+
+        def equity_row(at: datetime) -> dict[str, Any]:
+            row: dict[str, Any] = {"time": at, "cash": cash, "equity": portfolio_equity()}
+            if has_short_strategies:
+                collateral = restricted_collateral()
+                row["restricted_collateral"] = collateral
+                row["available_cash"] = cash - collateral
+            return row
+
+        def gross_exposure() -> Decimal:
+            return sum(
+                (q * marks.get(sym, ZERO) for sym, q in quantities.items() if q > ZERO), ZERO
+            )
+
+        def borrow_cost(symbol: str, quantity: Decimal, at: datetime) -> Decimal:
+            """Estimated stock-borrow charge for covering ``quantity`` (an assumption, 0 default)."""
+            cycle = open_cycles.get(symbol)
+            if borrow_bps_per_day <= ZERO or not is_short(symbol) or cycle is None:
+                return ZERO
+            opened = cycle["opened_at"].astimezone(NEW_YORK).date()
+            days = max((at.astimezone(NEW_YORK).date() - opened).days, 0)
+            share = costs[symbol] * quantity / quantities[symbol]
+            return share * borrow_bps_per_day * days / _BPS
         open_cycles: dict[str, dict[str, Any]] = {}
         order_meta: dict[str, dict[str, Any]] = {}
         pending_entry: dict[str, str] = {}
@@ -803,6 +921,8 @@ class BacktestRunner:
                 return
             entry_reference = current.entry_reference if current is not None else reference
             policy = protection_policy_for_entry(stop_spec, entry_reference)
+            direction = directions.get(symbol, PositionDirection.LONG)
+            long = direction is PositionDirection.LONG
             floor_stop = current.current_stop if current is not None else ZERO
             stepped = current.stepped if current is not None else None
             protection_count += 1
@@ -812,7 +932,7 @@ class BacktestRunner:
                 account_scope_id=scope_id,
                 cycle_id=cycle_id,
                 symbol=symbol,
-                side=OrderSide.SELL,
+                side=OrderSide.SELL if long else OrderSide.BUY_TO_COVER,
                 purpose=OrderPurpose.PROTECTIVE_STOP,
                 time_in_force=TimeInForce.GTC,
                 created_at=self.clock.now(),
@@ -833,6 +953,7 @@ class BacktestRunner:
                         if policy.stop_offset_amount is not None
                         else entry_reference * policy.stop_offset_percent / Decimal(100)
                     )
+                    raw_stop = entry_reference - offset if long else entry_reference + offset
                 else:
                     stepped = stepped or initial_state(
                         entry_reference,
@@ -845,13 +966,22 @@ class BacktestRunner:
                             TimeInForce.GTC,
                             "backtest",
                         ),
+                        side=direction.value,
                     )
-                    offset = entry_reference - stepped.candidate_stop
-                stop_now = max(_floor_stop(entry_reference - offset), floor_stop)
-                if not ZERO < stop_now < entry_reference:
+                    raw_stop = stepped.candidate_stop
+                if long:
+                    stop_now = max(_floor_stop(raw_stop), floor_stop)
+                    valid = ZERO < stop_now < entry_reference
+                else:
+                    # a short's protective stop sits ABOVE the market and only ever falls
+                    stop_now = _ceil_stop(raw_stop)
+                    if floor_stop > ZERO:
+                        stop_now = min(stop_now, floor_stop)
+                    valid = stop_now > entry_reference
+                if not valid:
                     raise ValueError(
                         f"{symbol}: protective stop distance leaves no valid stop "
-                        f"below the {entry_reference} entry reference"
+                        f"{'below' if long else 'above'} the {entry_reference} entry reference"
                     )
                 intent = OrderIntent(
                     order_type=OrderType.STOP, stop_price=stop_now, **common
@@ -868,7 +998,8 @@ class BacktestRunner:
                 if native_state is not None:
                     recorded_stop = native_state.stop_price
             protections[symbol] = _Protection(
-                order.broker_order_id, stop_spec, policy, entry_reference, recorded_stop, stepped
+                order.broker_order_id, stop_spec, policy, entry_reference, recorded_stop, stepped,
+                direction,
             )
             open_cycles[symbol]["protection_mode"] = str(spec_type(stop_spec))
             if recorded_stop > ZERO:
@@ -883,8 +1014,11 @@ class BacktestRunner:
                 "quantity": quantities[symbol],
             })
 
-        async def ratchet_stepped(symbol: str, high: Decimal) -> None:
-            """Engine-managed stepped trailing: raise (never lower) the stop."""
+        async def ratchet_stepped(symbol: str, high: Decimal, low: Decimal) -> None:
+            """Engine-managed stepped trailing: tighten (never loosen) the stop.
+
+            A long's stop only rises with new highs; a short's stop only falls with new lows.
+            """
             protection = protections.get(symbol)
             if (
                 protection is None
@@ -894,11 +1028,18 @@ class BacktestRunner:
             ):
                 return
             policy = protection.policy
-            if high < protection.entry_reference + (policy.activation_gain or ZERO):
+            long = protection.direction is PositionDirection.LONG
+            favorable = high if long else low
+            activation = policy.activation_gain or ZERO
+            if (
+                favorable < protection.entry_reference + activation
+                if long
+                else favorable > protection.entry_reference - activation
+            ):
                 return
             moved = advance(
                 protection.stepped,
-                high,
+                favorable,
                 SteppedTrailingPolicy(
                     DistanceKind.PERCENT,
                     policy.trail_percent,
@@ -910,8 +1051,10 @@ class BacktestRunner:
                 ),
             )
             protection.stepped = moved
-            candidate = _floor_stop(moved.candidate_stop)
-            if candidate > protection.current_stop:
+            candidate = (
+                _floor_stop(moved.candidate_stop) if long else _ceil_stop(moved.candidate_stop)
+            )
+            if (candidate > protection.current_stop) if long else (candidate < protection.current_stop):
                 previous = protection.current_stop
                 await self.execution.replace_order(protection.order_id, stop_price=candidate)
                 protection.current_stop = candidate
@@ -932,7 +1075,11 @@ class BacktestRunner:
             if protection is None or protection.policy.kind is not ProtectionKind.BROKER_TRAILING_STOP:
                 return
             state = self.execution.protection_state(protection.order_id)
-            if state is None or state.stop_price <= protection.current_stop:
+            if state is None or (
+                state.stop_price <= protection.current_stop
+                if protection.direction is PositionDirection.LONG
+                else state.stop_price >= protection.current_stop
+            ):
                 return
             previous = protection.current_stop
             protection.current_stop = state.stop_price
@@ -960,7 +1107,32 @@ class BacktestRunner:
         ) -> None:
             assert self.intent_factory is not None
             intent = self.intent_factory(evaluation, context, request)
-            if intent.side is OrderSide.SELL:
+            if intent.side.is_entry:
+                # Direction-aware entry gates: shorting is opt-in, short-sale proceeds are
+                # restricted collateral (only the own-cash margin part is purchasing power),
+                # and an optional gross-exposure ceiling applies to long and short alike.
+                reference = evaluation.reference_price or marks.get(symbol) or ZERO
+                notional = (intent.quantity or ZERO) * reference
+                refusal: str | None = None
+                if intent.side is OrderSide.SELL_SHORT:
+                    if not short_authorized:
+                        refusal = "SHORT_SELLING_NOT_AUTHORIZED"
+                    elif (margin_multiplier - 1) * notional > cash - restricted_collateral():
+                        refusal = "INSUFFICIENT_SHORT_MARGIN"
+                if (
+                    refusal is None
+                    and max_gross_exposure is not None
+                    and gross_exposure() + notional > max_gross_exposure
+                ):
+                    refusal = "GROSS_EXPOSURE_LIMIT"
+                if refusal is not None:
+                    decisions.append({
+                        "kind": "ENTRY_REFUSED", "time": context.as_of, "symbol": symbol,
+                        "signal_id": evaluation.signal_id, "strategy_id": evaluation.strategy_id,
+                        "side": intent.side.value, "reason": refusal,
+                    })
+                    return
+            if intent.side.is_exit:
                 # Make way for the discretionary exit exactly as the engine does:
                 # the stop is cancelled first and re-armed if the exit never fills.
                 protection = protections.get(symbol)
@@ -991,7 +1163,7 @@ class BacktestRunner:
                 "signal_time": context.as_of,
                 "intent_id": getattr(intent, "intent_id", None),
             }
-            if intent.side is OrderSide.BUY:
+            if intent.side.is_entry:
                 pending_entry[symbol] = order.broker_order_id
             else:
                 pending_exit[symbol] = order.broker_order_id
@@ -1003,7 +1175,14 @@ class BacktestRunner:
             await record_native_stop(ev.symbol)
             for x in outputs:
                 meta = order_meta.get(x.fill.broker_order_id, {})
-                is_buy = x.side.value == "BUY"
+                is_buy = x.side.is_entry  # opens a position (BUY or SELL_SHORT)
+                direction = x.side.direction
+                # Estimated borrow charge, charged only when covering a short.
+                borrow = (
+                    borrow_cost(x.symbol, x.quantity, x.fill.filled_at)
+                    if not is_buy and direction is PositionDirection.SHORT
+                    else ZERO
+                )
                 fill_row = {
                     "symbol": x.symbol,
                     "side": x.side.value,
@@ -1023,17 +1202,30 @@ class BacktestRunner:
                     else (
                         ExitSource.PROTECTIVE_STOP.value
                         if x.purpose is OrderPurpose.PROTECTIVE_STOP
-                        else ExitSource.STRATEGY_SELL.value
+                        else (
+                            ExitSource.STRATEGY_SELL.value
+                            if direction is PositionDirection.LONG
+                            else ExitSource.STRATEGY_COVER.value
+                        )
                     ),
                 }
+                if direction is PositionDirection.SHORT:
+                    # Long-only artifacts keep their exact shape; shorts add explicit fields.
+                    fill_row["direction"] = direction.value
+                    fill_row["borrow_cost"] = borrow
                 fills.append(fill_row)
-                cash += (
-                    -(x.quantity * x.price + x.fee)
-                    if is_buy
-                    else x.quantity * x.price - x.fee
-                )
+                # BUY pays; SELL_SHORT is credited (the proceeds are locked as collateral by
+                # ``restricted_collateral``); SELL is credited; BUY_TO_COVER pays market + costs.
+                if x.side is OrderSide.BUY:
+                    cash -= x.quantity * x.price + x.fee
+                elif x.side is OrderSide.BUY_TO_COVER:
+                    cash -= x.quantity * x.price + x.fee + borrow
+                else:
+                    cash += x.quantity * x.price - x.fee
                 marks[x.symbol] = x.price
                 if is_buy:
+                    if quantities[x.symbol] <= ZERO:
+                        directions[x.symbol] = direction
                     quantities[x.symbol] += x.quantity
                     costs[x.symbol] += x.quantity * x.price
                     if x.symbol not in open_cycles:
@@ -1056,6 +1248,11 @@ class BacktestRunner:
                             "entry_decision": "SELECTED",
                             "exit_reason": None,
                             "exit_strategy": None,
+                            **(
+                                {"direction": direction.value}
+                                if direction is PositionDirection.SHORT
+                                else {}
+                            ),
                         }
                     fill_row["cycle_id"] = open_cycles[x.symbol]["cycle_id"]
                     for intent_row in intents:
@@ -1081,21 +1278,13 @@ class BacktestRunner:
                         cycle["exit_signal_timestamp"] = meta.get("signal_time")
                         if quantities[x.symbol] <= ZERO:
                             costs[x.symbol] = ZERO
+                            directions.pop(x.symbol, None)
                             protections.pop(x.symbol, None)
                             pending_exit.pop(x.symbol, None)
                             cycle = open_cycles.pop(x.symbol)
                             cycle["closed_at"] = x.fill.filled_at
                             cycles.append(cycle)
-                equity_curve.append(
-                    {
-                        "time": x.fill.filled_at,
-                        "cash": cash,
-                        "equity": cash
-                        + sum(
-                            (qty * marks.get(sym, ZERO) for sym, qty in quantities.items()), ZERO
-                        ),
-                    }
-                )
+                equity_curve.append(equity_row(x.fill.filled_at))
             if ev.kind != ReplayEvent.KIND_BAR or ev.candle is None:
                 continue
             symbol = ev.symbol
@@ -1103,14 +1292,7 @@ class BacktestRunner:
             if plan is None:
                 continue
             marks[symbol] = ev.candle.close
-            equity_curve.append(
-                {
-                    "time": ev.available_at,
-                    "cash": cash,
-                    "equity": cash
-                    + sum((qty * marks.get(sym, ZERO) for sym, qty in quantities.items()), ZERO),
-                }
-            )
+            equity_curve.append(equity_row(ev.available_at))
             candles_by_symbol[symbol].append(ev.candle)
             candle = ev.candle
             strategy_bar = StrategyCandle(
@@ -1190,7 +1372,7 @@ class BacktestRunner:
                 del pending_exit[symbol]
                 if quantities[symbol] > ZERO:
                     await arm_protection(symbol, marks[symbol])  # exit lapsed: re-protect
-            await ratchet_stepped(symbol, candle.high)
+            await ratchet_stepped(symbol, candle.high, candle.low)
 
             due = self.scheduler.process(
                 CandleClosedEvent(
@@ -1292,16 +1474,25 @@ class BacktestRunner:
                     return evaluation
                 return None
 
-            if quantities[symbol] > ZERO:
-                # BUY side while held: advance the indicators only. Clearing the
-                # eligibility flag makes the gate block every signal, so no entry results.
-                for cls in plan.buys:
+            held_direction = directions.get(symbol) if quantities[symbol] > ZERO else None
+            if held_direction is not None:
+                # A position is held. Only the exit role of its own direction may act:
+                # SELL closes a long, COVER closes a short.  Every other role keeps its
+                # indicator state continuous (advance-only: ineligible roles can never
+                # signal, and any signal they would raise is discarded).
+                long_held = held_direction is PositionDirection.LONG
+                exit_cls = plan.sells if long_held else plan.covers
+                other_exit_cls = plan.covers if long_held else plan.sells
+                exit_source = ExitSource.STRATEGY_SELL if long_held else ExitSource.STRATEGY_COVER
+                for cls in (*plan.buys, *plan.shorts):
+                    # Clearing the eligibility flag makes the gate block every entry signal.
                     state[(symbol, cls.spec.strategy_id)].pop("eligibility", None)
                     evaluate(cls, record=False)
-                # SELL side: every configured SELL strategy sees the held position.
+                for cls in other_exit_cls:
+                    evaluate(cls, record=False)
                 winners = {
                     e.signal_id: (cls, e)
-                    for cls in plan.sells
+                    for cls in exit_cls
                     if (e := evaluate(cls)) is not None
                 }
                 if winners and self.intent_factory is not None:
@@ -1316,12 +1507,13 @@ class BacktestRunner:
                         ev.available_at,
                         management=ManagementStatus.MANAGED,
                         cycle_id=str(cycle["cycle_id"]),
+                        direction=held_direction,
                     )
                     result = arbitrate_exit_decisions(
                         [
                             ExitCandidate(
                                 signal_id=sid,
-                                source=ExitSource.STRATEGY_SELL,
+                                source=exit_source,
                                 symbol=symbol,
                                 strategy_id=cls.spec.strategy_id,
                                 version=cls.spec.version,
@@ -1337,7 +1529,7 @@ class BacktestRunner:
                         minimum_hold=minimum_hold,
                         entry_filled_at=cycle["opened_at"],
                         pending_exit_source=(
-                            ExitSource.STRATEGY_SELL if symbol in pending_exit else None
+                            exit_source if symbol in pending_exit else None
                         ),
                     )
                     decisions.append(
@@ -1346,21 +1538,32 @@ class BacktestRunner:
                     if result.selected is not None:
                         await submit(winners[result.selected.signal_id][1], context, symbol)
             else:
-                # SELL side while flat: advance the indicators only; there is no
-                # position to exit, so any signal is discarded.
-                for cls in plan.sells:
+                # Flat: SELL and COVER have nothing to close; keep their indicators advancing
+                # and discard any signal.  BUY and (when authorized) SHORT compete for entry.
+                for cls in (*plan.sells, *plan.covers):
                     evaluate(cls, record=False)
-                # BUY side: only a flat symbol with no entry working is eligible.
                 candidates = {}
                 for cls in plan.buys:
                     state[(symbol, cls.spec.strategy_id)]["eligibility"] = "WATCHING_BUY"
                     if (e := evaluate(cls)) is not None:
                         candidates[e.signal_id] = (cls, e)
+                for cls in plan.shorts:
+                    if short_authorized:
+                        state[(symbol, cls.spec.strategy_id)]["eligibility"] = "WATCHING_SHORT"
+                        if (e := evaluate(cls)) is not None:
+                            candidates[e.signal_id] = (cls, e)
+                    else:
+                        # Not authorized: ineligible, advance-only (never a signal).
+                        state[(symbol, cls.spec.strategy_id)].pop("eligibility", None)
+                        evaluate(cls, record=False)
                 if candidates:
                     result = arbitrate_entry_decisions(
                         [
                             EntryCandidate(
-                                sid, cls.spec.strategy_id, cls.spec.version, symbol, e.bar_time
+                                sid, cls.spec.strategy_id, cls.spec.version, symbol, e.bar_time,
+                                PositionDirection.LONG
+                                if cls.spec.side is StrategyRole.BUY
+                                else PositionDirection.SHORT,
                             )
                             for sid, (cls, e) in candidates.items()
                         ],

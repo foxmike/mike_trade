@@ -680,11 +680,14 @@ def test_invariant_violating_payload_raises() -> None:
     short_signal_id = make_signal_id(
         "buy-aapl", "AAPL", SignalAction.ENTER_SHORT, BAR_TIME
     )
-    dormant_short = serde.to_primitive(make_signal())
-    dormant_short["action"] = SignalAction.ENTER_SHORT.name
-    dormant_short["signal_id"] = short_signal_id
+    # Short actions are valid signals (SHORT/COVER roles); a payload whose signal_id does NOT
+    # match its identity fields is still rejected, and the matching one round-trips.
+    short_signal = serde.to_primitive(make_signal())
+    short_signal["action"] = SignalAction.ENTER_SHORT.name
     with pytest.raises((ValueError, TypeError)):
-        serde.from_primitive(dormant_short)
+        serde.from_primitive(short_signal)  # signal_id still hashes ENTER_LONG
+    short_signal["signal_id"] = short_signal_id
+    assert serde.from_primitive(short_signal).action is SignalAction.ENTER_SHORT
 
 
 def test_missing_field_raises() -> None:

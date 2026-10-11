@@ -22,7 +22,7 @@ from __future__ import annotations
 import hashlib
 from collections.abc import Sequence
 from dataclasses import dataclass, replace
-from decimal import ROUND_FLOOR, Decimal
+from decimal import ROUND_CEILING, ROUND_FLOOR, Decimal
 from enum import StrEnum
 
 from mike_trade.domain.trading import (
@@ -32,6 +32,7 @@ from mike_trade.domain.trading import (
     OrderPurpose,
     OrderSide,
     OrderType,
+    PositionDirection,
     TimeInForce,
 )
 
@@ -109,6 +110,12 @@ class TickRules:
         increment = self.increment_for(_decimal(price, "price"))
         return (price / increment).to_integral_value(rounding=ROUND_FLOOR) * increment
 
+    def ceil(self, price: Decimal) -> Decimal:
+        """Round ``price`` up (never down) to the grid."""
+
+        increment = self.increment_for(_decimal(price, "price"))
+        return (price / increment).to_integral_value(rounding=ROUND_CEILING) * increment
+
 
 # Alpaca equity convention: $0.01 at or above $1.00, $0.0001 below.
 ALPACA_EQUITY_TICK_RULES = TickRules(
@@ -129,6 +136,7 @@ def compute_fixed_stop_price(
     *,
     tick_rules: TickRules,
     support_buffer: Decimal = _ZERO,
+    direction: PositionDirection = PositionDirection.LONG,
 ) -> Decimal:
     """Return the tick-floored long stop for a FIXED ``policy``.
 
@@ -146,30 +154,48 @@ def compute_fixed_stop_price(
     if not isinstance(tick_rules, TickRules):
         raise TypeError("tick_rules must be TickRules")
     reference = _decimal(reference_price, "reference_price", positive=True)
+    if not isinstance(direction, PositionDirection):
+        raise TypeError("direction must be PositionDirection")
     buffer = _decimal(support_buffer, "support_buffer")
 
     if policy.distance_percent is not None:
-        raw = reference * (_HUNDRED - policy.distance_percent) / _HUNDRED
+        offset = reference * policy.distance_percent / _HUNDRED
+        raw = reference - offset if direction is PositionDirection.LONG else reference + offset
     elif policy.distance_usd is not None:
-        raw = reference - policy.distance_usd
+        raw = (
+            reference - policy.distance_usd
+            if direction is PositionDirection.LONG
+            else reference + policy.distance_usd
+        )
     elif policy.atr_multiple is not None:
         if atr is None:
             raise InvalidStopPrice("STOP_INPUT_MISSING", "ATR is required for an ATR-multiple stop")
-        raw = reference - policy.atr_multiple * _decimal(atr, "atr", positive=True)
+        offset = policy.atr_multiple * _decimal(atr, "atr", positive=True)
+        raw = reference - offset if direction is PositionDirection.LONG else reference + offset
     else:
         level = policy.support_level if support is None else support
         if level is None:
             raise InvalidStopPrice("STOP_INPUT_MISSING", "support level is required")
-        raw = _decimal(level, "support", positive=True) - buffer
+        raw = (
+            _decimal(level, "support", positive=True) - buffer
+            if direction is PositionDirection.LONG
+            else _decimal(level, "support", positive=True) + buffer
+        )
 
     if raw <= _ZERO:
         raise InvalidStopPrice("STOP_NOT_POSITIVE", f"computed stop {raw} is not positive")
-    stop = tick_rules.floor(raw)
+    stop = tick_rules.floor(raw) if direction is PositionDirection.LONG else tick_rules.ceil(raw)
     if stop <= _ZERO:
         raise InvalidStopPrice("STOP_NOT_POSITIVE", f"stop {raw} floors to zero on the tick grid")
-    if stop >= reference:
+    invalid_side = stop >= reference if direction is PositionDirection.LONG else stop <= reference
+    if invalid_side:
         raise InvalidStopPrice(
-            "STOP_NOT_BELOW_REFERENCE", f"stop {stop} is not below reference {reference}"
+            (
+                "STOP_NOT_BELOW_REFERENCE"
+                if direction is PositionDirection.LONG
+                else "STOP_NOT_ABOVE_REFERENCE"
+            ),
+            f"stop {stop} is not protective for {direction.value} reference {reference}",
         )
     return stop
 
@@ -179,7 +205,7 @@ def compute_fixed_stop_price(
 
 @dataclass(frozen=True, slots=True)
 class ProtectiveOrderIntent:
-    """Provider-neutral SELL stop / stop-limit intent for a long position."""
+    """Provider-neutral stop / stop-limit intent for a directional position."""
 
     client_order_id: str
     cycle_id: str
@@ -212,6 +238,7 @@ def build_fixed_stop_order(
     limit_offset: Decimal | None = None,
     tick_rules: TickRules | None = None,
     previous_stop_price: Decimal | None = None,
+    direction: PositionDirection = PositionDirection.LONG,
 ) -> ProtectiveOrderIntent:
     """Build the SELL protective intent; the client order id is ``f(cycle_id, revision)``.
 
@@ -224,16 +251,24 @@ def build_fixed_stop_order(
     sym = _text(symbol, "symbol").upper()
     quantity = _decimal(covered_qty, "covered_qty", positive=True)
     stop = _decimal(stop_price, "stop_price", positive=True)
+    if not isinstance(direction, PositionDirection):
+        raise TypeError("direction must be PositionDirection")
     if isinstance(revision, bool) or not isinstance(revision, int) or revision < 0:
         raise ValueError("revision must be an int >= 0")
     kind = _order_semantics(semantics)
     time_in_force = _tif(tif)
-    if previous_stop_price is not None and stop < _decimal(
-        previous_stop_price, "previous_stop_price", positive=True
-    ):
-        raise InvalidStopPrice(
-            "STOP_DOWNWARD_MOVE", f"stop {stop} is below previous stop {previous_stop_price}"
-        )
+    if previous_stop_price is not None:
+        previous = _decimal(previous_stop_price, "previous_stop_price", positive=True)
+        loosens = stop < previous if direction is PositionDirection.LONG else stop > previous
+        if loosens:
+            raise InvalidStopPrice(
+                (
+                    "STOP_DOWNWARD_MOVE"
+                    if direction is PositionDirection.LONG
+                    else "STOP_UPWARD_MOVE"
+                ),
+                f"stop {stop} loosens {direction.value} stop {previous_stop_price}",
+            )
 
     limit: Decimal | None = None
     notes: tuple[str, ...] = ()
@@ -242,7 +277,11 @@ def build_fixed_stop_order(
         if limit_offset is None or tick_rules is None:
             raise ValueError("STOP_LIMIT requires limit_offset and tick_rules")
         offset = _decimal(limit_offset, "limit_offset", positive=True)
-        limit = tick_rules.floor(stop - offset)
+        limit = (
+            tick_rules.floor(stop - offset)
+            if direction is PositionDirection.LONG
+            else tick_rules.ceil(stop + offset)
+        )
         if limit <= _ZERO:
             raise InvalidStopPrice("LIMIT_NOT_POSITIVE", f"limit {stop - offset} is not positive")
         order_type = OrderType.STOP_LIMIT
@@ -260,6 +299,11 @@ def build_fixed_stop_order(
         stop_price=stop,
         limit_price=limit,
         time_in_force=time_in_force,
+        side=(
+            OrderSide.SELL
+            if direction is PositionDirection.LONG
+            else OrderSide.BUY_TO_COVER
+        ),
         risk_notes=notes,
     )
 
@@ -387,6 +431,7 @@ class FixedStopCycleState:
     symbol: str
     policy: ProtectionPolicy
     tick_rules: TickRules
+    direction: PositionDirection = PositionDirection.LONG
     entry_qty: Decimal = _ZERO
     entry_cost: Decimal = _ZERO
     exit_qty: Decimal = _ZERO
@@ -433,13 +478,25 @@ def _apply_fill(state: FixedStopCycleState, fill: Fill) -> FixedStopCycleState:
     if fill.fill_id in state.applied_fill_ids:
         return state
     ids = state.applied_fill_ids + (fill.fill_id,)
-    if fill.side is OrderSide.BUY:
+    entry_side = (
+        OrderSide.BUY
+        if state.direction is PositionDirection.LONG
+        else OrderSide.SELL_SHORT
+    )
+    exit_side = (
+        OrderSide.SELL
+        if state.direction is PositionDirection.LONG
+        else OrderSide.BUY_TO_COVER
+    )
+    if fill.side is entry_side:
         return replace(
             state,
             entry_qty=state.entry_qty + fill.quantity,
             entry_cost=state.entry_cost + fill.quantity * fill.price,
             applied_fill_ids=ids,
         )
+    if fill.side is not exit_side:
+        raise ValueError(f"fill side must be {entry_side.value} or {exit_side.value}")
     if state.exit_qty + fill.quantity > state.entry_qty:
         raise ValueError("cumulative exit quantity must not exceed entry quantity")
     return replace(state, exit_qty=state.exit_qty + fill.quantity, applied_fill_ids=ids)
@@ -463,6 +520,7 @@ def _planned_stop(state: FixedStopCycleState) -> Decimal:
         state.support,
         tick_rules=state.tick_rules,
         support_buffer=state.support_buffer,
+        direction=state.direction,
     )
     floor = [p for p in (state.last_stop_price,) if p is not None]
     floor += [
@@ -470,11 +528,25 @@ def _planned_stop(state: FixedStopCycleState) -> Decimal:
         for o in state.protective_orders
         if _is_effective(o) and getattr(o, "stop_price", None) is not None
     ]
-    stop = max([stop, *floor])
-    if stop >= reference:
+    stop = (
+        max([stop, *floor])
+        if state.direction is PositionDirection.LONG
+        else min([stop, *floor])
+    )
+    invalid_side = (
+        stop >= reference
+        if state.direction is PositionDirection.LONG
+        else stop <= reference
+    )
+    if invalid_side:
         # A ratcheted stop can sit at/above a lower post-fill reference; do not place it.
         raise InvalidStopPrice(
-            "STOP_NOT_BELOW_REFERENCE", f"ratcheted stop {stop} is not below reference {reference}"
+            (
+                "STOP_NOT_BELOW_REFERENCE"
+                if state.direction is PositionDirection.LONG
+                else "STOP_NOT_ABOVE_REFERENCE"
+            ),
+            f"ratcheted stop {stop} is not protective for {state.direction.value} reference {reference}",
         )
     return stop
 
@@ -492,6 +564,7 @@ def _intent(state: FixedStopCycleState, stop: Decimal, qty: Decimal) -> Protecti
         limit_offset=policy.limit_offset,
         tick_rules=state.tick_rules,
         previous_stop_price=state.last_stop_price,
+        direction=state.direction,
     )
 
 

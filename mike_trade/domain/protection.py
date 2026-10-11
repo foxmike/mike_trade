@@ -18,6 +18,8 @@ from decimal import Decimal
 from enum import Enum
 from typing import TYPE_CHECKING
 
+from mike_trade.domain.trading import PositionDirection
+
 if TYPE_CHECKING:
     from mike_trade.domain.trading import PositionCycle
 
@@ -28,6 +30,7 @@ __all__ = [
     "TrailingStopState",
     "start_protection",
     "combined_sell_exposure",
+    "combined_exit_exposure",
 ]
 
 _ZERO = Decimal("0")
@@ -166,6 +169,7 @@ class TrailingStopState:
     covered_quantity: Decimal
     stop_price: Decimal
     high_water_mark: Decimal
+    direction: PositionDirection = PositionDirection.LONG
     broker_order_id: str | None = None
     last_confirmed_at: datetime | None = None
 
@@ -177,6 +181,8 @@ class TrailingStopState:
             raise ValueError("kind must be ProtectionKind")
         if not isinstance(self.status, ProtectionStatus):
             raise ValueError("status must be ProtectionStatus")
+        if not isinstance(self.direction, PositionDirection):
+            raise ValueError("direction must be PositionDirection")
         object.__setattr__(
             self,
             "covered_quantity",
@@ -204,8 +210,16 @@ class TrailingStopState:
                 inclusive=False,
             ),
         )
-        if self.stop_price > self.high_water_mark:
-            raise ValueError("stop_price must not exceed high_water_mark for a long")
+        if (
+            self.direction is PositionDirection.LONG
+            and self.stop_price > self.high_water_mark
+        ):
+            raise ValueError("long stop_price must not exceed its favorable watermark")
+        if (
+            self.direction is PositionDirection.SHORT
+            and self.stop_price < self.high_water_mark
+        ):
+            raise ValueError("short stop_price must not be below its favorable watermark")
         if self.broker_order_id is not None:
             object.__setattr__(
                 self,
@@ -225,12 +239,20 @@ class TrailingStopState:
         new_high = _require_decimal(
             observed_high, field="observed_high", minimum=_ZERO, inclusive=False
         )
-        if new_stop < self.stop_price:
-            raise ValueError("a long protective stop must never move downward")
-        if new_high < self.high_water_mark:
-            raise ValueError("a long high_water_mark must never move downward")
-        if new_stop > new_high:
-            raise ValueError("new_stop_price must not exceed observed_high")
+        if self.direction is PositionDirection.LONG:
+            if new_stop < self.stop_price:
+                raise ValueError("a long protective stop must never move downward")
+            if new_high < self.high_water_mark:
+                raise ValueError("a long favorable watermark must never move downward")
+            if new_stop > new_high:
+                raise ValueError("long new_stop_price must not exceed the watermark")
+        else:
+            if new_stop > self.stop_price:
+                raise ValueError("a short protective stop must never move upward")
+            if new_high > self.high_water_mark:
+                raise ValueError("a short favorable watermark must never move upward")
+            if new_stop < new_high:
+                raise ValueError("short new_stop_price must not be below the watermark")
         return replace(self, stop_price=new_stop, high_water_mark=new_high)
 
     def with_covered_quantity(self, remaining: Decimal) -> TrailingStopState:
@@ -243,13 +265,18 @@ class TrailingStopState:
 
 
 def _offset_price(
-    fill_price: Decimal, *, percent: Decimal | None, amount: Decimal | None
+    fill_price: Decimal,
+    *,
+    percent: Decimal | None,
+    amount: Decimal | None,
+    direction: PositionDirection = PositionDirection.LONG,
 ) -> Decimal:
+    sign = Decimal("-1") if direction is PositionDirection.LONG else Decimal("1")
     if amount is not None:
-        return fill_price - amount
+        return fill_price + sign * amount
     if percent is None:  # Protected by ProtectionPolicy validation.
         raise ValueError("a percent or amount offset is required")
-    return fill_price * (Decimal("1") - percent / Decimal("100"))
+    return fill_price * (Decimal("1") + sign * percent / Decimal("100"))
 
 
 def start_protection(
@@ -268,16 +295,23 @@ def start_protection(
         raise ValueError("protection requires a positive filled entry quantity")
     if not isinstance(remaining_quantity, Decimal) or remaining_quantity <= _ZERO:
         raise ValueError("protection requires a positive remaining quantity")
+    direction = getattr(cycle, "direction", PositionDirection.LONG)
+    if not isinstance(direction, PositionDirection):
+        raise ValueError("cycle direction must be PositionDirection")
 
     if policy.kind is ProtectionKind.FIXED_STOP:
         stop = _offset_price(
             price,
             percent=policy.stop_offset_percent,
             amount=policy.stop_offset_amount,
+            direction=direction,
         )
     else:
         stop = _offset_price(
-            price, percent=policy.trail_percent, amount=policy.trail_amount
+            price,
+            percent=policy.trail_percent,
+            amount=policy.trail_amount,
+            direction=direction,
         )
     stop = _require_decimal(stop, field="stop_price", minimum=_ZERO, inclusive=False)
     return TrailingStopState(
@@ -291,6 +325,7 @@ def start_protection(
         covered_quantity=remaining_quantity,
         stop_price=stop,
         high_water_mark=price,
+        direction=direction,
     )
 
 
@@ -303,3 +338,11 @@ def combined_sell_exposure(
     pending = _require_decimal(pending_exit_qty, field="pending_exit_qty")
     position = _require_decimal(position_qty, field="position_qty")
     return protective + pending > position
+
+
+def combined_exit_exposure(
+    protective_qty: Decimal, pending_exit_qty: Decimal, position_qty: Decimal
+) -> bool:
+    """Direction-neutral alias: exits may be SELL or BUY_TO_COVER."""
+
+    return combined_sell_exposure(protective_qty, pending_exit_qty, position_qty)

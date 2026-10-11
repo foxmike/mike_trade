@@ -106,6 +106,7 @@ from mike_trade.domain.trading import (
     OrderSide,
     OrderType,
     Position,
+    PositionDirection,
     TimeInForce,
 )
 from mike_trade.execution.order_fsm import (
@@ -187,6 +188,11 @@ def _duration(value: object, name: str) -> timedelta:
     if not isinstance(value, timedelta) or value < timedelta(0):
         raise ValueError(f"{name} must be a non-negative timedelta")
     return value
+
+
+def _buys(side: OrderSide) -> bool:
+    """True for the broker-side buy variants (BUY, BUY_TO_COVER): they pay the ask."""
+    return side.broker_side == "buy"
 
 
 def _is_fractional(quantity: Decimal) -> bool:
@@ -393,6 +399,7 @@ class _Held:
     cycle_id: str
     quantity: Decimal
     cost: Decimal
+    direction: PositionDirection
 
 
 @dataclass(frozen=True, slots=True)
@@ -403,6 +410,7 @@ class _CycleView:
     account_scope_id: str
     symbol: str
     quantity: Decimal
+    direction: PositionDirection = PositionDirection.LONG
 
     @property
     def entry_quantity(self) -> Decimal:
@@ -485,6 +493,10 @@ class HistoricalExecutionSimulator:
         held = self._held.get(symbol.upper())
         return _ZERO if held is None else held.quantity
 
+    def position_direction(self, symbol: str) -> PositionDirection | None:
+        held = self._held.get(symbol.upper())
+        return None if held is None else held.direction
+
     def protective_coverage(self, symbol: str) -> Decimal:
         """Open quantity of protective stops on ``symbol`` (never above the held quantity)."""
         return sum(
@@ -511,7 +523,7 @@ class HistoricalExecutionSimulator:
             supports_notional=False,
             supports_native_trailing_stop=True,
             supports_extended_hours=False,
-            supports_short=False,
+            supports_short=True,
             paper_verified_combinations=(
                 frozenset((t.value.lower(), True) for t in a.fractional_order_types)
                 if a.allow_fractional
@@ -534,6 +546,7 @@ class HistoricalExecutionSimulator:
                 as_of=now,
                 management=ManagementStatus.MANAGED,
                 cycle_id=h.cycle_id,
+                direction=h.direction,
             )
             for symbol, h in sorted(self._held.items())
         )
@@ -562,7 +575,7 @@ class HistoricalExecutionSimulator:
         symbol = intent.symbol
         held = self._held.get(symbol)
         if intent.side is OrderSide.SELL:
-            if held is None or held.quantity <= _ZERO:
+            if held is None or held.direction is not PositionDirection.LONG:
                 raise BrokerRejectedError(
                     f"{symbol}: SELL without a held position would create a short",
                     code="would_short",
@@ -572,6 +585,23 @@ class HistoricalExecutionSimulator:
                     f"{symbol}: SELL quantity {quantity} exceeds held {held.quantity}",
                     code="exceeds_held_quantity",
                 )
+        elif intent.side is OrderSide.BUY_TO_COVER:
+            if held is None or held.direction is not PositionDirection.SHORT:
+                raise BrokerRejectedError(
+                    f"{symbol}: BUY_TO_COVER requires an existing short",
+                    code="no_short_position",
+                )
+            if quantity > held.quantity:
+                raise BrokerRejectedError(
+                    f"{symbol}: cover quantity {quantity} exceeds short {held.quantity}",
+                    code="exceeds_held_quantity",
+                )
+        elif held is not None and held.direction is not intent.side.direction:
+            # Never a simultaneous long and short; pyramiding is the lifecycle layer's rule.
+            raise BrokerRejectedError(
+                f"{symbol}: an open {held.direction.value} position blocks an opposite entry",
+                code="opposite_position_open",
+            )
         now = self._clock.now()
         self._order_seq += 1
         order = _Order(
@@ -619,9 +649,18 @@ class HistoricalExecutionSimulator:
                     "only fixed STOP orders accept a replacement stop price"
                 )
             _decimal(stop_price, "stop_price", inclusive=False)
-            floor = max([order.prot.stop_price, *(r.stop_price or _ZERO for r in order.pending)])
-            if stop_price < floor:
-                raise ValueError("a long protective stop must never move downward")
+            pending_stops = [r.stop_price for r in order.pending if r.stop_price is not None]
+            loosens = (
+                stop_price < max([order.prot.stop_price, *pending_stops])
+                if order.prot.direction is PositionDirection.LONG
+                else stop_price > min([order.prot.stop_price, *pending_stops])
+            )
+            if loosens:
+                raise ValueError(
+                    "a long protective stop must never move downward"
+                    if order.prot.direction is PositionDirection.LONG
+                    else "a short protective stop must never move upward"
+                )
         if quantity is not None:
             _decimal(quantity, "quantity", inclusive=False)
             remaining = quantity - order.filled
@@ -689,8 +728,11 @@ class HistoricalExecutionSimulator:
             )
         if fractional and intent.time_in_force is not TimeInForce.DAY:
             raise UnsupportedOrderCapabilityError("fractional orders must be DAY")
-        if intent.order_type in _STOP_TYPES and intent.side is not OrderSide.SELL:
-            raise UnsupportedOrderCapabilityError("stop orders are supported for SELL only")
+        if intent.order_type in _STOP_TYPES and intent.side not in {
+            OrderSide.SELL,
+            OrderSide.BUY_TO_COVER,
+        }:
+            raise UnsupportedOrderCapabilityError("stop orders require a closing side")
         if intent.purpose is OrderPurpose.PROTECTIVE_STOP and intent.order_type not in _STOP_TYPES:
             raise UnsupportedOrderCapabilityError("a protective stop must be a stop order")
         return quantity
@@ -708,7 +750,12 @@ class HistoricalExecutionSimulator:
                 status=ProtectionStatus.PENDING,
                 covered_quantity=order.quantity,
                 stop_price=intent.stop_price,
-                high_water_mark=max(intent.stop_price, avg),
+                high_water_mark=(
+                    max(intent.stop_price, avg)
+                    if held.direction is PositionDirection.LONG
+                    else min(intent.stop_price, avg)
+                ),
+                direction=held.direction,
             )
             return
         order.policy = ProtectionPolicy(
@@ -716,15 +763,25 @@ class HistoricalExecutionSimulator:
             trail_percent=intent.trail_percent,
             trail_amount=intent.trail_price,
         )
-        view = _CycleView(intent.cycle_id, intent.account_scope_id, intent.symbol, order.quantity)
+        view = _CycleView(
+            intent.cycle_id,
+            intent.account_scope_id,
+            intent.symbol,
+            order.quantity,
+            held.direction,
+        )
         # ``start_protection`` reads only the structural cycle surface that ``_CycleView`` has.
         state = start_protection(
             order.policy, view, self._last_price.get(intent.symbol, avg)  # type: ignore[arg-type]
         )
-        floored = ALPACA_EQUITY_TICK_RULES.floor(state.stop_price)
-        if floored <= _ZERO:
+        rounded = (
+            ALPACA_EQUITY_TICK_RULES.floor(state.stop_price)
+            if held.direction is PositionDirection.LONG
+            else ALPACA_EQUITY_TICK_RULES.ceil(state.stop_price)
+        )
+        if rounded <= _ZERO:
             raise ValueError("trailing distance leaves no positive stop")
-        order.prot = replace(state, stop_price=floored)
+        order.prot = replace(state, stop_price=rounded)
 
     # ---- bars
 
@@ -744,7 +801,7 @@ class HistoricalExecutionSimulator:
         if regular:
             # Completed-bar information only reaches orders from the next bar on.
             self._last_price[symbol] = c.close
-            self._ratchet(symbol, c.high, c.start)
+            self._ratchet(symbol, c.high, c.low, c.start)
         return out
 
     def _match_bar(
@@ -807,25 +864,28 @@ class HistoricalExecutionSimulator:
             elif o.order_type is OrderType.LIMIT:
                 assert o.limit_price is not None
                 marketable = (
-                    c.open <= o.limit_price if o.side is OrderSide.BUY else c.open >= o.limit_price
+                    c.open <= o.limit_price if _buys(o.side) else c.open >= o.limit_price
                 )
                 if marketable:
                     fill(o, c.open, self._price(o, c.open, capped=True), c.start, False)
-            elif o.prot is not None and c.open <= o.prot.stop_price:
+            elif o.prot is not None and self._stop_crossed(o, c.open, c.open):
                 fill(o, c.open, self._price(o, c.open, capped=False), c.start, False)
 
         # (b) intrabar: stops first, then limits traded strictly through
         live = [o for o in orders if o.is_open]
-        hit = [o for o in live if o.prot is not None and c.low <= o.prot.stop_price]
+        hit = [o for o in live if o.prot is not None and self._stop_crossed(o, c.low, c.high)]
         favorable = [
             o for o in live
-            if o.order_type is OrderType.LIMIT and o.side is OrderSide.SELL
-            and o.limit_price is not None and c.high >= o.limit_price
+            if o.order_type is OrderType.LIMIT and o.limit_price is not None
+            and (
+                (o.side is OrderSide.SELL and c.high >= o.limit_price)
+                or (o.side is OrderSide.BUY_TO_COVER and c.low <= o.limit_price)
+            )
         ]
         ratchets = any(
             o.order_type is OrderType.TRAILING_STOP
             and o.prot is not None
-            and self._candidate_stop(o, c.high) > o.prot.stop_price
+            and self._candidate_stop(o, c.high, c.low) != o.prot.stop_price
             for o in hit
         )
         ambiguous = bool(hit) and self.held_quantity(symbol) > _ZERO and bool(favorable or ratchets)
@@ -839,11 +899,8 @@ class HistoricalExecutionSimulator:
         for o in live:
             if not o.is_open or o.order_type is not OrderType.LIMIT or o.limit_price is None:
                 continue
-            if o.side is OrderSide.SELL:
-                through = c.high > o.limit_price and not withhold
-            else:
-                through = c.low < o.limit_price
-            if through:
+            through = c.low < o.limit_price if _buys(o.side) else c.high > o.limit_price
+            if through and not (withhold and o.side.is_exit):
                 fill(o, o.limit_price, o.limit_price, c.end, ambiguous)
         return out
 
@@ -901,16 +958,18 @@ class HistoricalExecutionSimulator:
             )
             if ex is not None:
                 out.append(ex)
-        self._last_price[symbol] = snap.bid
-        self._ratchet(symbol, snap.bid, at)
+        held = self._held.get(symbol)
+        short = held is not None and held.direction is PositionDirection.SHORT
+        self._last_price[symbol] = snap.ask if short else snap.bid
+        self._ratchet(symbol, snap.bid, snap.ask, at)
         return out
 
     def _quote_shadow_fill(
         self, o: _Order, snap: QuoteSnapshot, evidence: _Evidence
     ) -> SimulatedExecution | None:
         want = o.remaining
-        if o.side is OrderSide.SELL:
-            want = min(want, self.held_quantity(o.intent.symbol))
+        if o.side.is_exit:
+            want = min(want, self._held_for(o.intent.symbol, o.side.direction))
         if want <= _ZERO:
             return None
         avg = o.notional / o.filled if o.filled > _ZERO else None
@@ -943,7 +1002,7 @@ class HistoricalExecutionSimulator:
         assert result.price is not None and result.quote_price is not None
         assert result.fill_id is not None
         self._shadow_fill_ids.add(result.fill_id)
-        size = snap.ask_size if o.side is OrderSide.BUY else snap.bid_size
+        size = snap.ask_size if _buys(o.side) else snap.bid_size
         assert size is not None
         cap = size * self._a.quote_size_multiplier * self._a.participation
         key = (snap.symbol, "QUOTE", o.side, snap.provider_ts, snap.receive_ts)
@@ -958,23 +1017,28 @@ class HistoricalExecutionSimulator:
         assert o.prot is not None
         if o.prot.status is ProtectionStatus.PENDING:
             o.prot = replace(o.prot, status=ProtectionStatus.ACTIVE)
-        if snap.bid > o.prot.stop_price:
+        short = o.prot.direction is PositionDirection.SHORT
+        # A long stop sells at the bid once the bid falls to it; a short stop covers at the
+        # ask once the ask rises to it.
+        touch = snap.ask if short else snap.bid
+        if (touch < o.prot.stop_price) if short else (touch > o.prot.stop_price):
             return None
+        size = snap.ask_size if short else snap.bid_size
         reason = None
         if snap.bid >= snap.ask:
             reason = "quote_crossed_or_locked"
         elif snap.receive_ts - snap.provider_ts > self._a.max_quote_age:
             reason = "quote_stale"
-        elif snap.bid_size is None or snap.bid_size <= _ZERO:
+        elif size is None or size <= _ZERO:
             reason = "quote_size_unavailable"
         if reason is not None:
             self._note(snap.provider_ts, o.broker_order_id, reason)
             return None
-        assert snap.bid_size is not None
-        cap = snap.bid_size * self._a.quote_size_multiplier * self._a.participation
+        assert size is not None
+        cap = size * self._a.quote_size_multiplier * self._a.participation
         key = (snap.symbol, "QUOTE", o.side, snap.provider_ts, snap.receive_ts)
         return self._try_fill(
-            o, snap.bid, self._price(o, snap.bid, capped=False), snap.provider_ts, key, cap,
+            o, touch, self._price(o, touch, capped=False), snap.provider_ts, key, cap,
             evidence, (),
         )
 
@@ -984,7 +1048,7 @@ class HistoricalExecutionSimulator:
         """Touch plus adverse slippage, rounded against the trader (limit never exceeded)."""
         a = self._a
         slip = touch * a.slippage_bps / _BPS + a.slippage_ticks * a.tick_size
-        if o.side is OrderSide.BUY:
+        if _buys(o.side):
             price = (touch + slip).quantize(a.price_quantum, rounding=ROUND_CEILING)
             if capped and o.limit_price is not None:
                 price = min(price, o.limit_price)
@@ -1036,8 +1100,13 @@ class HistoricalExecutionSimulator:
             self._note(at, o.broker_order_id, "price_non_positive_after_slippage")
             return None
         wanted = o.remaining if want is None else want
-        if o.side is OrderSide.SELL:
-            wanted = min(wanted, self.held_quantity(o.intent.symbol))
+        if o.side.is_exit:
+            wanted = min(wanted, self._held_for(o.intent.symbol, o.side.direction))
+        else:
+            held = self._held.get(o.intent.symbol)
+            if held is not None and held.direction is not o.side.direction:
+                self._note(at, o.broker_order_id, "opposite_position_blocks_entry")
+                return None
         quantity = self._take(key, cap, wanted, o.quantity) if wanted > _ZERO else _ZERO
         if quantity <= _ZERO:
             self._note(at, o.broker_order_id, "no_liquidity_or_below_lot")
@@ -1125,26 +1194,28 @@ class HistoricalExecutionSimulator:
     def _apply_to_position(self, o: _Order, quantity: Decimal, price: Decimal) -> None:
         symbol = o.intent.symbol
         held = self._held.get(symbol)
-        if o.side is OrderSide.BUY:
+        if o.side.is_entry:
             if held is None:
                 held = self._held[symbol] = _Held(
-                    o.intent.account_scope_id, o.intent.cycle_id, _ZERO, _ZERO
+                    o.intent.account_scope_id, o.intent.cycle_id, _ZERO, _ZERO, o.side.direction
                 )
+            assert held.direction is o.side.direction
             held.quantity += quantity
             held.cost += quantity * price
             return
-        assert held is not None and quantity <= held.quantity
+        assert held is not None and held.direction is o.side.direction
+        assert quantity <= held.quantity
         held.cost -= held.cost / held.quantity * quantity
         held.quantity -= quantity
         if held.quantity == _ZERO:
             del self._held[symbol]
 
     def _sync(self, symbol: str, at: datetime) -> None:
-        """Keep protective coverage within the held quantity; cancel SELLs once flat."""
-        held = self.held_quantity(symbol)
+        """Keep protective coverage within the held quantity; cancel exits once flat."""
         for o in self._open(symbol):
-            if o.side is not OrderSide.SELL:
+            if not o.side.is_exit:
                 continue
+            held = self._held_for(symbol, o.side.direction)
             if held <= _ZERO:
                 self._cancel(o, at, "position_closed")
             elif o.prot is not None and o.remaining > held:
@@ -1160,25 +1231,43 @@ class HistoricalExecutionSimulator:
             o.pending = [r for r in o.pending if r.effective_at > at]
             for r in due:
                 if r.stop_price is not None:
-                    high = max(o.prot.high_water_mark, r.stop_price)
-                    o.prot = o.prot.ratchet(r.stop_price, high)
+                    extreme = (
+                        max(o.prot.high_water_mark, r.stop_price)
+                        if o.prot.direction is PositionDirection.LONG
+                        else min(o.prot.high_water_mark, r.stop_price)
+                    )
+                    o.prot = o.prot.ratchet(r.stop_price, extreme)
                 if r.quantity is not None:
-                    remaining = min(r.quantity - o.filled, self.held_quantity(symbol))
+                    remaining = min(
+                        r.quantity - o.filled,
+                        self._held_for(symbol, o.prot.direction),
+                    )
                     if remaining > _ZERO:
                         o.quantity = o.filled + remaining
                         o.prot = replace(o.prot, covered_quantity=remaining)
                 o.updated_at = r.effective_at
 
-    def _candidate_stop(self, o: _Order, high: Decimal) -> Decimal:
-        """Stop a native trailing order would have after folding in ``high`` (never lower)."""
+    def _candidate_stop(self, o: _Order, high: Decimal, low: Decimal) -> Decimal:
+        """Stop a native trailing order would have after folding in the favorable extreme.
+
+        A long trails the highest price and never moves down; a short trails the lowest
+        price and never moves up.
+        """
         assert o.prot is not None and o.policy is not None
         intent = o.intent
-        reference = max(o.prot.high_water_mark, high)
-        view = _CycleView(intent.cycle_id, intent.account_scope_id, intent.symbol, o.remaining)
+        direction = o.prot.direction
+        view = _CycleView(
+            intent.cycle_id, intent.account_scope_id, intent.symbol, o.remaining, direction
+        )
+        if direction is PositionDirection.LONG:
+            reference = max(o.prot.high_water_mark, high)
+            moved = start_protection(o.policy, view, reference).stop_price  # type: ignore[arg-type]
+            return max(o.prot.stop_price, ALPACA_EQUITY_TICK_RULES.floor(moved))
+        reference = min(o.prot.high_water_mark, low)
         moved = start_protection(o.policy, view, reference).stop_price  # type: ignore[arg-type]
-        return max(o.prot.stop_price, ALPACA_EQUITY_TICK_RULES.floor(moved))
+        return min(o.prot.stop_price, ALPACA_EQUITY_TICK_RULES.ceil(moved))
 
-    def _ratchet(self, symbol: str, high: Decimal, at: datetime) -> None:
+    def _ratchet(self, symbol: str, high: Decimal, low: Decimal, at: datetime) -> None:
         for o in self._open(symbol):
             if (
                 o.order_type is not OrderType.TRAILING_STOP
@@ -1187,8 +1276,30 @@ class HistoricalExecutionSimulator:
                 or o.remaining <= _ZERO
             ):
                 continue
-            stop = self._candidate_stop(o, high)
-            o.prot = o.prot.ratchet(stop, max(o.prot.high_water_mark, high))
+            stop = self._candidate_stop(o, high, low)
+            extreme = (
+                max(o.prot.high_water_mark, high)
+                if o.prot.direction is PositionDirection.LONG
+                else min(o.prot.high_water_mark, low)
+            )
+            o.prot = o.prot.ratchet(stop, extreme)
+
+    def _held_for(self, symbol: str, direction: PositionDirection) -> Decimal:
+        """Held quantity of ``symbol`` only when the position has the given direction."""
+        held = self._held.get(symbol)
+        return held.quantity if held is not None and held.direction is direction else _ZERO
+
+    @staticmethod
+    def _stop_crossed(o: _Order, low: Decimal, high: Decimal) -> bool:
+        """True when the price range reaches the order's protective stop.
+
+        A long (SELL) stop sits below the market and fires when the low reaches it; a short
+        (BUY_TO_COVER) stop sits above the market and fires when the high reaches it.
+        """
+        assert o.prot is not None
+        if o.prot.direction is PositionDirection.LONG:
+            return low <= o.prot.stop_price
+        return high >= o.prot.stop_price
 
     def _transition(
         self, o: _Order, target: OrderStatus, *, filled_qty: Decimal | None = None

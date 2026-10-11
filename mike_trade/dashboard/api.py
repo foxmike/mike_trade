@@ -1601,9 +1601,10 @@ class DashboardReadService:
                 ).fetchone()
                 refs[key] = _dec(ref[0]) if ref else None
             avg: dict[str, Decimal | None] = {}
-            for side, key in (("BUY", "entry"), ("SELL", "exit")):
+            for sides, key in ((("BUY", "SELL_SHORT"), "entry"), (("SELL", "BUY_TO_COVER"), "exit")):
                 fills = q("SELECT quantity, price FROM fills WHERE account_scope_id = ? "
-                          "AND cycle_id = ? AND side = ?", (ctx.scope, cycle_id, side)).fetchall()
+                          "AND cycle_id = ? AND side IN (?, ?)",
+                          (ctx.scope, cycle_id, *sides)).fetchall()
                 qty = sum((schema.decimal_from_db(x[0]) for x in fills), _ZERO)
                 avg[key] = (sum((schema.decimal_from_db(x[0]) * schema.decimal_from_db(x[1])
                                  for x in fills), _ZERO) / qty) if qty else None

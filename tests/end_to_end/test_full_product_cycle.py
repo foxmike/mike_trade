@@ -275,6 +275,11 @@ async def test_reference_pair_full_cycle_exact_once_and_protected(
         assert blocked is not None and blocked[0] == "POST_SALE_COOLDOWN"
         clock.value += timedelta(minutes=6)
         assert shadow.account.state.entry_block("SPY", "vwap_bounce", clock.value) is None
+        # The engine clears a BUY strategy's eligibility while a position is held (its indicator
+        # state keeps advancing but it can never signal) and re-arms it on the next FLAT
+        # evaluation; a neutral bar (no bounce) proves the re-arm without opening a position.
+        assert "eligibility" not in shadow.states[("buy", "vwap_bounce", "SPY")]
+        await evaluator.process({"SPY": downward("SPY", clock.value, bid=D("100.5"), version=9)})
         assert shadow.states[("buy", "vwap_bounce", "SPY")]["eligibility"] == "WATCHING_BUY"
     finally:
         await runtime.stop()

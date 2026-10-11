@@ -40,6 +40,13 @@ class ExperimentSpec:
     #: ``strategy`` is only the recorded focus label (both legs always execute).
     buy_strategies: tuple[str, ...] | None = None
     sell_strategies: tuple[str, ...] | None = None
+    #: Optional SHORT / COVER collections.  Shorting is opt-in and fails closed:
+    #: ``short_selling_enabled`` must be true for any SHORT strategy to be eligible, and
+    #: ``short_borrow_bps_per_day`` is an explicit *estimated* stock-borrow assumption.
+    short_strategies: tuple[str, ...] | None = None
+    cover_strategies: tuple[str, ...] | None = None
+    short_selling_enabled: bool = False
+    short_borrow_bps_per_day: str = "0"
     #: ``stop_policy``-shaped protective stop (fixed / native_trailing /
     #: stepped_trailing); omitted keeps the reference 1.5% native trailing stop.
     protective_stop: Mapping[str, Any] | None = None
@@ -47,18 +54,30 @@ class ExperimentSpec:
     def validate(self) -> None:
         if not self.symbol or not self.symbol.replace(".", "").isalnum():
             raise ValueError(f"invalid experiment symbol: {self.symbol!r}")
-        explicit = self.buy_strategies is not None or self.sell_strategies is not None
+        explicit = any(
+            getattr(self, name) is not None
+            for name in ("buy_strategies", "sell_strategies", "short_strategies",
+                         "cover_strategies")
+        )
         if explicit:
             if not self.strategy or not self.strategy.replace("_", "").replace("-", "").isalnum():
                 raise ValueError(f"invalid experiment label: {self.strategy!r}")
-            for name in ("buy_strategies", "sell_strategies"):
+            for name in ("buy_strategies", "sell_strategies", "short_strategies",
+                         "cover_strategies"):
                 value = getattr(self, name)
                 if value is not None and (
                     isinstance(value, str) or any(not isinstance(i, str) for i in value)
                 ):
                     raise ValueError(f"{name} must be a list of strategy ids")
-            if not self.buy_strategies:
+            if not self.buy_strategies and not self.short_strategies:
                 raise ValueError("an explicit lifecycle needs at least one BUY strategy")
+            if self.short_strategies and not self.short_selling_enabled:
+                raise ValueError(
+                    "short_strategies require short_selling_enabled=True "
+                    "(shorting is opt-in and fails closed)"
+                )
+            if Decimal(self.short_borrow_bps_per_day) < 0:
+                raise ValueError("short_borrow_bps_per_day must be >= 0")
         elif self.strategy not in {"vwap_bounce", "vwap_breakdown"}:
             raise ValueError(f"unsupported registered lifecycle focus: {self.strategy!r}")
         if self.protective_stop is not None:
@@ -275,6 +294,10 @@ def _execute_experiment(job_data: dict[str, Any], root: str, results: str) -> di
         execution=spec.execution,
         buy_strategies=spec.buy_strategies,
         sell_strategies=spec.sell_strategies,
+        short_strategies=spec.short_strategies,
+        cover_strategies=spec.cover_strategies,
+        short_selling_enabled=spec.short_selling_enabled,
+        short_borrow_bps_per_day=Decimal(spec.short_borrow_bps_per_day),
         protective_stop=spec.protective_stop,
     )
     result.pop("trade_ledger", None)  # Ledger remains in the immutable per-run artifact.
@@ -508,6 +531,12 @@ def _research_registry() -> Any:
     from mike_trade.strategies.buy.opening_range_retest import OpeningRangeRetestBuy
     from mike_trade.strategies.buy.parabolic_sar import ParabolicSarBuy
     from mike_trade.strategies.buy.power_hour_momentum import PowerHourMomentumBuy
+    from mike_trade.strategies.short.short_ema_bearish_crossover import ShortEmaBearishCrossover
+    from mike_trade.strategies.short.short_supertrend_bearish_flip import ShortSupertrendBearishFlip
+    from mike_trade.strategies.short.short_donchian_breakdown import ShortDonchianBreakdown
+    from mike_trade.strategies.cover.cover_ema_bullish_crossover import CoverEmaBullishCrossover
+    from mike_trade.strategies.cover.cover_supertrend_bullish_flip import CoverSupertrendBullishFlip
+    from mike_trade.strategies.cover.cover_donchian_breakout import CoverDonchianBreakout
     from mike_trade.strategies.buy.previous_close_reclaim import PreviousCloseReclaimBuy
     from mike_trade.strategies.buy.previous_day_high_breakout import PreviousDayHighBreakoutBuy
     from mike_trade.strategies.buy.previous_day_low_reversal import PreviousDayLowReversalBuy
@@ -658,6 +687,12 @@ def _research_registry() -> Any:
         MiddayRangeBreakoutBuy,
         AfternoonBreakoutBuy,
         PowerHourMomentumBuy,
+        ShortEmaBearishCrossover,
+        ShortSupertrendBearishFlip,
+        ShortDonchianBreakdown,
+        CoverEmaBullishCrossover,
+        CoverSupertrendBullishFlip,
+        CoverDonchianBreakout,
         ObvBreakoutBuy,
         AccumulationDistributionBreakoutBuy,
         VolumePriceTrendBreakoutBuy,
@@ -749,6 +784,10 @@ def _run_one(
     execution: Mapping[str, Any] | None = None,
     buy_strategies: tuple[str, ...] | None = None,
     sell_strategies: tuple[str, ...] | None = None,
+    short_strategies: tuple[str, ...] | None = None,
+    cover_strategies: tuple[str, ...] | None = None,
+    short_selling_enabled: bool = False,
+    short_borrow_bps_per_day: Decimal = Decimal("0"),
     protective_stop: Mapping[str, Any] | None = None,
 ) -> dict[str, Any]:
     from mike_trade.backtest.clock import ReplayClock
@@ -886,7 +925,13 @@ def _run_one(
     assumptions = ExecutionAssumptions(**assumption_values)
     sim = HistoricalExecutionSimulator(feed, clock, assumptions)
     registry = _research_registry()
-    if buy_strategies is None and sell_strategies is None:
+    explicit_roles = any(
+        item is not None
+        for item in (buy_strategies, sell_strategies, short_strategies, cover_strategies)
+    )
+    short_ids = tuple(short_strategies or ())
+    cover_ids = tuple(cover_strategies or ())
+    if not explicit_roles:
         pair = resolve_pair_preset("vwap_reference", mode="shadow")
         buy_ids = (pair["buy_cls"].spec.strategy_id,)
         sell_ids = (pair["sell_cls"].spec.strategy_id,)
@@ -897,11 +942,20 @@ def _run_one(
         lifecycle = "vwap_reference"
     else:
         buy_ids, sell_ids = tuple(buy_strategies or ()), tuple(sell_strategies or ())
-        for side, ids in ((StrategyRole.BUY, buy_ids), (StrategyRole.SELL, sell_ids)):
+        for side, ids in (
+            (StrategyRole.BUY, buy_ids),
+            (StrategyRole.SELL, sell_ids),
+            (StrategyRole.SHORT, short_ids),
+            (StrategyRole.COVER, cover_ids),
+        ):
             for strategy_id in ids:
                 if registry.get(strategy_id).spec.side is not side:
                     raise ValueError(f"{strategy_id} is not a {side.value} strategy")
-        strategy_params = {strategy_id: {} for strategy_id in (*buy_ids, *sell_ids)}
+        if short_ids and not short_selling_enabled:
+            raise ValueError("short strategies require short_selling_enabled=True")
+        strategy_params = {
+            strategy_id: {} for strategy_id in (*buy_ids, *sell_ids, *short_ids, *cover_ids)
+        }
         lifecycle = "collection"
     for strategy_id, values in (parameters or {}).items():
         if strategy_id not in strategy_params:
@@ -921,7 +975,16 @@ def _run_one(
     )
 
     def intent_factory(evaluation: Any, context: Any, request: Any) -> OrderIntent:
-        is_buy = evaluation.side is StrategyRole.BUY
+        # Entries are BUY (long) and SHORT; exits are SELL (closes a long) and COVER (closes a
+        # short).  The roles never imply one another: no automatic reversal.
+        role = evaluation.side
+        is_buy = role in (StrategyRole.BUY, StrategyRole.SHORT)
+        order_side = {
+            StrategyRole.BUY: OrderSide.BUY,
+            StrategyRole.SELL: OrderSide.SELL,
+            StrategyRole.SHORT: OrderSide.SELL_SHORT,
+            StrategyRole.COVER: OrderSide.BUY_TO_COVER,
+        }[role]
         if is_buy:
             reference = evaluation.reference_price
             if reference is None or reference <= 0:
@@ -937,7 +1000,7 @@ def _run_one(
             account_scope_id="backtest:research",
             cycle_id=f"research:{symbol}",
             symbol=symbol,
-            side=OrderSide.BUY if is_buy else OrderSide.SELL,
+            side=order_side,
             purpose=OrderPurpose.ENTRY if is_buy else OrderPurpose.STRATEGY_EXIT,
             order_type=OrderType.MARKET,
             time_in_force=TimeInForce.DAY,
@@ -960,12 +1023,20 @@ def _run_one(
             "entry_cutoff_minutes": 30,
             "minimum_hold_seconds": 60,
             "max_entry_cycles_per_session": 1,
+            **(
+                {
+                    "short_selling_enabled": True,
+                    "short_borrow_bps_per_day": str(short_borrow_bps_per_day),
+                }
+                if short_selling_enabled
+                else {}
+            ),
             "execution_model": "bar-only next-bar-open",
             "assumptions": dict(assumptions.as_mapping()),
         },
         seed,
         starting_capital,
-        (*buy_ids, *sell_ids),
+        (*buy_ids, *sell_ids, *short_ids, *cover_ids),
         strategy_params=strategy_params,
         initial_strategy_state={buy_id: {"eligibility": "WATCHING_BUY"} for buy_id in buy_ids},
         result_directory=results,

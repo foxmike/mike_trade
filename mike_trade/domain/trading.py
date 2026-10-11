@@ -149,8 +149,38 @@ def _validate_order_prices(
 
 
 class OrderSide(Enum):
+    """Position-effect-aware order side.
+
+    Alpaca's REST API transports both ``SELL`` and ``SELL_SHORT`` as ``sell``
+    (and both buy variants as ``buy``).  Keeping the position effect here is
+    nevertheless essential: fills, ledgers, replay and reconciliation must not
+    infer whether an order opens or closes from the broker word alone.
+    """
+
     BUY = "BUY"
     SELL = "SELL"
+    SELL_SHORT = "SELL_SHORT"
+    BUY_TO_COVER = "BUY_TO_COVER"
+
+    @property
+    def broker_side(self) -> str:
+        return "buy" if self in {OrderSide.BUY, OrderSide.BUY_TO_COVER} else "sell"
+
+    @property
+    def is_entry(self) -> bool:
+        return self in {OrderSide.BUY, OrderSide.SELL_SHORT}
+
+    @property
+    def is_exit(self) -> bool:
+        return self in {OrderSide.SELL, OrderSide.BUY_TO_COVER}
+
+    @property
+    def direction(self) -> PositionDirection:
+        return (
+            PositionDirection.LONG
+            if self in {OrderSide.BUY, OrderSide.SELL}
+            else PositionDirection.SHORT
+        )
 
 
 class PositionDirection(Enum):
@@ -281,8 +311,10 @@ class OrderIntent:
             object.__setattr__(
                 self, "signal_id", _require_text(self.signal_id, field="signal_id")
             )
-        if self.side is OrderSide.SELL and self.purpose is OrderPurpose.ENTRY:
-            raise ValueError("short entry intents are not supported")
+        if self.purpose is OrderPurpose.ENTRY and not self.side.is_entry:
+            raise ValueError("ENTRY requires BUY or SELL_SHORT")
+        if self.purpose is not OrderPurpose.ENTRY and not self.side.is_exit:
+            raise ValueError("exit/protection intents require SELL or BUY_TO_COVER")
 
 
 @dataclass(frozen=True, slots=True)
@@ -397,7 +429,7 @@ class Fill:
 
 @dataclass(frozen=True, slots=True)
 class PositionCycle:
-    """A single long entry followed by a single complete discretionary exit."""
+    """A single directional entry followed by one complete opposite-side exit."""
 
     cycle_id: str
     account_scope_id: str
@@ -415,8 +447,6 @@ class PositionCycle:
             object.__setattr__(self, field, _require_text(getattr(self, field), field=field))
         object.__setattr__(self, "symbol", _require_symbol(self.symbol))
         _require_enum(self.direction, PositionDirection, field="direction")
-        if self.direction is not PositionDirection.LONG:
-            raise ValueError("SHORT position cycles are dormant")
         _require_enum(self.state, PositionCycleState, field="state")
         if self.entry_strategy_key is not None:
             object.__setattr__(
@@ -436,10 +466,10 @@ class PositionCycle:
         for fill in all_fills:
             if fill.account_scope_id != self.account_scope_id or fill.symbol != self.symbol:
                 raise ValueError("fill account_scope_id and symbol must match the cycle")
-        if any(fill.side is not OrderSide.BUY for fill in self.entry_fills):
-            raise ValueError("entry fills must have BUY side")
-        if any(fill.side is not OrderSide.SELL for fill in self.exit_fills):
-            raise ValueError("exit fills must have SELL side")
+        if any(fill.side is not self.entry_side for fill in self.entry_fills):
+            raise ValueError(f"entry fills must have {self.entry_side.value} side")
+        if any(fill.side is not self.exit_side for fill in self.exit_fills):
+            raise ValueError(f"exit fills must have {self.exit_side.value} side")
         if self.exit_quantity > self.entry_quantity:
             raise ValueError("cumulative exit quantity must not exceed entry quantity")
 
@@ -481,8 +511,8 @@ class PositionCycle:
             raise ValueError("entry fills are allowed only before exit begins")
         if self.exit_fills:
             raise ValueError("entry fills are not allowed after an exit fill")
-        if fill.side is not OrderSide.BUY:
-            raise ValueError("entry fill side must be BUY")
+        if fill.side is not self.entry_side:
+            raise ValueError(f"entry fill side must be {self.entry_side.value}")
         if fill.fill_id in {item.fill_id for item in self.entry_fills}:
             raise ValueError("fill_id already exists in cycle")
         opened_at = self.opened_at if self.opened_at is not None else fill.filled_at
@@ -503,8 +533,8 @@ class PositionCycle:
             raise ValueError("fill must be Fill")
         if self.state is not PositionCycleState.EXITING:
             raise ValueError("exit fills require an EXITING cycle")
-        if fill.side is not OrderSide.SELL:
-            raise ValueError("exit fill side must be SELL")
+        if fill.side is not self.exit_side:
+            raise ValueError(f"exit fill side must be {self.exit_side.value}")
         if fill.fill_id in {item.fill_id for item in self.entry_fills + self.exit_fills}:
             raise ValueError("fill_id already exists in cycle")
         if fill.quantity > self.remaining_quantity:
@@ -522,6 +552,22 @@ class PositionCycle:
     @property
     def entry_quantity(self) -> Decimal:
         return sum((fill.quantity for fill in self.entry_fills), start=_ZERO)
+
+    @property
+    def entry_side(self) -> OrderSide:
+        return (
+            OrderSide.BUY
+            if self.direction is PositionDirection.LONG
+            else OrderSide.SELL_SHORT
+        )
+
+    @property
+    def exit_side(self) -> OrderSide:
+        return (
+            OrderSide.SELL
+            if self.direction is PositionDirection.LONG
+            else OrderSide.BUY_TO_COVER
+        )
 
     @property
     def exit_quantity(self) -> Decimal:
@@ -552,12 +598,17 @@ class PositionCycle:
             (fill.quantity * fill.price for fill in self.entry_fills), start=_ZERO
         )
         fees = sum((fill.fee for fill in self.entry_fills + self.exit_fills), start=_ZERO)
-        return proceeds - entry_cost - fees
+        gross = (
+            proceeds - entry_cost
+            if self.direction is PositionDirection.LONG
+            else entry_cost - proceeds
+        )
+        return gross - fees
 
 
 @dataclass(frozen=True, slots=True)
 class Position:
-    """A positive long position observed from a broker or maintained ledger."""
+    """A positive-magnitude position observed from a broker or maintained ledger."""
 
     account_scope_id: str
     symbol: str
@@ -568,6 +619,7 @@ class Position:
     market_value: Decimal | None = None
     management: ManagementStatus = ManagementStatus.UNMANAGED
     cycle_id: str | None = None
+    direction: PositionDirection = PositionDirection.LONG
 
     def __post_init__(self) -> None:
         object.__setattr__(
@@ -599,6 +651,7 @@ class Position:
             "market_value",
             _optional_decimal(self.market_value, field="market_value"),
         )
+        _require_enum(self.direction, PositionDirection, field="direction")
         _require_enum(self.management, ManagementStatus, field="management")
         if self.cycle_id is not None:
             object.__setattr__(

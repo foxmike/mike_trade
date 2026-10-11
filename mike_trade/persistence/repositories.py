@@ -355,7 +355,7 @@ def _load_cycle(conn: sqlite3.Connection, scope: str, cycle_id: str) -> Position
             fee=decimal_from_db(fee),
             filled_at=from_db_timestamp(filled_at),
         )
-        (entries if fill.side is OrderSide.BUY else exits).append(fill)
+        (entries if fill.side.is_entry else exits).append(fill)
     return PositionCycle(
         cycle_id=row[0],
         account_scope_id=scope,
@@ -972,7 +972,7 @@ class FillRepository(_Repository):
             intent_qty, intent_cost = self._ledger(conn, "b.intent_id", intent.intent_id)
 
             # Domain transition first: a violation raises before any row is written.
-            if fill.side is OrderSide.BUY:
+            if fill.side.is_entry:
                 updated = cycle.apply_entry_fill(fill)
             else:
                 if cycle.state is PositionCycleState.OPEN:
@@ -1101,7 +1101,7 @@ class FillRepository(_Repository):
     ) -> str | None:
         """Consume the entry reservation in proportion; release it when the cycle closes."""
         scope = self._scope
-        if fill.side is OrderSide.SELL:
+        if fill.side.is_exit:  # SELL or BUY_TO_COVER
             if cycle.state is PositionCycleState.CLOSED:
                 _release_reservations(conn, scope, now, cycle_id=cycle.cycle_id)
                 return "RELEASED"
@@ -1174,7 +1174,7 @@ class FillRepository(_Repository):
         self, conn: sqlite3.Connection, cycle: PositionCycle, fill: Fill, now: datetime
     ) -> str | None:
         """Shrink active trailing coverage after an exit; entry fills never grow it."""
-        if fill.side is not OrderSide.SELL:
+        if not fill.side.is_exit:
             return None
         scope = self._scope
         row = conn.execute(

@@ -838,6 +838,8 @@ def _validate_symbols(raw: Any, errors: _ErrorList) -> dict[str, Any] | None:
                               "consecutive_loss_reset", "consecutive_loss_scope",
                               "post_sale_cooldown_seconds", "buy_strategy", "sell_strategy",
                               "buy_strategies", "sell_strategies",
+                              "short_strategy", "cover_strategy",
+                              "short_strategies", "cover_strategies",
                               "stop_policy"}, path, errors)
         enabled = _req_bool(item.get("enabled", True), _join(path, "enabled"),
                             errors, _join(path, "enabled"))
@@ -882,8 +884,16 @@ def _validate_symbols(raw: Any, errors: _ErrorList) -> dict[str, Any] | None:
         cooldown = _req_int(item.get("post_sale_cooldown_seconds", 0),
                             _join(path, "post_sale_cooldown_seconds"), errors,
                             _join(path, "post_sale_cooldown_seconds"), minimum=0)
-        buys = _strategy_collection(item, "buy", path, errors, required=True)
+        buys = _strategy_collection(item, "buy", path, errors, required=False)
         sells = _strategy_collection(item, "sell", path, errors, required=False)
+        shorts = _strategy_collection(item, "short", path, errors, required=False)
+        covers = _strategy_collection(item, "cover", path, errors, required=False)
+        if buys is not None and shorts is not None and not buys and not shorts:
+            # A symbol needs at least one entry strategy: BUY, or SHORT (short-only symbol).
+            _err(errors, _join(path, "buy_strategies"),
+                 f"{path} needs at least one buy strategy "
+                 f"(buy_strategy or buy_strategies)")
+            buys = None
         policy = None
         if "stop_policy" not in item:
             _err(errors, _join(path, "stop_policy"), f"{_join(path, 'stop_policy')} is required")
@@ -892,7 +902,8 @@ def _validate_symbols(raw: Any, errors: _ErrorList) -> dict[str, Any] | None:
                                            errors)
         if enabled is None or budget is None or min_hold is None or max_cycles is None \
                 or loss_limit is None or loss_reset is None or loss_scope is None \
-                or cooldown is None or buys is None or sells is None or policy is None:
+                or cooldown is None or buys is None or sells is None or policy is None \
+                or shorts is None or covers is None:
             continue
         normalized[ticker] = {"enabled": enabled, "budget": budget,
                               "planned_loss_cap": cap, "min_hold_seconds": min_hold,
@@ -902,9 +913,10 @@ def _validate_symbols(raw: Any, errors: _ErrorList) -> dict[str, Any] | None:
                               "consecutive_loss_scope": loss_scope,
                               "post_sale_cooldown_seconds": cooldown,
                               "buy_strategies": buys, "sell_strategies": sells,
+                              "short_strategies": shorts, "cover_strategies": covers,
                               # First configured entry of each side, kept for
                               # single-strategy consumers of the settings.
-                              "buy_strategy": buys[0],
+                              "buy_strategy": buys[0] if buys else None,
                               "sell_strategy": sells[0] if sells else None,
                               "stop_policy": policy}
     return normalized
@@ -928,9 +940,9 @@ def _validate_strategies(raw: Any, errors: _ErrorList) -> dict[str, Any] | None:
         plugin = _req_text(item.get("plugin"), _join(path, "plugin"),
                            errors, _join(path, "plugin"))
         side = item.get("side")
-        if side not in ("buy", "sell"):
+        if side not in ("buy", "sell", "short", "cover"):
             _err(errors, _join(path, "side"),
-                 f"unknown side {side!r}; expected buy or sell")
+                 f"unknown side {side!r}; expected buy, sell, short, or cover")
             side = None
         pair = item.get("pair")
         if pair is not None and (not isinstance(pair, str) or not pair.strip()):
@@ -1082,8 +1094,8 @@ def _check_cross_field(settings: dict[str, Any], errors: _ErrorList) -> None:
                  f"symbols.{ticker}.planned_loss_cap must be less than "
                  f"symbols.{ticker}.budget")
         plugins: dict[str, str] = {}
-        for side in ("buy", "sell"):
-            for name in symbol[f"{side}_strategies"]:
+        for side in ("buy", "sell", "short", "cover"):
+            for name in symbol.get(f"{side}_strategies", ()):
                 entry = strategies.get(name)
                 if entry is None or entry["side"] != side:
                     _err(errors, f"symbols.{ticker}.{side}_strategies",
@@ -1114,9 +1126,17 @@ def _check_cross_field(settings: dict[str, Any], errors: _ErrorList) -> None:
     elif execution["live_trading_enabled"]:
         _err(errors, "execution.live_trading_enabled",
              "live_trading_enabled may only be true with account_mode: live")
-    if execution["short_selling_enabled"]:
+    if execution["short_selling_enabled"] and mode == "live":
+        # LIVE short trading is never enabled by configuration: it needs a separate,
+        # explicit operational authorization that this release does not provide.
         _err(errors, "execution.short_selling_enabled",
-             "short selling is not supported; the product is long-only")
+             "short selling is not available for live accounts")
+    elif not execution["short_selling_enabled"] and any(
+        symbol.get("short_strategies") for symbol in symbols.values()
+    ):
+        _err(errors, "execution.short_selling_enabled",
+             "symbols that configure short strategies require "
+             "execution.short_selling_enabled: true (shorting is opt-in and fails closed)")
     if not execution["regular_hours_only"]:
         _err(errors, "execution.regular_hours_only",
              "only regular-hours trading is supported")
@@ -1572,7 +1592,13 @@ def validate_against_catalog(
         _err(errors, "execution.fractional_enabled",
              "fractional orders combined with native trailing stops are rejected "
              "until demonstrated in paper (fail closed)")
-    if execution["short_selling_enabled"]:
+    if (
+        execution["short_selling_enabled"]
+        and execution["account_mode"] != "shadow"
+        and not capabilities.get("short_selling_enabled", False)
+    ):
+        # SHADOW simulates shorts locally; a real broker account needs the provider catalog
+        # to declare (and an operator to have verified) the short-selling capability.
         _err(errors, "execution.short_selling_enabled",
              "short selling is not supported by the provider catalog")
     if errors:

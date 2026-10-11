@@ -83,9 +83,22 @@ class AlpacaAsset:
     shortable: bool
     easy_to_borrow: bool
     fractionable: bool
+    borrow_status: str | None = None
     min_order_size: Decimal | None = None
     min_trade_increment: Decimal | None = None
     price_increment: Decimal | None = None
+
+    @property
+    def standard_short_borrow_available(self) -> bool:
+        """True only when the provider reports ordinary ETB availability.
+
+        ``borrow_status`` replaced the deprecated ``easy_to_borrow`` field in
+        2026.  HTB/unknown assets require a separate locate workflow and are
+        intentionally rejected by the standard engine path.
+        """
+        if self.borrow_status is not None:
+            return self.borrow_status.strip().lower() == "easy_to_borrow"
+        return self.easy_to_borrow
 
     def eligibility(self) -> AssetEligibility:
         reasons: list[str] = []
@@ -116,10 +129,17 @@ def _parse_asset(
         tradable=_require_bool(data.get("tradable"), field="tradable"),
         marginable=_require_bool(data.get("marginable"), field="marginable"),
         shortable=_require_bool(data.get("shortable"), field="shortable"),
-        easy_to_borrow=_require_bool(
-            data.get("easy_to_borrow"), field="easy_to_borrow"
+        easy_to_borrow=(
+            _require_bool(data.get("easy_to_borrow"), field="easy_to_borrow")
+            if "easy_to_borrow" in data
+            else str(data.get("borrow_status", "")).lower() == "easy_to_borrow"
         ),
         fractionable=_require_bool(data.get("fractionable"), field="fractionable"),
+        borrow_status=(
+            _require_nonempty(data.get("borrow_status"), field="borrow_status")
+            if data.get("borrow_status") is not None
+            else None
+        ),
         min_order_size=_optional_decimal(
             data.get("min_order_size"), field="min_order_size"
         ),

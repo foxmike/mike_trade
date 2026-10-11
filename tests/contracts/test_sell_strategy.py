@@ -146,14 +146,14 @@ def test_disabled_or_unusable_data_is_no_signal(updates, expected):
 
 
 @pytest.mark.parametrize("source", tuple(ExitSource))
-def test_minimum_hold_only_blocks_strategy_sell(source):
+def test_minimum_hold_only_blocks_strategy_exits(source):
     result = eligibility(
         source=source,
         minimum_hold=timedelta(hours=1),
         evaluation_time=NOW,
         position_opened_at=OPENED,
     )
-    if source is ExitSource.STRATEGY_SELL:
+    if source in (ExitSource.STRATEGY_SELL, ExitSource.STRATEGY_COVER):
         assert result[0] is SellReasonCode.NOT_ELIGIBLE
         assert SellReasonCode.MINIMUM_HOLD in result
     else:
@@ -173,8 +173,10 @@ def test_minimum_hold_uses_injected_timestamps_and_allows_elapsed_period():
 
 def test_exit_priority_is_stable_and_every_non_strategy_source_outranks_sell():
     assert tuple(EXIT_PRIORITY) == tuple(ExitSource)
+    strategy_exits = (ExitSource.STRATEGY_SELL, ExitSource.STRATEGY_COVER)
     strategy_priority = EXIT_PRIORITY[ExitSource.STRATEGY_SELL]
-    assert all(EXIT_PRIORITY[source] < strategy_priority for source in ExitSource if source is not ExitSource.STRATEGY_SELL)
+    assert EXIT_PRIORITY[ExitSource.STRATEGY_COVER] == strategy_priority  # same tier
+    assert all(EXIT_PRIORITY[source] < strategy_priority for source in ExitSource if source not in strategy_exits)
 
 
 def test_signal_id_is_deterministic_and_changes_with_completed_bar_time():

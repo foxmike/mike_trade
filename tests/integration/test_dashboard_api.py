@@ -556,7 +556,7 @@ def test_health_shape_and_actionable_errors(world: World, dist: Path, tmp_path: 
     assert body["broker"]["rate_limit_errors"]["value"] == 0
     assert body["scheduler_lag_seconds"]["value"] == 1.5
     persistence = body["persistence"]
-    assert persistence["schema_version"] == 1 and persistence["size_bytes"] > 0
+    assert persistence["schema_version"] == 2 and persistence["size_bytes"] > 0
     assert persistence["last_backup_at"]["stale_reason"] == "unavailable"
     assert body["last_reconciliation_at"]["value"] == "2026-10-08T14:30:00Z"
     codes = {e["code"]: e for e in body["errors"]}

@@ -235,7 +235,9 @@ def _realized(conn, scope: str, *, closed_after: str | None = None,
         ).fetchall()
         for side, quantity, price, fee in rows:
             value = schema.decimal_from_db(quantity) * schema.decimal_from_db(price)
-            total += (value if side == "SELL" else -value) - schema.decimal_from_db(fee)
+            # cash flow: sells (SELL, SELL_SHORT) credit, buys (BUY, BUY_TO_COVER) debit, so the
+            # net of a closed cycle is its P&L for a long and for a short alike
+            total += (value if side in ("SELL", "SELL_SHORT") else -value) - schema.decimal_from_db(fee)
     return total
 
 
@@ -440,7 +442,7 @@ def recent_trades(source, account_scope_id: str, *, now: datetime,
             ).fetchall()
             for side, quantity, price, fee in fills:
                 value = schema.decimal_from_db(quantity) * schema.decimal_from_db(price)
-                pnl += (value if side == "SELL" else -value) - schema.decimal_from_db(fee)
+                pnl += (value if side in ("SELL", "SELL_SHORT") else -value) - schema.decimal_from_db(fee)
             result.append(RecentTradeView(_dt(closed) or current, cycle_id, symbol, direction,
                                           pnl, _dt(opened), _dt(closed) or current))
     return tuple(result)

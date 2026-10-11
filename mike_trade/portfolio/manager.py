@@ -1,4 +1,8 @@
-"""Serialized portfolio coordinator for managed one-buy / full-sell position cycles.
+"""Serialized portfolio coordinator for managed one-entry / full-exit position cycles.
+
+A cycle is LONG (BUY -> SELL) or SHORT (SELL_SHORT -> BUY_TO_COVER); the roles are independent,
+there is no automatic reversal and never a simultaneous long and short.  Short entries are
+opt-in (``PortfolioManagerConfig.short_authorized``) and fail closed.
 
 The coordinator owns one :class:`PositionCycle` per account/scenario and symbol and
 routes strategy signals, fills, protection updates, operator commands and
@@ -42,7 +46,7 @@ from mike_trade.controls.commands import ControlCommandType
 from mike_trade.domain.protection import ProtectionStatus
 from mike_trade.domain.signals import Signal, SignalAction
 from mike_trade.domain.strategy_types import StrategyRole
-from mike_trade.domain.trading import OrderSide
+from mike_trade.domain.trading import OrderSide, PositionDirection
 from mike_trade.execution.intents import OrderPurpose
 from mike_trade.execution.order_fsm import TERMINAL_STATUSES, OrderStatus
 from mike_trade.portfolio.cycles import (
@@ -158,8 +162,12 @@ class PortfolioManagerConfig:
     minimum_hold: MinimumHoldPolicy = field(default_factory=MinimumHoldPolicy)
     post_close_cooldown: timedelta = timedelta(0)
     auto_eod_liquidation: bool = False
+    #: Opt-in switch for ENTER_SHORT.  Off by default: a short entry is BLOCKED, never queued.
+    short_authorized: bool = False
 
     def __post_init__(self) -> None:
+        if not isinstance(self.short_authorized, bool):
+            raise TypeError("short_authorized must be bool")
         if not isinstance(self.minimum_hold, MinimumHoldPolicy):
             raise TypeError("minimum_hold must be MinimumHoldPolicy")
         if not isinstance(self.post_close_cooldown, timedelta) or self.post_close_cooldown < (
@@ -330,19 +338,28 @@ class PortfolioSnapshot:
     entries_paused: bool
     entries_disabled: bool
     pending_exits: Mapping[str, ExitKind]
+    short_entries_authorized: bool = False
 
     def consulted_roles(self, symbol: str) -> frozenset[StrategyRole]:
         """Which strategy roles should be evaluated for ``symbol`` right now.
 
-        Once any quantity is held only SELL strategies are consulted; BUY strategies
-        are consulted only for a flat, armed, entry-eligible cycle.
+        Once any quantity is held only the exit role of the held direction is consulted
+        (SELL for a long, COVER for a short).  BUY (and, when short selling is authorized,
+        SHORT) strategies are consulted only for a flat, armed, entry-eligible cycle.
         """
         cycle = self.cycles.get(_symbol(symbol))
         if cycle is None or cycle.state is CycleState.WATCHING_BUY:
-            blocked = self.entries_paused or self.entries_disabled
-            return frozenset() if blocked else frozenset({StrategyRole.BUY})
+            if self.entries_paused or self.entries_disabled:
+                return frozenset()
+            roles = {StrategyRole.BUY}
+            if self.short_entries_authorized:
+                roles.add(StrategyRole.SHORT)
+            return frozenset(roles)
         if cycle.remaining_qty > _ZERO:
-            return frozenset({StrategyRole.SELL})
+            return frozenset(
+                {StrategyRole.SELL if cycle.direction is PositionDirection.LONG
+                 else StrategyRole.COVER}
+            )
         return frozenset()
 
 
@@ -399,6 +416,13 @@ class PositionPort(Protocol):
     async def confirmed_quantity(self, account_scope_id: str, symbol: str) -> Decimal | None:
         """Broker-confirmed long quantity, or ``None`` when it cannot be verified."""
         ...
+
+    # Optional (only SHORT cycles need it; a port without it makes a short unverifiable and
+    # therefore fails closed):
+    #
+    #     async def confirmed_short_quantity(self, account_scope_id, symbol) -> Decimal | None
+    #
+    # the broker-confirmed SHORT magnitude, ``0`` when not short, ``None`` when unverifiable.
 
 
 class _Clock(Protocol):
@@ -465,15 +489,30 @@ class PortfolioManager:
         async with self._lock(key[0]):
             now, audits, stale = self._now(), [], self._pending_exits.get(key)
             event_type = "PortfolioDecision"
-            if signal.action is SignalAction.ENTER_LONG:
-                outcome = await self._enter(key, signal, now, audits)
+            if signal.action in (SignalAction.ENTER_LONG, SignalAction.ENTER_SHORT):
+                direction = (
+                    PositionDirection.LONG
+                    if signal.action is SignalAction.ENTER_LONG
+                    else PositionDirection.SHORT
+                )
+                outcome = await self._enter(key, signal, now, audits, direction)
                 if outcome[0] is Disposition.IGNORED:
                     event_type = "BuySignalIgnored"
-            elif signal.action is SignalAction.EXIT_LONG:
-                outcome = await self._exit(
-                    key, ExitKind.STRATEGY, signal.reason, signal.instance_id, now, audits
+            elif signal.action in (SignalAction.EXIT_LONG, SignalAction.COVER_SHORT):
+                wanted = (
+                    PositionDirection.LONG
+                    if signal.action is SignalAction.EXIT_LONG
+                    else PositionDirection.SHORT
                 )
-            else:
+                held = self._cycles.get(key)
+                if held is not None and held.remaining_qty > _ZERO and held.direction is not wanted:
+                    # a SELL never closes a short and a COVER never closes a long
+                    outcome = (Disposition.IGNORED, "wrong_direction")
+                else:
+                    outcome = await self._exit(
+                        key, ExitKind.STRATEGY, signal.reason, signal.instance_id, now, audits
+                    )
+            else:  # pragma: no cover - SignalAction is a closed set
                 outcome = (Disposition.IGNORED, "signal_action_not_enabled")
             await self._settle(key, now, audits, stale)
             return self._finish(key, outcome, audits, event_type)
@@ -556,6 +595,7 @@ class PortfolioManager:
                     if cs == scope
                 }
             ),
+            short_entries_authorized=self._config.short_authorized,
         )
 
     # ------------------------------------------------------------------ plumbing
@@ -644,9 +684,22 @@ class PortfolioManager:
             self._note(audits, key, "PortCallFailed", f"{label}:{type(exc).__name__}")
             return False
 
-    async def _confirmed_quantity(self, key: _Key) -> Decimal | None:
+    async def _confirmed_quantity(
+        self, key: _Key, direction: PositionDirection = PositionDirection.LONG
+    ) -> Decimal | None:
+        """Broker-confirmed magnitude of the position in ``direction``; ``None`` if unverifiable.
+
+        A SHORT is verified only through ``confirmed_short_quantity``; a position port that
+        cannot report shorts leaves the quantity unverified, which defers/blocks (fail closed).
+        """
+        if direction is PositionDirection.LONG:
+            call = self._positions.confirmed_quantity
+        else:
+            call = getattr(self._positions, "confirmed_short_quantity", None)
+            if call is None:
+                return None
         try:
-            quantity = await self._positions.confirmed_quantity(*key)
+            quantity = await call(*key)
         except Exception:
             return None
         return quantity if isinstance(quantity, Decimal) else None
@@ -683,9 +736,17 @@ class PortfolioManager:
     # --------------------------------------------------------------------- entry
 
     async def _enter(
-        self, key: _Key, signal: Signal, now: datetime, audits: list[Mapping[str, object]]
+        self,
+        key: _Key,
+        signal: Signal,
+        now: datetime,
+        audits: list[Mapping[str, object]],
+        direction: PositionDirection = PositionDirection.LONG,
     ) -> _Outcome:
         scope, symbol = key
+        short = direction is PositionDirection.SHORT
+        if short and not self._config.short_authorized:
+            return Disposition.BLOCKED, "short_selling_not_authorized"
         cycle = self._cycles.get(key)
         if cycle is None:
             cycle = self._cycles[key] = PositionCycle(scope, symbol, self._new_id())
@@ -722,6 +783,7 @@ class PortfolioManager:
             strategy_id=signal.instance_id,
             entry_intent_id=reservation.intent_id,
             target_entry_qty=reservation.quantity,
+            side=OrderSide.SELL_SHORT if short else OrderSide.BUY,
             reason=signal.reason,
         )
         self._apply(
@@ -731,8 +793,8 @@ class PortfolioManager:
             account_scope_id=scope,
             symbol=symbol,
             cycle_id=cycle.cycle_id,
-            purpose=OrderPurpose.ENTRY_LONG,
-            side=OrderSide.BUY,
+            purpose=OrderPurpose.ENTRY_SHORT if short else OrderPurpose.ENTRY_LONG,
+            side=OrderSide.SELL_SHORT if short else OrderSide.BUY,
             quantity=reservation.quantity,
             client_order_id=reservation.client_order_id,
             intent_id=reservation.intent_id,
@@ -777,7 +839,10 @@ class PortfolioManager:
     ) -> _Outcome:
         """Entry order ended without (more) fills: release budget, rearm if flat."""
         cycle = self._cycles[key]
-        if cycle.remaining_qty <= _ZERO and await self._confirmed_quantity(key) != _ZERO:
+        if (
+            cycle.remaining_qty <= _ZERO
+            and await self._confirmed_quantity(key, cycle.direction) != _ZERO
+        ):
             self._require_reconciliation(key, now, audits, "entry_ended_position_unverified")
             return Disposition.RECONCILING, "entry_ended_position_unverified"
         event_type = (
@@ -892,8 +957,9 @@ class PortfolioManager:
                 reason="strategy_sell_canceled_for_priority_exit",
             )
 
-        # 4. Cap the quantity at the broker-confirmed position: never short.
-        confirmed = await self._confirmed_quantity(key)
+        # 4. Cap the quantity at the broker-confirmed position of the cycle's own direction:
+        #    a close can never exceed it, so it can never open the opposite position.
+        confirmed = await self._confirmed_quantity(key, cycle.direction)
         if confirmed is None:
             await self._reprotect(cycle, key, audits)
             return defer("position_unconfirmed")
@@ -920,8 +986,8 @@ class PortfolioManager:
             account_scope_id=key[0],
             symbol=key[1],
             cycle_id=cycle.cycle_id,
-            purpose=self._purpose(kind),
-            side=OrderSide.SELL,
+            purpose=self._purpose(kind, cycle.direction),
+            side=cycle.exit_side,
             quantity=quantity,
             client_order_id=client_order_id,
             strategy_id=strategy_id,
@@ -940,9 +1006,15 @@ class PortfolioManager:
         return Disposition.ACCEPTED, "exit_submitted"
 
     @staticmethod
-    def _purpose(kind: ExitKind) -> OrderPurpose:
+    def _purpose(
+        kind: ExitKind, direction: PositionDirection = PositionDirection.LONG
+    ) -> OrderPurpose:
         if kind is ExitKind.STRATEGY:
-            return OrderPurpose.EXIT_LONG
+            return (
+                OrderPurpose.EXIT_LONG
+                if direction is PositionDirection.LONG
+                else OrderPurpose.EXIT_SHORT
+            )
         if kind in _MANUAL_KINDS:
             return OrderPurpose.MANUAL_CLOSE
         return OrderPurpose.SAFETY_EXIT
@@ -981,7 +1053,7 @@ class PortfolioManager:
             return Disposition.RECONCILING, "fill_rejected_by_cycle"
         if updated is before:
             return Disposition.DUPLICATE, "duplicate_fill"
-        if report.side is OrderSide.BUY:
+        if report.side.is_entry:
             await self._budget.apply_entry_fill(updated, report)
             if not before.entry_slot_consumed:
                 await self._gate.record_entry_fill(updated)
@@ -1006,7 +1078,7 @@ class PortfolioManager:
         if status not in _ENTRY_TERMINAL:
             return Disposition.IGNORED, "non_terminal_status"
         assert status is not None
-        if report.side is OrderSide.BUY:
+        if report.side.is_entry:
             if (
                 report.order_id not in cycle.entry_order_ids
                 or cycle.entry_order_status in TERMINAL_STATUSES
@@ -1110,7 +1182,7 @@ class PortfolioManager:
                     resolved_state=CycleState.CLOSING,
                     reason="stale_orders_canceled_at_close",
                 )
-            confirmed = await self._confirmed_quantity(key)
+            confirmed = await self._confirmed_quantity(key, cycle.direction)
             if confirmed is None:
                 self._note(audits, key, "ClosePending", "flat_unverified")
                 return

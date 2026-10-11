@@ -92,6 +92,49 @@ can gate further operator steps.
 `strategy-enable`, `strategy-disable`, and `strategy-set` mutate
 configuration and need live confirmation on LIVE accounts.
 
+## Short selling
+
+Short selling is **opt-in and fail-closed** and is never activated for LIVE
+(`docs/SAFETY_AND_RISK.md` §4a). Roles: SHORT opens a short, COVER closes it;
+SELL still closes only a long. There is no automatic reversal.
+
+**SHADOW.** Set `execution.short_selling_enabled: true` and list
+`short_strategies` / `cover_strategies` per symbol (strategies declared with
+`side: short` / `side: cover`; see `config/mike_trade.example.yaml`).
+Configuration refuses short strategies without the switch and refuses the
+switch for `account_mode: live`. A new SHADOW scenario account fixes
+`short_margin_multiplier` (default 1.5: proceeds stay locked and 0.5 x notional
+of own cash is required) and `short_borrow_bps_per_day` (default 0: an
+*estimated* borrow assumption, charged on cover) at creation; an existing
+scenario keeps its creation parameters. A short's proceeds are restricted
+collateral (excluded from buying power), equity subtracts the short's
+liability, and exposure ceilings and the session entry cap count shorts like
+longs. Enabling shorting changes the config fingerprint (the same
+acknowledgement as any strategy drift).
+
+**BACKTEST / research.** `ExperimentSpec` takes `short_strategies`,
+`cover_strategies`, `short_selling_enabled` (required for any short strategy)
+and `short_borrow_bps_per_day`; `BacktestRequest.config` accepts those keys
+plus `short_margin_multiplier` (default 1.5) and an optional
+`max_gross_exposure` ceiling that applies to long and short entries alike.
+Runs that include SHORT/COVER strategies
+use lifecycle semantics `"3"` (long-only runs keep `"2"` and their hashes).
+Artifacts add, for shorts only: fill `direction` and `borrow_cost`, cycle
+`direction`, equity-curve `restricted_collateral` / `available_cash`, and
+`ENTRY_REFUSED` decisions (`SHORT_SELLING_NOT_AUTHORIZED`,
+`INSUFFICIENT_SHORT_MARGIN`, `GROSS_EXPOSURE_LIMIT`). The trade ledger pairs
+`SELL_SHORT` with `BUY_TO_COVER` (`direction: SHORT`, gain = entry - cover).
+
+**PAPER / LIVE.** The order, position, reconciliation and protection layers are
+direction-aware and fail closed: a short entry needs the explicit switch, a
+broker account that may short with buying power, a shortable and easy-to-borrow
+asset, a recorded capability verification of the short order shapes, and
+broker-held short-side protection; otherwise nothing is sent. This release's
+PAPER/LIVE runtime composition does not evaluate strategies (only SHADOW and
+BACKTEST do), and no paper or live short order flow has been verified.
+Reconciliation reports `POSITION_DIRECTION_MISMATCH` when the broker holds the
+opposite direction of a managed cycle and never nets or adopts it.
+
 ## Symbols
 
 | Target | Variables | Example |

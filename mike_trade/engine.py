@@ -370,11 +370,11 @@ class Engine:
                 return False
             if not actionable or outcome_name != "SIGNAL":
                 return False
-            if side_name == "BUY":
+            if side_name in ("BUY", "SHORT"):
                 if not self.entries_allowed:
                     return False
                 return self._forward_signal(result)
-            # SELL and other exit roles always flow, even when entries block.
+            # SELL, COVER and other exit roles always flow, even when entries block.
             return self._forward_signal(result)
         except Exception as exc:
             detail = f"{type(exc).__name__}: {exc}"

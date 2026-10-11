@@ -50,6 +50,9 @@ class _ProtectiveOrderRequest:
     confirmed_avg_fill_price: Decimal
     policy: ProtectionPolicy
     created_at: datetime
+    #: "LONG" (a protective SELL stop below the market) or "SHORT" (a protective BUY_TO_COVER
+    #: stop above it).  The broker adapter derives the order side from this.
+    direction: str = "LONG"
 
 
 @dataclass(frozen=True, slots=True)
@@ -58,6 +61,7 @@ class _ExitOrderRequest:
     quantity: Decimal
     reason: str
     created_at: datetime
+    direction: str = "LONG"  # "SHORT": the exit is a BUY_TO_COVER
 
 
 @dataclass(slots=True)
@@ -77,6 +81,7 @@ class _CycleState:
     confirmed_entry_quantity: Decimal = _ZERO
     confirmed_exit_quantity: Decimal = _ZERO
     avg_fill_price: Decimal | None = None
+    direction: str = "LONG"
     status: str = "AWAITING_FILL"
     protective_order_id: str | None = None
     protective_order_quantity: Decimal = _ZERO
@@ -227,10 +232,14 @@ class ProtectionCoordinator:
         avg_fill_price: Decimal,
         *,
         confirmed: bool = True,
+        direction: str = "LONG",
     ) -> _ProtectionSnapshot | None:
-        """Cover a positive, broker-confirmed cumulative entry fill."""
+        """Cover a positive, broker-confirmed cumulative entry fill (long or short)."""
 
         cycle = _text(cycle_id, "cycle_id")
+        direction = _text(direction, "direction").upper()
+        if direction not in ("LONG", "SHORT"):
+            raise ValueError("direction must be LONG or SHORT")
         quantity = _decimal(cumulative_filled_qty, "cumulative_filled_qty")
         price = _decimal(avg_fill_price, "avg_fill_price", positive=True)
         if not isinstance(confirmed, bool):
@@ -238,7 +247,9 @@ class ProtectionCoordinator:
         if not confirmed or quantity == _ZERO:
             return self.current_protection(cycle)
 
-        state = self._cycles.setdefault(cycle, _CycleState(cycle_id=cycle))
+        state = self._cycles.setdefault(cycle, _CycleState(cycle_id=cycle, direction=direction))
+        if state.direction != direction:
+            raise ValueError("a cycle's direction cannot change (no automatic reversal)")
         if quantity < state.confirmed_entry_quantity:
             raise ValueError("cumulative_filled_qty must not decrease")
         state.confirmed_entry_quantity = quantity
@@ -368,6 +379,7 @@ class ProtectionCoordinator:
             confirmed_avg_fill_price=state.avg_fill_price,
             policy=self._policy,
             created_at=self._now(),
+            direction=state.direction,
         )
         try:
             acknowledgement = await self._broker_call(
@@ -419,7 +431,9 @@ class ProtectionCoordinator:
             raise RuntimeError("pending exit exceeds confirmed remaining position")
         reason = state.pending_exit_reason
         assert reason is not None
-        request = _ExitOrderRequest(state.cycle_id, quantity, reason, self._now())
+        request = _ExitOrderRequest(
+            state.cycle_id, quantity, reason, self._now(), direction=state.direction
+        )
         try:
             acknowledgement = await self._broker_call("submit_exit_order", "submit_order", request)
             state.working_exit = _WorkingExit(_order_id(acknowledgement), quantity)

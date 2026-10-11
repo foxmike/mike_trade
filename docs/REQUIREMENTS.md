@@ -17,10 +17,16 @@ Paper, shadow, and backtest results never prove live performance.
   10 symbols (`_MAX_WATCHLIST = 10` in `mike_trade/dashboard/api.py`).
   Operator commands: `make symbols`, `make symbols-add`,
   `make symbols-remove`, `make symbols-enable`, `make symbols-disable`.
-- **Direction:** long-only. Short selling is structurally unsupported: the
-  Alpaca capability matrix resolves any `short` descriptor to `UNSUPPORTED`
-  and it can never be promoted (`mike_trade/brokers/alpaca/capabilities.py`).
-- **Position cycle:** one intentional long entry and then one full
+- **Direction:** long and short, as four independent strategy roles: BUY
+  opens a long, SELL closes a long, SHORT opens a short, COVER closes a
+  short. A SELL never closes a short and a COVER never closes a long; there
+  is no automatic reversal and never a simultaneous long and short in one
+  symbol. Short selling is **opt-in and fails closed**
+  (`execution.short_selling_enabled`): it is simulated in SHADOW and BACKTEST,
+  requires a recorded capability verification plus every broker/account gate
+  for PAPER (`docs/ALPACA.md` §6, `docs/SAFETY_AND_RISK.md` §4a), and is never
+  activated for LIVE.
+- **Position cycle:** one intentional entry (long or short) and then one full
   discretionary exit per cycle (`mike_trade/portfolio/`). There is no
   averaging down, no pyramiding, and no planned partial exits
   (`mike_trade/domain/trading.py`: "planned partial exits are outside" the
@@ -184,8 +190,9 @@ differently on different symbols by defining several named entries. Rules:
 
 ## 6. Explicitly out of scope
 
-- Short selling, margin semantics beyond broker-reported buying power,
-  options, futures, forex, crypto, or non-U.S. venues.
+- LIVE short selling, unrestricted margin or leverage, margin semantics
+  beyond broker-reported buying power, options, futures, forex, crypto, or
+  non-U.S. venues.
 - Averaging down, pyramiding, or planned partial exits.
 - Raw-tick archival, charting-terminal UI, or price prediction.
 - Enterprise Alpaca Broker API (`broker-api.*` hosts are rejected).

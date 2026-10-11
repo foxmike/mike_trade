@@ -111,6 +111,9 @@ class ScenarioConfig:
     latency: timedelta = timedelta(0)
     participation: Decimal = _ONE
     allow_fractional: bool = False
+    #: SHORT opens a short and COVER closes one; independent of BUY/SELL (no auto-reversal).
+    short_strategies: tuple[str, ...] = ()
+    cover_strategies: tuple[str, ...] = ()
 
     def __post_init__(self) -> None:
         object.__setattr__(self, "scenario_id", _scenario_id(self.scenario_id, "scenario_id"))
@@ -127,6 +130,12 @@ class ScenarioConfig:
         )
         object.__setattr__(
             self, "sell_strategies", _strategy_ids(self.sell_strategies, "sell_strategies")
+        )
+        object.__setattr__(
+            self, "short_strategies", _strategy_ids(self.short_strategies, "short_strategies")
+        )
+        object.__setattr__(
+            self, "cover_strategies", _strategy_ids(self.cover_strategies, "cover_strategies")
         )
         entries = self.max_entries_per_symbol_per_session
         if isinstance(entries, bool) or not isinstance(entries, int) or entries < 1:
@@ -333,22 +342,27 @@ class ScenarioRunner:
         self._runtimes: dict[str, _ScenarioRuntime] = {}
         self._buy_strategies: dict[str, _StrategyFn] = {}
         self._sell_strategies: dict[str, _StrategyFn] = {}
+        self._short_strategies: dict[str, _StrategyFn] = {}
+        self._cover_strategies: dict[str, _StrategyFn] = {}
 
     # ---- setup
 
     def register_strategy(self, strategy_id: str, fn: _StrategyFn, *, side: str) -> None:
-        """Assign a strategy plugin to the BUY or SELL side for scenario configs."""
+        """Assign a strategy plugin to the BUY, SELL, SHORT or COVER side for scenario configs."""
         if not isinstance(strategy_id, str) or not strategy_id.strip():
             raise ValueError("strategy_id must be a non-empty string")
         if not callable(fn):
             raise TypeError("strategy plugin must be callable")
         normalized = side.strip().upper() if isinstance(side, str) else ""
-        if normalized == "BUY":
-            table = self._buy_strategies
-        elif normalized == "SELL":
-            table = self._sell_strategies
-        else:
-            raise ValueError("side must be BUY or SELL")
+        tables = {
+            "BUY": self._buy_strategies,
+            "SELL": self._sell_strategies,
+            "SHORT": self._short_strategies,
+            "COVER": self._cover_strategies,
+        }
+        if normalized not in tables:
+            raise ValueError("side must be BUY, SELL, SHORT or COVER")
+        table = tables[normalized]
         key = strategy_id.strip()
         if key in table:
             raise ValueError(f"duplicate {normalized} strategy {key!r}")
@@ -500,13 +514,13 @@ class ScenarioRunner:
                 quote = context.latest_quote
                 if quote is not None:
                     account.update_quote(symbol, (quote.bid + quote.ask) / 2)
-                for side, table in (
-                    ("BUY", self._buy_strategies),
-                    ("SELL", self._sell_strategies),
+                for side, table, assigned in (
+                    ("BUY", self._buy_strategies, config.buy_strategies),
+                    ("SELL", self._sell_strategies, config.sell_strategies),
+                    ("SHORT", self._short_strategies, config.short_strategies),
+                    ("COVER", self._cover_strategies, config.cover_strategies),
                 ):
-                    for strategy_id in (
-                        config.buy_strategies if side == "BUY" else config.sell_strategies
-                    ):
+                    for strategy_id in assigned:
                         plugin = self._resolve(table, strategy_id, side)
                         intent = plugin(config, context)
                         if intent is None:

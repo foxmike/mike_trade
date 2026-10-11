@@ -16,6 +16,8 @@ from mike_trade.market_data.candles import CandleTimeframe
 from mike_trade.market_data.context import MarketContext
 from mike_trade.strategies.base import (
     BuyStrategy,
+    CoverStrategy,
+    ShortStrategy,
     ParameterKind,
     ParameterSchema,
     ParameterSpec,
@@ -27,7 +29,9 @@ from mike_trade.strategies.base import (
 )
 from mike_trade.strategies.registry import StrategyRegistry
 
-__all__ = ["build_registry", "make_strategy", "STUBS"]
+__all__ = [
+    "build_registry", "build_bidirectional_registry", "make_strategy", "STUBS", "SHORT_COVER_STUBS",
+]
 
 _SCHEMA = ParameterSchema(
     (
@@ -42,7 +46,12 @@ _SCHEMA = ParameterSchema(
 
 
 def make_strategy(strategy_id: str, side: StrategyRole) -> type:
-    base = BuyStrategy if side is StrategyRole.BUY else SellStrategy
+    base = {
+        StrategyRole.BUY: BuyStrategy,
+        StrategyRole.SELL: SellStrategy,
+        StrategyRole.SHORT: ShortStrategy,
+        StrategyRole.COVER: CoverStrategy,
+    }[side]
     spec = StrategySpec(
         strategy_id=strategy_id,
         version="1.0.0",
@@ -88,7 +97,9 @@ def make_strategy(strategy_id: str, side: StrategyRole) -> type:
         if fire:
             return StrategyEvaluation.for_signal(
                 spec, context.symbol, bars[-1].start,
-                reference_price=bars[-1].close if side is StrategyRole.BUY else None,
+                reference_price=(
+                    bars[-1].close if side in (StrategyRole.BUY, StrategyRole.SHORT) else None
+                ),
                 state_updates=updates,
             )
         return StrategyEvaluation.no_signal(
@@ -122,3 +133,24 @@ def build_registry() -> StrategyRegistry:
 
 def price(value: str) -> Decimal:
     return Decimal(value)
+
+
+#: SHORT/COVER doubles for the bidirectional lifecycle tests; kept out of ``STUBS`` so the
+#: long-only registry (and every test built on it) is unchanged.
+SHORT_COVER_STUBS: Mapping[str, type] = {
+    **{
+        sid: make_strategy(sid, StrategyRole.SHORT)
+        for sid in ("short_alpha", "short_bravo", "short_charlie")
+    },
+    **{
+        sid: make_strategy(sid, StrategyRole.COVER)
+        for sid in ("cover_alpha", "cover_bravo", "cover_charlie")
+    },
+}
+
+
+def build_bidirectional_registry() -> StrategyRegistry:
+    registry = build_registry()
+    for cls in SHORT_COVER_STUBS.values():
+        registry.register(cls)
+    return registry

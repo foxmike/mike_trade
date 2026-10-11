@@ -75,11 +75,19 @@ class _OpenOrderProvider(Protocol):
 
 
 class _PositionProvider(Protocol):
+    """Position facts; ``*_short_*`` / ``*_cover_*`` are only consulted for ``EXIT_SHORT``."""
+
     def confirmed_long_quantity(self, key: ExecutionKey) -> Decimal | Awaitable[Decimal]: ...
 
     def committed_sell_quantity(self, key: ExecutionKey) -> Decimal | Awaitable[Decimal]: ...
 
     def protective_sell_quantity(self, key: ExecutionKey) -> Decimal | Awaitable[Decimal]: ...
+
+    def confirmed_short_quantity(self, key: ExecutionKey) -> Decimal | Awaitable[Decimal]: ...
+
+    def committed_cover_quantity(self, key: ExecutionKey) -> Decimal | Awaitable[Decimal]: ...
+
+    def protective_cover_quantity(self, key: ExecutionKey) -> Decimal | Awaitable[Decimal]: ...
 
 
 class _AvailableCashProvider(Protocol):
@@ -194,7 +202,7 @@ class OrderCommand:
             price = _decimal(self.intent.limit_price, field="intent.limit_price", positive=True)
             return quantity * price
         raise ValueError(
-            "ENTRY_LONG requires reservation_amount, notional, or qty with limit_price"
+            f"{self.purpose} requires reservation_amount, notional, or qty with limit_price"
         )
 
 
@@ -421,7 +429,9 @@ class OrderCommandCoordinator:
             ):
                 return CommandDecision(DecisionReason.REJECTED_OPEN_ORDER, key, purpose)
 
-            if purpose == "ENTRY_LONG":
+            if purpose in ("ENTRY_LONG", "ENTRY_SHORT"):
+                # A long reserves its notional; a short reserves its own-cash margin (the
+                # caller supplies ``reservation_amount``): sale proceeds are never cash.
                 reservation, available = await self.reservation_ledger.reserve(
                     key, command.requested_cash
                 )
@@ -447,20 +457,28 @@ class OrderCommandCoordinator:
         self, command: OrderCommand, key: ExecutionKey, purpose: str
     ) -> CommandDecision:
         requested = _decimal(command.intent.qty, field="intent.qty", positive=True)
-        held = _decimal(
-            await _resolve(self._position_provider.confirmed_long_quantity(key)),
-            field="confirmed long quantity",
-        )
+        provider = self._position_provider
+        if purpose == "EXIT_SHORT":
+            held_call = provider.confirmed_short_quantity
+            committed_call = provider.committed_cover_quantity
+            protective_call = provider.protective_cover_quantity
+            noun = "cover"
+        else:
+            held_call = provider.confirmed_long_quantity
+            committed_call = provider.committed_sell_quantity
+            protective_call = provider.protective_sell_quantity
+            noun = "sell"
+        held = _decimal(await _resolve(held_call(key)), field=f"confirmed {noun} quantity")
         committed = _decimal(
-            await _resolve(self._position_provider.committed_sell_quantity(key)),
-            field="committed sell quantity",
+            await _resolve(committed_call(key)), field=f"committed {noun} quantity"
         )
         protective = _decimal(
-            await _resolve(self._position_provider.protective_sell_quantity(key)),
-            field="protective sell quantity",
+            await _resolve(protective_call(key)), field=f"protective {noun} quantity"
         )
         if protective > committed:
-            raise ValueError("protective sell quantity cannot exceed committed sell quantity")
+            raise ValueError(
+                f"protective {noun} quantity cannot exceed committed {noun} quantity"
+            )
 
         available = max(_ZERO, held - committed)
         if requested <= available:

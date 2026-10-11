@@ -1,4 +1,4 @@
-"""Pure, fail-closed position sizing for protected long entries."""
+"""Pure, fail-closed position sizing for protected long and short entries."""
 
 from __future__ import annotations
 
@@ -89,6 +89,13 @@ class SizingInput:
     margin_required: bool = False
     margin_enabled: bool = False
     side: str = "long"
+    #: Short selling is opt-in: a short request is rejected (``SHORT_NOT_SUPPORTED``) unless it
+    #: is explicitly authorized, and it always needs a margin account.
+    short_selling_enabled: bool = False
+    #: Own-cash requirement of a short as a multiple of its notional MINUS the locked proceeds:
+    #: ``(multiplier - 1) x notional`` must fit in available buying power.  The sale proceeds are
+    #: restricted collateral and are never counted as buying power.
+    short_margin_multiplier: Decimal = Decimal("1.5")
 
     def __post_init__(self) -> None:
         for name in (
@@ -152,6 +159,15 @@ class SizingInput:
         if not isinstance(self.side, str) or not self.side.strip():
             raise TypeError("side must be a non-empty string")
         object.__setattr__(self, "side", self.side.strip().lower())
+        if not isinstance(self.short_selling_enabled, bool):
+            raise TypeError("short_selling_enabled must be bool")
+        object.__setattr__(
+            self,
+            "short_margin_multiplier",
+            _decimal(self.short_margin_multiplier, "short_margin_multiplier", positive=True),
+        )
+        if self.short_margin_multiplier < _ONE:
+            raise ValueError("short_margin_multiplier must be >= 1")
 
 
 @dataclass(frozen=True, slots=True)
@@ -180,20 +196,29 @@ def _rejected(
 
 
 def _stop_distance(request: SizingInput) -> tuple[Decimal | None, bool]:
-    """Return the validated long stop distance and whether it is valid."""
+    """Return the validated stop distance and whether it is valid.
+
+    A long's stop sits below the entry (the distance can never reach the entry price); a
+    short's stop sits above it.
+    """
 
     stop_price = request.protective_stop_price
     distance = request.protective_stop_distance
+    short = request.side == "short"
     if stop_price is None and distance is None:
         return None, False
     if stop_price is not None:
-        if stop_price <= _ZERO or stop_price >= request.entry_price:
+        if stop_price <= _ZERO or (
+            stop_price <= request.entry_price if short else stop_price >= request.entry_price
+        ):
             return None, False
-        price_distance = request.entry_price - stop_price
+        price_distance = (
+            stop_price - request.entry_price if short else request.entry_price - stop_price
+        )
         if distance is not None and distance != price_distance:
             return None, False
         distance = price_distance
-    elif distance is not None and distance >= request.entry_price:
+    elif distance is not None and not short and distance >= request.entry_price:
         return None, False
     if distance is None or distance <= _ZERO:
         return None, False
@@ -201,15 +226,18 @@ def _stop_distance(request: SizingInput) -> tuple[Decimal | None, bool]:
 
 
 class PositionSizer:
-    """Stateless implementation of protected long-entry sizing."""
+    """Stateless implementation of protected long- and short-entry sizing."""
 
     @staticmethod
     def size(request: SizingInput) -> SizingResult:
         if not isinstance(request, SizingInput):
             raise TypeError("request must be SizingInput")
-        if request.side != "long":
+        if request.side not in ("long", "short"):
             return _rejected(SizingRejection.SHORT_NOT_SUPPORTED)
-        if request.margin_required and not request.margin_enabled:
+        short = request.side == "short"
+        if short and not request.short_selling_enabled:
+            return _rejected(SizingRejection.SHORT_NOT_SUPPORTED)
+        if (request.margin_required or short) and not request.margin_enabled:
             return _rejected(SizingRejection.MARGIN_NOT_ENABLED)
         if request.require_max_planned_loss and request.max_planned_loss_usd is None:
             return _rejected(SizingRejection.MAX_PLANNED_LOSS_REQUIRED)
@@ -237,10 +265,19 @@ class PositionSizer:
         if broker_available <= _ZERO:
             return _rejected(SizingRejection.INSUFFICIENT_BUYING_POWER)
 
+        # Budgets are ceilings on GROSS exposure (a short counts like a long).  Buying power
+        # funds a long's whole notional but only a short's own-cash margin (multiplier - 1).
+        if short:
+            margin_ratio = request.short_margin_multiplier - _ONE
+            funded_notional = (
+                broker_available / margin_ratio if margin_ratio > _ZERO else broker_available
+            )
+        else:
+            funded_notional = broker_available
         spendable_notional = min(
             request.remaining_symbol_budget_usd,
             request.remaining_total_budget_usd,
-            broker_available,
+            funded_notional,
         )
         spendable_notional = max(
             _ZERO, spendable_notional - request.slippage_cushion_usd

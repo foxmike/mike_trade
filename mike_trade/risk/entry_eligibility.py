@@ -264,7 +264,9 @@ class EntryCycleCounter:
         """
         if not isinstance(fill, Fill):
             raise TypeError("fill must be Fill")
-        if fill.side is not OrderSide.BUY or fill.quantity <= _ZERO:
+        # BUY and SELL_SHORT both open a cycle: a short entry consumes the same daily slot,
+        # so the per-symbol entry cap cannot be bypassed by shorting.
+        if not fill.side.is_entry or fill.quantity <= _ZERO:
             return False
         scope = _scope_id(fill.account_scope_id)
         key = _text(entry_id, "entry_id") if entry_id is not None else fill.broker_order_id

@@ -1,4 +1,11 @@
-"""Pure, restart-safe lifecycle for one managed long position cycle.
+"""Pure, restart-safe lifecycle for one managed long or short position cycle.
+
+A cycle has a ``direction`` (LONG by default).  The BUY_*/SELL_* event and state names are the
+direction-neutral *entry*/*exit* lifecycle: a SHORT cycle goes FLAT -> entry pending (SELL_SHORT)
+-> SHORT -> exit pending (BUY_TO_COVER) -> FLAT through exactly the same states, with the order
+sides derived from the direction (``entry_side`` / ``exit_side``).  A fill whose side does not
+match the cycle's direction is refused, so no event sequence can reverse a position.
+
 
 The composite state in this module deliberately does not replace the order
 and protection state machines.  A cycle records their latest statuses and
@@ -18,7 +25,7 @@ from enum import Enum
 from typing import Any, ClassVar
 
 from mike_trade.domain.protection import ProtectionStatus
-from mike_trade.domain.trading import OrderSide
+from mike_trade.domain.trading import OrderSide, PositionDirection
 from mike_trade.execution.order_fsm import TERMINAL_STATUSES, OrderStatus
 
 __all__ = [
@@ -160,8 +167,12 @@ class PositionCycle:
     last_transition_at: datetime | None = None
     last_transition_reason: str = "initialized"
     version: int = 0
+    #: LONG (default) or SHORT.  Set when the entry signal is accepted; reset by REARM.
+    direction: PositionDirection = PositionDirection.LONG
 
     def __post_init__(self) -> None:
+        if not isinstance(self.direction, PositionDirection):
+            raise TypeError("direction must be PositionDirection")
         object.__setattr__(
             self,
             "account_or_scenario_id",
@@ -307,6 +318,22 @@ class PositionCycle:
     @property
     def linked_order_ids(self) -> tuple[str, ...]:
         return self.entry_order_ids + self.sell_order_ids + self.protective_order_ids
+
+    @property
+    def entry_side(self) -> OrderSide:
+        """BUY for a long, SELL_SHORT for a short."""
+        return (
+            OrderSide.BUY if self.direction is PositionDirection.LONG else OrderSide.SELL_SHORT
+        )
+
+    @property
+    def exit_side(self) -> OrderSide:
+        """SELL for a long, BUY_TO_COVER for a short."""
+        return (
+            OrderSide.SELL
+            if self.direction is PositionDirection.LONG
+            else OrderSide.BUY_TO_COVER
+        )
 
     @property
     def has_open_sell_order(self) -> bool:
@@ -495,7 +522,7 @@ def _advance(cycle: PositionCycle, event: CycleEvent, **changes: object) -> Posi
 
 def _owned(cycle: PositionCycle, event: CycleEvent) -> None:
     if cycle.remaining_qty <= _ZERO:
-        _illegal(cycle, event, "event requires a positive managed long position")
+        _illegal(cycle, event, "event requires a positive managed position")
 
 
 def _derived_after_reconciliation(cycle: PositionCycle) -> CycleState:
@@ -521,10 +548,18 @@ def _apply_unpaused(
             return cycle, (_audit(cycle, cycle, event, outcome="ignored"),)
         if event.strategy_id is None:
             _illegal(cycle, event, "buy signal requires strategy_id")
+        if event.side not in (None, OrderSide.BUY, OrderSide.SELL_SHORT):
+            _illegal(cycle, event, "an entry signal side must be BUY or SELL_SHORT")
+        direction = (
+            PositionDirection.SHORT
+            if event.side is OrderSide.SELL_SHORT
+            else PositionDirection.LONG
+        )
         updated = _advance(
             cycle,
             event,
             state=CycleState.ENTRY_RESERVED,
+            direction=direction,
             originating_buy_strategy_id=event.strategy_id,
             entry_intent_id=event.entry_intent_id,
             target_entry_qty=event.target_entry_qty,
@@ -584,7 +619,13 @@ def _apply_unpaused(
         assert event.price is not None
         if event.fill_id in cycle.applied_fill_ids:
             return cycle, ()
-        if event.side is OrderSide.BUY:
+        if event.side.is_entry:
+            if event.side is not cycle.entry_side:
+                _illegal(
+                    cycle, event,
+                    f"{event.side.value} cannot open a {cycle.direction.value} cycle "
+                    "(no automatic reversal)",
+                )
             if cycle.state not in {
                 CycleState.ENTRY_RESERVED,
                 CycleState.BUY_SUBMITTING,
@@ -592,12 +633,12 @@ def _apply_unpaused(
                 CycleState.PARTIALLY_OWNED,
                 CycleState.PROTECTIVE_PENDING,
             }:
-                _illegal(cycle, event, "buy fill is not associated with an open entry")
+                _illegal(cycle, event, "entry fill is not associated with an open entry")
             if cycle.filled_exit_qty > _ZERO:
-                _illegal(cycle, event, "buy fills are forbidden after exit execution begins")
+                _illegal(cycle, event, "entry fills are forbidden after exit execution begins")
             total = cycle.filled_entry_qty + event.quantity
             if cycle.target_entry_qty is not None and total > cycle.target_entry_qty:
-                _illegal(cycle, event, "buy fill exceeds target_entry_qty")
+                _illegal(cycle, event, "entry fill exceeds target_entry_qty")
             old_cost = cycle.filled_entry_qty * (cycle.average_entry_price or _ZERO)
             average = (old_cost + event.quantity * event.price) / total
             status = (
@@ -621,6 +662,12 @@ def _apply_unpaused(
             )
         else:
             _owned(cycle, event)
+            if event.side is not cycle.exit_side:
+                _illegal(
+                    cycle, event,
+                    f"{event.side.value} cannot close a {cycle.direction.value} cycle "
+                    "(no automatic reversal)",
+                )
             if cycle.state not in {
                 CycleState.PARTIALLY_OWNED,
                 CycleState.PROTECTIVE_PENDING,
@@ -629,9 +676,14 @@ def _apply_unpaused(
                 CycleState.SELL_PENDING,
                 CycleState.CLOSING,
             }:
-                _illegal(cycle, event, "sell fill requires an owned position")
+                _illegal(cycle, event, "exit fill requires an owned position")
             if event.quantity > cycle.remaining_qty:
-                _illegal(cycle, event, "sell fill exceeds remaining_qty (shorting is forbidden)")
+                _illegal(
+                    cycle, event,
+                    "sell fill exceeds remaining_qty (shorting is forbidden)"
+                    if cycle.direction is PositionDirection.LONG
+                    else "cover fill exceeds remaining_qty (a cover can never open a long)",
+                )
             remaining = cycle.remaining_qty - event.quantity
             protective_fill = event.order_id in cycle.protective_order_ids
             updated = _advance(
@@ -889,6 +941,7 @@ def _apply_unpaused(
             event,
             cycle_id=event.new_cycle_id or cycle.cycle_id,
             state=CycleState.WATCHING_BUY,
+            direction=PositionDirection.LONG,
             originating_buy_strategy_id=None,
             entry_intent_id=None,
             entry_order_ids=(),
@@ -1021,6 +1074,7 @@ def serialize_cycle(cycle: PositionCycle) -> dict[str, object]:
         "last_transition_at": _iso(cycle.last_transition_at),
         "last_transition_reason": cycle.last_transition_reason,
         "version": cycle.version,
+        "direction": cycle.direction.value,
     }
 
 
@@ -1113,6 +1167,8 @@ def deserialize_cycle(data: Mapping[str, Any] | str) -> PositionCycle:
             last_transition_at=_parse_time(data.get("last_transition_at"), "last_transition_at"),
             last_transition_reason=data.get("last_transition_reason"),  # type: ignore[arg-type]
             version=data.get("version"),  # type: ignore[arg-type]
+            # snapshots written before shorting existed carry no direction: they were LONG
+            direction=PositionDirection(data.get("direction", PositionDirection.LONG.value)),
         )
     except (TypeError, ValueError) as exc:
         raise ValueError(f"invalid cycle snapshot: {exc}") from exc

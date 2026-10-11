@@ -85,7 +85,12 @@ def _to_decimal(value: object, *, field: str) -> Decimal:
 
 
 class SignalAction(Enum):
-    """Signal actions; short-side members are reserved but dormant."""
+    """Signal actions: ENTER_LONG/EXIT_LONG (BUY/SELL) and ENTER_SHORT/COVER_SHORT (SHORT/COVER).
+
+    All four are valid signals.  Whether a short action may actually reach an order is decided
+    downstream and fails closed: the portfolio manager's ``short_authorized`` switch, the
+    broker adapter's short authorization and its shortability/margin/protection checks.
+    """
 
     ENTER_LONG = "ENTER_LONG"
     EXIT_LONG = "EXIT_LONG"
@@ -93,7 +98,7 @@ class SignalAction(Enum):
     COVER_SHORT = "COVER_SHORT"
 
 
-ENABLED_SIGNAL_ACTIONS = frozenset({SignalAction.ENTER_LONG, SignalAction.EXIT_LONG})
+ENABLED_SIGNAL_ACTIONS = frozenset(SignalAction)
 
 
 @dataclass(frozen=True, slots=True)
@@ -169,7 +174,7 @@ def make_signal_id(
 
 @dataclass(frozen=True, slots=True)
 class Signal:
-    """A strategy's immutable long-only actionable result."""
+    """A strategy's immutable actionable result (long or short entry/exit)."""
 
     signal_id: str
     strategy_key: str

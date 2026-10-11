@@ -1,4 +1,4 @@
-"""Pure, broker-independent monotonic stepped trailing-stop ratchet (LONG only).
+"""Pure, broker-independent monotonic stepped trailing-stop ratchet (LONG and SHORT).
 
 Nothing here performs I/O or touches a broker, clock, persistence layer, or
 order: every function maps explicit inputs to a value.  The module only
@@ -30,9 +30,19 @@ reference*, never on the moving high watermark or anchor:
 therefore constant for the life of the position, which keeps the ratchet
 deterministic and replay-stable.
 
+SHORT side (exact mirror)
+-------------------------
+A short stop sits *above* the market.  ``initial_state(..., side="SHORT")`` starts with
+``candidate_stop = entry_reference + distance``; ``advance`` folds in the observed *low*
+(the favorable extreme of a short) into ``high_watermark`` (the lowest price seen),
+moves the anchor DOWN by whole steps and sets ``candidate_stop = ratchet_anchor +
+distance``.  The candidate stop, watermark and anchor never increase, so the stop ratchets
+downward as price falls and never loosens upward when price rebounds.  ``should_replace``
+rounds UP to the tick grid and answers True only when the rounded candidate is strictly
+BELOW the last confirmed stop.
+
 Validation: all prices and amounts must be finite ``Decimal`` values; ``float``
-(and ``bool``/``int``) inputs are rejected with ``ValueError``.  The SHORT side
-is an explicit capability boundary and raises ``NotImplementedError``.
+(and ``bool``/``int``) inputs are rejected with ``ValueError``.
 """
 
 from __future__ import annotations
@@ -89,12 +99,11 @@ def _flag(value: object, name: str) -> bool:
     return value
 
 
-def _require_long(side: object) -> None:
+def _side(side: object) -> str:
     normalized = side.strip().upper() if isinstance(side, str) else side
-    if normalized == _SHORT:
-        raise NotImplementedError("SHORT-side stepped trailing is not supported")
-    if normalized != _LONG:
-        raise ValueError("side must be 'LONG'")
+    if normalized not in (_LONG, _SHORT):
+        raise ValueError("side must be 'LONG' or 'SHORT'")
+    return str(normalized)
 
 
 @dataclass(frozen=True, slots=True)
@@ -159,18 +168,28 @@ class SteppedTrailingState:
     ratchet_anchor: Decimal
     candidate_stop: Decimal
     steps_advanced: int = 0
+    #: ``"LONG"`` (default) or ``"SHORT"``.  For a short, ``high_watermark`` is the LOWEST
+    #: price seen (the favorable extreme) and ``candidate_stop`` sits above the anchor.
+    direction: str = _LONG
 
     def __post_init__(self) -> None:
+        object.__setattr__(self, "direction", _side(self.direction))
         for name in ("entry_reference", "high_watermark", "ratchet_anchor", "candidate_stop"):
             _decimal(getattr(self, name), name, positive=True)
         if isinstance(self.steps_advanced, bool) or not isinstance(self.steps_advanced, int):
             raise ValueError("steps_advanced must be an int")
         if self.steps_advanced < 0:
             raise ValueError("steps_advanced must be >= 0")
-        if self.high_watermark < self.ratchet_anchor:
-            raise ValueError("high_watermark must be >= ratchet_anchor")
-        if self.candidate_stop >= self.ratchet_anchor:
-            raise ValueError("candidate_stop must be below ratchet_anchor")
+        if self.direction == _LONG:
+            if self.high_watermark < self.ratchet_anchor:
+                raise ValueError("high_watermark must be >= ratchet_anchor")
+            if self.candidate_stop >= self.ratchet_anchor:
+                raise ValueError("candidate_stop must be below ratchet_anchor")
+        else:
+            if self.high_watermark > self.ratchet_anchor:
+                raise ValueError("a short's watermark (lowest price) must be <= ratchet_anchor")
+            if self.candidate_stop <= self.ratchet_anchor:
+                raise ValueError("a short's candidate_stop must be above ratchet_anchor")
 
 
 RatchetResult = SteppedTrailingState
@@ -185,20 +204,24 @@ def _check_policy(policy: object) -> SteppedTrailingPolicy:
 def initial_state(
     entry_reference: Decimal, policy: SteppedTrailingPolicy, *, side: str = _LONG
 ) -> SteppedTrailingState:
-    """Initial stop is ``entry_reference - distance``; it must stay positive."""
+    """Initial stop is ``entry_reference -/+ distance`` (long/short); it must stay positive."""
 
-    _require_long(side)
+    direction = _side(side)
     policy = _check_policy(policy)
     entry = _decimal(entry_reference, "entry_reference", positive=True)
-    stop = entry - policy.distance_amount(entry)
-    if stop <= _ZERO:
-        raise ValueError("trailing distance must be smaller than entry_reference")
+    if direction == _LONG:
+        stop = entry - policy.distance_amount(entry)
+        if stop <= _ZERO:
+            raise ValueError("trailing distance must be smaller than entry_reference")
+    else:
+        stop = entry + policy.distance_amount(entry)
     return SteppedTrailingState(
         entry_reference=entry,
         high_watermark=entry,
         ratchet_anchor=entry,
         candidate_stop=stop,
         steps_advanced=0,
+        direction=direction,
     )
 
 
@@ -207,29 +230,42 @@ def advance(
     observed_high: Decimal,
     policy: SteppedTrailingPolicy,
     *,
-    side: str = _LONG,
+    side: str | None = None,
 ) -> RatchetResult:
-    """Fold an observed high into ``state``; the candidate stop never decreases."""
+    """Fold the observed favorable extreme into ``state``; the stop never loosens.
 
-    _require_long(side)
+    ``observed_high`` is the observed HIGH for a long and the observed LOW for a short
+    (the name is kept for compatibility).  The direction comes from ``state``; an explicit
+    ``side`` must agree with it.
+    """
+
     policy = _check_policy(policy)
     if not isinstance(state, SteppedTrailingState):
         raise ValueError("state must be a SteppedTrailingState")
-    high = _decimal(observed_high, "observed_high", positive=True)
+    if side is not None and _side(side) != state.direction:
+        raise ValueError("side does not match the trailing state's direction")
+    extreme = _decimal(observed_high, "observed_high", positive=True)
     entry = state.entry_reference
-    watermark = max(state.high_watermark, high)
     step = policy.step_amount(entry)
-    steps = int((watermark - state.ratchet_anchor) // step)
-    anchor = state.ratchet_anchor + step * steps
-    # max() keeps the stop monotonic even if the caller swapped in a policy
-    # with a wider distance between calls.
-    stop = max(state.candidate_stop, anchor - policy.distance_amount(entry))
+    if state.direction == _LONG:
+        watermark = max(state.high_watermark, extreme)
+        steps = int((watermark - state.ratchet_anchor) // step)
+        anchor = state.ratchet_anchor + step * steps
+        # max() keeps the stop monotonic even if the caller swapped in a policy
+        # with a wider distance between calls.
+        stop = max(state.candidate_stop, anchor - policy.distance_amount(entry))
+    else:
+        watermark = min(state.high_watermark, extreme)
+        steps = int((state.ratchet_anchor - watermark) // step)
+        anchor = state.ratchet_anchor - step * steps
+        stop = min(state.candidate_stop, anchor + policy.distance_amount(entry))
     return SteppedTrailingState(
         entry_reference=entry,
         high_watermark=watermark,
         ratchet_anchor=anchor,
         candidate_stop=stop,
         steps_advanced=steps,
+        direction=state.direction,
     )
 
 
@@ -237,19 +273,27 @@ def should_replace(
     candidate_stop: Decimal,
     last_confirmed_stop: Decimal,
     tick_rounder: Callable[[Decimal], Decimal],
+    *,
+    side: str = _LONG,
 ) -> bool:
-    """True only if the tick-rounded candidate is strictly above the last confirmed stop.
+    """True only if the tick-rounded candidate tightens the last confirmed stop.
 
-    ``tick_rounder`` must round DOWN to a valid price increment; a rounder that
-    returns a value above the candidate is rejected so a long stop is never
-    raised past the computed level.
+    LONG: ``tick_rounder`` must round DOWN; True only when the rounded candidate is strictly
+    ABOVE the last confirmed stop (a rounder returning more than the candidate is rejected).
+    SHORT: ``tick_rounder`` must round UP; True only when the rounded candidate is strictly
+    BELOW the last confirmed stop (a rounder returning less than the candidate is rejected).
     """
 
+    direction = _side(side)
     candidate = _decimal(candidate_stop, "candidate_stop", positive=True)
     confirmed = _decimal(last_confirmed_stop, "last_confirmed_stop", positive=True)
     if not callable(tick_rounder):
         raise ValueError("tick_rounder must be callable")
     rounded = _decimal(tick_rounder(candidate), "rounded candidate_stop")
-    if rounded > candidate:
-        raise ValueError("tick_rounder must round down, never up")
-    return rounded > confirmed
+    if direction == _LONG:
+        if rounded > candidate:
+            raise ValueError("tick_rounder must round down, never up")
+        return rounded > confirmed
+    if rounded < candidate:
+        raise ValueError("tick_rounder must round up, never down for a short")
+    return rounded < confirmed

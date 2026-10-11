@@ -399,7 +399,7 @@ class ShadowFillSimulator:
                 continue
             if quote.bid >= quote.ask:
                 return result(FillOutcome.UNCERTAIN, REASON_QUOTE_CROSSED, quote)
-            buy = order.side is OrderSide.BUY
+            buy = order.side.broker_side == "buy"
             touch = quote.ask if buy else quote.bid
             if order.order_type is OrderType.LIMIT:
                 assert order.limit_price is not None
@@ -549,7 +549,7 @@ class ShadowFillSimulator:
         """Quote plus adverse slippage, rounded against the trader, capped at the limit."""
         a = self._assumptions
         slip = touch * a.slippage_bps / _BPS + a.slippage_ticks * a.tick_size
-        if order.side is OrderSide.BUY:
+        if order.side.broker_side == "buy":
             price = (touch + slip).quantize(a.price_quantum, rounding=ROUND_CEILING)
             if order.order_type is OrderType.LIMIT:
                 assert order.limit_price is not None
@@ -586,7 +586,7 @@ class ShadowFillSimulator:
     def _consumption_key(
         order: BrokerOrder, quote: QuoteSnapshot
     ) -> tuple[str, OrderSide, datetime, datetime, Decimal]:
-        touch = quote.ask if order.side is OrderSide.BUY else quote.bid
+        touch = quote.ask if order.side.broker_side == "buy" else quote.bid
         return (quote.symbol, order.side, quote.provider_ts, quote.receive_ts, touch)
 
     @staticmethod
@@ -626,7 +626,7 @@ class ShadowFillSimulator:
     ) -> SimulatedFill:
         evidence: dict[str, Any] = {}
         if quote is not None:
-            touch = quote.ask if order.side is OrderSide.BUY else quote.bid
+            touch = quote.ask if order.side.broker_side == "buy" else quote.bid
             evidence = self._evidence(quote, touch)
         return SimulatedFill(
             outcome=outcome,

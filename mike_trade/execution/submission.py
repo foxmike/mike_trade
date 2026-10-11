@@ -40,6 +40,7 @@ from mike_trade.domain.errors import (
     BrokerError,
     BrokerRejectedError,
     LiveTradingNotAuthorizedError,
+    UnsupportedOrderCapabilityError,
 )
 from mike_trade.domain.trading import BrokerOrder, BrokerOrderStatus
 from mike_trade.domain.trading import OrderIntent as BrokerOrderIntent
@@ -96,6 +97,8 @@ _BROKER_STATUS = {
 _BROKER_PURPOSE = {
     OrderPurpose.ENTRY_LONG: BrokerOrderPurpose.ENTRY,
     OrderPurpose.EXIT_LONG: BrokerOrderPurpose.STRATEGY_EXIT,
+    OrderPurpose.ENTRY_SHORT: BrokerOrderPurpose.ENTRY,
+    OrderPurpose.EXIT_SHORT: BrokerOrderPurpose.STRATEGY_EXIT,
     OrderPurpose.PROTECTIVE_STOP: BrokerOrderPurpose.PROTECTIVE_STOP,
     OrderPurpose.TRAILING_STOP: BrokerOrderPurpose.PROTECTIVE_STOP,
     OrderPurpose.MANUAL_CLOSE: BrokerOrderPurpose.MANUAL_CLOSE,
@@ -265,10 +268,14 @@ class OrderSubmitter:
         signal_checker: Callable[[OrderIntent, datetime], bool | Awaitable[bool]] | None = None,
         replace_capability: Callable[[str], bool] | None = None,
         live_authorized: bool = False,
+        short_authorized: bool = False,
+        short_entry_checker: Callable[[OrderIntent], bool | Awaitable[bool]] | None = None,
         call_timeout: float | None = None,
     ) -> None:
         if not isinstance(live_authorized, bool):
             raise TypeError("live_authorized must be bool")
+        if not isinstance(short_authorized, bool):
+            raise TypeError("short_authorized must be bool")
         self._broker = broker
         self._ledger = ledger
         self._clock = clock
@@ -278,6 +285,8 @@ class OrderSubmitter:
         )
         self._replace_capability = replace_capability
         self._live_authorized = live_authorized
+        self._short_authorized = short_authorized
+        self._short_entry_checker = short_entry_checker
         self._call_timeout = call_timeout
 
     # ------------------------------------------------------------------ submit
@@ -297,6 +306,7 @@ class OrderSubmitter:
         if not isinstance(intent, OrderIntent):
             raise TypeError("intent must be OrderIntent")
         self._require_live_authorization(intent)
+        await self._require_short_authorization(intent)
         if command.intent != intent or decision.key != ExecutionKey.from_intent(intent):
             raise ValueError("command, decision, and intent must describe the same order")
         if not decision.authorized:
@@ -306,7 +316,10 @@ class OrderSubmitter:
         status = self._ledger.status(cid)
         if status is not OrderStatus.INTENT_PERSISTED:
             return self._result("refused", intent, status, detail="intent is not INTENT_PERSISTED")
-        if intent.purpose is OrderPurpose.ENTRY_LONG and self._blocking_marker(intent):
+        if intent.purpose in {
+            OrderPurpose.ENTRY_LONG,
+            OrderPurpose.ENTRY_SHORT,
+        } and self._blocking_marker(intent):
             return self._result(
                 "blocked", intent, status, detail="unresolved order blocks new entries"
             )
@@ -655,6 +668,39 @@ class OrderSubmitter:
             raise LiveTradingNotAuthorizedError(
                 "LIVE submit, cancel, and replace require explicit live authorization",
                 code="live_not_authorized",
+                context={"client_order_id": intent.client_order_id},
+            )
+
+    async def _require_short_authorization(self, intent: OrderIntent) -> None:
+        """Fail closed before persistence/submission of a short opening order.
+
+        The explicit switch prevents a configuration or strategy merge from
+        enabling shorting.  Broker/account flags are necessary but not
+        sufficient: the injected checker must also prove symbol borrowability,
+        buying power/margin and an available broker-held protection mechanism.
+        """
+        if intent.purpose is not OrderPurpose.ENTRY_SHORT:
+            return
+        capabilities = self._broker.capabilities()
+        account = await self._call(self._broker.get_account())
+        checker = self._short_entry_checker
+        eligible = False
+        if checker is not None:
+            try:
+                eligible = await _resolve(checker(intent)) is True
+            except Exception:
+                eligible = False
+        if not (
+            self._short_authorized
+            and capabilities.supports_short
+            and account.shorting_enabled
+            and account.buying_power > Decimal("0")
+            and eligible
+        ):
+            raise UnsupportedOrderCapabilityError(
+                "short entry requires explicit authorization, broker/account "
+                "eligibility, buying power, symbol borrowability, and protection",
+                code="short_entry_not_authorized",
                 context={"client_order_id": intent.client_order_id},
             )
 
