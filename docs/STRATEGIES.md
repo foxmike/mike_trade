@@ -2351,3 +2351,40 @@ confirmed previous-session OHLC fields and may retain pre-market or only partial
 prior-session observations. Those references cannot be reconstructed safely from
 the oldest available candle, so no gap is inferred and no previous-day extreme is
 calculated.
+
+## 15. Technical strategy batch 4 (15 BUY)
+
+Same conventions as sections 11 and 13: long entries, edge-triggered on completed M1 bars,
+adjacent prior/latest bars, regular session, BUY eligibility, `required_bars(params)` exact and
+`spec.warmup_bars` its value at the defaults. Recursive state (cumulative volume lines, TSI, StochRSI,
+Wilder RSI/ADX, EMA) is persisted under `indicator_state` and resumed with `advance()`; the
+calculators are in `indicators/cumulative.py` and `indicators/oscillators.py`, the finite-window
+helpers in `indicators/patterns.py`. Swing-based patterns use the confirmed fractal pivots of
+`indicators/windows.py` computed only from bars before the signal bar, require every bar from the
+first pivot to the signal bar to be consecutive, and fire only on the first close beyond their
+trigger line. Percentage thresholds of the chart patterns are explicit parameters with intraday
+defaults because Bulkowski/Murphy give daily-chart or qualitative guidelines.
+
+| Strategy ID | Exact signal; default bars | Source and interpretation |
+|---|---|---|
+| `obv_breakout` | OBV exceeds its previous 20 values (prior bar did not); 22 | Granville / StockCharts: OBV breakouts confirm or lead price. The n-bar-high form is this implementation's reading. |
+| `accumulation_distribution_breakout` | Chaikin A/D line exceeds its previous 20 values; 22 | Chaikin / StockCharts ADL; breakout form by analogy with OBV. |
+| `volume_price_trend_breakout` | VPT (cumulative volume × % change) exceeds its previous 20 values; 22 | CFI Volume Price Trend; breakout form by analogy with OBV. |
+| `tsi_momentum` | TSI(25,13) crosses above 0; 39 | Blau / StockCharts TSI centerline cross; SMA-seeded EMAs. |
+| `stochastic_rsi` | Raw StochRSI(14,14) crosses above 0.20; 29 | Chande & Kroll; Fidelity/StockCharts. Flat RSI window undefined. |
+| `ultimate_oscillator` | Lower price swing low + higher UO(7,14,28) low below 30, then UO exceeds the highest UO between the lows (first time after the second low); 78 | Williams' bullish-divergence buy rule (StockCharts). Fractal swing lows (2 bars each side); default 30 is a parameter. |
+| `holy_grail_pullback` | ADX(14) > 30 and rising, +DI > −DI, setup bar low ≤ EMA(20), next bar closes above the setup bar's high; 30 | Raschke & Connors, Street Smarts. Sources differ on EMA/SMA and stop vs close entry; rare on M1 at defaults. |
+| `rsi2_trend_pullback` | RSI(2) crosses below 10 and close > SMA(200); 200 | Connors & Alvarez RSI(2) pullback; exits not included. |
+| `z_score_mean_reversion` | z of the close over 20 bars crosses below −2; 21 | Chan / ArbitrageLab Bollinger z-score entry; population SD. |
+| `double_bottom_reversal` | Last two swing lows within 0.5%, interim peak ≥ 1% above them, close first exceeds the peak; 101 | Edwards & Magee, Bulkowski Double Bottom. No prior-downtrend requirement. |
+| `inverse_head_and_shoulders` | Head lowest by ≥ 0.3%, shoulders within 1%, close first exceeds the sloped neckline through the two interim peaks; 151 | Bulkowski Head-and-Shoulders Bottom; Murphy. |
+| `ascending_triangle_breakout` | Three swing highs within 0.2%, rising last two swing lows, close first exceeds the flat top; 101 | Bulkowski Ascending Triangle (3+ tops, 2+ rising lows). |
+| `trendline_breakout` | Close first exceeds the line through the last two falling swing highs; 101 | Edwards & Magee, Murphy ch. 4. Two-point line, closes never above it since the first point. |
+| `triangle_breakout` | As `trendline_breakout` plus the last two swing lows since the first high rising; 101 | Bulkowski Symmetrical Triangle; upward break only. |
+| `bull_flag_breakout` | Pole ≥ 1% within 15 bars to the highest high, 3–20 flag bars retracing ≤ 50% of the pole, close above the flag high; 61 | Bulkowski / Murphy flags; no published minimum pole, so thresholds are parameters. |
+
+Conservative defaults mean several patterns are sparse on 1-minute data: in the real-data
+check (TSLA, 12 sessions) `holy_grail_pullback`, `double_bottom_reversal` and
+`inverse_head_and_shoulders` produced no signals at the defaults and did fire with relaxed
+parameters. The 78-, 101-, 151- and 200-bar strategies need `market_data.warmup_bars` raised from
+the example 60 (see section 13) to be ready at start-up.
