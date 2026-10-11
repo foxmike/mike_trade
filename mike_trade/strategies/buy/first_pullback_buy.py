@@ -113,13 +113,12 @@ class FirstPullbackBuy(BuyStrategy):
             "first completed close above the pullback highs with renewed volume."
         ),
         source=(
-            "Warrior Trading, The First Pullback (strong-volume breakout, orderly first "
-            "pullback, buy the first candle making a new high): "
-            "https://www.warriortrading.com/can-you-trade-in-a-cash-account/; "
-            "Pull Back Day Trading Strategies (short, lower-volume corrections): "
-            "https://www.warriortrading.com/pull-back-trading-strategy/. Numeric percentages, "
-            "volume multiples, time cutoff and completed-close confirmation are "
-            "engineering choices."
+            "Concept: a strong-volume advance, an orderly lower-volume first pullback, then entry "
+            "on the first candle making a new high (Warrior Trading, Pull Back Day Trading "
+            "Strategies: https://www.warriortrading.com/pull-back-trading-strategy/; the page "
+            "could not be fetched during review, so treat the citation as unverified). "
+            "Numeric percentages, volume multiples, time cutoff and completed-close "
+            "confirmation are engineering choices."
         ),
         execution_limitations=(
             "Only the first qualifying impulse and its first pullback are considered per session.",
@@ -243,7 +242,7 @@ class FirstPullbackBuy(BuyStrategy):
                 group = prefix[-impulse_bars:]
                 if (
                     len(group) == impulse_bars
-                    and all(session_key(item) == session_id for item in group)
+                    and all(item.start >= session.open_utc for item in group)
                     and all(a.end == b.start for a, b in zip(group, group[1:], strict=False))
                     and all(
                         b.close > a.close and b.high > a.high and b.low > a.low

@@ -84,6 +84,10 @@ class AnchoredVwapBreakoutBuy(BuyStrategy):
         execution_limitations=(
             "The anchor is unknown until the right-hand strength bars close; no trade occurs "
             "on the pivot or confirmation bar.",
+            "On confirmation VWAP is computed retroactively from the pivot bar through the "
+            "confirmation bar (an explicit convention: the pivot is only known then); entries "
+            "are considered from the following bar and never on a bar before confirmation.",
+            "Pivot neighbours must be regular-session bars; pre-market bars never confirm a pivot.",
             "The earliest confirmed session low is retained; a later lower low does not re-anchor.",
             "Missing bars or a restart without a valid snapshot and full session prefix "
             "fail closed.",
@@ -175,7 +179,10 @@ class AnchoredVwapBreakoutBuy(BuyStrategy):
             if bar.volume <= 0 or session_key(bar) != session:
                 return insufficient(self.spec, context)
             if calc is None:
-                prefix = tuple(item for item in supplied if item.end <= bar.end)
+                # Regular-session bars only: pre-market neighbours must not confirm a pivot.
+                prefix = tuple(
+                    item for item in supplied if session_open <= item.start and item.end <= bar.end
+                )
                 group = prefix[-(2 * strength + 1) :]
                 if len(group) == 2 * strength + 1:
                     _, lows = swing_pivots(group, strength)

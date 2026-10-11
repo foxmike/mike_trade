@@ -30,6 +30,7 @@ from mike_trade.strategies.base import (
     StrategySpec,
     TriggerKind,
 )
+from mike_trade.strategies.buy._session import latest_session_bars
 from mike_trade.strategies.closed_bar import (
     REASON_CODES,
     STATE_LAST_SIGNAL_BAR,
@@ -40,7 +41,6 @@ from mike_trade.strategies.closed_bar import (
     insufficient,
     require_param,
 )
-from mike_trade.strategies.indicators.patterns import contiguous
 
 if TYPE_CHECKING:
     from mike_trade.market_data.context import MarketContext
@@ -132,7 +132,9 @@ _SPEC = StrategySpec(
         "BUY when relative volume (bar volume / preceding volume_period volume SMA) "
         "crosses at or above rvol_threshold from below on a bullish candle (close > open and "
         "close > prior close) with positive return over momentum_bars "
-        "(100 * (close[t] - close[t-momentum_bars]) / close[t-momentum_bars] >= min_return_pct)."
+        "(100 * (close[t] - close[t-momentum_bars]) / close[t-momentum_bars] >= min_return_pct). "
+        "RVOL here is the rolling ratio against the immediately preceding volume_period minutes "
+        "(current bar excluded), not a same-minute-of-day multi-day relative volume."
     ),
     source=(
         "Indicator: Relative Volume (RVOL) ratio (current volume / preceding volume SMA); Type A. "
@@ -194,8 +196,8 @@ class RelativeVolumeMomentumBuy(BuyStrategy):
         if reason is not None:
             return blocked(self.spec, context, reason)
 
-        # Ensure no gaps exist across the evaluation window
-        if not contiguous(bars[-needed:]):
+        # Window must be adjacent and wholly inside the latest bar's regular session
+        if latest_session_bars(context, needed) is None:
             return insufficient(self.spec, context)
 
         # Baseline volume for latest bar (t): preceding vol_p bars
@@ -211,7 +213,10 @@ class RelativeVolumeMomentumBuy(BuyStrategy):
         vol_window_prior = bars[-2 - vol_p : -2]
         sum_vol_prior = sum((b.volume for b in vol_window_prior), Decimal("0"))
         avg_vol_prior = sum_vol_prior / Decimal(vol_p)
-        rvol_prior = (bars[-2].volume / avg_vol_prior) if avg_vol_prior > 0 else Decimal("0")
+        if avg_vol_prior <= 0:
+            # Prior RVOL is undefined (zero baseline): never read it as "below threshold".
+            return finish(self.spec, context, bars[-1], state, False)
+        rvol_prior = bars[-2].volume / avg_vol_prior
 
         # Edge trigger: RVOL crosses at or above threshold
         volume_surged = (rvol_prior < rvol_thresh) and (rvol_latest >= rvol_thresh)

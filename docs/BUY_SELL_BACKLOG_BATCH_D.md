@@ -1,5 +1,7 @@
 # BUY/SELL Backlog Batch D — Investigation and Implementation
 
+> **Review note:** this batch record was written before the independent review. Counts here are branch-local (pre-integration); the reviewed behaviour, corrections and final 182-strategy counts are in `docs/BUY_SELL_BACKLOG_CD_REVIEW.md`, which takes precedence.
+
 * **Branch:** `feature/gemini-buy-sell-backlog-d`
 * **Base commit:** `0f2a54e` (`origin/feature/buy-sell-backlog-reviewed`)
 * **Worktree:** `/home/mike/dev/mike/stocks/python/work/mike_trade-gemini-buy-sell-backlog-d`

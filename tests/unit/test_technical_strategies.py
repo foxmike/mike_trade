@@ -182,6 +182,7 @@ BACKLOG_BUY_A = {
 BACKLOG_BUY_B = {
     "vwap_band_reversion", "intraday_consolidation_breakout",
 }
+BACKLOG_BUY_C = {"anchored_vwap_breakout", "vwap_rejection", "first_pullback_buy"}
 BACKLOG_BUY_D = {
     "relative_volume_momentum", "moving_average_compression",
 }
@@ -645,6 +646,7 @@ def test_registry_inventory_counts() -> None:
         | GAP_BUY
         | BACKLOG_BUY_A
         | BACKLOG_BUY_B
+        | BACKLOG_BUY_C
         | BACKLOG_BUY_D
         | {k for k, v in EXISTING.items() if v[0] == "BUY"}
     )
@@ -658,7 +660,7 @@ def test_registry_inventory_counts() -> None:
         | {k for k, v in EXISTING.items() if v[0] == "SELL"}
     )
     assert (len(NEW_BUY), len(NEW_SELL)) == (14, 14)
-    assert (len(buys), len(sells)) == (82, 41)
+    assert (len(buys), len(sells)) == (85, 41)
     assert not buys & sells
 
 

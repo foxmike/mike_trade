@@ -1,5 +1,7 @@
 # BUY backlog C — VWAP and intraday methods
 
+> **Review note:** this batch record was written before the independent review. Counts here are branch-local (pre-integration); the reviewed behaviour, corrections and final 182-strategy counts are in `docs/BUY_SELL_BACKLOG_CD_REVIEW.md`, which takes precedence.
+
 Three of the six candidates produce distinct `1.0.0` BUY entries; three map to existing registered strategies. No source below is claimed to prescribe Mike_Trade's numeric defaults or to establish profitability. Every new signal uses completed M1 candles, a fresh regular-session context, `WATCHING_BUY` eligibility, conservative gap handling, a same-bar replay guard, and no order or portfolio logic.
 
 | Candidate | Outcome | Exact scope |

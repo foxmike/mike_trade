@@ -43,6 +43,7 @@ from mike_trade.strategies.base import (
     StrategySpec,
     TriggerKind,
 )
+from mike_trade.strategies.buy._session import latest_session_bars
 from mike_trade.strategies.closed_bar import (
     REASON_CODES,
     STATE_LAST_SIGNAL_BAR,
@@ -53,7 +54,6 @@ from mike_trade.strategies.closed_bar import (
     insufficient,
     require_param,
 )
-from mike_trade.strategies.indicators.patterns import contiguous
 
 if TYPE_CHECKING:
     from mike_trade.market_data.context import MarketContext
@@ -216,7 +216,7 @@ class MovingAverageCompressionBuy(BuyStrategy):
         if reason is not None:
             return blocked(self.spec, context, reason)
 
-        if not contiguous(bars[-needed:]):
+        if latest_session_bars(context, needed) is None:
             return insufficient(self.spec, context)
 
         n = len(bars)
