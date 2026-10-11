@@ -2258,3 +2258,28 @@ contains 32 BUY and 24 SELL methods.
 The complete source links, parameter ranges, and interpretation limits are in
 the individual `StrategySpec` declarations. These strategies provide signals;
 they do not select order size, submit orders, or change protective stops.
+
+## 12. Technical SELL strategy batch 3 (8 SELL)
+
+These advisory long exits use completed regular-session M1 bars and the existing
+`SellRule` contract. Edges require adjacent completed bars; structure and opening-range
+rules additionally require every candle used to define the pattern or range. Recursive
+ADX and Stochastic RSI calculations use persisted snapshot/restore state rather than a
+moving history seed. The registered library now contains 32 BUY and 32 SELL methods.
+
+| Strategy ID | Exact exit condition | Default parameters; history | Source interpretation |
+|---|---|---|---|
+| `adx_trend_weakening` | Wilder ADX crosses from at-or-above to below 20. | period=14, threshold=20; 29 bars | Wilder ADX; loss of trend strength, independent of direction. |
+| `stochastic_rsi_reversal` | Raw StochRSI crosses down through 80. | RSI=14, stochastic=14; 29 bars | Chande/Kroll StochRSI; flat RSI ranges are undefined. |
+| `ultimate_oscillator_reversal` | Williams 4:2:1 Ultimate Oscillator crosses down through 70. | 7/14/28, threshold=70; 30 bars | Larry Williams; no divergence confirmation is added. |
+| `lower_low_confirmation` | The pivot confirmed two bars ago is below the preceding confirmed five-bar pivot low. | lookback=30; 31 bars | Dow lower-low structure using Williams fractal pivots; no future data. |
+| `trendline_breakdown` | Close crosses below the rising line through the two latest confirmed higher pivot lows. | lookback=30; 31 bars | Classical rising-support trendline with objective Williams pivots. |
+| `failed_breakout_exit` | Prior close exceeds the preceding n-bar high, then the next close falls back below that level. | period=20; 22 bars | Failed-breakout pattern with a Donchian-style prior-period level. |
+| `opening_range_breakdown` | Two post-range closes cross below the low of all opening M1 bars from 09:30 New York. | range=30 minutes; 32 bars | Crabel opening-range method adapted strictly as a long exit. |
+| `bollinger_upper_band_reversal` | A close above the upper band is followed by a close back inside it. | period=20, deviations=2; 21 bars | Bollinger population-SD bands; a tag alone is not a signal. |
+
+Chandelier Exit and ATR Trailing Exit remain protective-stop responsibilities.
+Supertrend and cumulative OBV/Accumulation-Distribution methods remain deferred because
+their recursive/cumulative continuity is not available to an independent strategy module;
+Ichimoku remains deferred pending explicit displaced-span point-in-time semantics. Support
+Breakdown is already covered by `donchian_lower_channel_exit` and is not duplicated.

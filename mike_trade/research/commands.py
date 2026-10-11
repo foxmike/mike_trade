@@ -529,6 +529,18 @@ def _research_registry() -> Any:
     from mike_trade.strategies.sell.momentum_reversal import MomentumReversalSell
     from mike_trade.strategies.sell.rsi_reversal import RsiReversalSell
     from mike_trade.strategies.sell.vwap_breakdown import VwapBreakdownSell
+    from mike_trade.strategies.sell.adx_trend_weakening import AdxTrendWeakeningSell
+    from mike_trade.strategies.sell.bollinger_upper_band_reversal import (
+        BollingerUpperBandReversalSell,
+    )
+    from mike_trade.strategies.sell.failed_breakout_exit import FailedBreakoutExitSell
+    from mike_trade.strategies.sell.lower_low_confirmation import LowerLowConfirmationSell
+    from mike_trade.strategies.sell.opening_range_breakdown import OpeningRangeBreakdownSell
+    from mike_trade.strategies.sell.stochastic_rsi_reversal import StochasticRsiReversalSell
+    from mike_trade.strategies.sell.trendline_breakdown import TrendlineBreakdownSell
+    from mike_trade.strategies.sell.ultimate_oscillator_reversal import (
+        UltimateOscillatorReversalSell,
+    )
 
     registry = StrategyRegistry()
     for cls in (
@@ -588,6 +600,14 @@ def _research_registry() -> Any:
         AwesomeOscillatorReversalSell,
         KeltnerChannelBreakdownSell,
         PreviousSwingLowBreakSell,
+        AdxTrendWeakeningSell,
+        BollingerUpperBandReversalSell,
+        FailedBreakoutExitSell,
+        LowerLowConfirmationSell,
+        OpeningRangeBreakdownSell,
+        StochasticRsiReversalSell,
+        TrendlineBreakdownSell,
+        UltimateOscillatorReversalSell,
     ):
         registry.register(cls)
     return registry
