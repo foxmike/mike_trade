@@ -70,6 +70,12 @@ from mike_trade.market_data.context import (
     MarketContext,
 )
 from mike_trade.market_data.session_reference import SessionReferenceTracker
+from mike_trade.market_status import (
+    MarketStatusConfig,
+    MarketStatusEntryGate,
+    MarketStatusMonitor,
+    TradingAuthorizationPolicy,
+)
 from mike_trade.observability.logging import configure_logging, get_logger
 from mike_trade.persistence.maintenance import check_integrity, checkpoint
 from mike_trade.persistence.repositories import (
@@ -347,6 +353,10 @@ class AppSettings:
     credential_environment: Mapping[str, str] | None = field(
         default=None, repr=False, compare=False
     )
+    market_status_enabled: bool = False
+    market_status_config: MarketStatusConfig | None = None
+    market_status_policy: TradingAuthorizationPolicy | None = None
+    market_status_reference_symbols: tuple[str, ...] = ("SPY", "QQQ", "IWM")
 
     def __post_init__(self) -> None:
         object.__setattr__(self, "mode", ExecutionMode(self.mode))
@@ -354,6 +364,18 @@ class AppSettings:
         if not symbols or any(not symbol for symbol in symbols):
             raise ValueError("symbols must contain at least one non-empty symbol")
         object.__setattr__(self, "symbols", symbols)
+        if self.market_status_reference_symbols:
+            object.__setattr__(
+                self,
+                "market_status_reference_symbols",
+                tuple(
+                    dict.fromkeys(
+                        s.strip().upper()
+                        for s in self.market_status_reference_symbols
+                        if s.strip()
+                    )
+                ),
+            )
         if self.mode is ExecutionMode.SHADOW and not self.shadow_scenarios:
             raise ValueError("SHADOW requires at least one named scenario")
         names = [scenario.name for scenario in self.shadow_scenarios]
@@ -548,6 +570,31 @@ class ProductionMarketData:
         self.running = False
         self.closed = False
         self.acquisitions: dict[str, int] = {}
+        self._market_status_monitor: Any = None
+        self._reference_symbols: tuple[str, ...] = ("SPY", "QQQ", "IWM")
+        self._trading_symbols: tuple[str, ...] = ()
+
+    def bind_market_status(
+        self,
+        monitor: Any,
+        reference_symbols: Sequence[str] = ("SPY", "QQQ", "IWM"),
+        trading_symbols: Sequence[str] = (),
+    ) -> None:
+        self._market_status_monitor = monitor
+        self._reference_symbols = tuple(
+            dict.fromkeys(s.strip().upper() for s in reference_symbols if s.strip())
+        )
+        self._trading_symbols = tuple(
+            dict.fromkeys(s.strip().upper() for s in trading_symbols if s.strip())
+        )
+
+    def on_candle(self, candle: Candle) -> None:
+        self.session_references.add_bar(candle)
+        if (
+            self._market_status_monitor is not None
+            and candle.symbol.upper() in self._reference_symbols
+        ):
+            self._market_status_monitor.add_bar(candle)
 
     def ingest(self, update: MarketDataUpdate) -> None:
         self.cache.update(update)
@@ -634,9 +681,18 @@ class AlpacaProductionMarketData(ProductionMarketData):
         self._events = 0
         self._logger = get_logger("mike_trade.market_data.alpaca")
 
-    def bind_engine(self, scheduler: object, lifecycle: object | None) -> None:
+    def bind_engine(
+        self,
+        scheduler: object,
+        lifecycle: object | None,
+        trading_symbols: Sequence[str] = (),
+    ) -> None:
         self._scheduler = scheduler
         self._lifecycle = lifecycle
+        if trading_symbols:
+            self._trading_symbols = tuple(
+                dict.fromkeys(s.strip().upper() for s in trading_symbols if s.strip())
+            )
 
     def _credentials(self) -> tuple[str, str]:
         key_var = "MIKE_TRADE_ALPACA_DATA_KEY_ID"
@@ -658,7 +714,10 @@ class AlpacaProductionMarketData(ProductionMarketData):
     async def warm(self, symbols: Sequence[str]) -> bool:
         from mike_trade.market_data.alpaca_history import AlpacaHistoricalBars
 
-        self._symbols = tuple(dict.fromkeys(symbol.upper() for symbol in symbols))
+        trading = tuple(dict.fromkeys(symbol.upper() for symbol in symbols))
+        self._trading_symbols = trading
+        all_symbols = tuple(dict.fromkeys((*trading, *self._reference_symbols)))
+        self._symbols = all_symbols
         self.subscribe(self._symbols)
         key_id, secret_key = self._credentials()
         client = _AlpacaDataHttpClient(key_id, secret_key)
@@ -686,27 +745,31 @@ class AlpacaProductionMarketData(ProductionMarketData):
             )
             for bar in completed_bars:
                 item = cast(Any, bar)
-                self.session_references.add_bar(
-                    Candle(
-                        symbol=symbol,
-                        timeframe=CandleTimeframe.M1,
-                        start=item.timestamp,
-                        end=item.timestamp + timedelta(minutes=1),
-                        open=item.open,
-                        high=item.high,
-                        low=item.low,
-                        close=item.close,
-                        volume=Decimal(item.volume),
-                        feed_id=item.feed_id,
-                        consolidated=item.feed_id == "sip",
-                        origin=CandleOrigin.HISTORICAL_REST,
-                        price_basis=PriceBasis.RAW,
-                        status=CandleStatus.CLOSED,
-                        trade_count=(
-                            int(item.trade_count) if item.trade_count is not None else None
-                        ),
-                    )
+                c = Candle(
+                    symbol=symbol,
+                    timeframe=CandleTimeframe.M1,
+                    start=item.timestamp,
+                    end=item.timestamp + timedelta(minutes=1),
+                    open=item.open,
+                    high=item.high,
+                    low=item.low,
+                    close=item.close,
+                    volume=Decimal(item.volume),
+                    feed_id=item.feed_id,
+                    consolidated=item.feed_id == "sip",
+                    origin=CandleOrigin.HISTORICAL_REST,
+                    price_basis=PriceBasis.RAW,
+                    status=CandleStatus.CLOSED,
+                    trade_count=(
+                        int(item.trade_count) if item.trade_count is not None else None
+                    ),
                 )
+                self.session_references.add_bar(c)
+                if (
+                    self._market_status_monitor is not None
+                    and symbol in self._reference_symbols
+                ):
+                    self._market_status_monitor.add_bar(c)
             for bar in completed_bars[-(self.warmup_bars + 1):]:
                 item = cast(Any, bar)
                 self.candles.on_minute_bar(
@@ -831,7 +894,14 @@ class AlpacaProductionMarketData(ProductionMarketData):
         closed = [bar for bar in ingested.closed if bar.timeframe is CandleTimeframe.M1]
         for bar in closed:
             self.session_references.add_bar(bar)
+            if (
+                self._market_status_monitor is not None
+                and bar.symbol.upper() in self._reference_symbols
+            ):
+                self._market_status_monitor.add_bar(bar)
         if not closed or self._scheduler is None or self._lifecycle is None:
+            return
+        if self._trading_symbols and item.symbol.upper() not in self._trading_symbols:
             return
         latest = closed[-1]
         due = cast(Any, self._scheduler).on_candle_closed(
@@ -2173,6 +2243,7 @@ def build_runtime(
         "portfolio", "risk", "execution", "reporting", "controls", "logger",
         "calendar", "candle_engine", "strategies", "eligibility", "budget_manager",
         "protection", "reconciliation", "instance_lock", "startup_validator",
+        "market_status_monitor",
     }
     unknown = sorted(set(supplied) - allowed)
     if unknown:
@@ -2359,9 +2430,37 @@ def build_runtime(
         ),
     )
     controls = supplied.get("controls")
-    entry_gate = controls if isinstance(controls, EntryGate) else EntryGate()
+    raw_entry_gate = controls if isinstance(controls, EntryGate) else EntryGate()
     if controls is None:
-        controls = entry_gate
+        controls = raw_entry_gate
+
+    market_status_monitor = supplied.get("market_status_monitor")
+    if market_status_monitor is None and settings.market_status_enabled:
+        ms_config = settings.market_status_config or MarketStatusConfig(
+            symbols=settings.market_status_reference_symbols
+        )
+        ms_policy = settings.market_status_policy or TradingAuthorizationPolicy()
+        market_status_monitor = MarketStatusMonitor(
+            config=ms_config,
+            policy=ms_policy,
+            clock=clock,
+        )
+
+    if settings.market_status_enabled and market_status_monitor is not None:
+        entry_gate = MarketStatusEntryGate(
+            monitor=market_status_monitor,
+            inner_gate=raw_entry_gate,
+        )
+    else:
+        entry_gate = raw_entry_gate
+
+    bind_ms = getattr(market_data, "bind_market_status", None)
+    if callable(bind_ms) and market_status_monitor is not None:
+        bind_ms(
+            market_status_monitor,
+            reference_symbols=settings.market_status_reference_symbols,
+            trading_symbols=settings.symbols,
+        )
 
     if "broker" in supplied:
         broker = supplied["broker"]
@@ -2465,12 +2564,16 @@ def build_runtime(
         account_scope_id=scopes[0].scope_id,
         symbols=settings.symbols,
         lifecycle=lifecycle,
+        market_status_monitor=market_status_monitor,
         entry_gate=entry_gate,
         heartbeat_interval=settings.heartbeat_interval_seconds,
     )
     bind_engine = getattr(market_data, "bind_engine", None)
     if callable(bind_engine):
-        bind_engine(scheduler, lifecycle)
+        try:
+            bind_engine(scheduler, lifecycle, trading_symbols=settings.symbols)
+        except TypeError:
+            bind_engine(scheduler, lifecycle)
     logger.info(
         "Runtime graph built",
         extra={

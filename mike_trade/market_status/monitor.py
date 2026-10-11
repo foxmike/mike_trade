@@ -14,7 +14,13 @@ from datetime import UTC, datetime, timedelta
 from decimal import Decimal
 from typing import Any
 
-from mike_trade.market_data.candles import Candle
+from mike_trade.market_data.candles import (
+    Candle,
+    CandleOrigin,
+    CandleStatus,
+    CandleTimeframe,
+    PriceBasis,
+)
 from mike_trade.market_status.config import MarketStatusConfig
 from mike_trade.market_status.metrics import (
     MarketMetricsSnapshot,
@@ -48,13 +54,16 @@ class MarketStatusMonitor:
         policy: TradingAuthorizationPolicy | None = None,
         initial_state: MarketState = MarketState.NORMAL,
         initial_time: datetime | None = None,
+        clock: Any = None,
     ) -> None:
         self.config = config or MarketStatusConfig()
         self.policy = policy or TradingAuthorizationPolicy()
+        self.clock = clock
 
         self._current_state = initial_state
         self._previous_state: MarketState | None = None
-        now = (initial_time or datetime.now(UTC)).astimezone(UTC)
+        now = initial_time or (clock.now() if clock and hasattr(clock, "now") else datetime.now(UTC))
+        now = now.astimezone(UTC)
         self._state_since = now
         self._bars_in_state = 0
 
@@ -101,10 +110,32 @@ class MarketStatusMonitor:
     def transitions(self) -> tuple[StateTransitionRecord, ...]:
         return tuple(self._transitions)
 
-    def add_bar(self, bar: Candle) -> None:
+    @property
+    def reference_candles(self) -> Mapping[str, tuple[Candle, ...]]:
+        return {s: tuple(q) for s, q in self._candles.items()}
+
+    def add_bar(self, bar: Any) -> None:
         """Ingest one completed reference candle."""
-        if not isinstance(bar, Candle):
+        if not hasattr(bar, "symbol") or not hasattr(bar, "close") or not hasattr(bar, "start"):
             raise TypeError("bar must be a Candle instance")
+        if not isinstance(bar, Candle):
+            bar = Candle(
+                symbol=bar.symbol,
+                timeframe=CandleTimeframe(getattr(getattr(bar, "timeframe", None), "value", "1m")),
+                start=bar.start,
+                end=getattr(bar, "end", bar.start + timedelta(minutes=1)),
+                open=Decimal(str(bar.open)),
+                high=Decimal(str(bar.high)),
+                low=Decimal(str(bar.low)),
+                close=Decimal(str(bar.close)),
+                volume=Decimal(str(bar.volume)),
+                feed_id=getattr(getattr(bar, "provenance", None), "feed", "IEX"),
+                consolidated=getattr(getattr(bar, "provenance", None), "is_consolidated", False),
+                origin=CandleOrigin.REPLAY,
+                price_basis=PriceBasis.RAW,
+                status=CandleStatus.CLOSED,
+                trade_count=getattr(bar, "trade_count", None),
+            )
         symbol = bar.symbol.strip().upper()
         if symbol in self._candles:
             buffer = self._candles[symbol]
@@ -131,11 +162,22 @@ class MarketStatusMonitor:
 
     def evaluate(self, as_of: datetime | None = None) -> MarketStateSnapshot:
         """Evaluate market conditions and determine current state and authorization."""
-        eval_time = (as_of or self._latest_bar_time() or datetime.now(UTC)).astimezone(UTC)
+        now_fallback = (
+            self.clock.now() if self.clock and hasattr(self.clock, "now") else datetime.now(UTC)
+        )
+        eval_time = (as_of or self._latest_bar_time() or now_fallback).astimezone(UTC)
         self._last_evaluation_time = eval_time
 
+        # Point-in-time candle view: never look ahead past eval_time
+        candles_as_of = {
+            s: deque((b for b in buf if b.end <= eval_time), maxlen=buf.maxlen)
+            for s, buf in self._candles.items()
+        }
+
         # Check reference data presence and freshness
-        data_available, is_stale, staleness_reasons = self._check_data_quality(eval_time)
+        data_available, is_stale, staleness_reasons = self._check_data_quality(
+            eval_time, candles=candles_as_of
+        )
 
         if not data_available or is_stale:
             # Conservative fail-closed authorization: entries blocked, exits preserved!
@@ -173,9 +215,9 @@ class MarketStatusMonitor:
 
         prior_trough = self._trough_drawdown
 
-        # Compute deterministic market metrics
+        # Compute deterministic market metrics point-in-time
         metrics = calculate_market_metrics(
-            self._candles,
+            candles_as_of,
             eval_time,
             self.config,
             prior_trough_drawdown=self._trough_drawdown,
@@ -226,10 +268,15 @@ class MarketStatusMonitor:
                     latest = bar_end
         return latest
 
-    def _check_data_quality(self, eval_time: datetime) -> tuple[bool, bool, tuple[str, ...]]:
+    def _check_data_quality(
+        self,
+        eval_time: datetime,
+        candles: Mapping[str, Sequence[Candle]] | None = None,
+    ) -> tuple[bool, bool, tuple[str, ...]]:
         """Verify minimum reference symbols present and not stale."""
+        target_candles = candles if candles is not None else self._candles
         reasons: list[str] = []
-        symbols_with_data = [s for s, b in self._candles.items() if len(b) > 0]
+        symbols_with_data = [s for s, b in target_candles.items() if len(b) > 0]
 
         if len(symbols_with_data) < self.config.symbols.min_required_symbols:
             reasons.append(
@@ -241,7 +288,7 @@ class MarketStatusMonitor:
         max_age = timedelta(seconds=self.config.windows.max_observation_age_seconds)
         stale_symbols: list[str] = []
         for sym in symbols_with_data:
-            latest_bar = self._candles[sym][-1]
+            latest_bar = target_candles[sym][-1]
             if eval_time - latest_bar.end > max_age:
                 stale_symbols.append(sym)
 
@@ -492,6 +539,30 @@ class MarketStatusMonitor:
 
     def snapshot(self) -> dict[str, Any]:
         """Serialize state for atomic restart persistence."""
+        candles_dict: dict[str, list[dict[str, Any]]] = {}
+        for s, buf in self._candles.items():
+            recent = list(buf)[-self.config.windows.peak_lookback_bars:]
+            candles_dict[s] = [
+                {
+                    "symbol": c.symbol,
+                    "timeframe": c.timeframe.value,
+                    "start": c.start.isoformat(),
+                    "end": c.end.isoformat(),
+                    "open": str(c.open),
+                    "high": str(c.high),
+                    "low": str(c.low),
+                    "close": str(c.close),
+                    "volume": str(c.volume),
+                    "feed_id": c.feed_id,
+                    "consolidated": c.consolidated,
+                    "origin": c.origin.value,
+                    "price_basis": c.price_basis.value,
+                    "status": c.status.value,
+                    "trade_count": c.trade_count,
+                }
+                for c in recent
+            ]
+
         return {
             "current_state": self._current_state.value,
             "previous_state": self._previous_state.value if self._previous_state else None,
@@ -514,6 +585,7 @@ class MarketStatusMonitor:
                 }
                 for t in self._transitions[-20:]
             ],
+            "candles": candles_dict,
         }
 
     def restore(self, data: Mapping[str, Any]) -> None:
@@ -550,3 +622,31 @@ class MarketStatusMonitor:
                 )
             )
         self._transitions = records
+
+        candles_data = data.get("candles")
+        if isinstance(candles_data, Mapping):
+            for s, bar_list in candles_data.items():
+                s_norm = s.strip().upper()
+                if s_norm in self._candles and isinstance(bar_list, list):
+                    for b_dict in bar_list:
+                        try:
+                            bar = Candle(
+                                symbol=b_dict["symbol"],
+                                timeframe=CandleTimeframe(b_dict["timeframe"]),
+                                start=datetime.fromisoformat(b_dict["start"]).astimezone(UTC),
+                                end=datetime.fromisoformat(b_dict["end"]).astimezone(UTC),
+                                open=Decimal(str(b_dict["open"])),
+                                high=Decimal(str(b_dict["high"])),
+                                low=Decimal(str(b_dict["low"])),
+                                close=Decimal(str(b_dict["close"])),
+                                volume=Decimal(str(b_dict["volume"])),
+                                feed_id=b_dict.get("feed_id", "sip"),
+                                consolidated=bool(b_dict.get("consolidated", True)),
+                                origin=CandleOrigin(b_dict.get("origin", "historical_rest")),
+                                price_basis=PriceBasis(b_dict.get("price_basis", "RAW")),
+                                status=CandleStatus(b_dict.get("status", "CLOSED")),
+                                trade_count=b_dict.get("trade_count"),
+                            )
+                            self.add_bar(bar)
+                        except Exception:
+                            continue

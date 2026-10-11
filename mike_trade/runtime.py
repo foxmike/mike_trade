@@ -260,6 +260,7 @@ class Runtime:
     symbols: tuple[str, ...] = ()
     startup_validator: object | None = None
     lifecycle: object | None = None
+    market_status_monitor: object | None = None
     entry_gate: EntryGate = field(default_factory=EntryGate)
     drain_timeout: float = 10.0
     heartbeat_interval: float = 5.0
@@ -294,6 +295,41 @@ class Runtime:
         if state is not StartupState.RUNNING:
             self.entry_gate.block(*(block_reasons or (state.value,)))
 
+    async def _restore_market_status(self) -> None:
+        if self.market_status_monitor is None:
+            return
+        repo = getattr(self.market_status_monitor, "repository", None)
+        if repo is None:
+            session = getattr(self.persistence, "session", None)
+            if session is not None:
+                from mike_trade.market_status.persistence import SqliteMarketStatusRepository
+
+                repo = SqliteMarketStatusRepository(session, clock=self.clock)
+        if repo is not None:
+            scope = self.account_scope_id or "default"
+            doc = repo.load(scope)
+            if doc:
+                restore_fn = getattr(self.market_status_monitor, "restore", None)
+                if callable(restore_fn):
+                    restore_fn(doc)
+
+    async def _persist_market_status(self) -> None:
+        if self.market_status_monitor is None:
+            return
+        repo = getattr(self.market_status_monitor, "repository", None)
+        if repo is None:
+            session = getattr(self.persistence, "session", None)
+            if session is not None:
+                from mike_trade.market_status.persistence import SqliteMarketStatusRepository
+
+                repo = SqliteMarketStatusRepository(session, clock=self.clock)
+        if repo is not None:
+            scope = self.account_scope_id or "default"
+            snapshot_fn = getattr(self.market_status_monitor, "snapshot", None)
+            if callable(snapshot_fn):
+                doc = snapshot_fn()
+                repo.save(scope, doc)
+
     async def _heartbeat(self) -> None:
         details = {
             "state": self.state.value,
@@ -301,6 +337,14 @@ class Runtime:
             "entry_block_reasons": ",".join(self.entry_block_reasons),
             "reconciliation_status": self.reconciliation_status,
         }
+        if self.market_status_monitor is not None:
+            eval_fn = getattr(self.market_status_monitor, "evaluate", None)
+            if callable(eval_fn):
+                with contextlib.suppress(Exception):
+                    mkt_eval = eval_fn()
+                    details["market_state"] = mkt_eval.state.value
+                    details["market_buy_allowed"] = str(mkt_eval.authorization.buy_allowed).lower()
+        await self._persist_market_status()
         await _call_optional(self.persistence, ("heartbeat", "publish_heartbeat"), details)
         await _call_optional(self.broker, ("refresh_balance_snapshots",))
         feed_details = await _call_optional(self.market_data, ("health_details",))
@@ -361,6 +405,7 @@ class Runtime:
                 self.config_fingerprint,
             )
             await _call_optional(self.controls, ("load", "restore"))
+            await self._restore_market_status()
 
             phase = StartupState.VALIDATING_ENVIRONMENT
             self._transition(phase, "ENVIRONMENT_NOT_VALIDATED")

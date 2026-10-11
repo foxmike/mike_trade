@@ -218,35 +218,145 @@ class MarketStatusEntryGate:
     """Adapter implementing the portfolio EntryGate protocol using MarketStatusMonitor.
 
     Consulted only on entry requests; exit requests and risk liquidations
-    are never blocked.
+    are never blocked. Acts as an additional restriction layer on top of
+    any existing risk/eligibility gate without bypassing or weakening them.
     """
 
-    def __init__(self, monitor: Any) -> None:
+    def __init__(self, monitor: Any, inner_gate: Any = None) -> None:
         self._monitor = monitor
+        self._inner_gate = inner_gate
+        self._manual_blocked_reasons: tuple[str, ...] = ()
 
-    async def evaluate(self, request: EntryRequest) -> EntryGateDecision:
-        """Evaluate entry request against current market authorization decision."""
+    @property
+    def monitor(self) -> Any:
+        return self._monitor
+
+    @property
+    def inner_gate(self) -> Any:
+        return self._inner_gate
+
+    # --- Runtime / SHADOW EntryGate protocol compatibility ---
+
+    @property
+    def authorized(self) -> bool:
+        if self._manual_blocked_reasons:
+            return False
+        if self._inner_gate is not None:
+            if hasattr(self._inner_gate, "authorized") and not self._inner_gate.authorized:
+                return False
+            if hasattr(self._inner_gate, "entries_enabled") and not self._inner_gate.entries_enabled():
+                return False
+        snap = self._monitor.evaluate()
+        return snap.authorization.buy_allowed
+
+    @property
+    def reasons(self) -> tuple[str, ...]:
+        result: list[str] = list(self._manual_blocked_reasons)
+        if self._inner_gate is not None and hasattr(self._inner_gate, "reasons"):
+            result.extend(self._inner_gate.reasons)
+        snap = self._monitor.evaluate()
+        if not snap.authorization.buy_allowed:
+            result.extend(snap.authorization.reasons or (f"MARKET_STATE_{snap.state.value}_BUY_RESTRICTED",))
+        return tuple(result)
+
+    def entries_enabled(self) -> bool:
+        return self.authorized
+
+    def block(self, *reasons: str) -> None:
+        normalized = tuple(str(r).strip() for r in reasons if str(r).strip())
+        self._manual_blocked_reasons = normalized or ("ENTRY_BLOCKED",)
+        if self._inner_gate is not None and hasattr(self._inner_gate, "block"):
+            self._inner_gate.block(*reasons)
+
+    def allow(self) -> None:
+        self._manual_blocked_reasons = ()
+        if self._inner_gate is not None and hasattr(self._inner_gate, "allow"):
+            self._inner_gate.allow()
+
+    # --- PortfolioManager EntryGate protocol compatibility ---
+
+    async def evaluate_entry(
+        self,
+        account_scope_id: str,
+        symbol: str,
+        strategy_id: str,
+        now: datetime,
+        *,
+        action: Any = "ENTER_LONG",
+    ) -> EntryGateDecision:
         from mike_trade.portfolio.manager import EntryGateDecision
 
-        snapshot = self._monitor.evaluate()
-        decision: TradingAuthorizationDecision = snapshot.authorization
+        if self._manual_blocked_reasons:
+            return EntryGateDecision(allowed=False, reasons=self._manual_blocked_reasons)
 
-        # Inspect signal action kind if present
-        signal = getattr(request, "signal", None)
-        action = getattr(signal, "action", None)
-        action_name = getattr(action, "value", str(action)) if action else "ENTER_LONG"
+        # 1. Existing risk/eligibility checks are consulted first (never bypassed or weakened)
+        if self._inner_gate is not None and hasattr(self._inner_gate, "evaluate_entry"):
+            inner_decision = await self._inner_gate.evaluate_entry(
+                account_scope_id, symbol, strategy_id, now
+            )
+            if inner_decision.blocked:
+                return inner_decision
+
+        # 2. Market Status evaluation
+        snapshot = self._monitor.evaluate(as_of=now)
+        decision: TradingAuthorizationDecision = snapshot.authorization
+        action_name = getattr(action, "value", str(action)).upper()
 
         if action_name in {"ENTER_LONG", "BUY"}:
             if not decision.buy_allowed:
-                reasons = decision.reasons or (f"MARKET_STATE_{decision.state}_BUY_RESTRICTED",)
+                reasons = decision.reasons or (f"MARKET_STATE_{decision.state.value}_BUY_RESTRICTED",)
                 return EntryGateDecision(allowed=False, reasons=reasons)
             return EntryGateDecision(allowed=True)
 
         if action_name in {"ENTER_SHORT", "SHORT"}:
             if not decision.short_allowed:
-                reasons = decision.reasons or (f"MARKET_STATE_{decision.state}_SHORT_RESTRICTED",)
+                reasons = decision.reasons or (f"MARKET_STATE_{decision.state.value}_SHORT_RESTRICTED",)
+                return EntryGateDecision(allowed=False, reasons=reasons)
+            return EntryGateDecision(allowed=True)
+
+        # Exits, stops, covers, and liquidations are NEVER blocked
+        return EntryGateDecision(allowed=True)
+
+    async def evaluate(self, request: EntryRequest) -> EntryGateDecision:
+        """Evaluate entry request against current market authorization decision."""
+        from mike_trade.portfolio.manager import EntryGateDecision
+
+        if self._manual_blocked_reasons:
+            return EntryGateDecision(allowed=False, reasons=self._manual_blocked_reasons)
+
+        if self._inner_gate is not None and hasattr(self._inner_gate, "evaluate"):
+            inner_decision = await self._inner_gate.evaluate(request)
+            if inner_decision.blocked:
+                return inner_decision
+
+        signal = getattr(request, "signal", None)
+        action = getattr(signal, "action", None)
+        bar_time = getattr(signal, "bar_time", None) or getattr(signal, "generated_at", None)
+
+        snapshot = self._monitor.evaluate()
+        decision: TradingAuthorizationDecision = snapshot.authorization
+
+        action_name = getattr(action, "value", str(action)).upper() if action else "ENTER_LONG"
+
+        if action_name in {"ENTER_LONG", "BUY"}:
+            if not decision.buy_allowed:
+                reasons = decision.reasons or (f"MARKET_STATE_{decision.state.value}_BUY_RESTRICTED",)
+                return EntryGateDecision(allowed=False, reasons=reasons)
+            return EntryGateDecision(allowed=True)
+
+        if action_name in {"ENTER_SHORT", "SHORT"}:
+            if not decision.short_allowed:
+                reasons = decision.reasons or (f"MARKET_STATE_{decision.state.value}_SHORT_RESTRICTED",)
                 return EntryGateDecision(allowed=False, reasons=reasons)
             return EntryGateDecision(allowed=True)
 
         # Exits are unconditionally allowed through entry gate
         return EntryGateDecision(allowed=True)
+
+    async def record_entry_fill(self, cycle: Any) -> None:
+        if self._inner_gate is not None and hasattr(self._inner_gate, "record_entry_fill"):
+            await self._inner_gate.record_entry_fill(cycle)
+
+    async def record_cycle_closed(self, cycle: Any) -> None:
+        if self._inner_gate is not None and hasattr(self._inner_gate, "record_cycle_closed"):
+            await self._inner_gate.record_cycle_closed(cycle)

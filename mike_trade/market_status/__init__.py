@@ -24,6 +24,7 @@ from mike_trade.market_status.persistence import (
     InMemoryMarketStatusRepository,
     JsonFileMarketStatusRepository,
     MarketStatusRepository,
+    SqliteMarketStatusRepository,
 )
 from mike_trade.market_status.policy import (
     ActionKind,
@@ -72,4 +73,5 @@ __all__ = [
     "MarketStatusRepository",
     "InMemoryMarketStatusRepository",
     "JsonFileMarketStatusRepository",
+    "SqliteMarketStatusRepository",
 ]

@@ -157,9 +157,15 @@ class WindowConfig:
 class MarketStatusConfig:
     """Unified configuration for the Market Status Monitor."""
 
-    symbols: ReferenceSymbolsConfig = field(default_factory=ReferenceSymbolsConfig)
+    symbols: ReferenceSymbolsConfig | Sequence[str] = field(default_factory=ReferenceSymbolsConfig)
     drawdowns: DrawdownThresholds = field(default_factory=DrawdownThresholds)
     volatility: VolatilityThresholds = field(default_factory=VolatilityThresholds)
     breadth: BreadthThresholds = field(default_factory=BreadthThresholds)
     hysteresis: HysteresisConfig = field(default_factory=HysteresisConfig)
     windows: WindowConfig = field(default_factory=WindowConfig)
+
+    def __post_init__(self) -> None:
+        if not isinstance(self.symbols, ReferenceSymbolsConfig):
+            object.__setattr__(
+                self, "symbols", ReferenceSymbolsConfig(symbols=tuple(self.symbols))
+            )

@@ -12,10 +12,15 @@ from pathlib import Path
 from tempfile import NamedTemporaryFile
 from typing import Any, Protocol
 
+from datetime import UTC, datetime
+
+from mike_trade.persistence.schema import to_db_timestamp
+
 __all__ = [
     "MarketStatusRepository",
     "InMemoryMarketStatusRepository",
     "JsonFileMarketStatusRepository",
+    "SqliteMarketStatusRepository",
 ]
 
 
@@ -87,3 +92,63 @@ class JsonFileMarketStatusRepository:
             tmp.write(text)
             tmp_path = Path(tmp.name)
         tmp_path.replace(path)
+
+
+class SqliteMarketStatusRepository:
+    """SQLite-backed repository using the existing service_health table."""
+
+    def __init__(self, session: Any, clock: Any = None) -> None:
+        self._session = session
+        self._clock = clock
+
+    def _connection(self) -> Any:
+        return getattr(self._session, "connection", self._session)
+
+    def load(self, scope_id: str) -> Mapping[str, Any] | None:
+        conn = self._connection()
+        row = conn.execute(
+            "SELECT details_json FROM service_health WHERE account_scope_id = ? "
+            "AND component = ?",
+            (scope_id, "market_status_monitor"),
+        ).fetchone()
+        if row is None:
+            return None
+        try:
+            data = json.loads(row[0])
+            if isinstance(data, Mapping):
+                return data
+            return None
+        except Exception:
+            return None
+
+    def save(self, scope_id: str, document: Mapping[str, Any]) -> None:
+        now = (
+            self._clock.now() if self._clock and hasattr(self._clock, "now") else datetime.now(UTC)
+        ).astimezone(UTC)
+        text = json.dumps(document, sort_keys=True, default=str)
+        curr_state = str(document.get("current_state", "")).upper()
+        status = "DEGRADED" if curr_state in {"CRASH", "WARNING"} else "HEALTHY"
+        ts = to_db_timestamp(now)
+        env = scope_id.split(":")[0].upper()
+
+        def _execute(conn: Any) -> None:
+            conn.execute(
+                "INSERT OR IGNORE INTO account_scopes(account_scope_id, environment, broker, "
+                "broker_account_ref, created_at) VALUES (?, ?, 'none', 'none', ?)",
+                (scope_id, env, ts),
+            )
+            conn.execute(
+                "INSERT INTO service_health(account_scope_id, component, status, heartbeat_at, "
+                "observed_at, details_json) VALUES (?, 'market_status_monitor', ?, ?, ?, ?) "
+                "ON CONFLICT(account_scope_id, component) DO UPDATE SET "
+                "status = excluded.status, heartbeat_at = excluded.heartbeat_at, "
+                "observed_at = excluded.observed_at, details_json = excluded.details_json",
+                (scope_id, status, ts, ts, text),
+            )
+
+        if hasattr(self._session, "unit_of_work"):
+            with self._session.unit_of_work() as conn:
+                _execute(conn)
+        else:
+            conn = self._connection()
+            _execute(conn)
