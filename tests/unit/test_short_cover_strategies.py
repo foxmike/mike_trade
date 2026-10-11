@@ -39,6 +39,16 @@ ALL_SHORTS = SHORTS + (
     "short_adx_bearish_trend_confirmation",
 )
 COVERS = ("cover_ema_bullish_crossover", "cover_supertrend_bullish_flip", "cover_donchian_breakout")
+ALL_COVERS = COVERS + (
+    "cover_sma_bullish_crossover", "cover_macd_bullish_crossover",
+    "cover_macd_zero_line_crossover", "cover_rsi_oversold_reversal",
+    "cover_rsi_centerline_crossover", "cover_dmi_bullish_crossover",
+    "cover_aroon_bullish_reversal", "cover_parabolic_sar_bullish_reversal",
+    "cover_vwap_reclaim", "cover_bollinger_lower_band_reversion",
+    "cover_keltner_channel_reversion", "cover_cci_oversold_reversal",
+    "cover_stochastic_bullish_crossover", "cover_williams_r_bullish_reversal",
+    "cover_chaikin_money_flow_recovery",
+)
 ARMED = {"short": {"eligibility": "WATCHING_SHORT"}, "cover": {}}
 
 
@@ -99,11 +109,11 @@ def test_roles_are_independent_and_registered() -> None:
     assert [r.value for r in StrategyRole] == ["BUY", "SELL", "SHORT", "COVER"]
     counts = {r: len(REGISTRY.list_strategies(r)) for r in StrategyRole}
     assert counts == {StrategyRole.BUY: 75, StrategyRole.SELL: 40,
-                      StrategyRole.SHORT: 18, StrategyRole.COVER: 3}
-    assert len(REGISTRY.list_strategies()) == 136
+                      StrategyRole.SHORT: 18, StrategyRole.COVER: 18}
+    assert len(REGISTRY.list_strategies()) == 151
     source = inspect.getsource(app.build_runtime)
     for ids, role, base in ((ALL_SHORTS, StrategyRole.SHORT, ShortStrategy),
-                            (COVERS, StrategyRole.COVER, CoverStrategy)):
+                            (ALL_COVERS, StrategyRole.COVER, CoverStrategy)):
         assert {c.spec.strategy_id for c in REGISTRY.list_strategies(role)} == set(ids)
         for strategy_id in ids:
             cls = REGISTRY.get(strategy_id)
@@ -113,7 +123,7 @@ def test_roles_are_independent_and_registered() -> None:
             assert cls.spec.trigger_timeframe is CandleTimeframe.M1
             assert cls.spec.warmup_bars == cls.required_bars({})
             assert source.count(f"{cls.__name__},") == 1
-    for ids in (SHORTS, COVERS):
+    for ids in (ALL_SHORTS, ALL_COVERS):
         assert not {c.spec.strategy_id for c in REGISTRY.list_strategies(StrategyRole.BUY)} & set(ids)
 
 

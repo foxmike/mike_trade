@@ -205,6 +205,21 @@ from mike_trade.strategies.short.short_adx_bearish_trend_confirmation import (
 from mike_trade.strategies.cover.cover_ema_bullish_crossover import CoverEmaBullishCrossover
 from mike_trade.strategies.cover.cover_supertrend_bullish_flip import CoverSupertrendBullishFlip
 from mike_trade.strategies.cover.cover_donchian_breakout import CoverDonchianBreakout
+from mike_trade.strategies.cover.cover_sma_bullish_crossover import CoverSmaBullishCrossover
+from mike_trade.strategies.cover.cover_macd_bullish_crossover import CoverMacdBullishCrossover
+from mike_trade.strategies.cover.cover_macd_zero_line_crossover import CoverMacdZeroLineCrossover
+from mike_trade.strategies.cover.cover_rsi_oversold_reversal import CoverRsiOversoldReversal
+from mike_trade.strategies.cover.cover_rsi_centerline_crossover import CoverRsiCenterlineCrossover
+from mike_trade.strategies.cover.cover_dmi_bullish_crossover import CoverDmiBullishCrossover
+from mike_trade.strategies.cover.cover_aroon_bullish_reversal import CoverAroonBullishReversal
+from mike_trade.strategies.cover.cover_parabolic_sar_bullish_reversal import CoverParabolicSarBullishReversal
+from mike_trade.strategies.cover.cover_vwap_reclaim import CoverVwapReclaim
+from mike_trade.strategies.cover.cover_bollinger_lower_band_reversion import CoverBollingerLowerBandReversion
+from mike_trade.strategies.cover.cover_keltner_channel_reversion import CoverKeltnerChannelReversion
+from mike_trade.strategies.cover.cover_cci_oversold_reversal import CoverCciOversoldReversal
+from mike_trade.strategies.cover.cover_stochastic_bullish_crossover import CoverStochasticBullishCrossover
+from mike_trade.strategies.cover.cover_williams_r_bullish_reversal import CoverWilliamsRBullishReversal
+from mike_trade.strategies.cover.cover_chaikin_money_flow_recovery import CoverChaikinMoneyFlowRecovery
 from mike_trade.strategies.buy.previous_close_reclaim import PreviousCloseReclaimBuy
 from mike_trade.strategies.buy.previous_day_high_breakout import PreviousDayHighBreakoutBuy
 from mike_trade.strategies.buy.previous_day_low_reversal import PreviousDayLowReversalBuy
@@ -2632,6 +2647,21 @@ def build_runtime(
         CoverEmaBullishCrossover,
         CoverSupertrendBullishFlip,
         CoverDonchianBreakout,
+        CoverSmaBullishCrossover,
+        CoverMacdBullishCrossover,
+        CoverMacdZeroLineCrossover,
+        CoverRsiOversoldReversal,
+        CoverRsiCenterlineCrossover,
+        CoverDmiBullishCrossover,
+        CoverAroonBullishReversal,
+        CoverParabolicSarBullishReversal,
+        CoverVwapReclaim,
+        CoverBollingerLowerBandReversion,
+        CoverKeltnerChannelReversion,
+        CoverCciOversoldReversal,
+        CoverStochasticBullishCrossover,
+        CoverWilliamsRBullishReversal,
+        CoverChaikinMoneyFlowRecovery,
         ObvBreakoutBuy,
         AccumulationDistributionBreakoutBuy,
         VolumePriceTrendBreakoutBuy,
