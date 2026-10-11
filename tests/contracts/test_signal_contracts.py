@@ -111,10 +111,13 @@ def test_evaluation_status_has_exact_members() -> None:
     ]
 
 
-def test_enabled_signal_actions_are_exactly_long_actions() -> None:
-    assert ENABLED_SIGNAL_ACTIONS == frozenset(
-        {SignalAction.ENTER_LONG, SignalAction.EXIT_LONG}
-    )
+def test_all_four_signal_actions_are_valid_signals() -> None:
+    # SHORT/COVER strategies signal ENTER_SHORT/COVER_SHORT.  Whether such a signal may become
+    # an order is decided downstream and fails closed (portfolio short_authorized switch, broker
+    # short authorization, shortability/margin/protection checks), never by the signal type.
+    assert ENABLED_SIGNAL_ACTIONS == frozenset(SignalAction)
+    assert {a.value for a in SignalAction} == {
+        "ENTER_LONG", "EXIT_LONG", "ENTER_SHORT", "COVER_SHORT"}
 
 
 def test_decision_outcome_has_exact_members() -> None:
@@ -122,9 +125,11 @@ def test_decision_outcome_has_exact_members() -> None:
 
 
 @pytest.mark.parametrize("action", [SignalAction.ENTER_SHORT, SignalAction.COVER_SHORT])
-def test_dormant_signal_actions_are_rejected(action: SignalAction) -> None:
-    with pytest.raises(ValueError, match="not enabled"):
-        signal(action=action)
+def test_short_signal_actions_create_valid_deterministic_signals(action: SignalAction) -> None:
+    created = signal(action=action)
+    assert created.action is action
+    assert created.signal_id == make_signal_id("buy-aapl", "AAPL", action, BAR_TIME)
+    assert created.signal_id != signal().signal_id  # distinct identity per action
 
 
 def test_signal_ids_are_deterministic_and_change_by_bar_or_action() -> None:

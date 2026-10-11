@@ -484,8 +484,18 @@ class AlpacaOrderService:
         purpose: OrderPurpose | str | Enum,
         attempt: int = 0,
         known_position_qty: Decimal | int | str | None = None,
+        known_position_side: str | None = None,
+        capability_check: Callable[[str], bool] | None = None,
     ) -> AlpacaOrder | NotSubmitted:
-        """Submit a stock BUY/SELL market or limit order exactly once."""
+        """Submit a stock market or limit order exactly once.
+
+        Alpaca transports a short sale as ``sell`` and a cover as ``buy``, so the position
+        effect is validated here against the verified broker position (``known_position_qty``
+        is the magnitude, ``known_position_side`` is ``"long"``/``"short"``): an opening order
+        requires a flat symbol, a SELL requires a LONG, a cover requires a SHORT, and
+        nothing can ever reverse a position.  A short entry additionally needs the
+        ``short_entry_sell`` capability to be proven (fails closed) and whole shares only.
+        """
 
         self._require_live_authorization()
         asset = self._validate_asset(asset)
@@ -495,6 +505,7 @@ class AlpacaOrderService:
         if not isinstance(resolved_sizing, OrderSizing):
             raise TypeError("sizing must be an OrderSizing")
         resolved_side = _enum_string(side, field="side", allowed=frozenset({"buy", "sell"}))
+        resolved_purpose = _purpose(purpose)
         resolved_type = _enum_string(
             order_type, field="order_type", allowed=frozenset({"market", "limit"})
         )
@@ -512,7 +523,17 @@ class AlpacaOrderService:
             price = None
         validated_qty = validated.qty
         assert validated_qty is None or isinstance(validated_qty, Decimal)
-        self._check_oversell(validated_qty, resolved_side, known_position_qty)
+        self._check_position_effect(
+            resolved_purpose, resolved_side, validated_qty, known_position_qty, known_position_side
+        )
+        if resolved_purpose is OrderPurpose.ENTRY_SHORT:
+            if validated_qty is None or validated_qty != validated_qty.to_integral_value():
+                raise BrokerRejectedError(
+                    "short sales require whole-share quantity", code="short_requires_whole_shares"
+                )
+            self._require_capability(
+                capability_check, f"short_entry_sell:whole:{tif}:{resolved_type}"
+            )
         body: dict[str, Any] = {
             "symbol": asset.symbol,
             "side": resolved_side,
@@ -525,7 +546,7 @@ class AlpacaOrderService:
             body["notional"] = str(validated.notional)
         if price is not None:
             body["limit_price"] = str(price)
-        return self._submit(body, cycle_id=cycle_id, purpose=purpose, attempt=attempt)
+        return self._submit(body, cycle_id=cycle_id, purpose=resolved_purpose, attempt=attempt)
 
     def submit_stop_sell(
         self,
@@ -605,6 +626,105 @@ class AlpacaOrderService:
             "symbol": asset.symbol,
             "qty": str(normalized_qty),
             "side": "sell",
+            "type": "trailing_stop",
+            "time_in_force": tif,
+        }
+        if trail_price is not None:
+            body["trail_price"] = str(quantize_price(trail_price, asset, strict=True))
+        else:
+            body["trail_percent"] = str(
+                _positive_decimal(trail_percent, field="trail_percent")
+            )
+        return self._submit(
+            body,
+            cycle_id=cycle_id,
+            purpose=OrderPurpose.TRAILING_STOP,
+            attempt=attempt,
+        )
+
+    def submit_stop_buy_to_cover(
+        self,
+        *,
+        asset: AlpacaAsset,
+        qty: Decimal | int | str,
+        stop_price: Decimal | int | str,
+        known_position_qty: Decimal | int | str,
+        capability_check: Callable[[str], bool] | None,
+        time_in_force: str | Enum = "gtc",
+        cycle_id: str,
+        attempt: int = 0,
+    ) -> AlpacaOrder | NotSubmitted:
+        """Submit a capability-proven standalone protective BUY stop that covers a short."""
+
+        self._require_live_authorization()
+        asset = self._validate_asset(asset)
+        tif = _enum_string(
+            time_in_force, field="time_in_force", allowed=frozenset({"day", "gtc"})
+        )
+        raw_qty = _positive_decimal(qty, field="qty")
+        fractional = raw_qty != raw_qty.to_integral_value()
+        capability = f"standalone_stop_buy_to_cover:{'fractional' if fractional else 'whole'}:{tif}"
+        self._require_capability(capability_check, capability)
+        sizing = self._validate_sizing(OrderSizing(qty=raw_qty), asset, tif=tif)
+        normalized_qty = sizing.qty
+        assert isinstance(normalized_qty, Decimal)
+        self._check_position_effect(
+            OrderPurpose.EXIT_SHORT, "buy", normalized_qty, known_position_qty, "short"
+        )
+        price = quantize_price(stop_price, asset, strict=True)
+        body = {
+            "symbol": asset.symbol,
+            "qty": str(normalized_qty),
+            "side": "buy",
+            "type": "stop",
+            "time_in_force": tif,
+            "stop_price": str(price),
+        }
+        return self._submit(
+            body,
+            cycle_id=cycle_id,
+            purpose=OrderPurpose.PROTECTIVE_STOP,
+            attempt=attempt,
+        )
+
+    def submit_trailing_stop_buy_to_cover(
+        self,
+        *,
+        asset: AlpacaAsset,
+        qty: Decimal | int | str,
+        known_position_qty: Decimal | int | str,
+        capability_check: Callable[[str], bool] | None,
+        trail_price: Decimal | int | str | None = None,
+        trail_percent: Decimal | int | str | None = None,
+        time_in_force: str | Enum = "gtc",
+        cycle_id: str,
+        attempt: int = 0,
+    ) -> AlpacaOrder | NotSubmitted:
+        """Submit a standalone native trailing BUY stop that covers a short."""
+
+        self._require_live_authorization()
+        asset = self._validate_asset(asset)
+        if (trail_price is None) == (trail_percent is None):
+            raise ValueError("exactly one of trail_price or trail_percent is required")
+        tif = _enum_string(
+            time_in_force, field="time_in_force", allowed=frozenset({"day", "gtc"})
+        )
+        raw_qty = _positive_decimal(qty, field="qty")
+        fractional = raw_qty != raw_qty.to_integral_value()
+        quantity_kind = "fractional" if fractional else "whole"
+        self._require_capability(
+            capability_check, f"standalone_trailing_stop_buy_to_cover:{quantity_kind}:{tif}"
+        )
+        sizing = self._validate_sizing(OrderSizing(qty=raw_qty), asset, tif=tif)
+        normalized_qty = sizing.qty
+        assert isinstance(normalized_qty, Decimal)
+        self._check_position_effect(
+            OrderPurpose.EXIT_SHORT, "buy", normalized_qty, known_position_qty, "short"
+        )
+        body: dict[str, Any] = {
+            "symbol": asset.symbol,
+            "qty": str(normalized_qty),
+            "side": "buy",
             "type": "trailing_stop",
             "time_in_force": tif,
         }
@@ -866,6 +986,66 @@ class AlpacaOrderService:
             )
         notional = quantize_price(sizing.notional, asset, strict=True)
         return OrderSizing(notional=notional)
+
+    @staticmethod
+    def _check_position_effect(
+        purpose: OrderPurpose,
+        side: str,
+        qty: Decimal | None,
+        known_position_qty: Decimal | int | str | None,
+        known_position_side: str | None,
+    ) -> None:
+        """Refuse any order whose position effect could open, add to or reverse a position.
+
+        ``known_position_side`` is ``None`` for flat/unknown-and-legacy callers, else
+        ``"long"`` or ``"short"``.  The legacy long paths (no side supplied) keep their
+        exact behavior; the short paths fail closed when the position is not verified.
+        """
+        known_side = None if known_position_side is None else known_position_side.lower()
+        if known_side not in (None, "long", "short"):
+            raise ValueError("known_position_side must be 'long', 'short' or None")
+        known = None
+        if known_position_qty is not None:
+            known = _decimal(known_position_qty, field="known_position_qty")
+        has_position = known is not None and known != 0
+        if purpose is OrderPurpose.ENTRY_SHORT:
+            if side != "sell":
+                raise BrokerRejectedError("a short entry must be a sell", code="short_entry_side")
+            if has_position or known_side is not None:
+                raise BrokerRejectedError(
+                    "a short entry requires a flat symbol (no pyramiding, no reversal)",
+                    code="position_already_open",
+                )
+            return
+        if purpose is OrderPurpose.EXIT_SHORT:
+            if side != "buy":
+                raise BrokerRejectedError("a cover must be a buy", code="cover_side")
+            if known is None or known_side != "short" or not has_position:
+                raise BrokerRejectedError(
+                    "a cover requires a verified short position", code="cover_without_short"
+                )
+            if qty is not None and qty > abs(known):
+                raise BrokerRejectedError(
+                    f"cover {qty} exceeds the short position {abs(known)}", code="overcover"
+                )
+            return
+        if purpose is OrderPurpose.ENTRY and side == "buy":
+            if known_side == "short" or (has_position and known_side is None):
+                raise BrokerRejectedError(
+                    "a buy entry requires a flat symbol (a buy would cover a short)",
+                    code="position_already_open",
+                )
+            if has_position:
+                raise BrokerRejectedError(
+                    "a buy entry requires a flat symbol", code="position_already_open"
+                )
+        if side == "sell" and known_side == "short":
+            raise BrokerRejectedError(
+                "a sell against a short would add to it; use a cover", code="sell_against_short"
+            )
+        AlpacaOrderService._check_oversell(
+            qty, side, None if known is None else abs(known) if has_position else known
+        )
 
     @staticmethod
     def _check_oversell(

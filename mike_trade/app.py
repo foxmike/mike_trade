@@ -1958,6 +1958,7 @@ class AlpacaBrokerAdapter:
         *,
         authorized: bool,
         short_authorized: bool = False,
+        capabilities_matrix: object | None = None,
         environ: Mapping[str, str] | None,
     ) -> None:
         self.mode = mode
@@ -1966,6 +1967,9 @@ class AlpacaBrokerAdapter:
         self.clock = clock
         self.authorized = authorized
         self.short_authorized = short_authorized
+        #: Alpaca capability matrix; the default leaves every short-side order shape UNPROVEN,
+        #: so a short never reaches the broker until an operator records a verification.
+        self.capabilities_matrix = capabilities_matrix
         self.environ = environ
         self._client: object | None = None
         self._account: object | None = None
@@ -2070,9 +2074,11 @@ class AlpacaBrokerAdapter:
             symbol=item.symbol,
             quantity=abs(item.qty),
             avg_entry_price=item.avg_entry_price,
-            cost_basis=item.cost_basis,
+            # Alpaca reports a short with negative qty/cost/value; the domain carries a
+            # positive magnitude plus an explicit direction.
+            cost_basis=abs(item.cost_basis),
             as_of=self.clock.now(),
-            market_value=item.market_value,
+            market_value=None if item.market_value is None else abs(item.market_value),
             management=ManagementStatus.UNMANAGED,
             direction=(
                 PositionDirection.LONG
@@ -2174,7 +2180,7 @@ class AlpacaBrokerAdapter:
                 broker_order_id=item.order_id,
                 account_scope_id=self.scope.scope_id,
                 symbol=item.symbol,
-                side=OrderSide(item.side.upper()),
+                side=self._fill_side(item),
                 quantity=item.qty,
                 price=item.price,
                 fee=Decimal("0"),
@@ -2182,6 +2188,29 @@ class AlpacaBrokerAdapter:
             )
             for item in activities
         )
+
+    def _fill_side(self, item: object) -> OrderSide:
+        """Position-effect-aware side of a broker fill activity.
+
+        Alpaca reports ``buy``/``sell`` (some activities say ``sell_short``/``buy_to_cover``).
+        A plain buy/sell is resolved through the order's own client-order-id lineage, which
+        records whether the order was a short entry or a cover; an order we cannot attribute
+        stays BUY/SELL and the reconciler's direction checks flag any mismatch.
+        """
+        activity = cast(Any, item)
+        raw = str(activity.side).strip().lower()
+        explicit = {"sell_short": OrderSide.SELL_SHORT, "buy_to_cover": OrderSide.BUY_TO_COVER}
+        if raw in explicit:
+            return explicit[raw]
+        side = OrderSide(raw.upper())
+        try:
+            order = cast(Any, self._orders).get_order(activity.order_id)
+            converted = self._order(order) if order is not None else None
+        except Exception:  # unattributable fill: keep the broker word; reconciliation decides
+            converted = None
+        if converted is not None and converted.side.broker_side == side.broker_side:
+            return converted.side
+        return side
 
     async def submit_order(self, intent: object) -> object:
         self._ready()
@@ -2219,11 +2248,17 @@ class AlpacaBrokerAdapter:
                     "power, and current easy-to-borrow shortability",
                     code="SHORT_ENTRY_NOT_AUTHORIZED",
                 )
-        known_position = None
-        if intent.side in {OrderSide.SELL, OrderSide.BUY_TO_COVER}:
-            observed = cast(Any, self._account).get_position(intent.symbol)
-            known_position = None if observed is None else observed.qty
+        # Always verify the symbol's CURRENT broker position: Alpaca transports a short sale
+        # as ``sell`` and a cover as ``buy``, so only the verified position and its direction
+        # can prove an order opens, closes, adds to or would REVERSE a position.
+        observed = cast(Any, self._account).get_position(intent.symbol)
+        known_position = None if observed is None else abs(observed.qty)
+        known_side = None if observed is None else str(observed.side).lower()
+        from mike_trade.brokers.alpaca.capabilities import default_alpaca_capabilities
         from mike_trade.brokers.alpaca.orders import OrderPurpose as AlpacaOrderPurpose
+
+        matrix = self.capabilities_matrix or default_alpaca_capabilities()
+        capability_check = cast(Any, matrix).as_legacy_checker(self.mode.value)
 
         alpaca_purpose = (
             AlpacaOrderPurpose.ENTRY_SHORT
@@ -2245,6 +2280,8 @@ class AlpacaBrokerAdapter:
             cycle_id=intent.cycle_id,
             purpose=alpaca_purpose,
             known_position_qty=known_position,
+            known_position_side=known_side,
+            capability_check=capability_check,
         )
         converted = self._order(result) if hasattr(result, "order_id") else result
         return converted
