@@ -249,6 +249,58 @@ def test_short_side_is_rejected() -> None:
     assert result.rejection is SizingRejection.SHORT_NOT_SUPPORTED
 
 
+def short_input(**changes: object) -> SizingInput:
+    base: dict[str, object] = {
+        "side": "short", "short_selling_enabled": True, "margin_enabled": True,
+        "protective_stop_price": D("11"),
+    }
+    base.update(changes)
+    return sizing_input(**base)
+
+
+def test_a_short_needs_authorization_and_a_margin_account() -> None:
+    assert size_long_entry(short_input(short_selling_enabled=False)).rejection is (
+        SizingRejection.SHORT_NOT_SUPPORTED)
+    assert size_long_entry(short_input(margin_enabled=False)).rejection is (
+        SizingRejection.MARGIN_NOT_ENABLED)
+    assert size_long_entry(short_input()).accepted
+
+
+def test_a_short_stop_must_sit_above_the_entry() -> None:
+    for stop in ("9", "10"):  # below / at the entry protects nothing for a short
+        result = size_long_entry(short_input(
+            protective_stop_price=D(stop), max_planned_loss_usd=D("50")))
+        assert result.rejection is SizingRejection.INVALID_PROTECTIVE_STOP
+        # without a loss cap the same defect surfaces as "protection cannot be established"
+        assert size_long_entry(short_input(protective_stop_price=D(stop))).rejection is (
+            SizingRejection.PROTECTION_CANNOT_BE_ESTABLISHED)
+    assert size_long_entry(short_input(protective_stop_price=None,
+                                       protective_stop_distance=D("0.5"))).accepted
+    # a short's stop distance may exceed the entry price (the stop can be far above it)
+    assert size_long_entry(short_input(protective_stop_price=None,
+                                       protective_stop_distance=D("25"))).accepted
+
+
+def test_short_quantity_is_capped_by_gross_budget_and_by_own_cash_margin_only() -> None:
+    # budgets are ceilings on GROSS notional; buying power funds only (1.5 - 1) x notional
+    capped_by_budget = size_long_entry(short_input(
+        remaining_symbol_budget_usd=D("300"), broker_buying_power_usd=D("1000")))
+    assert capped_by_budget.quantity == D("30")      # 300 / 10
+    capped_by_margin = size_long_entry(short_input(broker_buying_power_usd=D("100")))
+    assert capped_by_margin.quantity == D("20")      # 100 / 0.5 = 200 notional -> 20 shares
+    long_same_cash = size_long_entry(sizing_input(broker_buying_power_usd=D("100")))
+    assert long_same_cash.quantity == D("10")        # a long needs the full notional in cash
+    stricter = size_long_entry(short_input(
+        broker_buying_power_usd=D("100"), short_margin_multiplier=D("2")))
+    assert stricter.quantity == D("10")              # (2 - 1) x notional
+
+
+def test_short_planned_loss_is_bounded_by_the_distance_to_the_stop_above() -> None:
+    result = size_long_entry(short_input(max_planned_loss_usd=D("5")))
+    assert result.accepted and result.quantity == D("5")  # $5 / $1 stop distance
+    assert result.planned_loss == D("5")
+
+
 def test_money_and_quantity_inputs_reject_float() -> None:
     with pytest.raises(TypeError, match="entry_price must be Decimal"):
         sizing_input(entry_price=10.0)
