@@ -120,7 +120,7 @@ def signal_cases() -> dict[str, tuple[dict[str, object], list[Candle]]]:
         ),
         "failed_breakout_exit": (
             {"period": 2},
-            bars([9, 10, 12, 10], highs=[10, 11, 12, 10]),
+            bars([9, 10, 10, 12, 9], highs=[10, 10, 10, 12, 10]),
         ),
         "lower_low_confirmation": (
             {"lookback": 7},
@@ -132,18 +132,18 @@ def signal_cases() -> dict[str, tuple[dict[str, object], list[Candle]]]:
         ),
         "opening_range_breakdown": (
             {"opening_range_minutes": 2},
-            bars([10, 9, 9, "8.5"], lows=["9.5", 9, "8.8", 8], highs=["10.5", 10, "9.5", 9]),
+            bars([10, 9, "8.5"], lows=["9.5", 9, 8], highs=["10.5", 10, 9]),
         ),
         "stochastic_rsi_reversal": (
             {"rsi_period": 2, "stochastic_period": 2, "overbought": D(80)},
             bars([10, 11, 10, 12, 11]),
         ),
         "trendline_breakdown": (
-            {"lookback": 7},
+            {"lookback": 8},
             bars(
-                [4, 3, 2, 3, 4, 3, 4, "2.5"],
-                lows=[4, 3, 1, 3, 4, 2, 4, "2.4"],
-                highs=[4, 3, 3, 3, 4, 4, 4, 3],
+                [4, 3, 2, 3, 4, 3, 4, 4, "2.5"],
+                lows=[4, 3, 1, 3, 4, 2, 4, 4, "2.4"],
+                highs=[4, 3, 3, 3, 4, 4, 4, 4, 3],
             ),
         ),
         "ultimate_oscillator_reversal": (
@@ -199,7 +199,9 @@ def test_representative_non_signal_and_parameter_boundaries() -> None:
     cls = REGISTRY.get("failed_breakout_exit")
     assert (
         not cls()
-        .evaluate(context(bars([9, 10, 11, 10], highs=[10, 11, 11, 10])), {"period": 2}, {})
+        .evaluate(
+            context(bars([9, 10, 10, 11, 10], highs=[10, 10, 11, 11, 10])), {"period": 2}, {}
+        )
         .is_signal
     )
     with pytest.raises(ParameterValidationError):
@@ -210,6 +212,8 @@ def test_representative_non_signal_and_parameter_boundaries() -> None:
         REGISTRY.get("stochastic_rsi_reversal").required_bars({"overbought": D(100)})
     with pytest.raises(ParameterValidationError):
         REGISTRY.get("opening_range_breakdown").required_bars({"opening_range_minutes": 0})
+    with pytest.raises(ParameterValidationError):
+        REGISTRY.get("trendline_breakdown").required_bars({"lookback": 7})
 
 
 @pytest.mark.parametrize(
@@ -313,3 +317,141 @@ def test_one_new_sell_exits_a_position_in_the_real_backtest(tmp_path: Path) -> N
     assert any(fill["side"] == "SELL" for fill in result.fills)
     assert any(row["strategy"] == "failed_breakout_exit" for row in result.signals)
     assert all(row["trigger_bar_end"] <= row["time"] for row in result.signals)
+
+
+def test_opening_range_breakdown_first_post_range_bar_and_later_bar() -> None:
+    cls = REGISTRY.get("opening_range_breakdown")
+    # 2-minute range: bars 0 (09:30) and 1 (09:31).
+    # Range low is min(9.5, 9.0) = 9.0.
+    # 1. Breakdown on the very first post-range bar at 09:32:
+    first_post_breakdown = bars(
+        [10, 9, "8.5"], lows=["9.5", 9, 8], highs=["10.5", 10, 9]
+    )
+    eval_first = cls().evaluate(context(first_post_breakdown), {"opening_range_minutes": 2}, {})
+    assert eval_first.is_signal
+
+    # 2. Normal later breakdown:
+    # Bar 2 at 09:32 stays inside the range (close 9.2 >= 9.0).
+    # Bar 3 at 09:33 breaks down below 9.0 (close 8.7 < 9.0).
+    later_breakdown = bars(
+        [10, 9, "9.2", "8.7"],
+        lows=["9.5", 9, "9.0", "8.5"],
+        highs=["10.5", 10, "9.5", "9.0"],
+    )
+    eval_later = cls().evaluate(context(later_breakdown), {"opening_range_minutes": 2}, {})
+    assert eval_later.is_signal
+
+    # 3. Bar still inside the opening range cannot generate a signal:
+    inside_range = bars([10, "8.5"], lows=["9.5", 8], highs=["10.5", 9])
+    eval_inside = cls().evaluate(context(inside_range), {"opening_range_minutes": 2}, {})
+    assert not eval_inside.is_signal
+    assert eval_inside.reason_codes == (ReasonCode.INSUFFICIENT_DATA,)
+
+
+def test_trendline_breakdown_unconfirmed_trendline_cannot_generate_signal() -> None:
+    cls = REGISTRY.get("trendline_breakdown")
+    # In this 8-bar sequence, pivot 1 is at index 2 (low 1).
+    # Potential pivot 2 is at index 5 (low 2).
+    # However, index 5 requires two completed right-hand bars (index 6 and index 7).
+    # At index 7 (the breakdown bar), index 5 is only confirmed BY index 7.
+    # Prior to index 7, at index 6, pivot 2 was unconfirmed and no rising trendline existed.
+    unconfirmed = bars(
+        [4, 3, 2, 3, 4, 3, 4, "2.5"],
+        lows=[4, 3, 1, 3, 4, 2, 4, "2.4"],
+        highs=[4, 3, 3, 3, 4, 4, 4, 3],
+    )
+    eval_unconfirmed = cls().evaluate(context(unconfirmed), {"lookback": 8}, {})
+    assert not eval_unconfirmed.is_signal
+
+    # When both pivots are confirmed prior to the crossover comparison (9 bars):
+    # Pivot 2 (index 5) is confirmed when index 7 completes.
+    # At index 7 (bars[-2]), the trendline is fully established.
+    # At index 8 (bars[-1]), price breaks below the established trendline.
+    confirmed = bars(
+        [4, 3, 2, 3, 4, 3, 4, 4, "2.5"],
+        lows=[4, 3, 1, 3, 4, 2, 4, 4, "2.4"],
+        highs=[4, 3, 3, 3, 4, 4, 4, 4, 3],
+    )
+    eval_confirmed = cls().evaluate(context(confirmed), {"lookback": 8}, {})
+    assert eval_confirmed.is_signal
+
+
+def test_adx_trend_weakening_zero_directional_movement_continuity_and_determinism() -> None:
+    from mike_trade.strategies.sell.adx_trend_weakening import _ADXCalculator
+
+    calc = _ADXCalculator(period=2)
+    # Feed 4 flat bars (no directional movement: +DM = 0, -DM = 0)
+    # Period is 2, so:
+    # Bar 0: prev set
+    # Bar 1: DMI seed 1
+    # Bar 2: DMI seed 2 -> DMI produces +DI=0, -DI=0. ADX seed 1 = 0
+    # Bar 3: DMI produces +DI=0, -DI=0. ADX seed 2 = 0 -> ADX initializes to Decimal(0)
+    calc.update(bar(0, 10, low=9, high=10))
+    calc.update(bar(1, 10, low=9, high=10))
+    calc.update(bar(2, 10, low=9, high=10))
+    plus3, minus3, adx3 = calc.update(bar(3, 10, low=9, high=10))
+    assert plus3 == D(0)
+    assert minus3 == D(0)
+    assert adx3 == D(0)
+
+    # Bar 4: zero directional movement continues after ADX initialization (+DI + -DI == 0)
+    plus4, minus4, adx4 = calc.update(bar(4, 10, low=9, high=10))
+    assert plus4 == D(0)
+    assert minus4 == D(0)
+    # ADX must NOT be None; continuity is preserved (under old buggy code this returned None)
+    assert adx4 == D(0)
+
+    # Now verify with an initialized non-zero ADX value
+    calc._value = D("50")
+    # Feed Bar 5 with zero directional movement
+    plus5, minus5, adx5 = calc.update(bar(5, 10, low=9, high=10))
+    assert plus5 == D(0)
+    assert minus5 == D(0)
+    # Wilder smoothing with dx=0: (50 * (2 - 1) + 0) / 2 = 25
+    assert adx5 == D("25")
+
+    # Determinism across snapshot / restore
+    snapshot = calc.snapshot()
+    restored = _ADXCalculator.restore(snapshot)
+    assert restored._value == calc._value
+
+    next_bar = bar(6, 12, low=11, high=13)
+    _, _, adx_orig = calc.update(next_bar)
+    _, _, adx_rest = restored.update(next_bar)
+    assert adx_orig == adx_rest
+
+
+def test_failed_breakout_exit_distinguishes_genuine_failure_from_ordinary_pullback() -> None:
+    cls = REGISTRY.get("failed_breakout_exit")
+    # 1. Genuine failed breakout:
+    # Channel bars 0 & 1: high = 10.
+    # Bar 2 (bars[-3]): close 10 <= 10 (no prior breakout).
+    # Bar 3 (bars[-2]): close 12 > 10 (fresh breakout).
+    # Bar 4 (bars[-1]): close 9 < 10 (immediate failure back below 10).
+    genuine_failure = bars(
+        [9, 10, 10, 12, 9],
+        highs=[10, 10, 10, 12, 10],
+    )
+    eval_genuine = cls().evaluate(context(genuine_failure), {"period": 2}, {})
+    assert eval_genuine.is_signal
+
+    # 2. Ordinary pullback after an established breakout:
+    # Channel bars 0 & 1: high = 10.
+    # Bar 2 (bars[-3]): close 12 > 10 (breakout already occurred here).
+    # Bar 3 (bars[-2]): close 14 > 10 (continuation higher, not a fresh breakout).
+    # Bar 4 (bars[-1]): close 11 (ordinary pullback; still above original breakout level 10).
+    ordinary_pullback = bars(
+        [9, 10, 12, 14, 11],
+        highs=[10, 10, 12, 14, 13],
+    )
+    eval_pullback = cls().evaluate(context(ordinary_pullback), {"period": 2}, {})
+    assert not eval_pullback.is_signal
+
+
+def test_lower_low_confirmation_methodology_clarification() -> None:
+    cls = REGISTRY.get("lower_low_confirmation")
+    assert (
+        "formed two bars earlier is confirmed on the latest completed bar"
+        in cls.spec.methodology
+    )
+

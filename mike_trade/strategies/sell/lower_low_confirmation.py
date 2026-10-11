@@ -59,8 +59,9 @@ class LowerLowConfirmationSell(SellRule):
         ),
         persistent_state_keys=(STATE_LAST_SIGNAL_BAR,),
         methodology=(
-            "SELL when the five-bar fractal low confirmed two bars ago is strictly below "
-            "the preceding confirmed five-bar fractal low in the lookback."
+            "SELL when the five-bar fractal low formed two bars earlier is confirmed on "
+            "the latest completed bar strictly below the preceding confirmed five-bar fractal low "
+            "in the lookback."
         ),
         source=(
             "Charles H. Dow trend structure (successive lower lows); five-bar pivot "

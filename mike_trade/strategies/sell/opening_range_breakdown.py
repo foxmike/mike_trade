@@ -45,7 +45,7 @@ class OpeningRangeBreakdownSell(SellRule):
         sub_category="intraday_session",
         reference_symbols=(),
         required_timeframes=(CandleTimeframe.M1,),
-        warmup_bars=32,
+        warmup_bars=31,
         completed_bars_only=True,
         requires_volume=False,
         trigger_kind=TriggerKind.EDGE_ON_CLOSED_BAR,
@@ -66,8 +66,8 @@ class OpeningRangeBreakdownSell(SellRule):
         execution_limitations=(
             "Advisory exit of an owned long, not a short entry; regular US equity "
             "session and M1 bars only.",
-            "Every opening-range minute must be present; the crossing bars must be "
-            "adjacent and after the range completes.",
+            "Every opening-range minute must be present; the trigger bar must be "
+            "adjacent to the prior bar and evaluate at or after the range completion.",
         ),
         reason_codes=REASON_CODES,
     )
@@ -76,14 +76,14 @@ class OpeningRangeBreakdownSell(SellRule):
     def required_bars(cls, params: Mapping[str, object]) -> int:
         minutes = cls.spec.parameter_schema.validate(params)["opening_range_minutes"]
         assert isinstance(minutes, int)
-        return minutes + 2
+        return minutes + 1
 
     def evaluate_trigger(
         self, context: MarketContext, params: Mapping[str, object], state: Mapping[str, object]
     ) -> StrategyEvaluation:
         minutes = self.spec.parameter_schema.validate(params)["opening_range_minutes"]
         assert isinstance(minutes, int)
-        bars = closed_bars(self.spec, context, minutes + 2)
+        bars = closed_bars(self.spec, context, minutes + 1)
         if bars is None:
             return insufficient(self.spec, context)
         reason = gate(self.spec, context, state)
@@ -98,7 +98,7 @@ class OpeningRangeBreakdownSell(SellRule):
         if len(range_bars) != minutes or tuple(bar.start for bar in range_bars) != expected:
             return insufficient(self.spec, context)
         prior, latest = bars[-2:]
-        if prior.start < window_end or not adjacent(prior, latest):
+        if latest.start < window_end or prior.start < window_open or not adjacent(prior, latest):
             return insufficient(self.spec, context)
         range_low = min(bar.low for bar in range_bars)
         return finish(

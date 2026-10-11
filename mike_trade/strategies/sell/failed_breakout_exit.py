@@ -40,7 +40,7 @@ class FailedBreakoutExitSell(SellRule):
         sub_category="breakout",
         reference_symbols=(),
         required_timeframes=(CandleTimeframe.M1,),
-        warmup_bars=22,
+        warmup_bars=23,
         completed_bars_only=True,
         requires_volume=False,
         trigger_kind=TriggerKind.EDGE_ON_CLOSED_BAR,
@@ -68,14 +68,14 @@ class FailedBreakoutExitSell(SellRule):
     def required_bars(cls, params: Mapping[str, object]) -> int:
         period = cls.spec.parameter_schema.validate(params)["period"]
         assert isinstance(period, int)
-        return period + 2
+        return period + 3
 
     def evaluate_trigger(
         self, context: MarketContext, params: Mapping[str, object], state: Mapping[str, object]
     ) -> StrategyEvaluation:
         period = self.spec.parameter_schema.validate(params)["period"]
         assert isinstance(period, int)
-        bars = closed_bars(self.spec, context, period + 2)
+        bars = closed_bars(self.spec, context, period + 3)
         if bars is None:
             return insufficient(self.spec, context)
         reason = gate(self.spec, context, state)
@@ -83,7 +83,8 @@ class FailedBreakoutExitSell(SellRule):
             return blocked(self.spec, context, reason)
         if not adjacent(bars[-2], bars[-1]):
             return insufficient(self.spec, context)
-        level = max(bar.high for bar in bars[-period - 2 : -2])
+        prior_level = max(bar.high for bar in bars[-period - 3 : -3])
+        was_breakout = bars[-3].close <= prior_level and bars[-2].close > prior_level
         return finish(
-            self.spec, context, bars[-1], state, bars[-2].close > level and bars[-1].close < level
+            self.spec, context, bars[-1], state, was_breakout and bars[-1].close < prior_level
         )

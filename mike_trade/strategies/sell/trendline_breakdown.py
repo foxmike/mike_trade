@@ -56,7 +56,7 @@ class TrendlineBreakdownSell(SellRule):
         trigger_kind=TriggerKind.EDGE_ON_CLOSED_BAR,
         trigger_timeframe=CandleTimeframe.M1,
         parameter_schema=ParameterSchema(
-            (ParameterSpec("lookback", ParameterKind.INT, 30, 7, 200),)
+            (ParameterSpec("lookback", ParameterKind.INT, 30, 8, 200),)
         ),
         persistent_state_keys=(STATE_LAST_SIGNAL_BAR,),
         methodology=(
@@ -98,7 +98,7 @@ class TrendlineBreakdownSell(SellRule):
             return blocked(self.spec, context, reason)
         if any(not adjacent(first, second) for first, second in zip(bars, bars[1:], strict=False)):
             return insufficient(self.spec, context)
-        pivots = _pivot_lows(bars)
+        pivots = _pivot_lows(bars[:-1])
         triggered = False
         if len(pivots) >= 2:
             first, second = pivots[-2:]

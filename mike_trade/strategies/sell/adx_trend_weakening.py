@@ -50,12 +50,13 @@ class _ADXCalculator:
 
     def update(self, bar: Candle) -> tuple[Decimal | None, Decimal | None, Decimal | None]:
         plus, minus = self._dmi.update(bar)  # type: ignore[arg-type]
-        if plus is None or minus is None or plus + minus == 0:
+        if plus is None or minus is None:
             return plus, minus, None
         with localcontext() as arithmetic:
             arithmetic.prec = 28
             arithmetic.rounding = ROUND_HALF_EVEN
-            dx = Decimal(100) * abs(plus - minus) / (plus + minus)
+            total = plus + minus
+            dx = Decimal(0) if total == 0 else Decimal(100) * abs(plus - minus) / total
             if self._value is None:
                 self._seed.append(dx)
                 if len(self._seed) < self.period:
