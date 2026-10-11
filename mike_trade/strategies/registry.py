@@ -3,8 +3,8 @@
 Strategy classes are registered by the composition root with a plain call
 (``registry.register(MyBuyStrategy)``) after importing them normally.  There is
 no dynamic code evaluation, no entry-point or path-based plugin discovery, and
-no rules DSL.  One registry holds both sides, keyed by ``(strategy_id,
-version)``; BUY and SELL entries are independent and never require a partner.
+no rules DSL.  One registry holds every side, keyed by ``(strategy_id,
+version)``; BUY, SELL, SHORT and COVER entries are independent and never require a partner.
 """
 
 from __future__ import annotations
@@ -14,15 +14,25 @@ from collections.abc import Mapping
 
 from mike_trade.domain.errors import MikeTradeError
 from mike_trade.domain.strategy_types import StrategyRole
-from mike_trade.strategies.base import BuyStrategy, SellStrategy, StrategySpec
+from mike_trade.strategies.base import (
+    BuyStrategy,
+    CoverStrategy,
+    SellStrategy,
+    ShortStrategy,
+    StrategySpec,
+)
 
 __all__ = ["StrategyRegistryError", "StrategyRegistry"]
 
-StrategyClass = type[BuyStrategy] | type[SellStrategy]
+StrategyClass = (
+    type[BuyStrategy] | type[SellStrategy] | type[ShortStrategy] | type[CoverStrategy]
+)
 
 _SIDE_BASES: dict[StrategyRole, StrategyClass] = {
     StrategyRole.BUY: BuyStrategy,
     StrategyRole.SELL: SellStrategy,
+    StrategyRole.SHORT: ShortStrategy,
+    StrategyRole.COVER: CoverStrategy,
 }
 
 
@@ -41,16 +51,16 @@ class StrategyRegistry:
         self._entries: dict[tuple[str, str], StrategyClass] = {}
 
     def register(self, strategy_cls: StrategyClass) -> StrategyClass:
-        """Register a concrete ``BuyStrategy``/``SellStrategy`` subclass.
+        """Register a concrete BUY, SELL, SHORT or COVER strategy subclass.
 
         Raises ``StrategyRegistryError`` for an invalid class or a duplicate
         ``(strategy_id, version)``.  Returns the class unchanged.
         """
         if not inspect.isclass(strategy_cls) or not issubclass(
-            strategy_cls, (BuyStrategy, SellStrategy)
+            strategy_cls, (BuyStrategy, SellStrategy, ShortStrategy, CoverStrategy)
         ):
             raise StrategyRegistryError(
-                f"{strategy_cls!r} is not a BuyStrategy or SellStrategy subclass",
+                f"{strategy_cls!r} is not a BuyStrategy, SellStrategy, ShortStrategy or CoverStrategy subclass",
                 code="invalid_strategy",
             )
         if inspect.isabstract(strategy_cls):
