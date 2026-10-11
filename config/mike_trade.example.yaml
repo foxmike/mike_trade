@@ -92,6 +92,9 @@ execution:
   block_new_entries_when_unprotected: true
   margin_enabled: false
   short_selling_enabled: false
+  # Market Status Monitor (SPY/QQQ/IWM). When true it gates NEW BUY and SHORT entries per
+  # market state (see docs/MARKET_STATUS_MONITOR.md); SELL, COVER and stops are never gated.
+  market_status_enabled: false
 risk:
   total_application_budget: "10000.00"
   max_open_positions: 3

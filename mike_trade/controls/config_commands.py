@@ -168,6 +168,7 @@ _DEFAULTS: dict[str, Any] = {
         "block_new_entries_when_unprotected": True,
         "margin_enabled": False,
         "short_selling_enabled": False,
+        "market_status_enabled": False,
     },
     "risk": {"max_open_positions": 3, "require_buying_power_check": True},
     "symbols": {},
@@ -587,7 +588,8 @@ def _validate_execution(raw: Any, errors: _ErrorList) -> dict[str, Any] | None:
                           "fractional_enabled", "entry_order_type", "exit_order_type",
                           "regular_hours_only", "entry_cutoff", "end_of_day_close",
                           "stop_required", "block_new_entries_when_unprotected",
-                          "margin_enabled", "short_selling_enabled"}, "execution", errors)
+                          "margin_enabled", "short_selling_enabled",
+                          "market_status_enabled"}, "execution", errors)
     broker = _req_text(node.get("broker", "alpaca"), "execution.broker",
                        errors, "execution.broker")
     account_mode = node.get("account_mode", "shadow")
@@ -644,10 +646,14 @@ def _validate_execution(raw: Any, errors: _ErrorList) -> dict[str, Any] | None:
     short = _req_bool(node.get("short_selling_enabled", False),
                       "execution.short_selling_enabled", errors,
                       "execution.short_selling_enabled")
+    market_status = _req_bool(node.get("market_status_enabled", False),
+                              "execution.market_status_enabled", errors,
+                              "execution.market_status_enabled")
     if broker is None or account_mode is None or live_enabled is None or fractional is None \
             or entry_type is None or exit_type is None or regular_hours is None \
             or cutoff is None or eod_norm is None or stop_required is None \
-            or block_unprotected is None or margin is None or short is None:
+            or block_unprotected is None or margin is None or short is None \
+            or market_status is None:
         return None
     return {"broker": broker, "account_mode": account_mode,
             "live_trading_enabled": live_enabled, "fractional_enabled": fractional,
@@ -655,7 +661,8 @@ def _validate_execution(raw: Any, errors: _ErrorList) -> dict[str, Any] | None:
             "regular_hours_only": regular_hours, "entry_cutoff": cutoff[0],
             "end_of_day_close": eod_norm, "stop_required": stop_required,
             "block_new_entries_when_unprotected": block_unprotected,
-            "margin_enabled": margin, "short_selling_enabled": short}
+            "margin_enabled": margin, "short_selling_enabled": short,
+            "market_status_enabled": market_status}
 
 
 def _validate_risk(raw: Any, errors: _ErrorList) -> dict[str, Any] | None:

@@ -107,7 +107,7 @@ class FakeGate:
     def __init__(self, world: World) -> None:
         self.w = world
 
-    async def evaluate_entry(self, account_scope_id, symbol, strategy_id, now):
+    async def evaluate_entry(self, account_scope_id, symbol, strategy_id, now, action="ENTER_LONG"):
         await asyncio.sleep(0)
         return self.w.decision
 

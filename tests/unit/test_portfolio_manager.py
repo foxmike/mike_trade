@@ -80,7 +80,7 @@ class FakeGate:
     def __init__(self, world: World) -> None:
         self.w = world
 
-    async def evaluate_entry(self, account_scope_id, symbol, strategy_id, now):
+    async def evaluate_entry(self, account_scope_id, symbol, strategy_id, now, action="ENTER_LONG"):
         self.w.gate_calls += 1
         if self.w.gate_wait is not None and account_scope_id.endswith("slow"):
             await self.w.gate_wait.wait()

@@ -206,9 +206,11 @@ async def test_crash_blocks_buy() -> None:
     raw_gate = EntryGate(authorized=True, reasons=())
     gate = MarketStatusEntryGate(monitor=monitor, inner_gate=raw_gate)
 
-    assert gate.authorized is False
-    assert gate.entries_enabled() is False
-    assert "MARKET_CRASH_ACUTE_RISK" in gate.reasons
+    # Entries are authorized per direction: CRASH blocks BUY but (by default policy) still
+    # permits a qualified SHORT, so the aggregate gate stays open for the short side.
+    assert gate.authorizes("ENTER_LONG") is False
+    assert gate.authorizes("ENTER_SHORT") is True
+    assert gate.authorized is True
 
     decision = await gate.evaluate_entry(
         account_scope_id="shadow:test",

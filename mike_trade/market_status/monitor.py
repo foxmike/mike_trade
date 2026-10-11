@@ -10,6 +10,7 @@ from __future__ import annotations
 
 from collections import deque
 from collections.abc import Mapping, Sequence
+from dataclasses import replace
 from datetime import UTC, datetime, timedelta
 from decimal import Decimal
 from typing import Any
@@ -43,6 +44,8 @@ __all__ = ["MarketStatusMonitor"]
 
 _ZERO = Decimal("0")
 _ONE = Decimal("1")
+#: How long a minute may wait for the slowest reference symbol before the quorum suffices.
+_STEP_GRACE_SECONDS = 60
 
 
 class MarketStatusMonitor:
@@ -90,6 +93,13 @@ class MarketStatusMonitor:
         self._transitions: list[StateTransitionRecord] = []
         self._last_evaluation_time: datetime = now
 
+        # The state machine advances at most once per completed reference minute, so the
+        # result depends on the data fed in and never on how often evaluate() is called.
+        self._last_step_end: datetime | None = None
+        # Entries stay blocked after a failed restore until the metrics windows are re-warmed.
+        self._fail_closed_reason: str | None = None
+        self._fail_closed_steps_remaining = 0
+
     @property
     def current_state(self) -> MarketState:
         return self._current_state
@@ -113,6 +123,44 @@ class MarketStatusMonitor:
     @property
     def reference_candles(self) -> Mapping[str, tuple[Candle, ...]]:
         return {s: tuple(q) for s, q in self._candles.items()}
+
+    def fail_closed(self, reason: str) -> None:
+        """Block new entries until a full lookback of reference bars has been observed.
+
+        Used when persisted state could not be restored: the monitor cannot know whether the
+        market was in CRASH, so it must not silently behave as NORMAL.  Exits are unaffected.
+        """
+        self._fail_closed_reason = reason
+        self._fail_closed_steps_remaining = self.config.windows.peak_lookback_bars
+
+    @property
+    def fail_closed_reason(self) -> str | None:
+        return self._fail_closed_reason
+
+    def _step_end(
+        self, candles: Mapping[str, Sequence[Candle]], eval_time: datetime
+    ) -> datetime | None:
+        """End of the latest reference minute that is complete enough to advance the machine.
+
+        A minute is complete when every configured reference symbol has progressed to it, or
+        (after a grace period) when at least ``min_required_symbols`` have.
+        """
+        ends = {s: b[-1].end for s, b in candles.items() if len(b) > 0}
+        if not ends:
+            return None
+        symbols = self.config.symbols
+        best: datetime | None = None
+        if len(ends) == len(candles):
+            best = min(ends.values())
+        need = symbols.min_required_symbols
+        ranked = sorted(ends.values(), reverse=True)
+        if len(ranked) >= need:
+            quorum = ranked[need - 1]
+            if eval_time - quorum >= timedelta(seconds=_STEP_GRACE_SECONDS) and (
+                best is None or quorum > best
+            ):
+                best = quorum
+        return best
 
     def add_bar(self, bar: Any) -> None:
         """Ingest one completed reference candle."""
@@ -162,10 +210,12 @@ class MarketStatusMonitor:
 
     def evaluate(self, as_of: datetime | None = None) -> MarketStateSnapshot:
         """Evaluate market conditions and determine current state and authorization."""
-        now_fallback = (
-            self.clock.now() if self.clock and hasattr(self.clock, "now") else datetime.now(UTC)
-        )
-        eval_time = (as_of or self._latest_bar_time() or now_fallback).astimezone(UTC)
+        # Without an explicit time the injected clock decides, so a stalled reference feed is
+        # detected as stale; with no clock (replay/tests) the latest observed bar defines "now".
+        clock_now = self.clock.now() if self.clock and hasattr(self.clock, "now") else None
+        eval_time = (
+            as_of or clock_now or self._latest_bar_time() or datetime.now(UTC)
+        ).astimezone(UTC)
         self._last_evaluation_time = eval_time
 
         # Point-in-time candle view: never look ahead past eval_time
@@ -226,13 +276,22 @@ class MarketStatusMonitor:
             vix_level=self._vix_level,
         )
 
-        # Evaluate state machine transitions using metrics and prior state
-        self._process_transitions(metrics, eval_time, prior_trough)
-
-        # Update episode tracking
-        self._trough_drawdown = metrics.trough_drawdown_percent
-        self._bars_since_trough = metrics.bars_since_trough
-        self._peak_volatility = metrics.peak_volatility_bps
+        # Advance the state machine once per completed reference minute only; repeated or
+        # more frequent evaluations (gate checks, heartbeats) re-read the current state.
+        step_end = self._step_end(candles_as_of, eval_time)
+        if step_end is not None and (
+            self._last_step_end is None or step_end > self._last_step_end
+        ):
+            self._last_step_end = step_end
+            self._process_transitions(metrics, eval_time, prior_trough)
+            self._trough_drawdown = metrics.trough_drawdown_percent
+            self._bars_since_trough = metrics.bars_since_trough
+            self._peak_volatility = metrics.peak_volatility_bps
+            self._bars_in_state += 1
+            if self._fail_closed_reason is not None:
+                self._fail_closed_steps_remaining -= 1
+                if self._fail_closed_steps_remaining <= 0:
+                    self._fail_closed_reason = None
 
         # Produce typed authorization decision
         auth = self.policy.evaluate(
@@ -241,8 +300,13 @@ class MarketStatusMonitor:
             data_available=True,
             is_stale=False,
         )
-
-        self._bars_in_state += 1
+        reasons: tuple[str, ...] = ()
+        if self._fail_closed_reason is not None:
+            auth = self.policy.evaluate(
+                self._current_state, eval_time, data_available=False, is_stale=False
+            )
+            auth = replace(auth, reasons=(self._fail_closed_reason,))
+            reasons = (self._fail_closed_reason,)
 
         return MarketStateSnapshot(
             state=self._current_state,
@@ -252,7 +316,7 @@ class MarketStatusMonitor:
             previous_state=self._previous_state,
             data_available=True,
             is_stale=False,
-            reasons=(),
+            reasons=reasons,
             metrics=metrics,
             authorization=auth,
             last_transition=self._transitions[-1] if self._transitions else None,
@@ -573,6 +637,9 @@ class MarketStatusMonitor:
             "peak_volatility": str(self._peak_volatility),
             "pending_state": self._pending_state.value if self._pending_state else None,
             "pending_bars": self._pending_bars,
+            "last_step_end": self._last_step_end.isoformat() if self._last_step_end else None,
+            "fail_closed_reason": self._fail_closed_reason,
+            "fail_closed_steps_remaining": self._fail_closed_steps_remaining,
             "vix_level": str(self._vix_level) if self._vix_level is not None else None,
             "vix_timestamp": self._vix_timestamp.isoformat() if self._vix_timestamp is not None else None,
             "transitions": [
@@ -604,6 +671,13 @@ class MarketStatusMonitor:
         pending = data.get("pending_state")
         self._pending_state = MarketState(pending) if pending else None
         self._pending_bars = int(data.get("pending_bars", 0))
+
+        last_step = data.get("last_step_end")
+        self._last_step_end = (
+            datetime.fromisoformat(last_step).astimezone(UTC) if last_step else None
+        )
+        self._fail_closed_reason = data.get("fail_closed_reason") or None
+        self._fail_closed_steps_remaining = int(data.get("fail_closed_steps_remaining", 0))
 
         vix = data.get("vix_level")
         self._vix_level = Decimal(str(vix)) if vix is not None else None

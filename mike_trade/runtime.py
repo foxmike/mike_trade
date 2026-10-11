@@ -307,11 +307,21 @@ class Runtime:
                 repo = SqliteMarketStatusRepository(session, clock=self.clock)
         if repo is not None:
             scope = self.account_scope_id or "default"
-            doc = repo.load(scope)
-            if doc:
+            try:
+                doc = repo.load(scope)
                 restore_fn = getattr(self.market_status_monitor, "restore", None)
-                if callable(restore_fn):
+                if doc and callable(restore_fn):
                     restore_fn(doc)
+            except Exception as exc:
+                # Cannot tell whether the market was in CRASH: block new entries until the
+                # monitor has re-observed a full lookback.  Exits are never affected.
+                self.logger.error(
+                    "Market status restore failed; entries fail closed",
+                    extra={"error": type(exc).__name__},
+                )
+                fail_closed = getattr(self.market_status_monitor, "fail_closed", None)
+                if callable(fail_closed):
+                    fail_closed("MARKET_STATUS_RESTORE_FAILED")
 
     async def _persist_market_status(self) -> None:
         if self.market_status_monitor is None:
@@ -327,8 +337,12 @@ class Runtime:
             scope = self.account_scope_id or "default"
             snapshot_fn = getattr(self.market_status_monitor, "snapshot", None)
             if callable(snapshot_fn):
-                doc = snapshot_fn()
-                repo.save(scope, doc)
+                try:
+                    repo.save(scope, snapshot_fn())
+                except Exception as exc:  # persistence trouble must not stop the heartbeat
+                    self.logger.error(
+                        "Market status persist failed", extra={"error": type(exc).__name__}
+                    )
 
     async def _heartbeat(self) -> None:
         details = {

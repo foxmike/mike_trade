@@ -1104,6 +1104,7 @@ def load_app_settings(
         mode=mode,
         enable_live_trading=bool(execution["live_trading_enabled"]),
         short_selling_enabled=bool(execution["short_selling_enabled"]),
+        market_status_enabled=bool(execution["market_status_enabled"]),
         db_path=db_path,
         data_dir=data_dir,
         symbols=symbols,
@@ -1584,6 +1585,13 @@ class VwapReferenceLifecycle:
             cycle_id, symbol, self._policy_for(symbol, position.avg_cost), at=at
         )
 
+    def _entry_permitted(self, direction: PositionDirection) -> bool:
+        """Runtime gate (and, when enabled, market-state policy) for one entry direction."""
+        authorizes = getattr(self.entry_gate, "authorizes", None)
+        if callable(authorizes):
+            return bool(authorizes(direction))
+        return bool(self.entry_gate.authorized)
+
     @staticmethod
     def _open_orders(account: ShadowAccount, symbol: str, *sides: OrderSide) -> bool:
         return any(
@@ -1718,6 +1726,18 @@ class VwapReferenceLifecycle:
                 entries[evaluation.signal_id or ""] = (binding, evaluation)
         if not entries:
             return actions
+        # Runtime / market-state authorization is per entry direction.  Candidates of a
+        # direction that is not currently authorized are dropped *before* arbitration, so a
+        # restricted BUY can never suppress an authorized SHORT (or the reverse).
+        entries = {
+            signal_id: (binding, evaluation)
+            for signal_id, (binding, evaluation) in entries.items()
+            if self._entry_permitted(
+                PositionDirection.SHORT if binding.role == "short" else PositionDirection.LONG
+            )
+        }
+        if not entries:
+            return actions
         arbitration = arbitrate_entry_decisions(
             [
                 EntryCandidate(
@@ -1732,7 +1752,7 @@ class VwapReferenceLifecycle:
                 account, context.symbol, OrderSide.BUY, OrderSide.SELL_SHORT
             ),
         )
-        if arbitration.selected is None or not self.entry_gate.authorized:
+        if arbitration.selected is None:
             return actions
         binding, evaluation = entries[arbitration.selected.signal_id]
         short = binding.role == "short"
@@ -2448,6 +2468,8 @@ def _fingerprint(settings: AppSettings) -> str:
     }
     if custom_stops:
         document["stop_policies"] = custom_stops
+    if settings.market_status_enabled:  # absent when off: existing fingerprints are unchanged
+        document["market_status"] = list(settings.market_status_reference_symbols)
     payload = json.dumps(document, sort_keys=True, separators=(",", ":"))
     return hashlib.sha256(payload.encode("utf-8")).hexdigest()
 
@@ -2685,6 +2707,10 @@ def build_runtime(
         )
     else:
         entry_gate = raw_entry_gate
+    if supplied.get("controls") is None:
+        # The runtime treats "controls is the entry gate" as "no separate operator control";
+        # keep that identity when the market-status wrapper stands in for the plain gate.
+        controls = entry_gate
 
     bind_ms = getattr(market_data, "bind_market_status", None)
     if callable(bind_ms) and market_status_monitor is not None:

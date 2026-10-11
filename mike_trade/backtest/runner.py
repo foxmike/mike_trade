@@ -914,6 +914,37 @@ class BacktestRunner:
             for e in self.feed.events(symbols=feed_symbols)
             if e.available_at and request.window_start <= e.available_at <= request.window_end
         ]
+        # Reference bars are fed to the monitor strictly by availability time, ahead of any
+        # trading event at the same or a later time (point-in-time: nothing later is visible),
+        # and the monitor is stepped once per distinct reference minute so the replayed state
+        # sequence matches what a live feed produces.
+        reference_events = [
+            e
+            for e in replay_events
+            if backtest_monitor is not None
+            and e.kind == ReplayEvent.KIND_BAR
+            and e.candle is not None
+            and e.symbol in ref_symbols
+        ]
+        reference_cursor = 0
+
+        def feed_reference(upto: datetime) -> None:
+            nonlocal reference_cursor
+            while reference_cursor < len(reference_events):
+                batch_time = reference_events[reference_cursor].available_at
+                assert batch_time is not None
+                if batch_time > upto:
+                    return
+                while (
+                    reference_cursor < len(reference_events)
+                    and reference_events[reference_cursor].available_at == batch_time
+                ):
+                    candle_ref = reference_events[reference_cursor].candle
+                    assert candle_ref is not None and backtest_monitor is not None
+                    backtest_monitor.add_bar(candle_ref)
+                    reference_cursor += 1
+                backtest_monitor.evaluate(as_of=batch_time)
+
         trigger_rows: set[tuple[str, str, datetime]] = set()
         state: dict[tuple[str, str], dict[str, Any]] = defaultdict(dict)
         for symbol in request.symbols:
@@ -1195,6 +1226,8 @@ class BacktestRunner:
         for ev in replay_events:
             assert ev.available_at
             self.clock.advance_to(ev.available_at)
+            if backtest_monitor is not None:
+                feed_reference(ev.available_at)
             outputs = self.execution.process_event(ev)
             await record_native_stop(ev.symbol)
             for x in outputs:
@@ -1312,8 +1345,6 @@ class BacktestRunner:
             if ev.kind != ReplayEvent.KIND_BAR or ev.candle is None:
                 continue
             symbol = ev.symbol
-            if backtest_monitor is not None and symbol in ref_symbols:
-                backtest_monitor.add_bar(ev.candle)
             plan = plans.get(symbol)
             if plan is None:
                 continue
@@ -1582,6 +1613,53 @@ class BacktestRunner:
                         # Not authorized: ineligible, advance-only (never a signal).
                         state[(symbol, cls.spec.strategy_id)].pop("eligibility", None)
                         evaluate(cls, record=False)
+                market_blocked: dict[PositionDirection, str] = {}
+                if candidates and backtest_monitor is not None:
+                    # Market-state authorization is additional to every other entry gate and is
+                    # applied per direction *before* arbitration: a restricted BUY must not
+                    # suppress an authorized SHORT (nor the reverse).  Exits are never gated.
+                    authorization = backtest_monitor.evaluate(
+                        as_of=ev.available_at
+                    ).authorization
+                    for direction, allowed in (
+                        (PositionDirection.LONG, authorization.buy_allowed),
+                        (PositionDirection.SHORT, authorization.short_allowed),
+                    ):
+                        if not allowed:
+                            market_blocked[direction] = (
+                                authorization.reasons[0]
+                                if authorization.reasons
+                                else f"MARKET_STATE_{authorization.state.value}_"
+                                f"{direction.value}_RESTRICTED"
+                            )
+                    blocked_candidates = {
+                        sid: market_blocked[
+                            PositionDirection.LONG
+                            if cls.spec.side is StrategyRole.BUY
+                            else PositionDirection.SHORT
+                        ]
+                        for sid, (cls, _e) in candidates.items()
+                        if (
+                            PositionDirection.LONG
+                            if cls.spec.side is StrategyRole.BUY
+                            else PositionDirection.SHORT
+                        )
+                        in market_blocked
+                    }
+                    if blocked_candidates:
+                        for sid, reason in blocked_candidates.items():
+                            cls_b, e_b = candidates.pop(sid)
+                            decisions.append({
+                                "kind": "ENTRY_REFUSED",
+                                "time": ev.available_at,
+                                "symbol": symbol,
+                                "signal_id": sid,
+                                "strategy_id": cls_b.spec.strategy_id,
+                                "side": cls_b.spec.side.value,
+                                "reason": reason,
+                                "gate": "MARKET_STATUS",
+                                "market_state": authorization.state.value,
+                            })
                 if candidates:
                     result = arbitrate_entry_decisions(
                         [
@@ -1612,14 +1690,6 @@ class BacktestRunner:
                             (symbol, session_key)
                         ] >= int(max_cycles):
                             gate = "MAX_ENTRY_CYCLES_REACHED"
-                        elif backtest_monitor is not None:
-                            status_eval = backtest_monitor.evaluate(as_of=ev.available_at)
-                            if not status_eval.authorization.buy_allowed:
-                                gate = (
-                                    status_eval.authorization.reasons[0]
-                                    if status_eval.authorization.reasons
-                                    else f"MARKET_STATE_{status_eval.state.value}_BUY_RESTRICTED"
-                                )
                     decisions.append(
                         {
                             "kind": "ENTRY",

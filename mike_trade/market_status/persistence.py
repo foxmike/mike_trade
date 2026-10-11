@@ -28,7 +28,7 @@ class MarketStatusRepository(Protocol):
     """Persistence port for market status monitor state documents."""
 
     def load(self, scope_id: str) -> Mapping[str, Any] | None:
-        """Load persisted market status state for scope, or None if absent."""
+        """Load persisted state for scope; ``None`` if absent, ``ValueError`` if unreadable."""
         ...
 
     def save(self, scope_id: str, document: Mapping[str, Any]) -> None:
@@ -68,14 +68,15 @@ class JsonFileMarketStatusRepository:
         path = self._file_path(scope_id)
         if not path.exists():
             return None
+        # An existing but unreadable document is an error, never "no state": the caller must
+        # fail closed instead of silently starting from NORMAL.
         try:
-            content = path.read_text(encoding="utf-8")
-            data = json.loads(content)
-            if isinstance(data, Mapping):
-                return data
-            return None
-        except (OSError, json.JSONDecodeError):
-            return None
+            data = json.loads(path.read_text(encoding="utf-8"))
+        except (OSError, json.JSONDecodeError) as exc:
+            raise ValueError(f"unreadable market status document: {path}") from exc
+        if not isinstance(data, Mapping):
+            raise ValueError(f"malformed market status document: {path}")
+        return data
 
     def save(self, scope_id: str, document: Mapping[str, Any]) -> None:
         path = self._file_path(scope_id)
@@ -115,11 +116,11 @@ class SqliteMarketStatusRepository:
             return None
         try:
             data = json.loads(row[0])
-            if isinstance(data, Mapping):
-                return data
-            return None
-        except Exception:
-            return None
+        except Exception as exc:
+            raise ValueError("unreadable market status document") from exc
+        if not isinstance(data, Mapping):
+            raise ValueError("malformed market status document")
+        return data
 
     def save(self, scope_id: str, document: Mapping[str, Any]) -> None:
         now = (

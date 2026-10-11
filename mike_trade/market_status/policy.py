@@ -237,8 +237,7 @@ class MarketStatusEntryGate:
 
     # --- Runtime / SHADOW EntryGate protocol compatibility ---
 
-    @property
-    def authorized(self) -> bool:
+    def _inner_authorized(self) -> bool:
         if self._manual_blocked_reasons:
             return False
         if self._inner_gate is not None:
@@ -246,8 +245,28 @@ class MarketStatusEntryGate:
                 return False
             if hasattr(self._inner_gate, "entries_enabled") and not self._inner_gate.entries_enabled():
                 return False
-        snap = self._monitor.evaluate()
-        return snap.authorization.buy_allowed
+        return True
+
+    @property
+    def authorized(self) -> bool:
+        """True when new entries of *some* direction are permitted (BUY or SHORT)."""
+        if not self._inner_authorized():
+            return False
+        decision = self._monitor.evaluate().authorization
+        return decision.buy_allowed or decision.short_allowed
+
+    def authorizes(self, direction: Any) -> bool:
+        """True when a new entry in ``direction`` is permitted by the runtime gate and the
+        market state.  ``direction`` is a PositionDirection or an entry action/role name."""
+        if not self._inner_authorized():
+            return False
+        decision = self._monitor.evaluate().authorization
+        raw = str(getattr(direction, "value", direction)).strip().upper()
+        if raw in {"LONG", "BUY", "ENTER_LONG"}:
+            return decision.buy_allowed
+        if raw in {"SHORT", "ENTER_SHORT"}:
+            return decision.short_allowed
+        return False
 
     @property
     def reasons(self) -> tuple[str, ...]:
@@ -255,8 +274,9 @@ class MarketStatusEntryGate:
         if self._inner_gate is not None and hasattr(self._inner_gate, "reasons"):
             result.extend(self._inner_gate.reasons)
         snap = self._monitor.evaluate()
-        if not snap.authorization.buy_allowed:
-            result.extend(snap.authorization.reasons or (f"MARKET_STATE_{snap.state.value}_BUY_RESTRICTED",))
+        auth = snap.authorization
+        if not auth.buy_allowed and not auth.short_allowed:
+            result.extend(auth.reasons or (f"MARKET_STATE_{snap.state.value}_ENTRIES_RESTRICTED",))
         return tuple(result)
 
     def entries_enabled(self) -> bool:

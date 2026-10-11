@@ -124,19 +124,75 @@ This invariant is unconditionally verified by automated unit tests and enforced 
 
 ---
 
-## 7. Persistence and Historical Replay
+## 7. Evaluation Cadence, Persistence and Historical Replay
 
-### 7.1 Restart Persistence
-The monitor implements clean serialization and restoration:
-- **`InMemoryMarketStatusRepository`**: Fast in-memory state repository for tests and unit operations.
-- **`JsonFileMarketStatusRepository`**: Atomic file persistence writing to a temporary file (`.tmp`) and renaming into place, preventing corruption during system crashes.
+### 7.1 Evaluation cadence (call-frequency independent)
+`evaluate()` is a pure read except that it advances the state machine **at most once per
+completed reference minute**. A minute `E` is complete when every configured reference symbol has
+a bar ending at or after `E` (or, after a 60 s grace period, when `min_required_symbols` do).
+Repeated calls (entry gates, heartbeats, the backtest loop) therefore never change the hysteresis
+counters: the state sequence depends only on the data fed in, which is what makes SHADOW and
+BACKTEST equivalent. Without an explicit `as_of`, the injected clock supplies the evaluation time
+so a stalled feed is detected as stale; with no clock the latest bar defines "now".
 
-### 7.2 Historical Replay Compatibility
-`MarketStatusMonitor` has no hidden wall-clock dependencies when fed bar data. Passing historical bars bar-by-bar produces identical, deterministic metric series and state transitions across replayed datasets.
+### 7.2 Restart persistence
+- `SqliteMarketStatusRepository` (production) stores the snapshot in the existing
+  `service_health` table (component `market_status_monitor`); it is written on every runtime
+  heartbeat and at shutdown and restored at startup. `InMemoryMarketStatusRepository` and
+  `JsonFileMarketStatusRepository` exist for tests and tools.
+- The snapshot includes state, hysteresis counters, episode trackers, the last advanced minute and
+  the recent reference candles, so a restart during `CRASH` resumes in `CRASH`.
+- An **absent** document is a fresh start. An **unreadable** document (or any restore error) makes
+  the monitor *fail closed*: new BUY and SHORT entries are blocked (`MARKET_STATUS_RESTORE_FAILED`)
+  until a full lookback (`peak_lookback_bars`) of reference minutes has been observed again.
+  Exits and stops are never affected.
+
+### 7.3 Historical replay compatibility
+`MarketStatusMonitor` has no hidden wall-clock dependencies when fed bar data. The backtest runner
+feeds reference candles strictly by availability time (ahead of any trading event at the same or a
+later time), steps the monitor once per distinct reference minute and never reads live market data.
 
 ---
 
-## 8. Portfolio Integration Guide
+## 8. Integration with the Bidirectional Engine
+
+`execution.market_status_enabled: true` (default `false`) enables the monitor in SHADOW. Reference
+symbols (`SPY`, `QQQ`, `IWM`) are fetched independently of the trading symbols (de-duplicated when
+also traded), fed to the monitor and never evaluated by trading strategies.
+
+```
+ reference candles --> MarketStatusMonitor --> TradingAuthorizationDecision
+                                                  |  buy_allowed / short_allowed
+                                                  v
+ BUY, SHORT candidates --(drop unauthorized direction)--> arbitration --> existing gates
+                                                              (cutoff, budget, margin, caps)
+ SELL, COVER, protective stops, liquidation -----------------------------> never gated
+```
+
+- Authorization is **per direction and additional**: the runtime gate, entry cutoff, budget, margin,
+  short-selling authorization, exposure and protection requirements are unchanged and still apply.
+- Candidates of a restricted direction are dropped **before** arbitration, so a restricted BUY can
+  never suppress an authorized SHORT (nor the reverse). SHORT is *not* authorized by `CRASH`: a
+  strategy must still produce a valid SHORT signal and pass every other restriction.
+- `MarketStatusEntryGate.authorized` means "some entry direction is open";
+  `MarketStatusEntryGate.authorizes(direction)` is the per-direction query used by the SHADOW
+  lifecycle; `PortfolioManager` passes `action="ENTER_SHORT"` to `evaluate_entry` for shorts.
+- BACKTEST (`config["market_status_enabled"]`): refused candidates are recorded as `ENTRY_REFUSED`
+  decisions with `gate: MARKET_STATUS` and the market state; they affect real order decisions.
+- Default policy (`TradingAuthorizationPolicy`): NORMAL BUY+SHORT; WARNING SHORT only; CRASH SHORT
+  only; STABILIZING neither; RECOVERY BUY only. Missing or stale reference data blocks both.
+
+### 8.1 Limitations
+- SHADOW and BACKTEST are the supported autonomous strategy-evaluation environments. PAPER/LIVE
+  runtimes are built with `lifecycle=None` (no automatic strategy evaluation), so the monitor does
+  not gate automated PAPER/LIVE entries; LIVE short trading remains disabled by configuration.
+- The backtest monitor starts empty at the window start (reference candles before the window are
+  not replayed), so entries are blocked until two reference symbols have data. Research
+  (`research-batch`) does not yet expose the market-status switch.
+
+---
+
+## 9. Portfolio Integration Guide
 
 ### 8.1 Integration Architecture
 The monitor connects into the portfolio layer via the `MarketStatusEntryGate` adapter:
@@ -171,7 +227,7 @@ from mike_trade.market_status.persistence import JsonFileMarketStatusRepository
 # 1. Initialize monitor with persistent repository
 repo = JsonFileMarketStatusRepository("/path/to/market_status.json")
 monitor = MarketStatusMonitor()
-saved_state = repo.load()
+saved_state = repo.load("shadow:default")
 if saved_state:
     monitor.restore(saved_state)
 
@@ -184,5 +240,5 @@ for bar in incoming_bars:
 snapshot = monitor.evaluate()
 
 # 4. Save state on cycle completion
-repo.save(monitor.snapshot())
+repo.save("shadow:default", monitor.snapshot())
 ```

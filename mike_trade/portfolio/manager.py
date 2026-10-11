@@ -370,8 +370,15 @@ class EntryGate(Protocol):
     """Injected eligibility/risk gate (daily slots, cooldown, lockouts, cutoff, freshness)."""
 
     async def evaluate_entry(
-        self, account_scope_id: str, symbol: str, strategy_id: str, now: datetime
-    ) -> EntryGateDecision: ...
+        self,
+        account_scope_id: str,
+        symbol: str,
+        strategy_id: str,
+        now: datetime,
+        action: str = "ENTER_LONG",
+    ) -> EntryGateDecision:
+        """``action`` is ``ENTER_LONG`` or ``ENTER_SHORT`` (passed only for short entries)."""
+        ...
 
     async def record_entry_fill(self, cycle: PositionCycle) -> None: ...
 
@@ -768,7 +775,12 @@ class PortfolioManager:
             return Disposition.BLOCKED, "operator_paused"
         if cycle.protection_status is ProtectionStatus.UNKNOWN:
             return Disposition.BLOCKED, "protection_unknown"
-        decision = await self._gate.evaluate_entry(scope, symbol, signal.instance_id, now)
+        if short:
+            decision = await self._gate.evaluate_entry(  # type: ignore[call-arg]
+                scope, symbol, signal.instance_id, now, action="ENTER_SHORT"
+            )
+        else:
+            decision = await self._gate.evaluate_entry(scope, symbol, signal.instance_id, now)
         if decision.blocked:
             return Disposition.BLOCKED, "gate:" + ",".join(decision.blocking_reasons)
         reservation = await self._budget.reserve(EntryRequest(scope, cycle.cycle_id, signal))
