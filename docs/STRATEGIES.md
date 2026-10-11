@@ -2439,10 +2439,10 @@ bar. Alpaca warmup discards a still-forming REST minute before aggregation.
 `gap_continuation` and `opening_gap_breakout` are inventory aliases of
 `gap_and_go`: under the selected published long rule all three are the same gap-up
 opening-range breakout, so separate classes would duplicate a signal. `gap_exhaustion`
-remains blocked: a defensible downside-exhaustion BUY needs confirmed multi-session/daily
-downtrend context (and commonly abnormal-volume context), while the deliberately narrow
-contract exposes only one completed prior session. None of these entry primitives sizes a
-position, places an order, or defines an exit.
+was blocked while the contract exposed only one completed prior session; `SessionReference`
+now also carries a bounded chain of consecutive, fully observed prior sessions (OHLC and
+volume) and `gap_exhaustion` is implemented on it (see `docs/BUY_BACKLOG_FINAL_PATTERNS.md`).
+None of these entry primitives sizes a position, places an order, or defines an exit.
 
 ## 18. SHORT and COVER roles (28 SHORT, 28 COVER)
 
@@ -2452,8 +2452,8 @@ position, places an order, or defines an exit.
 in the same `StrategyRegistry`, which keeps one `_SIDE_BASES` entry per role and rejects a class whose
 spec side does not match its base. A SELL signal is never an implicit SHORT and a COVER signal is never
 an implicit BUY; there is no automatic reversal. Signal ids are `make_signal_id(...)` over the
-role, so the same bar yields four distinct ids. The library holds 80 BUY, 40 SELL, 28 SHORT and 28 COVER
-strategies = 176 (5 BUY strategies were added by the reviewed backlog batches: `docs/BUY_SELL_BACKLOG_BATCH_A.md`, `docs/BUY_SELL_BACKLOG_BATCH_B.md`, `docs/BUY_SELL_BACKLOG_REVIEW.md`; integration record: `docs/STRATEGY_LIBRARY_176_INTEGRATION.md`; 25 SHORT strategies added by Batches A and B: `docs/SHORT_STRATEGIES_BATCH_A.md`, `docs/SHORT_STRATEGIES_BATCH_B.md`; 25 COVER strategies added by Batches A and B: `docs/COVER_STRATEGIES_BATCH_A.md`, `docs/COVER_STRATEGIES_BATCH_B.md`). The original 156-candidate inventory covers BUY and SELL candidates only and is unchanged.
+role, so the same bar yields four distinct ids. The library holds 82 BUY, 40 SELL, 28 SHORT and 28 COVER
+strategies = 178 (`gap_exhaustion` and `bull_pennant_breakout` were added by `docs/BUY_BACKLOG_FINAL_PATTERNS.md`; 5 BUY strategies were added by the reviewed backlog batches: `docs/BUY_SELL_BACKLOG_BATCH_A.md`, `docs/BUY_SELL_BACKLOG_BATCH_B.md`, `docs/BUY_SELL_BACKLOG_REVIEW.md`; integration record: `docs/STRATEGY_LIBRARY_176_INTEGRATION.md`; 25 SHORT strategies added by Batches A and B: `docs/SHORT_STRATEGIES_BATCH_A.md`, `docs/SHORT_STRATEGIES_BATCH_B.md`; 25 COVER strategies added by Batches A and B: `docs/COVER_STRATEGIES_BATCH_A.md`, `docs/COVER_STRATEGIES_BATCH_B.md`). The original 156-candidate inventory covers BUY and SELL candidates only and is unchanged.
 
 Strategy-level contract (unchanged `StrategySpec`/`ParameterSchema`/state conventions):
 

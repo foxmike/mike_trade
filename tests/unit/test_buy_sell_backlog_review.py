@@ -77,9 +77,9 @@ def test_the_five_strategies_are_registered_once_in_production_and_research() ->
         assert cls.spec.warmup_bars == cls.required_bars({})
         assert cls.spec.parameter_schema.validate({}) is not None
     counts = {role: len(REGISTRY.list_strategies(role)) for role in StrategyRole}
-    assert counts == {StrategyRole.BUY: 80, StrategyRole.SELL: 40, StrategyRole.SHORT: 28,
+    assert counts == {StrategyRole.BUY: 82, StrategyRole.SELL: 40, StrategyRole.SHORT: 28,
                       StrategyRole.COVER: 28}
-    assert len(REGISTRY.list_strategies()) == 176
+    assert len(REGISTRY.list_strategies()) == 178
 
 
 def test_the_five_strategies_compose_into_a_shadow_runtime_as_per_symbol_buys(tmp_path) -> None:
