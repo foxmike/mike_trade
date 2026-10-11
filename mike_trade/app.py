@@ -204,6 +204,16 @@ from mike_trade.strategies.sell.opening_range_breakdown import OpeningRangeBreak
 from mike_trade.strategies.sell.stochastic_rsi_reversal import StochasticRsiReversalSell
 from mike_trade.strategies.sell.trendline_breakdown import TrendlineBreakdownSell
 from mike_trade.strategies.sell.ultimate_oscillator_reversal import UltimateOscillatorReversalSell
+from mike_trade.strategies.sell.accumulation_distribution_breakdown import (
+    AccumulationDistributionBreakdownSell,
+)
+from mike_trade.strategies.sell.bearish_momentum_divergence import BearishMomentumDivergenceSell
+from mike_trade.strategies.sell.double_top_reversal import DoubleTopReversalSell
+from mike_trade.strategies.sell.head_and_shoulders_breakdown import HeadAndShouldersBreakdownSell
+from mike_trade.strategies.sell.ichimoku_bearish_exit import IchimokuBearishExitSell
+from mike_trade.strategies.sell.obv_breakdown import ObvBreakdownSell
+from mike_trade.strategies.sell.shooting_star_reversal import ShootingStarReversalSell
+from mike_trade.strategies.sell.supertrend_bearish_flip import SupertrendBearishFlipSell
 
 __all__ = [
     "AppSettings",
@@ -2223,6 +2233,14 @@ def build_runtime(
         StochasticRsiReversalSell,
         TrendlineBreakdownSell,
         UltimateOscillatorReversalSell,
+        AccumulationDistributionBreakdownSell,
+        BearishMomentumDivergenceSell,
+        DoubleTopReversalSell,
+        HeadAndShouldersBreakdownSell,
+        IchimokuBearishExitSell,
+        ObvBreakdownSell,
+        ShootingStarReversalSell,
+        SupertrendBearishFlipSell,
     ):
         registry.register(strategy_cls)
     strategies = supplied.get("strategies", registry)

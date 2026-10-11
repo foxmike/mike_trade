@@ -170,6 +170,11 @@ BATCH3_SELL = {
     "lower_low_confirmation", "opening_range_breakdown", "stochastic_rsi_reversal",
     "trendline_breakdown", "ultimate_oscillator_reversal",
 }
+BATCH5_SELL = {
+    "accumulation_distribution_breakdown", "bearish_momentum_divergence",
+    "double_top_reversal", "head_and_shoulders_breakdown", "ichimoku_bearish_exit",
+    "obv_breakdown", "shooting_star_reversal", "supertrend_bearish_flip",
+}
 
 REGISTRY = _research_registry()
 
@@ -609,10 +614,10 @@ def test_registry_inventory_counts() -> None:
     sells = {cls.spec.strategy_id for cls in REGISTRY.list_strategies(StrategyRole.SELL)}
     assert buys == set(NEW_BUY) | EXTENSION_BUY | BATCH2_BUY | BATCH3_BUY | SESSION_BUY | {
         k for k, v in EXISTING.items() if v[0] == "BUY"}
-    assert sells == set(NEW_SELL) | EXTENSION_SELL | BATCH2_SELL | BATCH3_SELL | {
+    assert sells == set(NEW_SELL) | EXTENSION_SELL | BATCH2_SELL | BATCH3_SELL | BATCH5_SELL | {
         k for k, v in EXISTING.items() if v[0] == "SELL"}
     assert (len(NEW_BUY), len(NEW_SELL)) == (14, 14)
-    assert (len(buys), len(sells)) == (54, 32)
+    assert (len(buys), len(sells)) == (54, 40)
     assert not buys & sells
 
 

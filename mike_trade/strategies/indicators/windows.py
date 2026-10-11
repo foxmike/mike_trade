@@ -8,7 +8,7 @@ and the last element of a window is always the latest completed bar (no later ba
 from __future__ import annotations
 
 from collections.abc import Sequence
-from decimal import Decimal, ROUND_HALF_EVEN, localcontext
+from decimal import ROUND_HALF_EVEN, Decimal, localcontext
 
 from mike_trade.market_data.candles import Candle
 from mike_trade.strategies.closed_bar import adjacent
@@ -22,6 +22,7 @@ __all__ = [
     "swing_pivots",
     "ease_of_movement",
     "is_hammer",
+    "is_shooting_star",
     "true_ranges",
 ]
 
@@ -175,3 +176,19 @@ def is_hammer(bar: Candle, shadow_ratio: Decimal, max_upper_fraction: Decimal) -
     lower = min(bar.open, bar.close) - bar.low
     upper = bar.high - max(bar.open, bar.close)
     return lower >= shadow_ratio * body and upper <= max_upper_fraction * spread and lower > 0
+
+
+def is_shooting_star(bar: Candle, shadow_ratio: Decimal, max_lower_fraction: Decimal) -> bool:
+    """Nison shooting-star shape: long upper shadow and negligible lower shadow.
+
+    ``upper shadow >= shadow_ratio * real body`` and ``lower shadow <=
+    max_lower_fraction * (high - low)`` on a non-zero-range bar.  Trend context and
+    bearish confirmation belong to the strategy using this shape helper.
+    """
+    spread = bar.high - bar.low
+    if spread <= 0:
+        return False
+    body = abs(bar.close - bar.open)
+    upper = bar.high - max(bar.open, bar.close)
+    lower = min(bar.open, bar.close) - bar.low
+    return upper >= shadow_ratio * body and lower <= max_lower_fraction * spread and upper > 0

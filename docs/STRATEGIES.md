@@ -2279,10 +2279,10 @@ moving history seed. The integrated library now contains 54 BUY and 32 SELL meth
 | `bollinger_upper_band_reversal` | A close above the upper band is followed by a close back inside it. | period=20, deviations=2; 21 bars | Bollinger population-SD bands; a tag alone is not a signal. |
 
 Chandelier Exit and ATR Trailing Exit remain protective-stop responsibilities.
-Supertrend and cumulative OBV/Accumulation-Distribution methods remain deferred because
-their recursive/cumulative continuity is not available to an independent strategy module;
-Ichimoku remains deferred pending explicit displaced-span point-in-time semantics. Support
-Breakdown is already covered by `donchian_lower_channel_exit` and is not duplicated.
+At the end of batch 3, Supertrend and cumulative OBV/Accumulation-Distribution were deferred
+for continuity, and Ichimoku for displaced-span semantics. Batch 5 (§15) resolves those
+blockers. Support Breakdown remains covered by `donchian_lower_channel_exit` and is not
+duplicated.
 
 ## 13. Technical strategy batch 3 (16 BUY)
 
@@ -2351,3 +2351,36 @@ confirmed previous-session OHLC fields and may retain pre-market or only partial
 prior-session observations. Those references cannot be reconstructed safely from
 the oldest available candle, so no gap is inferred and no previous-day extreme is
 calculated.
+
+## 15. Technical SELL strategy batch 5 (8 SELL)
+
+These methods are advisory exits from owned long positions. All evaluate completed
+regular-session M1 candles through `SellRule`; they do not submit orders, size positions,
+manage stops, or open shorts. The registered library now contains 54 BUY and 40 SELL
+strategies (94 total).
+
+Recursive Supertrend, OBV, and A/D calculations use JSON-safe snapshot/restore state and
+resume through `advance()`, so bounded candle history never silently restarts them. Finite
+pattern rules require every bar in their calculation window to be adjacent. Swing points
+are strict confirmed fractals: a pivot becomes usable only after `strength` right-hand bars
+have closed, preventing historical look-ahead.
+
+| Strategy ID | Exact SELL condition | Defaults; warmup | Published source / interpretation |
+|---|---|---|---|
+| `supertrend_bearish_flip` | Supertrend direction changes from up to down when close finishes below its ratcheted final lower band. | ATR=10, multiplier=3; 11 bars | Olivier Seban; TradingView `ta.supertrend`. Wilder ATR and band direction are snapshot-restored. |
+| `ichimoku_bearish_exit` | Close crosses below `min(Senkou A, Senkou B)` as plotted at each bar. | Fixed 9/26/52 with displacement 26; 79 bars | Goichi Hosoda / StockCharts. Plotted spans use windows ending 26 bars earlier; Chikou is excluded. |
+| `obv_breakdown` | Cumulative OBV crosses below its lowest reading in the preceding 20 bars. | support=20; 22 bars | Joseph Granville / StockCharts OBV support-break interpretation. The additive starting level cannot affect the comparison. |
+| `accumulation_distribution_breakdown` | Cumulative Chaikin A/D Line crosses below its lowest reading in the preceding 20 bars. | support=20; 22 bars | Marc Chaikin / StockCharts A/D. Zero-range bars contribute zero money-flow volume. |
+| `shooting_star_reversal` | After a five-bar rise, a star has upper shadow ≥ 2 × body and lower shadow ≤ 10% of range; the next close is below its low. | trend=5; 8 bars | Steve Nison / StockCharts bearish candlesticks. A gap is not mandatory; next-bar bearish confirmation is. |
+| `bearish_momentum_divergence` | The newly confirmed higher price swing high has lower `close[t] - close[t-10]` momentum at the same two pivot timestamps. | momentum=10, strength=2, lookback=50; 60 bars | John Murphy momentum divergence with Williams-style confirmed pivots. Unrelated oscillator maxima are never compared. |
+| `double_top_reversal` | Latest confirmed peaks are within 3%, their trough is at least 10% below the lower peak, and close crosses below trough support. | strength=2, lookback=60; 61 bars | StockCharts Double Top Reversal. Its published 3% peak and 10% trough tests are retained in the M1 adaptation. |
+| `head_and_shoulders_breakdown` | Three confirmed peaks form lower shoulder / higher head / lower shoulder after a rising predecessor peak; close crosses the line through the two intervening lows. | strength=2, lookback=60; 61 bars | StockCharts Head and Shoulders Top. Shoulder symmetry and volume are preferred, not mandatory, so no arbitrary filters are added. |
+
+Support Breakdown is an existing equivalent of `donchian_lower_channel_exit` (with
+`previous_swing_low_break` covering structural pivot support). Volatility Expansion
+Reversal, High-Volume Reversal, and Volume Climax Exit remain source-definition deferrals:
+published descriptions do not select one threshold, candle form, trend context, or
+confirmation rule. Bollinger Middle Band Exit remains entry-method dependent. Chandelier
+and ATR trailing exits remain protective-stop policy; End-of-Day and Time-Based exits remain
+engine/session lifecycle policy because `SellRule` neither owns liquidation nor receives
+position age.
