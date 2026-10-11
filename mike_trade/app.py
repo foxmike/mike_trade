@@ -1396,6 +1396,13 @@ class VwapReferenceLifecycle:
         collections = self.collections(context.symbol)
         position = account.state.positions.get(context.symbol)
         if position is not None:
+            # BUY side while held: advance the indicators only. Clearing the eligibility
+            # flag makes the gate block every signal, so no entry can result.
+            for binding in collections.buys:
+                state = self._state(scenario, binding, context.symbol)
+                state.pop("eligibility", None)
+                evaluation = binding.strategy.evaluate(context, binding.parameters, state)
+                self._save_state(scenario, binding, context.symbol, evaluation.state_updates)
             # SELL side: every configured SELL strategy evaluates the held position
             # (its state advances even when a hold or pending exit blocks the exit).
             exits: dict[str, _Binding] = {}
@@ -1437,6 +1444,12 @@ class VwapReferenceLifecycle:
                     )
             return actions
 
+        # SELL side while flat: advance the indicators only; there is no position to
+        # exit, so any signal is discarded.
+        for binding in collections.sells:
+            state = self._state(scenario, binding, context.symbol)
+            evaluation = binding.strategy.evaluate(context, binding.parameters, state)
+            self._save_state(scenario, binding, context.symbol, evaluation.state_updates)
         # BUY side: every configured BUY strategy evaluates the flat symbol; the
         # shared arbitration lets at most one entry through.
         entries: dict[str, tuple[_Binding, StrategyEvaluation]] = {}

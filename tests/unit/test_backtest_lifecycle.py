@@ -219,6 +219,31 @@ def test_buy_signals_while_holding_never_scale_the_position(tmp_path):
     assert len(result.cycles) == 1 and result.cycles[0]["entry_quantity"] == D("10")
 
 
+def test_buy_state_advances_through_the_bars_it_is_held(tmp_path):
+    # buy_alpha's own evaluation count is persisted state. Its 12th evaluation falls on the
+    # 12th bar whether or not a position was open in between, so re-entry is on that bar.
+    result = _run_sync(
+        {"AAA": _quiet(30)}, ("buy_alpha", "sell_alpha"),
+        params={"buy_alpha": {"fire_at": 2, "fire_on_nth": 12}, "sell_alpha": {"fire_at": 6}},
+        result_dir=tmp_path,
+    )
+    assert len(_fills(result, "SELL")) == 1
+    assert [f["time"] for f in _fills(result, "BUY")] == [
+        OPEN + timedelta(minutes=2), OPEN + timedelta(minutes=12)]
+
+
+def test_sell_state_advances_while_flat_and_never_exits_an_empty_book(tmp_path):
+    # sell_alpha's 8th evaluation happens while flat; that signal must be discarded, and
+    # the counter must not restart once a position opens.
+    result = _run_sync(
+        {"AAA": _quiet(30)}, ("buy_alpha", "sell_alpha"),
+        params={"buy_alpha": {"fire_at": 10}, "sell_alpha": {"fire_on_nth": 8}},
+        result_dir=tmp_path,
+    )
+    assert len(_fills(result, "BUY")) == 1
+    assert _fills(result, "SELL") == []
+
+
 def test_symbol_without_sell_strategies_still_has_stop_protection(tmp_path):
     bars = _quiet(5) + [("100", "100", "97", "97.5")] + _quiet(4)
     result = _run_sync(
@@ -434,7 +459,7 @@ def test_symbols_have_independent_collections_parameters_and_state(tmp_path):
         },
         symbol_params={
             "AAA": {"buy_alpha": {"fire_on_nth": 4}, "buy_bravo": {"fire_on_nth": 99},
-                    "sell_alpha": {"fire_on_nth": 3}},
+                    "sell_alpha": {"fire_on_nth": 7}},  # counts flat bars too: 7th bar is held
             "BBB": {"buy_charlie": {"fire_on_nth": 6}},
         },
         result_dir=tmp_path,

@@ -1229,7 +1229,7 @@ class BacktestRunner:
                  "rsi_prev": rsi_values.get(symbol, (None, None))[1]},
             )
 
-            def evaluate(cls: type) -> StrategyEvaluation | None:
+            def evaluate(cls: type, record: bool = True) -> StrategyEvaluation | None:
                 spec = cls.spec
                 if spec.strategy_id not in due_ids:
                     return None
@@ -1252,6 +1252,8 @@ class BacktestRunner:
                     context, plan.params[spec.strategy_id], state[(symbol, spec.strategy_id)]
                 )
                 state[(symbol, spec.strategy_id)].update(evaluation.state_updates)
+                if not record:
+                    return None
                 context_bars = [
                     bar for history in strategy_candles[symbol].values() for bar in history
                 ]
@@ -1287,6 +1289,11 @@ class BacktestRunner:
                 return None
 
             if quantities[symbol] > ZERO:
+                # BUY side while held: advance the indicators only. Clearing the
+                # eligibility flag makes the gate block every signal, so no entry results.
+                for cls in plan.buys:
+                    state[(symbol, cls.spec.strategy_id)].pop("eligibility", None)
+                    evaluate(cls, record=False)
                 # SELL side: every configured SELL strategy sees the held position.
                 winners = {
                     e.signal_id: (cls, e)
@@ -1335,6 +1342,10 @@ class BacktestRunner:
                     if result.selected is not None:
                         await submit(winners[result.selected.signal_id][1], context, symbol)
             else:
+                # SELL side while flat: advance the indicators only; there is no
+                # position to exit, so any signal is discarded.
+                for cls in plan.sells:
+                    evaluate(cls, record=False)
                 # BUY side: only a flat symbol with no entry working is eligible.
                 candidates = {}
                 for cls in plan.buys:
