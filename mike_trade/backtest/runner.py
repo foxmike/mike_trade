@@ -885,9 +885,33 @@ class BacktestRunner:
         window: dict[str, deque[StrategyCandle]] = defaultdict(
             lambda: deque(maxlen=request.context_history_bars)
         )
+        market_status_enabled = bool(request.config.get("market_status_enabled", False))
+        backtest_monitor = request.config.get("market_status_monitor")
+        ref_symbols: tuple[str, ...] = tuple(
+            request.config.get("market_status_reference_symbols", ("SPY", "QQQ", "IWM"))
+        )
+        if market_status_enabled and backtest_monitor is None:
+            from mike_trade.market_status.config import MarketStatusConfig
+            from mike_trade.market_status.monitor import MarketStatusMonitor
+            from mike_trade.market_status.policy import TradingAuthorizationPolicy
+
+            ms_config = request.config.get("market_status_config") or MarketStatusConfig(
+                symbols=ref_symbols
+            )
+            ms_policy = request.config.get("market_status_policy") or TradingAuthorizationPolicy()
+            backtest_monitor = MarketStatusMonitor(
+                config=ms_config,
+                policy=ms_policy,
+                clock=self.clock,
+            )
+
+        feed_symbols = request.symbols
+        if backtest_monitor is not None:
+            feed_symbols = tuple(dict.fromkeys((*request.symbols, *ref_symbols)))
+
         replay_events = [
             e
-            for e in self.feed.events(symbols=request.symbols)
+            for e in self.feed.events(symbols=feed_symbols)
             if e.available_at and request.window_start <= e.available_at <= request.window_end
         ]
         trigger_rows: set[tuple[str, str, datetime]] = set()
@@ -1288,6 +1312,8 @@ class BacktestRunner:
             if ev.kind != ReplayEvent.KIND_BAR or ev.candle is None:
                 continue
             symbol = ev.symbol
+            if backtest_monitor is not None and symbol in ref_symbols:
+                backtest_monitor.add_bar(ev.candle)
             plan = plans.get(symbol)
             if plan is None:
                 continue
@@ -1586,6 +1612,14 @@ class BacktestRunner:
                             (symbol, session_key)
                         ] >= int(max_cycles):
                             gate = "MAX_ENTRY_CYCLES_REACHED"
+                        elif backtest_monitor is not None:
+                            status_eval = backtest_monitor.evaluate(as_of=ev.available_at)
+                            if not status_eval.authorization.buy_allowed:
+                                gate = (
+                                    status_eval.authorization.reasons[0]
+                                    if status_eval.authorization.reasons
+                                    else f"MARKET_STATE_{status_eval.state.value}_BUY_RESTRICTED"
+                                )
                     decisions.append(
                         {
                             "kind": "ENTRY",
