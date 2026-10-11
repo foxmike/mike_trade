@@ -161,11 +161,11 @@ def case(strategy_id: str) -> tuple[list[Candle], list[Candle]]:
 # ------------------------------------------------------------------- registration and roles
 
 
-def test_the_registry_holds_136_strategies_with_18_cover_entries() -> None:
+def test_the_registry_holds_151_strategies_with_18_cover_entries() -> None:
     counts = {role: len(REGISTRY.list_strategies(role)) for role in StrategyRole}
-    assert counts == {StrategyRole.BUY: 75, StrategyRole.SELL: 40, StrategyRole.SHORT: 3,
+    assert counts == {StrategyRole.BUY: 75, StrategyRole.SELL: 40, StrategyRole.SHORT: 18,
                       StrategyRole.COVER: 18}
-    assert len(REGISTRY.list_strategies()) == 136
+    assert len(REGISTRY.list_strategies()) == 151
     assert {c.spec.strategy_id for c in REGISTRY.list_strategies(StrategyRole.COVER)} == set(
         OLD_IDS + NEW_IDS)
     assert len(set(NEW_IDS)) == 15
