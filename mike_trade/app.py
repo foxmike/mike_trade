@@ -146,6 +146,22 @@ from mike_trade.strategies.buy.sma_crossover import SmaCrossoverBuy
 from mike_trade.strategies.buy.stochastic_crossover import StochasticCrossoverBuy
 from mike_trade.strategies.buy.vwap_bounce import VwapBounceBuy
 from mike_trade.strategies.buy.williams_r_reversion import WilliamsRReversionBuy
+from mike_trade.strategies.buy.adaptive_moving_average import AdaptiveMovingAverageBuy
+from mike_trade.strategies.buy.adx_trend_following import AdxTrendFollowingBuy
+from mike_trade.strategies.buy.atr_expansion_breakout import AtrExpansionBreakoutBuy
+from mike_trade.strategies.buy.bollinger_squeeze import BollingerSqueezeBuy
+from mike_trade.strategies.buy.connors_rsi_mean_reversion import ConnorsRsiMeanReversionBuy
+from mike_trade.strategies.buy.ease_of_movement import EaseOfMovementBuy
+from mike_trade.strategies.buy.elder_impulse_system import ElderImpulseSystemBuy
+from mike_trade.strategies.buy.ema_pullback import EmaPullbackBuy
+from mike_trade.strategies.buy.hammer_reversal import HammerReversalBuy
+from mike_trade.strategies.buy.higher_high_higher_low import HigherHighHigherLowBuy
+from mike_trade.strategies.buy.ichimoku_cloud_breakout import IchimokuCloudBreakoutBuy
+from mike_trade.strategies.buy.keltner_channel_reversion import KeltnerChannelReversionBuy
+from mike_trade.strategies.buy.moving_average_ribbon import MovingAverageRibbonBuy
+from mike_trade.strategies.buy.resistance_breakout import ResistanceBreakoutBuy
+from mike_trade.strategies.buy.supertrend import SupertrendBuy
+from mike_trade.strategies.buy.volatility_squeeze_breakout import VolatilitySqueezeBreakoutBuy
 from mike_trade.strategies.indicators.core import VWAPCalculator
 from mike_trade.strategies.presets.pairs import resolve_pair_preset
 from mike_trade.strategies.registry import StrategyRegistry
@@ -2129,6 +2145,22 @@ def build_runtime(
         Nr7BreakoutBuy,
         RateOfChangeMomentumBuy,
         TripleMovingAverageBuy,
+        AdaptiveMovingAverageBuy,
+        AdxTrendFollowingBuy,
+        AtrExpansionBreakoutBuy,
+        BollingerSqueezeBuy,
+        ConnorsRsiMeanReversionBuy,
+        EaseOfMovementBuy,
+        ElderImpulseSystemBuy,
+        EmaPullbackBuy,
+        HammerReversalBuy,
+        HigherHighHigherLowBuy,
+        IchimokuCloudBreakoutBuy,
+        KeltnerChannelReversionBuy,
+        MovingAverageRibbonBuy,
+        ResistanceBreakoutBuy,
+        SupertrendBuy,
+        VolatilitySqueezeBreakoutBuy,
         AroonBearishReversalSell,
         CciZeroLineBreakdownSell,
         DmiBearishCrossoverSell,

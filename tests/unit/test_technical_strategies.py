@@ -154,6 +154,13 @@ BATCH2_BUY = {
 BATCH2_SELL = {
     "awesome_oscillator_reversal", "keltner_channel_breakdown", "previous_swing_low_break",
 }
+BATCH3_BUY = {
+    "adaptive_moving_average", "adx_trend_following", "atr_expansion_breakout",
+    "bollinger_squeeze", "connors_rsi_mean_reversion", "ease_of_movement",
+    "elder_impulse_system", "ema_pullback", "hammer_reversal", "higher_high_higher_low",
+    "ichimoku_cloud_breakout", "keltner_channel_reversion", "moving_average_ribbon",
+    "resistance_breakout", "supertrend", "volatility_squeeze_breakout",
+}
 
 REGISTRY = _research_registry()
 
@@ -591,12 +598,12 @@ def test_new_strategy_metadata_registration_and_role(strategy_id: str) -> None:
 def test_registry_inventory_counts() -> None:
     buys = {cls.spec.strategy_id for cls in REGISTRY.list_strategies(StrategyRole.BUY)}
     sells = {cls.spec.strategy_id for cls in REGISTRY.list_strategies(StrategyRole.SELL)}
-    assert buys == set(NEW_BUY) | EXTENSION_BUY | BATCH2_BUY | {
+    assert buys == set(NEW_BUY) | EXTENSION_BUY | BATCH2_BUY | BATCH3_BUY | {
         k for k, v in EXISTING.items() if v[0] == "BUY"}
     assert sells == set(NEW_SELL) | EXTENSION_SELL | BATCH2_SELL | {
         k for k, v in EXISTING.items() if v[0] == "SELL"}
     assert (len(NEW_BUY), len(NEW_SELL)) == (14, 14)
-    assert (len(buys), len(sells)) == (32, 24)
+    assert (len(buys), len(sells)) == (48, 24)
     assert not buys & sells
 
 
