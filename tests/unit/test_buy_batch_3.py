@@ -160,8 +160,8 @@ def test_sixteen_new_buys_registered_in_production_and_research() -> None:
         assert cls.spec.trigger_timeframe is CandleTimeframe.M1
         assert source.count(f"{cls.__name__},") == 1
         assert cls.spec.warmup_bars == cls.required_bars({}), strategy_id
-    assert len(REGISTRY.list_strategies(StrategyRole.BUY)) == 80
-    assert len(REGISTRY.list_strategies(StrategyRole.SELL)) == 40
+    assert len(REGISTRY.list_strategies(StrategyRole.BUY)) == 82
+    assert len(REGISTRY.list_strategies(StrategyRole.SELL)) == 42
 
 
 @pytest.mark.parametrize("strategy_id", NEW)

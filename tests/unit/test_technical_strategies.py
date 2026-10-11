@@ -182,6 +182,12 @@ BACKLOG_BUY_A = {
 BACKLOG_BUY_B = {
     "vwap_band_reversion", "intraday_consolidation_breakout",
 }
+FINAL_BUY = {
+    "intraday_exhaustion_reversal", "volume_dry_up_pullback",
+}
+FINAL_SELL = {
+    "volatility_expansion_reversal", "volume_climax_exit",
+}
 BATCH3_SELL = {
     "adx_trend_weakening", "bollinger_upper_band_reversal", "failed_breakout_exit",
     "lower_low_confirmation", "opening_range_breakdown", "stochastic_rsi_reversal",
@@ -629,12 +635,12 @@ def test_new_strategy_metadata_registration_and_role(strategy_id: str) -> None:
 def test_registry_inventory_counts() -> None:
     buys = {cls.spec.strategy_id for cls in REGISTRY.list_strategies(StrategyRole.BUY)}
     sells = {cls.spec.strategy_id for cls in REGISTRY.list_strategies(StrategyRole.SELL)}
-    assert buys == set(NEW_BUY) | EXTENSION_BUY | BATCH2_BUY | BATCH3_BUY | BATCH4_BUY | SESSION_BUY | GAP_BUY | BACKLOG_BUY_A | BACKLOG_BUY_B | {
+    assert buys == set(NEW_BUY) | EXTENSION_BUY | BATCH2_BUY | BATCH3_BUY | BATCH4_BUY | SESSION_BUY | GAP_BUY | BACKLOG_BUY_A | BACKLOG_BUY_B | FINAL_BUY | {
         k for k, v in EXISTING.items() if v[0] == "BUY"}
-    assert sells == set(NEW_SELL) | EXTENSION_SELL | BATCH2_SELL | BATCH3_SELL | BATCH5_SELL | {
+    assert sells == set(NEW_SELL) | EXTENSION_SELL | BATCH2_SELL | BATCH3_SELL | BATCH5_SELL | FINAL_SELL | {
         k for k, v in EXISTING.items() if v[0] == "SELL"}
     assert (len(NEW_BUY), len(NEW_SELL)) == (14, 14)
-    assert (len(buys), len(sells)) == (80, 40)
+    assert (len(buys), len(sells)) == (82, 42)
     assert not buys & sells
 
 

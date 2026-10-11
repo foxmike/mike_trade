@@ -641,6 +641,10 @@ def _research_registry() -> Any:
     from mike_trade.strategies.buy.intraday_consolidation_breakout import (
         IntradayConsolidationBreakoutBuy,
     )
+    from mike_trade.strategies.buy.intraday_exhaustion_reversal import (
+        IntradayExhaustionReversalBuy,
+    )
+    from mike_trade.strategies.buy.volume_dry_up_pullback import VolumeDryUpPullbackBuy
     from mike_trade.strategies.sell.aroon_bearish_reversal import AroonBearishReversalSell
     from mike_trade.strategies.sell.cci_zero_line_breakdown import CciZeroLineBreakdownSell
     from mike_trade.strategies.sell.cci_bearish_reversal import CciBearishReversalSell
@@ -692,6 +696,10 @@ def _research_registry() -> Any:
     from mike_trade.strategies.sell.obv_breakdown import ObvBreakdownSell
     from mike_trade.strategies.sell.shooting_star_reversal import ShootingStarReversalSell
     from mike_trade.strategies.sell.supertrend_bearish_flip import SupertrendBearishFlipSell
+    from mike_trade.strategies.sell.volatility_expansion_reversal import (
+        VolatilityExpansionReversalSell,
+    )
+    from mike_trade.strategies.sell.volume_climax_exit import VolumeClimaxExitSell
     from mike_trade.strategies.short.short_bearish_engulfing import ShortBearishEngulfing
     from mike_trade.strategies.short.short_shooting_star_reversal import ShortShootingStarReversal
     from mike_trade.strategies.short.short_double_top_breakdown import ShortDoubleTopBreakdown
@@ -848,6 +856,8 @@ def _research_registry() -> Any:
         SupportBounceBuy,
         VWAPBandReversionBuy,
         IntradayConsolidationBreakoutBuy,
+        IntradayExhaustionReversalBuy,
+        VolumeDryUpPullbackBuy,
         AroonBearishReversalSell,
         CciZeroLineBreakdownSell,
         DmiBearishCrossoverSell,
@@ -885,6 +895,8 @@ def _research_registry() -> Any:
         ObvBreakdownSell,
         ShootingStarReversalSell,
         SupertrendBearishFlipSell,
+        VolatilityExpansionReversalSell,
+        VolumeClimaxExitSell,
     ):
         registry.register(cls)
     return registry
