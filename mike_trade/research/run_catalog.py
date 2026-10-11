@@ -6,6 +6,7 @@ import hashlib
 import json
 import os
 import threading
+from collections import OrderedDict
 from dataclasses import dataclass
 from datetime import UTC, datetime
 from decimal import Decimal
@@ -49,9 +50,221 @@ def _parse_time(value: object) -> datetime | None:
         return None
     try:
         dt = datetime.fromisoformat(value.replace("Z", "+00:00"))
+        if dt.tzinfo is None:
+            return dt.replace(tzinfo=UTC)
         return dt.astimezone(UTC)
     except (ValueError, TypeError):
         return None
+
+
+#: Bump whenever the persisted ``research_runs_index`` layout or derived metric
+#: definitions change. A stale persisted index is dropped and rebuilt from the
+#: immutable run artifacts on next use.
+INDEX_SCHEMA_VERSION = 3
+
+_ENTRY_SIDES = frozenset({"BUY", "SELL_SHORT"})
+_EXIT_SIDES = frozenset({"SELL", "BUY_TO_COVER"})
+
+
+def _fmt(value: Decimal | None, places: int = 6) -> str | None:
+    """Fixed-point string rounded to ``places`` (keeps API payloads free of 28-digit noise)."""
+    if value is None:
+        return None
+    return format(round(value, places), "f")
+
+
+def stop_policy_label(stop_cfg: dict[str, Any]) -> str | None:
+    """Short, filterable description of the recorded protective stop, or None.
+
+    Runs recorded before stop settings were captured have no stop information;
+    they return None (rendered as unrecorded) rather than a guessed default.
+    """
+    if not stop_cfg:
+        return None
+    spec = stop_cfg.get("protective_stop")
+    if isinstance(spec, dict):
+        kind = str(spec.get("type", "stop"))
+        parts = [
+            f"{key.replace('_percent', '')} {value}%"
+            if key.endswith("_percent")
+            else f"{key.replace('_amount', '')} ${value}"
+            for key, value in spec.items()
+            if key != "type"
+        ]
+        return f"{kind} {', '.join(parts)}".strip()
+    if isinstance(spec, str) and spec:
+        return spec
+    pct = stop_cfg.get("protective_trailing_percent")
+    if pct is not None:
+        return f"native_trailing {pct}%"
+    return None
+
+
+def compute_trade_stats(pnls: list[Decimal]) -> dict[str, Any]:
+    """Closed-trade statistics from realized P&L values (one per closed trade)."""
+    wins = sorted((p for p in pnls if p > ZERO), reverse=True)
+    losses = [p for p in pnls if p < ZERO]
+    gross_profit = sum(wins, ZERO)
+    gross_loss = -sum(losses, ZERO)
+    realized = sum(pnls, ZERO)
+    count = len(pnls)
+    top3 = sum(wins[:3], ZERO)
+    average_win = gross_profit / len(wins) if wins else None
+    average_loss = -gross_loss / len(losses) if losses else None
+    payoff = (
+        average_win / -average_loss
+        if average_win is not None and average_loss is not None and average_loss < ZERO
+        else None
+    )
+
+    text = _fmt
+
+    return {
+        "closed_trades": count,
+        "winning_trades": len(wins),
+        "losing_trades": len(losses),
+        "breakeven_trades": count - len(wins) - len(losses),
+        "gross_profit": _fmt(gross_profit),
+        "gross_loss": _fmt(gross_loss),
+        "realized_pnl": _fmt(realized),
+        "average_win": text(average_win),
+        "average_loss": text(average_loss),
+        "expectancy": text(realized / count if count else None),
+        "payoff_ratio": text(payoff),
+        "best_trade": text(max(pnls) if pnls else None),
+        "worst_trade": text(min(pnls) if pnls else None),
+        "top3_profit_share": text(
+            top3 / gross_profit * Decimal(100) if gross_profit > ZERO else None
+        ),
+        "realized_pnl_ex_top3": text(realized - top3 if pnls else None),
+    }
+
+
+def build_trade_records(
+    run: dict[str, Any],
+    manifest: dict[str, Any],
+    result: dict[str, Any],
+) -> list[dict[str, Any]]:
+    """Reconstruct per-cycle trade records from the recorded ledger.
+
+    Realized P&L comes from the recorded fills (average entry vs. average exit
+    price times exited quantity; sign flipped for shorts). Fees are not
+    deducted here: recorded runs carry zero fee assumptions, and slippage is
+    already embedded in the fill prices.
+    """
+    fills = list(result.get("fills", []))
+    cycles = list(result.get("cycles", []))
+    sig_idx, int_idx = build_signal_indexes(result)
+    versions = {
+        str(x.get("name")): str(x.get("version"))
+        for x in manifest.get("strategies", []) if isinstance(x, dict)
+    }
+
+    fills_by_symbol: dict[str, list[tuple[datetime, str, dict[str, Any]]]] = {}
+    for fill in fills:
+        at = _parse_time(fill.get("time"))
+        if at is None:
+            continue
+        symbol = str(fill.get("symbol", "")).upper()
+        fills_by_symbol.setdefault(symbol, []).append(
+            (at, str(fill.get("side", "")).upper(), fill)
+        )
+
+    records: list[dict[str, Any]] = []
+    for idx, cycle in enumerate(cycles):
+        opened = _parse_time(cycle.get("opened_at"))
+        closed = _parse_time(cycle.get("closed_at"))
+        symbol = str(cycle.get("symbol", "UNKNOWN")).upper()
+        cycle_id = str(cycle.get("cycle_id") or f"{run['run_id']}:{symbol}:{idx + 1}")
+
+        related: list[dict[str, Any]] = []
+        for at, side, fill in fills_by_symbol.get(symbol, []):
+            legacy_match = bool(
+                opened
+                and (
+                    (side in _ENTRY_SIDES and at >= opened and (closed is None or at < closed))
+                    or (side in _EXIT_SIDES and at > opened and (closed is None or at <= closed))
+                )
+            )
+            if fill.get("cycle_id") == cycle_id or (not fill.get("cycle_id") and legacy_match):
+                related.append(fill)
+
+        buys = [f for f in related if str(f.get("side")).upper() in _ENTRY_SIDES]
+        sells = [f for f in related if str(f.get("side")).upper() in _EXIT_SIDES]
+        direction = (
+            "SHORT" if any(str(f.get("side")).upper() == "SELL_SHORT" for f in buys) else "LONG"
+        )
+
+        attr = reconcile_trade_attribution(cycle, buys, sells, sig_idx, int_idx, versions)
+
+        bq = sum((_to_decimal(f.get("quantity")) or ZERO for f in buys), ZERO)
+        sq = sum((_to_decimal(f.get("quantity")) or ZERO for f in sells), ZERO)
+
+        def vwap(rows: list[dict[str, Any]], qty: Decimal) -> Decimal | None:
+            if qty <= ZERO:
+                return None
+            return sum(
+                (
+                    (_to_decimal(f.get("quantity")) or ZERO)
+                    * (_to_decimal(f.get("price")) or ZERO)
+                    for f in rows
+                ),
+                ZERO,
+            ) / qty
+
+        bp = vwap(buys, bq)
+        sp = vwap(sells, sq)
+        bn = bp * bq if bp is not None else None
+        sn = sp * sq if sp is not None else None
+
+        realized = None
+        if bp is not None and sp is not None and sq > ZERO:
+            realized = (sp - bp) * sq if direction == "LONG" else (bp - sp) * sq
+        if realized is None and closed is not None:
+            realized = _to_decimal(cycle.get("realized_pnl"))
+        basis = bp * sq if bp is not None else None
+        realized_return = (
+            realized / basis * Decimal("100")
+            if realized is not None and basis is not None and basis > ZERO
+            else None
+        )
+
+        records.append({
+            "trade_id": cycle_id,
+            "execution_mode": "BACKTEST",
+            "account_id": f"BACKTEST:{run['selection_id']}",
+            "research_run_id": run["selection_id"],
+            "symbol": symbol,
+            "cycle_id": cycle_id,
+            "entry_timestamp": _to_iso(opened),
+            "exit_timestamp": _to_iso(closed),
+            "entry_price": _fmt(bp),
+            "exit_price": _fmt(sp),
+            "filled_quantity": str(bq),
+            "exited_quantity": str(sq),
+            "open_quantity": str(max(ZERO, bq - sq)),
+            "entry_notional": _fmt(bn),
+            "exit_notional": _fmt(sn),
+            "realized_pnl": _fmt(realized),
+            "realized_return_percent": _fmt(realized_return),
+            "position_status": (
+                "CLOSED" if closed else ("PARTIALLY_CLOSED" if sq > ZERO else "OPEN")
+            ),
+            "entry_strategy_id": attr.entry_strategy_id,
+            "entry_strategy_version": attr.entry_strategy_version,
+            "entry_signal_id": attr.entry_signal_id,
+            "entry_signal_timestamp": attr.entry_signal_timestamp,
+            "exit_strategy_id": attr.exit_strategy_id,
+            "exit_strategy_version": attr.exit_strategy_version,
+            "exit_signal_id": attr.exit_signal_id,
+            "exit_signal_timestamp": attr.exit_signal_timestamp,
+            "exit_reason": attr.exit_reason,
+            "attribution_complete": attr.attribution_complete,
+            "attribution_source": attr.attribution_source,
+            "direction": direction,
+        })
+
+    return records
 
 
 @dataclass(frozen=True, slots=True)
@@ -74,9 +287,12 @@ class ResearchRunQuery:
     min_trades: int | None = None
     min_win_rate: float | None = None
     min_pnl: float | None = None
+    min_return: float | None = None
+    min_profit_factor: float | None = None
     max_drawdown: float | None = None
     window_start: datetime | None = None
     window_end: datetime | None = None
+    window_key: str | None = None
     execution_date: str | None = None
     sort_by: str = "execution_at"
     sort_order: str = "desc"
@@ -91,6 +307,125 @@ class ResearchRunQueryResult:
     page: int
     page_size: int
     total_pages: int
+
+
+#: Ordered (column, SQL type) pairs of the persisted index. Insert statements
+#: are generated from this list so schema and writer cannot drift apart.
+_INDEX_COLUMNS: tuple[tuple[str, str], ...] = (
+    ("selection_id", "VARCHAR PRIMARY KEY"),
+    ("run_id", "VARCHAR NOT NULL"),
+    ("execution_id", "VARCHAR"),
+    ("created_at", "TIMESTAMPTZ"),
+    ("execution_at", "TIMESTAMPTZ"),
+    ("completed_at", "TIMESTAMPTZ"),
+    ("symbols", "VARCHAR[]"),
+    ("period_role", "VARCHAR"),
+    ("window_start", "TIMESTAMPTZ"),
+    ("window_end", "TIMESTAMPTZ"),
+    ("window_key", "VARCHAR"),
+    ("dataset_id", "VARCHAR"),
+    ("dataset_hash", "VARCHAR"),
+    ("config_fingerprint", "VARCHAR"),
+    ("artifact_version", "VARCHAR"),
+    ("buy_strategies", "VARCHAR[]"),
+    ("sell_strategies", "VARCHAR[]"),
+    ("short_strategies", "VARCHAR[]"),
+    ("cover_strategies", "VARCHAR[]"),
+    ("stop_configuration_json", "TEXT"),
+    ("stop_policy", "VARCHAR"),
+    ("run_purpose", "VARCHAR"),
+    ("artifact_group", "VARCHAR"),
+    ("execution_mode", "VARCHAR"),
+    ("status", "VARCHAR"),
+    ("starting_capital", "VARCHAR"),
+    ("final_equity", "VARCHAR"),
+    ("net_pnl", "VARCHAR"),
+    ("return_percent", "VARCHAR"),
+    ("completed_trade_count", "INTEGER"),
+    ("win_rate", "VARCHAR"),
+    ("profit_factor", "VARCHAR"),
+    ("max_drawdown", "VARCHAR"),
+    ("data_source", "VARCHAR"),
+    ("duplicate_artifact_count", "INTEGER"),
+    ("execution_identity_uncertain", "BOOLEAN"),
+    ("provenance_json", "TEXT"),
+    ("locations", "VARCHAR[]"),
+    ("manifest_path", "VARCHAR NOT NULL"),
+    ("results_path", "VARCHAR NOT NULL"),
+    ("result_hash", "VARCHAR NOT NULL"),
+    ("net_pnl_num", "DOUBLE"),
+    ("return_percent_num", "DOUBLE"),
+    ("win_rate_num", "DOUBLE"),
+    ("max_drawdown_num", "DOUBLE"),
+    ("profit_factor_num", "DOUBLE"),
+    ("expectancy_num", "DOUBLE"),
+    ("top3_profit_share_num", "DOUBLE"),
+    ("best_trade_num", "DOUBLE"),
+    ("manifest_mtime", "DOUBLE NOT NULL"),
+    ("results_mtime", "DOUBLE NOT NULL"),
+    ("manifest_size", "BIGINT NOT NULL"),
+    ("results_size", "BIGINT NOT NULL"),
+    ("indexed_at", "TIMESTAMPTZ NOT NULL"),
+    ("payload_json", "TEXT NOT NULL"),
+)
+
+_SORT_COLUMNS = {
+    "execution_at": "execution_at",
+    "created_at": "created_at",
+    "net_pnl": "net_pnl_num",
+    "return_percent": "return_percent_num",
+    "win_rate": "win_rate_num",
+    "profit_factor": "profit_factor_num",
+    "max_drawdown": "max_drawdown_num",
+    "trade_count": "completed_trade_count",
+    "expectancy": "expectancy_num",
+    "top3_share": "top3_profit_share_num",
+    "symbols": "array_to_string(symbols, ' ')",
+}
+
+#: Aggregation dimensions. List dimensions are unnested (a run appears once in
+#: every group it belongs to); scalar dimensions use the column directly.
+_LIST_DIMENSIONS = {
+    "buy_strategy": "buy_strategies",
+    "sell_strategy": "sell_strategies",
+    "short_strategy": "short_strategies",
+    "cover_strategy": "cover_strategies",
+    "symbol": "symbols",
+}
+_SCALAR_DIMENSIONS = {
+    "stop_policy": "stop_policy",
+    "period_role": "period_role",
+    "run_purpose": "run_purpose",
+    "status": "status",
+    "window": "window_key",
+    "artifact_group": "artifact_group",
+}
+AGGREGATE_DIMENSIONS = tuple(_LIST_DIMENSIONS) + tuple(_SCALAR_DIMENSIONS)
+
+_FACET_KEYS = {
+    "buy_strategy": "buy_strategies",
+    "sell_strategy": "sell_strategies",
+    "short_strategy": "short_strategies",
+    "cover_strategy": "cover_strategies",
+    "symbol": "symbols",
+    "stop_policy": "stop_policies",
+    "period_role": "period_roles",
+    "run_purpose": "run_purposes",
+    "status": "statuses",
+    "window": "windows",
+    "artifact_group": "artifact_groups",
+}
+
+_AGGREGATE_SORTS = {
+    "run_count": "run_count",
+    "trade_count": "trade_count",
+    "median_return": "median_return",
+    "mean_return": "mean_return",
+    "profitable_rate": "profitable_run_rate",
+    "median_profit_factor": "median_profit_factor",
+    "median_drawdown": "median_drawdown",
+    "worst_drawdown": "worst_drawdown",
+}
 
 
 class ResearchRunCatalog:
@@ -113,6 +448,9 @@ class ResearchRunCatalog:
             self.catalog_path = Path(catalog_path).resolve()
         self._lock = threading.Lock()
         self._con: duckdb.DuckDBPyConnection | None = None
+        self._trade_cache: OrderedDict[
+            tuple[str, float, float], list[dict[str, Any]]
+        ] = OrderedDict()
         self._init_database()
 
     def _get_connection(self) -> duckdb.DuckDBPyConnection:
@@ -122,8 +460,12 @@ class ResearchRunCatalog:
             return self._con
         return duckdb.connect(str(self.catalog_path))
 
+    def _release(self, con: duckdb.DuckDBPyConnection) -> None:
+        if str(self.catalog_path) != ":memory:":
+            con.close()
+
     def _init_database(self) -> None:
-        """Create the DuckDB tables if they do not exist."""
+        """Create the DuckDB tables if they do not exist; rebuild a stale index."""
         with self._lock:
             if str(self.catalog_path) != ":memory:":
                 self.catalog_path.parent.mkdir(parents=True, exist_ok=True)
@@ -143,63 +485,25 @@ class ResearchRunCatalog:
                         updated_at TIMESTAMPTZ NOT NULL
                     );
                 """)
-                con.execute("""
-                    CREATE TABLE IF NOT EXISTS research_runs_index (
-                        selection_id VARCHAR PRIMARY KEY,
-                        run_id VARCHAR NOT NULL,
-                        execution_id VARCHAR,
-                        created_at TIMESTAMPTZ,
-                        execution_at TIMESTAMPTZ,
-                        completed_at TIMESTAMPTZ,
-                        symbols VARCHAR[],
-                        period_role VARCHAR,
-                        window_start TIMESTAMPTZ,
-                        window_end TIMESTAMPTZ,
-                        dataset_id VARCHAR,
-                        dataset_hash VARCHAR,
-                        config_fingerprint VARCHAR,
-                        artifact_version VARCHAR,
-                        buy_strategies VARCHAR[],
-                        sell_strategies VARCHAR[],
-                        short_strategies VARCHAR[],
-                        cover_strategies VARCHAR[],
-                        stop_configuration_json TEXT,
-                        run_purpose VARCHAR,
-                        artifact_group VARCHAR,
-                        execution_mode VARCHAR,
-                        status VARCHAR,
-                        starting_capital VARCHAR,
-                        final_equity VARCHAR,
-                        net_pnl VARCHAR,
-                        return_percent VARCHAR,
-                        completed_trade_count INTEGER,
-                        win_rate VARCHAR,
-                        profit_factor VARCHAR,
-                        max_drawdown VARCHAR,
-                        data_source VARCHAR,
-                        duplicate_artifact_count INTEGER,
-                        execution_identity_uncertain BOOLEAN,
-                        provenance_json TEXT,
-                        locations VARCHAR[],
-                        manifest_path VARCHAR NOT NULL,
-                        results_path VARCHAR NOT NULL,
-                        result_hash VARCHAR NOT NULL,
-                        net_pnl_num DOUBLE,
-                        return_percent_num DOUBLE,
-                        win_rate_num DOUBLE,
-                        max_drawdown_num DOUBLE,
-                        profit_factor_num DOUBLE,
-                        manifest_mtime DOUBLE NOT NULL,
-                        results_mtime DOUBLE NOT NULL,
-                        manifest_size BIGINT NOT NULL,
-                        results_size BIGINT NOT NULL,
-                        indexed_at TIMESTAMPTZ NOT NULL,
-                        payload_json TEXT NOT NULL
-                    );
-                """)
+                con.execute(
+                    "CREATE TABLE IF NOT EXISTS catalog_meta "
+                    "(key VARCHAR PRIMARY KEY, value VARCHAR)"
+                )
+                row = con.execute(
+                    "SELECT value FROM catalog_meta WHERE key = 'index_schema_version'"
+                ).fetchone()
+                if row is None or row[0] != str(INDEX_SCHEMA_VERSION):
+                    # Derived metrics changed: the index is a pure cache of the
+                    # immutable artifacts, so drop it and let sync() rebuild it.
+                    con.execute("DROP TABLE IF EXISTS research_runs_index")
+                    con.execute(
+                        "INSERT OR REPLACE INTO catalog_meta VALUES ('index_schema_version', ?)",
+                        [str(INDEX_SCHEMA_VERSION)],
+                    )
+                columns = ",\n".join(f"{name} {sql_type}" for name, sql_type in _INDEX_COLUMNS)
+                con.execute(f"CREATE TABLE IF NOT EXISTS research_runs_index ({columns})")
             finally:
-                if str(self.catalog_path) != ":memory:":
-                    con.close()
+                self._release(con)
 
     def sync(self, force: bool = False) -> int:
         """Incrementally crawl research_root and update the DuckDB index.
@@ -299,6 +603,10 @@ class ResearchRunCatalog:
                 # Now process distinct variant groups into research_runs_index
                 con.execute("DELETE FROM research_runs_index")
 
+                insert_sql = (
+                    f"INSERT INTO research_runs_index ({', '.join(n for n, _ in _INDEX_COLUMNS)}) "
+                    f"VALUES ({', '.join('?' for _ in _INDEX_COLUMNS)})"
+                )
                 indexed_count = 0
                 for (_, _variant), copies in groups.items():
                     copies.sort(key=lambda item: item["manifest_path"].as_posix())
@@ -329,26 +637,28 @@ class ResearchRunCatalog:
                     # Strategy roles recovery
                     buys, sells, shorts, covers = recover_run_strategies(manifest)
                     stop_cfg = recover_stop_configuration(manifest)
+                    stop_label = stop_policy_label(stop_cfg)
 
                     # Performance economics calculation
                     starting = _to_decimal(manifest.get("starting_capital"))
                     curve = result.get("equity_curve", [])
                     final = _to_decimal(curve[-1].get("equity")) if curve else None
 
-                    # Trade metrics
-                    cycles = result.get("cycles", [])
-                    closed_cycles = [c for c in cycles if c.get("closed_at")]
-                    completed_trade_count = len(closed_cycles)
-
-                    # Calculate win_rate, pnl, drawdown from cycles & equity curve
-                    wins = 0
-                    pnl_sum = ZERO
-                    for c in cycles:
-                        c_pnl = _to_decimal(c.get("realized_pnl"))
-                        if c_pnl is not None:
-                            pnl_sum += c_pnl
-                            if c_pnl > ZERO:
-                                wins += 1
+                    # Trade metrics: derived from the recorded fills ledger so legacy
+                    # artifacts without per-cycle realized_pnl still get real statistics.
+                    records = build_trade_records(
+                        {"run_id": run_id, "selection_id": selection_id}, manifest, result
+                    )
+                    completed_trade_count = sum(
+                        1 for r in records if r["position_status"] == "CLOSED"
+                    )
+                    pnls = [
+                        Decimal(r["realized_pnl"])
+                        for r in records
+                        if r["position_status"] == "CLOSED" and r["realized_pnl"] is not None
+                    ]
+                    stats = compute_trade_stats(pnls)
+                    pnl_sum = Decimal(stats["realized_pnl"])
 
                     if final is None and starting is not None:
                         final = starting + pnl_sum
@@ -364,8 +674,8 @@ class ResearchRunCatalog:
                         else None
                     )
                     win_rate = (
-                        (Decimal(wins) / Decimal(completed_trade_count) * Decimal(100))
-                        if completed_trade_count > 0
+                        (Decimal(stats["winning_trades"]) / Decimal(len(pnls)) * Decimal(100))
+                        if pnls
                         else None
                     )
 
@@ -382,16 +692,10 @@ class ResearchRunCatalog:
 
                     max_dd_pct = drawdown * Decimal(100)
 
-                    # Profit factor
-                    pnls = [
-                        _to_decimal(c.get("realized_pnl"))
-                        for c in cycles
-                        if c.get("realized_pnl") is not None
-                    ]
-                    pnls = [x for x in pnls if x is not None]
-                    pos = sum((x for x in pnls if x > ZERO), ZERO)
-                    neg = -sum((x for x in pnls if x < ZERO), ZERO)
-                    profit_factor = (pos / neg) if neg > ZERO else None
+                    gross_loss = Decimal(stats["gross_loss"])
+                    profit_factor = (
+                        Decimal(stats["gross_profit"]) / gross_loss if gross_loss > ZERO else None
+                    )
 
                     folder_labels = [Path(loc).parts[0] for loc in locations if Path(loc).parts]
                     known_groups = {
@@ -408,6 +712,11 @@ class ResearchRunCatalog:
                     completed_at = _parse_time(manifest.get("completed_at"))
                     win_start = _parse_time(manifest.get("window_start"))
                     win_end = _parse_time(manifest.get("window_end"))
+                    window_key = (
+                        f"{win_start.date().isoformat()}..{win_end.date().isoformat()}"
+                        if win_start and win_end
+                        else None
+                    )
 
                     symbols = [str(s) for s in manifest.get("symbols", [])]
                     period_role = manifest.get("period_role")
@@ -436,18 +745,20 @@ class ResearchRunCatalog:
                         "short_strategies": shorts,
                         "cover_strategies": covers,
                         "stop_configuration": stop_cfg,
+                        "stop_policy": stop_label,
                         "run_purpose": purpose,
                         "artifact_group": group,
                         "execution_mode": "BACKTEST",
                         "status": status,
                         "starting_capital": str(starting) if starting is not None else None,
                         "final_equity": str(final) if final is not None else None,
-                        "net_pnl": str(net) if net is not None else None,
-                        "return_percent": str(ret_pct) if ret_pct is not None else None,
+                        "net_pnl": _fmt(net),
+                        "return_percent": _fmt(ret_pct),
                         "completed_trade_count": completed_trade_count,
-                        "win_rate": str(win_rate) if win_rate is not None else None,
-                        "profit_factor": str(profit_factor) if profit_factor is not None else None,
-                        "max_drawdown": str(max_dd_pct),
+                        "win_rate": _fmt(win_rate),
+                        "profit_factor": _fmt(profit_factor),
+                        "max_drawdown": _fmt(max_dd_pct),
+                        "trade_stats": stats,
                         "data_source": source,
                         "duplicate_artifact_count": len(copies),
                         "execution_identity_uncertain": chosen["execution_id"] is None,
@@ -455,194 +766,199 @@ class ResearchRunCatalog:
                         "artifact_locations": locations,
                     }
 
-                    placeholders = ", ".join(["?"] * 50)
-                    con.execute(f"""
-                        INSERT INTO research_runs_index VALUES ({placeholders})
-                    """, [
-                        selection_id,
-                        run_id,
-                        chosen["execution_id"],
-                        started_at or created_at,
-                        started_at,
-                        completed_at,
-                        symbols,
-                        period_role,
-                        win_start,
-                        win_end,
-                        run_row["dataset_id"],
-                        run_row["dataset_hash"],
-                        run_row["config_fingerprint"],
-                        run_row["artifact_version"],
-                        buys,
-                        sells,
-                        shorts,
-                        covers,
-                        json.dumps(stop_cfg, sort_keys=True),
-                        purpose,
-                        group,
-                        "BACKTEST",
-                        status,
-                        run_row["starting_capital"],
-                        run_row["final_equity"],
-                        run_row["net_pnl"],
-                        run_row["return_percent"],
-                        completed_trade_count,
-                        run_row["win_rate"],
-                        run_row["profit_factor"],
-                        run_row["max_drawdown"],
-                        source,
-                        len(copies),
-                        chosen["execution_id"] is None,
-                        json.dumps(run_row["provenance"], sort_keys=True),
-                        locations,
-                        chosen["manifest_path"].as_posix(),
-                        chosen["results_path"].as_posix(),
-                        chosen["result_hash"],
-                        _to_float(net),
-                        _to_float(ret_pct),
-                        _to_float(win_rate),
-                        _to_float(max_dd_pct),
-                        _to_float(profit_factor),
-                        chosen["manifest_mtime"],
-                        chosen["results_mtime"],
-                        chosen["manifest_size"],
-                        chosen["results_size"],
-                        datetime.now(UTC),
-                        json.dumps(run_row, sort_keys=True),
-                    ])
+                    values: dict[str, Any] = {
+                        "selection_id": selection_id,
+                        "run_id": run_id,
+                        "execution_id": chosen["execution_id"],
+                        "created_at": started_at or created_at,
+                        "execution_at": started_at,
+                        "completed_at": completed_at,
+                        "symbols": symbols,
+                        "period_role": period_role,
+                        "window_start": win_start,
+                        "window_end": win_end,
+                        "window_key": window_key,
+                        "dataset_id": run_row["dataset_id"],
+                        "dataset_hash": run_row["dataset_hash"],
+                        "config_fingerprint": run_row["config_fingerprint"],
+                        "artifact_version": run_row["artifact_version"],
+                        "buy_strategies": buys,
+                        "sell_strategies": sells,
+                        "short_strategies": shorts,
+                        "cover_strategies": covers,
+                        "stop_configuration_json": json.dumps(stop_cfg, sort_keys=True),
+                        "stop_policy": stop_label,
+                        "run_purpose": purpose,
+                        "artifact_group": group,
+                        "execution_mode": "BACKTEST",
+                        "status": status,
+                        "starting_capital": run_row["starting_capital"],
+                        "final_equity": run_row["final_equity"],
+                        "net_pnl": run_row["net_pnl"],
+                        "return_percent": run_row["return_percent"],
+                        "completed_trade_count": completed_trade_count,
+                        "win_rate": run_row["win_rate"],
+                        "profit_factor": run_row["profit_factor"],
+                        "max_drawdown": run_row["max_drawdown"],
+                        "data_source": source,
+                        "duplicate_artifact_count": len(copies),
+                        "execution_identity_uncertain": chosen["execution_id"] is None,
+                        "provenance_json": json.dumps(run_row["provenance"], sort_keys=True),
+                        "locations": locations,
+                        "manifest_path": chosen["manifest_path"].as_posix(),
+                        "results_path": chosen["results_path"].as_posix(),
+                        "result_hash": chosen["result_hash"],
+                        "net_pnl_num": _to_float(net),
+                        "return_percent_num": _to_float(ret_pct),
+                        "win_rate_num": _to_float(win_rate),
+                        "max_drawdown_num": _to_float(max_dd_pct),
+                        "profit_factor_num": _to_float(profit_factor),
+                        "expectancy_num": _to_float(stats["expectancy"]),
+                        "top3_profit_share_num": _to_float(stats["top3_profit_share"]),
+                        "best_trade_num": _to_float(stats["best_trade"]),
+                        "manifest_mtime": chosen["manifest_mtime"],
+                        "results_mtime": chosen["results_mtime"],
+                        "manifest_size": chosen["manifest_size"],
+                        "results_size": chosen["results_size"],
+                        "indexed_at": datetime.now(UTC),
+                        "payload_json": json.dumps(run_row, sort_keys=True),
+                    }
+                    con.execute(insert_sql, [values[name] for name, _ in _INDEX_COLUMNS])
                     indexed_count += 1
 
                 return indexed_count
             finally:
-                if str(self.catalog_path) != ":memory:":
-                    con.close()
+                self._release(con)
 
-    def query_runs(self, query: ResearchRunQuery) -> ResearchRunQueryResult:
-        """Query research runs with server-side filtering, sorting, and pagination."""
-        # Ensure at least an initial sync has occurred
+    # ------------------------------------------------------------------ querying
+
+    def _ensure_indexed(self) -> None:
         with self._lock:
             con = self._get_connection()
             try:
                 row_count = con.execute("SELECT count(*) FROM research_runs_index").fetchone()[0]
             finally:
-                if str(self.catalog_path) != ":memory:":
-                    con.close()
-
+                self._release(con)
         if row_count == 0:
             self.sync()
+
+    @staticmethod
+    def _build_where(query: ResearchRunQuery) -> tuple[str, list[Any]]:
+        where_clauses: list[str] = []
+        params: list[Any] = []
+
+        if query.symbol:
+            where_clauses.append("list_contains(symbols, ?)")
+            params.append(query.symbol.strip().upper())
+
+        if query.period_role:
+            where_clauses.append("period_role = ?")
+            params.append(query.period_role.strip().upper())
+
+        for field, column in (
+            ("buy_strategy", "buy_strategies"),
+            ("sell_strategy", "sell_strategies"),
+            ("short_strategy", "short_strategies"),
+            ("cover_strategy", "cover_strategies"),
+        ):
+            value = getattr(query, field)
+            if value:
+                where_clauses.append(f"list_contains({column}, ?)")
+                params.append(value.strip())
+
+        if query.strategy:
+            strat = query.strategy.strip()
+            where_clauses.append(
+                "(list_contains(buy_strategies, ?) "
+                "OR list_contains(sell_strategies, ?) "
+                "OR list_contains(short_strategies, ?) "
+                "OR list_contains(cover_strategies, ?))"
+            )
+            params.extend([strat, strat, strat, strat])
+
+        if query.run_purpose:
+            where_clauses.append("run_purpose = ?")
+            params.append(query.run_purpose.strip())
+
+        if query.stop_policy:
+            value = query.stop_policy.strip()
+            where_clauses.append("(stop_policy = ? OR lower(stop_configuration_json) LIKE ?)")
+            params.extend([value, f"%{value.lower()}%"])
+
+        if query.status:
+            where_clauses.append("status = ?")
+            params.append(query.status.strip())
+
+        if query.min_trades is not None:
+            where_clauses.append("completed_trade_count >= ?")
+            params.append(query.min_trades)
+
+        if query.min_win_rate is not None:
+            where_clauses.append("win_rate_num >= ?")
+            params.append(float(query.min_win_rate))
+
+        if query.min_pnl is not None:
+            where_clauses.append("net_pnl_num >= ?")
+            params.append(float(query.min_pnl))
+
+        if query.min_return is not None:
+            where_clauses.append("return_percent_num >= ?")
+            params.append(float(query.min_return))
+
+        if query.min_profit_factor is not None:
+            where_clauses.append("profit_factor_num >= ?")
+            params.append(float(query.min_profit_factor))
+
+        if query.max_drawdown is not None:
+            where_clauses.append("max_drawdown_num <= ?")
+            params.append(float(query.max_drawdown))
+
+        if query.window_start is not None:
+            where_clauses.append("window_start >= ?")
+            params.append(query.window_start.astimezone(UTC))
+
+        if query.window_end is not None:
+            where_clauses.append("window_end <= ?")
+            params.append(query.window_end.astimezone(UTC))
+
+        if query.window_key:
+            where_clauses.append("window_key = ?")
+            params.append(query.window_key.strip())
+
+        if query.execution_date:
+            where_clauses.append("CAST(execution_at AS DATE) = CAST(? AS DATE)")
+            params.append(query.execution_date.strip())
+
+        if query.search:
+            search_term = f"%{query.search.strip().lower()}%"
+            where_clauses.append("""(
+                lower(run_id) LIKE ? OR
+                lower(selection_id) LIKE ? OR
+                lower(coalesce(run_purpose, '')) LIKE ? OR
+                lower(coalesce(stop_policy, '')) LIKE ? OR
+                lower(array_to_string(symbols, ' ')) LIKE ? OR
+                lower(array_to_string(buy_strategies, ' ')) LIKE ? OR
+                lower(array_to_string(sell_strategies, ' ')) LIKE ? OR
+                lower(array_to_string(short_strategies, ' ')) LIKE ? OR
+                lower(array_to_string(cover_strategies, ' ')) LIKE ?
+            )""")
+            params.extend([search_term] * 9)
+
+        where_sql = ("WHERE " + " AND ".join(where_clauses)) if where_clauses else ""
+        return where_sql, params
+
+    def query_runs(self, query: ResearchRunQuery) -> ResearchRunQueryResult:
+        """Query research runs with server-side filtering, sorting, and pagination."""
+        self._ensure_indexed()
 
         with self._lock:
             con = self._get_connection()
             try:
-                where_clauses: list[str] = []
-                params: list[Any] = []
-
-                if query.symbol:
-                    sym = query.symbol.strip().upper()
-                    where_clauses.append("list_contains(symbols, ?)")
-                    params.append(sym)
-
-                if query.period_role:
-                    where_clauses.append("period_role = ?")
-                    params.append(query.period_role.strip().upper())
-
-                if query.buy_strategy:
-                    where_clauses.append("list_contains(buy_strategies, ?)")
-                    params.append(query.buy_strategy.strip())
-
-                if query.sell_strategy:
-                    where_clauses.append("list_contains(sell_strategies, ?)")
-                    params.append(query.sell_strategy.strip())
-
-                if query.short_strategy:
-                    where_clauses.append("list_contains(short_strategies, ?)")
-                    params.append(query.short_strategy.strip())
-
-                if query.cover_strategy:
-                    where_clauses.append("list_contains(cover_strategies, ?)")
-                    params.append(query.cover_strategy.strip())
-
-                if query.strategy:
-                    strat = query.strategy.strip()
-                    where_clauses.append(
-                        "(list_contains(buy_strategies, ?) "
-                        "OR list_contains(sell_strategies, ?) "
-                        "OR list_contains(short_strategies, ?) "
-                        "OR list_contains(cover_strategies, ?))"
-                    )
-                    params.extend([strat, strat, strat, strat])
-
-                if query.run_purpose:
-                    where_clauses.append("run_purpose = ?")
-                    params.append(query.run_purpose.strip())
-
-                if query.stop_policy:
-                    where_clauses.append("lower(stop_configuration_json) LIKE ?")
-                    params.append(f"%{query.stop_policy.strip().lower()}%")
-
-                if query.status:
-                    where_clauses.append("status = ?")
-                    params.append(query.status.strip())
-
-                if query.min_trades is not None:
-                    where_clauses.append("completed_trade_count >= ?")
-                    params.append(query.min_trades)
-
-                if query.min_win_rate is not None:
-                    where_clauses.append("win_rate_num >= ?")
-                    params.append(float(query.min_win_rate))
-
-                if query.min_pnl is not None:
-                    where_clauses.append("net_pnl_num >= ?")
-                    params.append(float(query.min_pnl))
-
-                if query.max_drawdown is not None:
-                    where_clauses.append("max_drawdown_num <= ?")
-                    params.append(float(query.max_drawdown))
-
-                if query.window_start is not None:
-                    where_clauses.append("window_start >= ?")
-                    params.append(query.window_start.astimezone(UTC))
-
-                if query.window_end is not None:
-                    where_clauses.append("window_end <= ?")
-                    params.append(query.window_end.astimezone(UTC))
-
-                if query.execution_date:
-                    where_clauses.append("CAST(execution_at AS DATE) = CAST(? AS DATE)")
-                    params.append(query.execution_date.strip())
-
-                if query.search:
-                    search_term = f"%{query.search.strip().lower()}%"
-                    where_clauses.append("""(
-                        lower(run_id) LIKE ? OR
-                        lower(selection_id) LIKE ? OR
-                        lower(coalesce(run_purpose, '')) LIKE ? OR
-                        lower(array_to_string(symbols, ' ')) LIKE ? OR
-                        lower(array_to_string(buy_strategies, ' ')) LIKE ? OR
-                        lower(array_to_string(sell_strategies, ' ')) LIKE ?
-                    )""")
-                    params.extend([search_term] * 6)
-
-                where_sql = ("WHERE " + " AND ".join(where_clauses)) if where_clauses else ""
-
-                # Total count
+                where_sql, params = self._build_where(query)
                 count_query = f"SELECT count(*) FROM research_runs_index {where_sql}"
                 total = con.execute(count_query, params).fetchone()[0]
 
-                # Sorting
-                sort_columns = {
-                    "execution_at": "execution_at",
-                    "created_at": "created_at",
-                    "net_pnl": "net_pnl_num",
-                    "return_percent": "return_percent_num",
-                    "win_rate": "win_rate_num",
-                    "profit_factor": "profit_factor_num",
-                    "max_drawdown": "max_drawdown_num",
-                    "trade_count": "completed_trade_count",
-                    "symbols": "array_to_string(symbols, ' ')",
-                }
-                order_col = sort_columns.get(query.sort_by, "execution_at")
+                order_col = _SORT_COLUMNS.get(query.sort_by, "execution_at")
                 order_dir = "DESC" if query.sort_order.lower() == "desc" else "ASC"
 
                 limit = max(1, min(500, query.page_size))
@@ -667,11 +983,191 @@ class ResearchRunCatalog:
                     total_pages=total_pages,
                 )
             finally:
-                if str(self.catalog_path) != ":memory:":
-                    con.close()
+                self._release(con)
+
+    def run_counts_by_symbol(self) -> tuple[dict[str, int], dict[str, str]]:
+        """Return ``(run_count, latest_selection_id)`` per symbol across the full index."""
+        self._ensure_indexed()
+        with self._lock:
+            con = self._get_connection()
+            try:
+                rows = con.execute("""
+                    SELECT sym, count(*) AS cnt,
+                           arg_max(selection_id, coalesce(execution_at, created_at)) AS latest
+                    FROM research_runs_index, UNNEST(symbols) AS expanded(sym)
+                    GROUP BY sym
+                """).fetchall()
+            finally:
+                self._release(con)
+        return (
+            {str(r[0]).upper(): int(r[1]) for r in rows},
+            {str(r[0]).upper(): str(r[2]) for r in rows},
+        )
+
+    def get_facets(self) -> dict[str, Any]:
+        """Distinct filter values with run counts over the *entire* catalog."""
+        self._ensure_indexed()
+
+        def option_rows(con: duckdb.DuckDBPyConnection, sql: str) -> list[dict[str, Any]]:
+            return [
+                {"value": str(value), "count": int(count)}
+                for value, count in con.execute(sql).fetchall()
+                if value is not None and str(value) != ""
+            ]
+
+        with self._lock:
+            con = self._get_connection()
+            try:
+                facets: dict[str, Any] = {}
+                for name, column in _LIST_DIMENSIONS.items():
+                    facets[_FACET_KEYS[name]] = option_rows(
+                        con,
+                        f"""SELECT v, count(*) FROM research_runs_index, UNNEST({column}) AS e(v)
+                            GROUP BY v ORDER BY count(*) DESC, v""",
+                    )
+                for name, column in _SCALAR_DIMENSIONS.items():
+                    facets[_FACET_KEYS[name]] = option_rows(
+                        con,
+                        f"""SELECT {column}, count(*) FROM research_runs_index
+                            GROUP BY {column} ORDER BY count(*) DESC, {column}""",
+                    )
+                total, unrecorded_stop, first_window, last_window = con.execute("""
+                    SELECT count(*), count(*) FILTER (WHERE stop_policy IS NULL),
+                           min(window_start), max(window_end)
+                    FROM research_runs_index
+                """).fetchone()
+                bounds = con.execute("""
+                    SELECT min(return_percent_num), max(return_percent_num),
+                           max(max_drawdown_num), max(completed_trade_count)
+                    FROM research_runs_index
+                """).fetchone()
+            finally:
+                self._release(con)
+
+        facets.update({
+            "total_runs": int(total),
+            "runs_without_stop_policy": int(unrecorded_stop),
+            "earliest_window_start": _to_iso(first_window),
+            "latest_window_end": _to_iso(last_window),
+            "bounds": {
+                "min_return_percent": bounds[0],
+                "max_return_percent": bounds[1],
+                "max_drawdown_percent": bounds[2],
+                "max_trade_count": bounds[3],
+            },
+        })
+        return facets
+
+    def aggregate_runs(
+        self,
+        query: ResearchRunQuery,
+        group_by: str,
+        *,
+        sort_by: str = "median_return",
+        sort_order: str = "desc",
+        min_runs: int = 1,
+        limit: int = 100,
+        include_multi_symbol: bool = False,
+    ) -> dict[str, Any]:
+        """Group the filtered runs and summarize each group's *run-level* metrics.
+
+        Every statistic is computed across independent runs, each measured
+        against its own starting capital. Capital, P&L and returns are
+        deliberately never summed; only trade counts (which are additive) are.
+        """
+        if group_by not in AGGREGATE_DIMENSIONS:
+            raise ValueError(f"unsupported group_by: {group_by}")
+        self._ensure_indexed()
+
+        where_sql, params = self._build_where(query)
+        extra: list[str] = []
+        if group_by in _LIST_DIMENSIONS:
+            column = _LIST_DIMENSIONS[group_by]
+            source = f"research_runs_index, UNNEST({column}) AS g(grp)"
+            if group_by == "symbol" and not include_multi_symbol:
+                extra.append("len(symbols) = 1")
+        else:
+            source = "research_runs_index"
+        key_expr = "grp" if group_by in _LIST_DIMENSIONS else _SCALAR_DIMENSIONS[group_by]
+
+        clauses = [where_sql[len("WHERE "):]] if where_sql else []
+        clauses.extend(extra)
+        full_where = ("WHERE " + " AND ".join(clauses)) if clauses else ""
+        order_col = _AGGREGATE_SORTS.get(sort_by, "median_return")
+        order_dir = "DESC" if sort_order.lower() == "desc" else "ASC"
+        limit = max(1, min(500, limit))
+
+        sql = f"""
+            SELECT coalesce(CAST({key_expr} AS VARCHAR), 'UNRECORDED') AS grp_key,
+                   count(*) AS run_count,
+                   coalesce(sum(completed_trade_count), 0) AS trade_count,
+                   count(*) FILTER (WHERE net_pnl_num > 0) AS profitable_runs,
+                   100.0 * count(*) FILTER (WHERE net_pnl_num > 0) / count(*)
+                       AS profitable_run_rate,
+                   min(return_percent_num) AS min_return,
+                   quantile_cont(return_percent_num, 0.25) AS p25_return,
+                   median(return_percent_num) AS median_return,
+                   quantile_cont(return_percent_num, 0.75) AS p75_return,
+                   max(return_percent_num) AS max_return,
+                   avg(return_percent_num) AS mean_return,
+                   median(profit_factor_num) AS median_profit_factor,
+                   count(profit_factor_num) AS profit_factor_runs,
+                   median(win_rate_num) AS median_win_rate,
+                   median(max_drawdown_num) AS median_drawdown,
+                   max(max_drawdown_num) AS worst_drawdown,
+                   median(expectancy_num) AS median_expectancy,
+                   median(top3_profit_share_num) AS median_top3_share,
+                   max(top3_profit_share_num) AS max_top3_share,
+                   count(DISTINCT array_to_string(symbols, ',')) AS distinct_symbol_sets,
+                   arg_max(selection_id, return_percent_num) AS best_run_id,
+                   arg_min(selection_id, return_percent_num) AS worst_run_id,
+                   min(window_start) AS first_window_start,
+                   max(window_end) AS last_window_end,
+                   count(DISTINCT window_key) AS distinct_windows,
+                   count(DISTINCT concat_ws('|', array_to_string(symbols, ','), net_pnl,
+                         completed_trade_count, window_key)) AS distinct_outcomes
+            FROM {source}
+            {full_where}
+            GROUP BY grp_key
+            HAVING count(*) >= ?
+            ORDER BY {order_col} {order_dir} NULLS LAST, grp_key
+            LIMIT ?
+        """
+        with self._lock:
+            con = self._get_connection()
+            try:
+                cursor = con.execute(sql, [*params, max(1, min_runs), limit])
+                names = [d[0] for d in cursor.description]
+                rows = [dict(zip(names, row, strict=True)) for row in cursor.fetchall()]
+                considered = con.execute(
+                    f"SELECT count(*) FROM research_runs_index {where_sql}", params
+                ).fetchone()[0]
+                multi_symbol_excluded = 0
+                if group_by == "symbol" and not include_multi_symbol:
+                    multi_symbol_excluded = con.execute(
+                        f"""SELECT count(*) FROM research_runs_index
+                            {where_sql + (' AND ' if where_sql else 'WHERE ')} len(symbols) > 1""",
+                        params,
+                    ).fetchone()[0]
+            finally:
+                self._release(con)
+
+        groups = []
+        for row in rows:
+            row["first_window_start"] = _to_iso(row["first_window_start"])
+            row["last_window_end"] = _to_iso(row["last_window_end"])
+            row["key"] = row.pop("grp_key")
+            groups.append(row)
+        return {
+            "group_by": group_by,
+            "runs_considered": int(considered),
+            "multi_symbol_runs_excluded": int(multi_symbol_excluded),
+            "groups": groups,
+        }
 
     def get_run(self, identifier: str) -> dict[str, Any] | None:
         """Find a single run by selection_id, execution_id, or run_id."""
+        self._ensure_indexed()
         with self._lock:
             con = self._get_connection()
             try:
@@ -679,8 +1175,9 @@ class ResearchRunCatalog:
                     SELECT payload_json, manifest_path, results_path
                     FROM research_runs_index
                     WHERE selection_id = ? OR execution_id = ? OR run_id = ?
+                    ORDER BY (selection_id = ?) DESC
                     LIMIT 1
-                """, [identifier, identifier, identifier]).fetchone()
+                """, [identifier, identifier, identifier, identifier]).fetchone()
                 if not row:
                     return None
                 data = json.loads(row[0])
@@ -688,140 +1185,43 @@ class ResearchRunCatalog:
                 data["_results_path"] = row[2]
                 return data
             finally:
-                if str(self.catalog_path) != ":memory:":
-                    con.close()
+                self._release(con)
 
     def get_trades_for_run(self, identifier: str) -> list[dict[str, Any]]:
-        """Return all trades for a run with recovered strategy attribution."""
+        """Return all trades for a run with recovered strategy attribution.
+
+        Records are cached per artifact (path + mtimes) because journal paging
+        and sorting would otherwise re-derive them from the ledger on every
+        request. Callers receive a shallow copy and must not mutate the rows.
+        """
         run = self.get_run(identifier)
         if not run:
             raise LookupError(identifier)
 
         manifest_path = Path(run["_manifest_path"])
         results_path = Path(run["_results_path"])
+        try:
+            cache_key = (
+                run["selection_id"],
+                manifest_path.stat().st_mtime,
+                results_path.stat().st_mtime,
+            )
+        except OSError:
+            cache_key = None
+        if cache_key is not None:
+            with self._lock:
+                cached = self._trade_cache.get(cache_key)
+                if cached is not None:
+                    self._trade_cache.move_to_end(cache_key)
+                    return list(cached)
 
         manifest = json.loads(manifest_path.read_text(encoding="utf-8"))
         result = json.loads(results_path.read_text(encoding="utf-8"))
+        records = build_trade_records(run, manifest, result)
 
-        fills = list(result.get("fills", []))
-        cycles = list(result.get("cycles", []))
-        sig_idx, int_idx = build_signal_indexes(result)
-        versions = {
-            str(x.get("name")): str(x.get("version"))
-            for x in manifest.get("strategies", []) if isinstance(x, dict)
-        }
-
-        entry_sides = frozenset({"BUY", "BUY_TO_COVER"})
-        exit_sides = frozenset({"SELL", "SELL_SHORT"})
-
-        records: list[dict[str, Any]] = []
-
-        for idx, cycle in enumerate(cycles):
-            opened = _parse_time(cycle.get("opened_at"))
-            closed = _parse_time(cycle.get("closed_at"))
-            symbol = str(cycle.get("symbol", "UNKNOWN")).upper()
-            cycle_id = str(cycle.get("cycle_id") or f"{run['run_id']}:{symbol}:{idx + 1}")
-
-            related = []
-            for fill in fills:
-                at = _parse_time(fill.get("time"))
-                if str(fill.get("symbol", "")).upper() != symbol or at is None:
-                    continue
-                side = str(fill.get("side", "")).upper()
-                legacy_match = bool(
-                    opened
-                    and (
-                        (side in entry_sides and at >= opened and (closed is None or at < closed))
-                        or (side in exit_sides and at > opened and (closed is None or at <= closed))
-                    )
-                )
-                if fill.get("cycle_id") == cycle_id or (not fill.get("cycle_id") and legacy_match):
-                    related.append(fill)
-
-            buys = [f for f in related if str(f.get("side")).upper() in entry_sides]
-            sells = [f for f in related if str(f.get("side")).upper() in exit_sides]
-
-            # Reconcile attribution using deterministic matching
-            attr = reconcile_trade_attribution(cycle, buys, sells, sig_idx, int_idx, versions)
-
-            bq = sum((_to_decimal(f.get("quantity")) or ZERO for f in buys), ZERO)
-            sq = sum((_to_decimal(f.get("quantity")) or ZERO for f in sells), ZERO)
-
-            bp = (
-                sum(
-                    (
-                        (_to_decimal(f.get("quantity")) or ZERO)
-                        * (_to_decimal(f.get("price")) or ZERO)
-                        for f in buys
-                    ),
-                    ZERO,
-                )
-                / bq
-                if bq > ZERO
-                else None
-            )
-            sp = (
-                sum(
-                    (
-                        (_to_decimal(f.get("quantity")) or ZERO)
-                        * (_to_decimal(f.get("price")) or ZERO)
-                        for f in sells
-                    ),
-                    ZERO,
-                )
-                / sq
-                if sq > ZERO
-                else None
-            )
-
-            bn = bp * bq if bp is not None else None
-            sn = sp * sq if sp is not None else None
-
-            # Calculate realized PnL
-            realized = None
-            if bp is not None and sp is not None and sq > ZERO:
-                realized = (sp - bp) * sq
-            realized_return = (
-                realized / bn * Decimal("100")
-                if realized is not None and bn is not None and bn > ZERO
-                else None
-            )
-
-            records.append({
-                "trade_id": cycle_id,
-                "execution_mode": "BACKTEST",
-                "account_id": f"BACKTEST:{run['selection_id']}",
-                "research_run_id": run["selection_id"],
-                "symbol": symbol,
-                "cycle_id": cycle_id,
-                "entry_timestamp": _to_iso(opened),
-                "exit_timestamp": _to_iso(closed),
-                "entry_price": str(bp) if bp is not None else None,
-                "exit_price": str(sp) if sp is not None else None,
-                "filled_quantity": str(bq),
-                "exited_quantity": str(sq),
-                "open_quantity": str(max(ZERO, bq - sq)),
-                "entry_notional": str(bn) if bn is not None else None,
-                "exit_notional": str(sn) if sn is not None else None,
-                "realized_pnl": str(realized) if realized is not None else None,
-                "realized_return_percent": (
-                    str(realized_return) if realized_return is not None else None
-                ),
-                "position_status": (
-                    "CLOSED" if closed else ("PARTIALLY_CLOSED" if sq > ZERO else "OPEN")
-                ),
-                "entry_strategy_id": attr.entry_strategy_id,
-                "entry_strategy_version": attr.entry_strategy_version,
-                "entry_signal_id": attr.entry_signal_id,
-                "entry_signal_timestamp": attr.entry_signal_timestamp,
-                "exit_strategy_id": attr.exit_strategy_id,
-                "exit_strategy_version": attr.exit_strategy_version,
-                "exit_signal_id": attr.exit_signal_id,
-                "exit_signal_timestamp": attr.exit_signal_timestamp,
-                "exit_reason": attr.exit_reason,
-                "attribution_complete": attr.attribution_complete,
-                "attribution_source": attr.attribution_source,
-                "direction": "LONG",
-            })
-
-        return records
+        if cache_key is not None:
+            with self._lock:
+                self._trade_cache[cache_key] = records
+                while len(self._trade_cache) > 8:
+                    self._trade_cache.popitem(last=False)
+        return list(records)

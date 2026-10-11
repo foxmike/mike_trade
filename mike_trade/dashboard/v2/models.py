@@ -79,6 +79,7 @@ class ResearchRunResponse(_V2Model):
     short_strategies: list[str] = Field(default_factory=list)
     cover_strategies: list[str] = Field(default_factory=list)
     stop_configuration: dict[str, Any] = Field(default_factory=dict)
+    stop_policy: str | None = None
     run_purpose: str | None = None
     artifact_group: str | None = None
     execution_mode: str = "BACKTEST"
@@ -91,6 +92,7 @@ class ResearchRunResponse(_V2Model):
     win_rate: str | None = None
     profit_factor: str | None = None
     max_drawdown: str | None = None
+    trade_stats: dict[str, Any] = Field(default_factory=dict)
     data_source: str | None = None
     duplicate_artifact_count: int = 1
     execution_identity_uncertain: bool = False
@@ -110,7 +112,20 @@ class ResearchRunDetailResponse(_V2Model):
     run: ResearchRunResponse
     configuration: dict[str, Any] = Field(default_factory=dict)
     artifact_locations: list[str] = Field(default_factory=list)
+    #: Mark-to-market account equity, bucket-downsampled to ``equity_curve_points``
+    #: (extremes preserved). Includes unrealized P&L of open positions.
     equity_curve: list[dict[str, Any]] = Field(default_factory=list)
+    equity_curve_total_points: int = 0
+    #: Drawdown from running equity peak (percent), computed on the full curve.
+    drawdown_curve: list[dict[str, Any]] = Field(default_factory=list)
+    #: Closed-trade realized P&L only, stepped at each trade exit.
+    trade_series: list[dict[str, Any]] = Field(default_factory=list)
+    trade_series_total: int = 0
+    pnl_distribution: dict[str, Any] = Field(default_factory=dict)
+    period_performance: dict[str, Any] = Field(default_factory=dict)
+    drawdown_detail: dict[str, Any] = Field(default_factory=dict)
+    assumptions: dict[str, Any] = Field(default_factory=dict)
+    metric_definitions: dict[str, str] = Field(default_factory=dict)
     diagnostics: dict[str, Any] = Field(default_factory=dict)
 
 
@@ -157,6 +172,10 @@ class ResearchTradeListResponse(_V2Model):
     items: list[ResearchTradeItemResponse]
     available_entry_strategies: list[str] = Field(default_factory=list)
     available_exit_reasons: list[str] = Field(default_factory=list)
+    available_symbols: list[str] = Field(default_factory=list)
+    available_directions: list[str] = Field(default_factory=list)
+    #: Totals over the whole filtered set (not just the current page).
+    filtered_summary: dict[str, Any] = Field(default_factory=dict)
 
 
 class ResearchCompareRequest(_V2Model):
@@ -166,3 +185,68 @@ class ResearchCompareRequest(_V2Model):
 class ResearchCompareResponse(_V2Model):
     runs: list[ResearchRunResponse]
     comparative_metrics: dict[str, Any] = Field(default_factory=dict)
+    #: Per selection_id: normalized (start = 100) equity curve, downsampled.
+    curves: dict[str, list[dict[str, Any]]] = Field(default_factory=dict)
+    #: Configuration fields whose values differ between the compared runs.
+    differences: list[dict[str, Any]] = Field(default_factory=list)
+
+
+class ResearchFacetOption(_V2Model):
+    value: str
+    count: int
+
+
+class ResearchFacetsResponse(_V2Model):
+    total_runs: int = 0
+    runs_without_stop_policy: int = 0
+    buy_strategies: list[ResearchFacetOption] = Field(default_factory=list)
+    sell_strategies: list[ResearchFacetOption] = Field(default_factory=list)
+    short_strategies: list[ResearchFacetOption] = Field(default_factory=list)
+    cover_strategies: list[ResearchFacetOption] = Field(default_factory=list)
+    symbols: list[ResearchFacetOption] = Field(default_factory=list)
+    stop_policies: list[ResearchFacetOption] = Field(default_factory=list)
+    period_roles: list[ResearchFacetOption] = Field(default_factory=list)
+    run_purposes: list[ResearchFacetOption] = Field(default_factory=list)
+    statuses: list[ResearchFacetOption] = Field(default_factory=list)
+    windows: list[ResearchFacetOption] = Field(default_factory=list)
+    artifact_groups: list[ResearchFacetOption] = Field(default_factory=list)
+    earliest_window_start: str | None = None
+    latest_window_end: str | None = None
+    bounds: dict[str, Any] = Field(default_factory=dict)
+
+
+class ResearchAggregateGroup(_V2Model):
+    key: str
+    run_count: int
+    distinct_outcomes: int = 0
+    trade_count: int = 0
+    profitable_runs: int = 0
+    profitable_run_rate: float | None = None
+    min_return: float | None = None
+    p25_return: float | None = None
+    median_return: float | None = None
+    p75_return: float | None = None
+    max_return: float | None = None
+    mean_return: float | None = None
+    median_profit_factor: float | None = None
+    profit_factor_runs: int = 0
+    median_win_rate: float | None = None
+    median_drawdown: float | None = None
+    worst_drawdown: float | None = None
+    median_expectancy: float | None = None
+    median_top3_share: float | None = None
+    max_top3_share: float | None = None
+    distinct_symbol_sets: int = 0
+    distinct_windows: int = 0
+    first_window_start: str | None = None
+    last_window_end: str | None = None
+    best_run_id: str | None = None
+    worst_run_id: str | None = None
+
+
+class ResearchAggregateResponse(_V2Model):
+    group_by: str
+    runs_considered: int
+    multi_symbol_runs_excluded: int = 0
+    groups: list[ResearchAggregateGroup]
+    notes: list[str] = Field(default_factory=list)
