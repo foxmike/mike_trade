@@ -663,6 +663,32 @@ class _PreviousVWAP:
         return result
 
 
+def _warmup_candle_bars(
+    bars: Sequence[object], warmup_bars: int, now: datetime
+) -> tuple[object, ...]:
+    """The completed warmup bars to seed the candle builder with.
+
+    The last ``warmup_bars + 1`` bars, extended back to today's regular-session open when ``now``
+    falls on a trading day, so a restart in the middle of a session still gives strategies that
+    need the whole current session (a complete-from-open prefix) their history.  Nothing is
+    created: only bars the venue actually reported are returned.
+    """
+    tail_start = len(bars) - (warmup_bars + 1)
+    start = max(tail_start, 0)
+    day = now.astimezone(exchange_calendar.NEW_YORK).date()
+    try:
+        trading = exchange_calendar.is_trading_day(day)
+    except ValueError:
+        trading = False
+    if trading:
+        open_utc = exchange_calendar.session_for(day).open_utc
+        for index, bar in enumerate(bars):
+            if cast(Any, bar).timestamp >= open_utc:
+                start = min(start, index)
+                break
+    return tuple(bars[start:])
+
+
 class ProductionMarketData:
     """Shared cache/candle/context engine used by stream, replay, and offline tests."""
 
@@ -893,7 +919,7 @@ class AlpacaProductionMarketData(ProductionMarketData):
                     and symbol in self._reference_symbols
                 ):
                     self._market_status_monitor.add_bar(c)
-            for bar in completed_bars[-(self.warmup_bars + 1):]:
+            for bar in _warmup_candle_bars(completed_bars, self.warmup_bars, now):
                 item = cast(Any, bar)
                 self.candles.on_minute_bar(
                     MinuteBar(

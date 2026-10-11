@@ -202,10 +202,13 @@ def test_gap_exhaustion_boundaries() -> None:
     # decline exactly at the threshold counts: (110-102)/110 = 7.2727..%
     assert ge(gap_bars(), ref, {"min_decline_pct": D("7.27")}).is_signal
     quiet_ge(gap_bars(), ref, {"min_decline_pct": D("7.28")})
-    # gap exactly at the threshold: edge 100, open 98.98 -> 1.02/102 = 1.0%
-    exact = gap_bars(["98.99", "99.5", "100.2"], open_="98.98")
-    assert ge(exact, reference(history(DOWN), "98.98"), {"min_gap_pct": D("1")}).is_signal
-    quiet_ge(exact, reference(history(DOWN), "98.98"), {"min_gap_pct": D("1.01")})
+    # gap exactly at the threshold, measured against the previous LOW (100): open 99.00 -> 1.00%
+    exact = gap_bars(["99.2", "99.6", "100.2"], open_="99")
+    assert ge(exact, reference(history(DOWN), "99"), {"min_gap_pct": D("1")}).is_signal
+    quiet_ge(exact, reference(history(DOWN), "99"), {"min_gap_pct": D("1.01")})
+    # ... and 99.01 is just short of 1% of the low (it would still pass against the close, 102)
+    just_short = gap_bars(["99.2", "99.6", "100.2"], open_="99.01")
+    quiet_ge(just_short, reference(history(DOWN), "99.01"), {"min_gap_pct": D("1")})
 
 
 def test_gap_exhaustion_does_not_fabricate_a_trend_from_missing_or_unknown_history() -> None:

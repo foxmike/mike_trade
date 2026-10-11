@@ -2387,7 +2387,7 @@ the example 60 (see section 13) to be ready at start-up.
 These methods are advisory exits from owned long positions. All evaluate completed
 regular-session M1 candles through `SellRule`; they do not submit orders, size positions,
 manage stops, or open shorts. The registered library then contained 75 BUY and 40 SELL
-strategies (115 total; see §18 for the current 182-strategy distribution).
+strategies (115 total; see §18 for the current 184-strategy distribution).
 
 Recursive Supertrend, OBV, and A/D calculations use JSON-safe snapshot/restore state and
 resume through `advance()`, so bounded candle history never silently restarts them. Finite
@@ -2452,8 +2452,8 @@ None of these entry primitives sizes a position, places an order, or defines an 
 in the same `StrategyRegistry`, which keeps one `_SIDE_BASES` entry per role and rejects a class whose
 spec side does not match its base. A SELL signal is never an implicit SHORT and a COVER signal is never
 an implicit BUY; there is no automatic reversal. Signal ids are `make_signal_id(...)` over the
-role, so the same bar yields four distinct ids. The library holds 85 BUY, 41 SELL, 28 SHORT and 28 COVER
-strategies = 182 (5 BUY strategies were added by the reviewed backlog batches: `docs/BUY_SELL_BACKLOG_BATCH_A.md`, `docs/BUY_SELL_BACKLOG_BATCH_B.md`, `docs/BUY_SELL_BACKLOG_REVIEW.md`; a further 5 BUY and 1 SELL by backlog batches C and D as corrected in `docs/BUY_SELL_BACKLOG_CD_REVIEW.md`; integration record: `docs/STRATEGY_LIBRARY_176_INTEGRATION.md`; 25 SHORT strategies added by Batches A and B: `docs/SHORT_STRATEGIES_BATCH_A.md`, `docs/SHORT_STRATEGIES_BATCH_B.md`; 25 COVER strategies added by Batches A and B: `docs/COVER_STRATEGIES_BATCH_A.md`, `docs/COVER_STRATEGIES_BATCH_B.md`). The original 156-candidate inventory covers BUY and SELL candidates only and is unchanged.
+role, so the same bar yields four distinct ids. The library holds 87 BUY, 41 SELL, 28 SHORT and 28 COVER
+strategies = 184 (5 BUY strategies were added by the reviewed backlog batches: `docs/BUY_SELL_BACKLOG_BATCH_A.md`, `docs/BUY_SELL_BACKLOG_BATCH_B.md`, `docs/BUY_SELL_BACKLOG_REVIEW.md`; a further 5 BUY and 1 SELL by backlog batches C and D as corrected in `docs/BUY_SELL_BACKLOG_CD_REVIEW.md`; `gap_exhaustion` and `bull_pennant_breakout` by `docs/BUY_BACKLOG_FINAL_PATTERNS.md`, reviewed in `docs/STRATEGY_LIBRARY_184_PATTERN_REVIEW.md`; integration record: `docs/STRATEGY_LIBRARY_176_INTEGRATION.md`; 25 SHORT strategies added by Batches A and B: `docs/SHORT_STRATEGIES_BATCH_A.md`, `docs/SHORT_STRATEGIES_BATCH_B.md`; 25 COVER strategies added by Batches A and B: `docs/COVER_STRATEGIES_BATCH_A.md`, `docs/COVER_STRATEGIES_BATCH_B.md`). The original 156-candidate inventory covers BUY and SELL candidates only and is unchanged.
 
 Strategy-level contract (unchanged `StrategySpec`/`ParameterSchema`/state conventions):
 

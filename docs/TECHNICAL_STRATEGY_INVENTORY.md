@@ -8,14 +8,14 @@ This is the authoritative reconciliation of the original 156 BUY/SELL candidates
 |---|---:|
 | Original BUY candidates | 106 |
 | Original SELL candidates | 50 |
-| Implemented BUY strategies | 68 |
+| Implemented BUY strategies | 70 |
 | Implemented SELL strategies | 24 |
 | Existing equivalents | 48 |
 | Pending candidates | 0 |
-| Deferred candidates | 16 |
+| Deferred candidates | 14 |
 
-The registered library contains 85 BUY and 41 SELL strategies (plus 28 SHORT and 28 COVER, 182 in total) after the general BUY,
-current-session BUY, SELL batch-3, BUY batch-4, SELL batch-5, gap BUY batch-6, and backlog batches A, B, C and D additions. Keltner Squeeze maps to `volatility_squeeze_breakout`. There are 48 equivalent candidate rows;
+The registered library contains 87 BUY and 41 SELL strategies (plus 28 SHORT and 28 COVER, 184 in total) after the general BUY,
+current-session BUY, SELL batch-3, BUY batch-4, SELL batch-5, gap BUY batch-6, and backlog batches A, B, C and D and final-pattern (`gap_exhaustion`, `bull_pennant_breakout`) additions. Keltner Squeeze maps to `volatility_squeeze_breakout`. There are 48 equivalent candidate rows;
 Volume Surge Breakout maps to `momentum_breakout` and Donchian Trend Following to
 `donchian_channel_breakout`; “RSI Reversal” and “RSI Overbought Exit” describe one existing
 rule, and NR4 uses the NR7 implementation with period=4.
@@ -109,7 +109,7 @@ Each row records the original candidate name, role, original inventory group, su
 | Gap Reversal | BUY | gap_trading | technical | gap_trading | IMPLEMENTED | gap_reversal | BreakPoint, Gap Down Trading Strategy: https://brkpoint.in/tradeguide/learn/gap-down-trading-strategy/ | After a gap down, completed close crosses the opening-range high and closes above session VWAP. |
 | Gap Continuation | BUY | gap_trading | technical | gap_trading | EXISTING_EQUIVALENT | gap_and_go | Existing module: mike_trade/strategies/buy/gap_and_go.py | The selected long gap-continuation rule is the gap-up opening-range breakout already registered as Gap and Go. |
 | Opening Gap Breakout | BUY | gap_trading | technical | gap_trading | EXISTING_EQUIVALENT | gap_and_go | Existing module: mike_trade/strategies/buy/gap_and_go.py | Gap-up plus opening-range high breakout is exactly the registered Gap and Go rule; no duplicate class. |
-| Gap Exhaustion | BUY | gap_trading | technical | gap_trading | IMPLEMENTED | gap_exhaustion | Concept: the exhaustion gap - a late, heavy-volume gap in an extended move that is soon closed (Edwards & Magee; Murphy). The numeric thresholds are engineering choices. | After 4 consecutive lower session closes (>= 3% total), the session opens >= 1% below the previous low on >= 1.5x per-minute volume, and a completed M1 close is the first to climb back above the previous low. Uses the new consecutive-session history in SessionReference (production warmup already loads ~14 days of M1 bars); fails closed on any missing session or minute. |
+| Gap Exhaustion | BUY | gap_trading | technical | gap_trading | IMPLEMENTED | gap_exhaustion | Concept: the exhaustion gap - a late, heavy-volume gap in an extended move that is soon closed (Edwards & Magee; Murphy). The numeric thresholds are engineering choices. | After 4 consecutive lower session closes (>= 3% total), the session opens >= 1% (of that low) below the previous low on >= 1.5x per-minute volume, and a completed M1 close is the first to climb back above the previous low. Uses the consecutive-session history in SessionReference (production warmup loads 14 calendar days of M1 bars, about nine sessions); fails closed on any missing session or minute, so thin-feed symbols may rarely qualify. BACKTEST windows must themselves contain the five prior sessions. |
 | First Pullback Buy | BUY | intraday_session | technical | intraday_session | IMPLEMENTED | first_pullback_buy | Warrior Trading, Pull Back Day Trading Strategies: https://www.warriortrading.com/pull-back-trading-strategy/ (page not retrievable during review; citation unverified; an earlier cash-account URL did not match the topic and was removed) | First higher-high/higher-low high-volume impulse, first shallow lower-volume pullback, then completed close over pullback highs on renewed volume before the configured morning cutoff. Only the first impulse and its first pullback are ever considered per session: an invalidated setup is not re-armed. Impulse bars must be regular-session bars. Exact percentages/volumes are engineering defaults. |
 | Opening Drive | BUY | intraday_session | technical | intraday_session | IMPLEMENTED | opening_drive | Mike Bellafiore, The PlayBook; Swoopr, Opening Drive: https://www.getswoopr.com/technical-analysis/price-action/opening-drive/ | First configurable M1 bars are bullish with strictly rising closes and no post-first-bar trade below the session open. |
 | Morning Momentum Continuation | BUY | intraday_session | technical | intraday_session | EXISTING_EQUIVALENT | first_pullback_buy | Warrior Trading morning momentum pullback pattern: https://www.warriortrading.com/pull-back-trading-strategy/ | Partial coverage: for the selected morning impulse → shallow pullback → renewed-volume continuation reading, `first_pullback_buy` supplies the time-bounded rule (first pullback only). It is not an exact equivalent of the umbrella: later pullbacks, flag/consolidation continuations and non-pullback drives are covered by other existing strategies (`opening_range_breakout`, `opening_drive`, `intraday_consolidation_breakout`) or not at all. |

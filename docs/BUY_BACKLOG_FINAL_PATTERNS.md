@@ -1,9 +1,11 @@
+> **Review note:** counts and the gap-size denominator in this branch record are superseded by `docs/STRATEGY_LIBRARY_184_PATTERN_REVIEW.md`.
+
 # BUY Backlog — Final Complex Chart Patterns
 
 Four remaining BUY candidates were investigated against what the strategy contract can actually supply.
 Result: **two implemented** (`gap_exhaustion`, `bull_pennant_breakout`) and **two left
 `BLOCKED_BY_INFRASTRUCTURE`** (`volatility_contraction_pattern`, `cup_and_handle`).
-Library: 82 BUY, 40 SELL, 28 SHORT, 28 COVER = **178** (production and research registries identical).
+Library (branch-local, before integration): 82 BUY, 40 SELL, 28 SHORT, 28 COVER = **178**; the reviewed integrated library is 87/41/28/28 = **184** (production and research registries identical).
 
 ## What the data contract provides (inspected)
 
@@ -39,13 +41,13 @@ feed the tracker. Existing fields and strategies are unchanged.
 **Rule.** (The numbers are engineering defaults; see Sources.)
 1. *Decline:* the last `trend_sessions` (4) session-to-session closes are each lower than the one before
    (needs `trend_sessions + 1` = 5 consecutive complete sessions), totalling at least `min_decline_pct` (3%) of the first close.
-2. *Gap:* the session open is below the previous session's **low** by at least `min_gap_pct` (1%) of the previous close.
+2. *Gap:* the session open is below the previous session's **low** by at least `min_gap_pct` (1%) of that low (corrected in review).
 3. *Participation:* today's per-minute volume so far is at least `min_relative_volume` (1.5) times the trend sessions'
    per-minute average (0 disables; unknown session volume fails closed).
 4. *Confirmation:* the completed M1 close that is the **first** to rise above the previous low (every earlier close of the
    session is at or below it). The signal is that bar; the reversal is therefore observed, not predicted.
 
-Today's bars must run from the 09:30 open with no missing minute (`INSUFFICIENT_DATA` otherwise). Warmup `2` bars plus the
+Today's bars must run from the 09:30 open with no missing minute (`INSUFFICIENT_DATA` otherwise). Warmup `1` bar (the first minute may already be the confirmation) plus the
 session history. Distinct from `gap_fill` (reclaim of the open after any gap-down), `gap_reversal` (opening range + VWAP) and
 `previous_day_low_reversal` (single-bar sweep and reclaim): it adds the multi-session decline, an opening gap beyond the prior
 low, abnormal participation and first closure.

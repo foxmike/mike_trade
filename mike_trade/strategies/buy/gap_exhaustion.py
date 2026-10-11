@@ -34,7 +34,7 @@ if TYPE_CHECKING:
 STRATEGY_ID = "gap_exhaustion"
 STRATEGY_VERSION = "1.0.0"
 TIMEFRAME = CandleTimeframe.M1
-WARMUP_BARS = 2
+WARMUP_BARS = 1
 HUNDRED = Decimal(100)
 MINUTE_SECONDS = 60
 
@@ -71,7 +71,7 @@ _SPEC = StrategySpec(
                 "min_gap_pct", ParameterKind.DECIMAL, Decimal(1), Decimal("0.1"), Decimal(20),
                 description=(
                     "Minimum distance of the session open below the previous session's low, percent "
-                    "of the previous close. Default 1."
+                    "of that low. Default 1."
                 ),
             ),
             ParameterSpec(
@@ -141,7 +141,7 @@ class GapExhaustionBuy(BuyStrategy):
             return blocked(self.spec, context, reason)
         reference = complete_session_reference(context)
         found = current_session_bars(context)
-        if reference is None or found is None or len(found[1]) < 2:
+        if reference is None or found is None:
             return insufficient(self.spec, context)
         trend = reference.history[-(sessions + 1):]
         if len(trend) < sessions + 1:
@@ -150,13 +150,15 @@ class GapExhaustionBuy(BuyStrategy):
         previous = reference.previous
         assert previous is not None and reference.current_open is not None
         latest, edge = bars[-1], previous.low
+        if reference.current_open != bars[0].open:
+            return insufficient(self.spec, context)  # tracker and context disagree on the open
 
         # 1. a decline: every one of the last `sessions` session-to-session closes is lower
         declining = all(b.close < a.close for a, b in zip(trend, trend[1:], strict=False))
         drop_pct = (trend[0].close - trend[-1].close) / trend[0].close * HUNDRED
-        # 2. an opening gap below the previous session's low (not merely below its close); a
-        #    positive gap percentage already means open < previous low
-        gap_pct = (edge - reference.current_open) / previous.close * HUNDRED
+        # 2. an opening gap below the previous session's low (not merely below its close), sized
+        #    as a percentage of that low; a positive value already means open < previous low
+        gap_pct = (edge - reference.current_open) / edge * HUNDRED
         # 3. participation: per-minute volume of today so far against the trend sessions
         volume_ok = True
         if rel_volume > 0:

@@ -18,6 +18,7 @@ from mike_trade.strategies.base import (
     StrategySpec,
     TriggerKind,
 )
+from mike_trade.strategies.buy._session import latest_session_bars
 from mike_trade.strategies.closed_bar import (
     REASON_CODES,
     STATE_LAST_SIGNAL_BAR,
@@ -29,7 +30,7 @@ from mike_trade.strategies.closed_bar import (
     insufficient,
     require_param,
 )
-from mike_trade.strategies.indicators.patterns import contiguous, first_close_above, line_value
+from mike_trade.strategies.indicators.patterns import first_close_above, line_value
 from mike_trade.strategies.indicators.windows import swing_pivots
 
 if TYPE_CHECKING:
@@ -130,8 +131,9 @@ class BullPennantBreakoutBuy(BuyStrategy):
             "Entry signal only: no stops, sizing, targets, or orders.",
             "Intraday adaptation of a daily-chart pattern on M1 bars; two-point boundaries through "
             "the last two swing highs and the last two swing lows after the pole top.",
-            "Pole and pennant bars must be consecutive completed bars; a hole yields "
-            "INSUFFICIENT_DATA. Regular session only; stale data never signals.",
+            "Pole and pennant bars must be consecutive completed bars inside the signal bar's "
+            "regular session (pre-market and prior-session bars never form the pattern); a hole "
+            "yields INSUFFICIENT_DATA. Stale data never signals.",
             "Distinct from bull_flag_breakout (no converging lines), triangle_breakout and "
             "ascending_triangle_breakout (no flagpole, no duration limit); a pennant breakout can also "
             "satisfy triangle_breakout.",
@@ -177,7 +179,8 @@ class BullPennantBreakoutBuy(BuyStrategy):
         triggered = False
         if shortest <= len(pennant) <= longest:
             start = max(0, top - pole_bars)
-            if not contiguous(window[start:]):
+            # pole and pennant must be adjacent bars wholly inside the signal bar's regular session
+            if latest_session_bars(context, len(window) - start) is None:
                 return insufficient(self.spec, context)
             peak = base[top].high
             floor = min(bar.low for bar in base[start:top + 1])
