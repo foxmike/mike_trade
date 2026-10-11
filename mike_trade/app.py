@@ -291,6 +291,20 @@ from mike_trade.strategies.sell.ichimoku_bearish_exit import IchimokuBearishExit
 from mike_trade.strategies.sell.obv_breakdown import ObvBreakdownSell
 from mike_trade.strategies.sell.shooting_star_reversal import ShootingStarReversalSell
 from mike_trade.strategies.sell.supertrend_bearish_flip import SupertrendBearishFlipSell
+from mike_trade.strategies.short.short_bearish_engulfing import ShortBearishEngulfing
+from mike_trade.strategies.short.short_shooting_star_reversal import ShortShootingStarReversal
+from mike_trade.strategies.short.short_double_top_breakdown import ShortDoubleTopBreakdown
+from mike_trade.strategies.short.short_head_and_shoulders_breakdown import (
+    ShortHeadAndShouldersBreakdown,
+)
+from mike_trade.strategies.short.short_trendline_breakdown import ShortTrendlineBreakdown
+from mike_trade.strategies.short.short_previous_swing_low_break import ShortPreviousSwingLowBreak
+from mike_trade.strategies.short.short_lower_low_confirmation import ShortLowerLowConfirmation
+from mike_trade.strategies.short.short_failed_breakout_reversal import ShortFailedBreakoutReversal
+from mike_trade.strategies.short.short_bear_flag_breakdown import ShortBearFlagBreakdown
+from mike_trade.strategies.short.short_bearish_momentum_divergence import (
+    ShortBearishMomentumDivergence,
+)
 
 __all__ = [
     "AppSettings",
@@ -2629,6 +2643,16 @@ def build_runtime(
         ShortObvBreakdown,
         ShortCciZeroLineBreakdown,
         ShortAdxBearishTrendConfirmation,
+        ShortBearishEngulfing,
+        ShortShootingStarReversal,
+        ShortDoubleTopBreakdown,
+        ShortHeadAndShouldersBreakdown,
+        ShortTrendlineBreakdown,
+        ShortPreviousSwingLowBreak,
+        ShortLowerLowConfirmation,
+        ShortFailedBreakoutReversal,
+        ShortBearFlagBreakdown,
+        ShortBearishMomentumDivergence,
         CoverEmaBullishCrossover,
         CoverSupertrendBullishFlip,
         CoverDonchianBreakout,
