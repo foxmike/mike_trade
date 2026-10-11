@@ -214,6 +214,12 @@ class _CycleRow:
     symbol: str
     state: str
     remaining: Decimal
+    #: "LONG" or "SHORT": broker positions are only comparable within one direction.
+    direction: str = "LONG"
+
+    @property
+    def exit_side(self) -> OrderSide:
+        return OrderSide.SELL if self.direction == "LONG" else OrderSide.BUY_TO_COVER
 
 
 @dataclass(frozen=True, slots=True)
@@ -360,7 +366,7 @@ class AccountReconciler:
                 candidates = tuple(
                     fill
                     for fill in external_fills
-                    if fill.symbol == cycle.symbol and fill.side is OrderSide.SELL
+                    if fill.symbol == cycle.symbol and fill.side is cycle.exit_side
                 )
                 linked_open = self._cycle_has_linked_open_order(cycle.cycle_id, open_ids)
                 if (
@@ -492,25 +498,29 @@ class AccountReconciler:
     def _load_local_snapshot(self) -> _LocalSnapshot:
         conn, scope = self._writer.connection, self.account_scope_id
         cycle_rows = conn.execute(
-            "SELECT cycle_id,symbol,state FROM position_cycles "
+            "SELECT cycle_id,symbol,state,direction FROM position_cycles "
             "WHERE account_scope_id=? ORDER BY created_at,rowid",
             (scope,),
         ).fetchall()
         cycles: list[_CycleRow] = []
-        for cycle_id, symbol, state in cycle_rows:
+        for cycle_id, symbol, state, direction in cycle_rows:
             quantities = conn.execute(
                 "SELECT side,quantity FROM fills WHERE account_scope_id=? AND cycle_id=?",
                 (scope, cycle_id),
             ).fetchall()
-            bought = sum(
-                (decimal_from_db(qty) for side, qty in quantities if side == "BUY"),
+            # LONG: bought - sold.  SHORT: shorted - covered.  Remaining is a magnitude.
+            opening, closing = (
+                ("BUY", "SELL") if direction == "LONG" else ("SELL_SHORT", "BUY_TO_COVER")
+            )
+            opened = sum(
+                (decimal_from_db(qty) for side, qty in quantities if side == opening),
                 start=_ZERO,
             )
-            sold = sum(
-                (decimal_from_db(qty) for side, qty in quantities if side == "SELL"),
+            closed = sum(
+                (decimal_from_db(qty) for side, qty in quantities if side == closing),
                 start=_ZERO,
             )
-            cycles.append(_CycleRow(cycle_id, symbol, state, bought - sold))
+            cycles.append(_CycleRow(cycle_id, symbol, state, opened - closed, direction))
 
         intent_rows = conn.execute(
             "SELECT client_order_id,intent_id,cycle_id,symbol,status FROM order_intents "
@@ -605,10 +615,12 @@ class AccountReconciler:
         unmanaged: list[UnmanagedHolding] = []
         reasons: dict[str, list[str]] = {}
         for position in positions:
+            # A managed cycle only owns a broker position of ITS direction: an external short
+            # against a local long cycle (or the reverse) is unmanaged, never merged.
             managed = [
                 cycle
                 for cycle in cycles_by_symbol.get(position.symbol, ())
-                if cycle.remaining > 0
+                if cycle.remaining > 0 and cycle.direction == position.direction.value
             ]
             if not managed:
                 unmanaged.append(
@@ -632,6 +644,21 @@ class AccountReconciler:
                 reasons.setdefault(symbol, []).append("MULTIPLE_MANAGED_CYCLES")
             for cycle in cycles:
                 broker_qty = position_by_symbol.get(symbol)
+                if (
+                    broker_qty is not None
+                    and cycle.remaining > _ZERO
+                    and broker_qty.direction.value != cycle.direction
+                ):
+                    mismatch = ReconciliationDriftItem(
+                        "POSITION_DIRECTION_MISMATCH",
+                        symbol,
+                        cycle.cycle_id,
+                        {"local_direction": cycle.direction},
+                        {"broker_direction": broker_qty.direction.value},
+                    )
+                    drifts.append(mismatch)
+                    reasons.setdefault(symbol, []).append(mismatch.drift_type)
+                    broker_qty = None  # opposite books are never summed or netted
                 actual = _ZERO if broker_qty is None else broker_qty.quantity
                 if cycle.remaining != actual:
                     item = ReconciliationDriftItem(
@@ -668,7 +695,7 @@ class AccountReconciler:
                                 BrokerOrderStatus.UNKNOWN,
                                 BrokerOrderStatus.PENDING_CANCEL,
                             }
-                            or protective_order.side is not OrderSide.SELL
+                            or protective_order.side is not cycle.exit_side
                             or protective_order.quantity
                             - protective_order.filled_quantity
                             != actual
@@ -873,7 +900,7 @@ class AccountReconciler:
             if order is None:
                 return False
             self._require_order_scope(order)
-            if order.status not in _TERMINAL or order.side is not OrderSide.SELL:
+            if order.status not in _TERMINAL or not order.side.is_exit:
                 return False
             observed[order.broker_order_id] = order
             self._orders.upsert_broker_order(order, intent_id=None)

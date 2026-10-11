@@ -487,20 +487,46 @@ class FillProcessor:
         if event.side is not None and event.side is not side:
             raise ValueError("fill side does not match order")
         row = conn.execute(
-            "SELECT quantity,average_entry_price FROM positions "
+            "SELECT quantity,average_entry_price,direction FROM positions "
             "WHERE account_scope_id=? AND symbol=?",
             (scope, symbol),
         ).fetchone()
         held = decimal_from_db(row[0]) if row else ZERO
         avg = decimal_from_db(row[1]) if row else ZERO
+        held_direction = str(row[2]) if row else None
         cost = held * avg
-        if side is OrderSide.SELL and delta > held:
+        entry = side.is_entry  # BUY or SELL_SHORT opens/adds; SELL or BUY_TO_COVER closes
+        fill_direction = side.direction.value
+        if held > ZERO and held_direction != fill_direction:
+            # A fill against the opposite position would reverse it (or close the wrong
+            # book): never applied.  Recorded as drift for the reconciler, position untouched.
             drift = self._drift(
                 conn,
                 key,
                 event,
                 now,
-                "CRITICAL_OVERSELL",
+                "CRITICAL_DIRECTION_MISMATCH",
+                {"held_qty": held, "held_direction": held_direction},
+                {
+                    "fill_side": side.value,
+                    "fill_qty": delta,
+                    "client_order_id": event.client_order_id,
+                },
+            )
+            if cycle_id:
+                conn.execute(
+                    "UPDATE position_cycles SET state='EXITING',updated_at=? "
+                    "WHERE account_scope_id=? AND cycle_id=? AND state!='CLOSED'",
+                    (to_db_timestamp(now), scope, cycle_id),
+                )
+            return None, drift
+        if not entry and delta > held:
+            drift = self._drift(
+                conn,
+                key,
+                event,
+                now,
+                "CRITICAL_OVERSELL" if side is OrderSide.SELL else "CRITICAL_OVERCOVER",
                 {"held_qty": held},
                 {"sell_qty": delta, "client_order_id": event.client_order_id},
             )
@@ -511,8 +537,8 @@ class FillProcessor:
                     (to_db_timestamp(now), scope, cycle_id),
                 )
             return None, drift
-        new_held = held + delta if side is OrderSide.BUY else held - delta
-        new_cost = cost + delta * price if side is OrderSide.BUY else cost - avg * delta
+        new_held = held + delta if entry else held - delta
+        new_cost = cost + delta * price if entry else cost - avg * delta
         if new_held == ZERO:
             if cycle_id:
                 conn.execute(
@@ -526,7 +552,7 @@ class FillProcessor:
             return PositionFillState(cycle_id or "", symbol, ZERO, ZERO, None), None
         average = new_cost / new_held
         if cycle_id:
-            state = "OPEN" if side is OrderSide.BUY else "EXITING"
+            state = "OPEN" if entry else "EXITING"
             conn.execute(
                 "UPDATE position_cycles SET state=?,opened_at=COALESCE(opened_at,?),updated_at=? "
                 "WHERE account_scope_id=? AND cycle_id=?",
@@ -535,15 +561,16 @@ class FillProcessor:
         conn.execute(
             "INSERT INTO positions(account_scope_id,symbol,cycle_id,management,direction,"
             "quantity,average_entry_price,market_price,market_value,unrealized_pl,as_of) "
-            "VALUES (?,?,?,'MANAGED','LONG',?,?,NULL,NULL,NULL,?) "
+            "VALUES (?,?,?,'MANAGED',?,?,?,NULL,NULL,NULL,?) "
             "ON CONFLICT(account_scope_id,symbol) DO UPDATE SET "
-            "cycle_id=excluded.cycle_id,management='MANAGED',direction='LONG',"
+            "cycle_id=excluded.cycle_id,management='MANAGED',direction=excluded.direction,"
             "quantity=excluded.quantity,average_entry_price=excluded.average_entry_price,"
             "as_of=excluded.as_of",
             (
                 scope,
                 symbol,
                 cycle_id,
+                fill_direction,
                 decimal_to_db(new_held),
                 decimal_to_db(average),
                 to_db_timestamp(event.occurred_at),
@@ -562,7 +589,7 @@ class FillProcessor:
             "WHERE account_scope_id=? AND intent_id=?",
             (scope, intent_id),
         ).fetchone()
-        if not intent or intent[0] != "BUY":
+        if not intent or intent[0] not in ("BUY", "SELL_SHORT"):
             return
         reservation_id = f"rsv:{intent_id}"
         row = conn.execute(

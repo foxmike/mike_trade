@@ -1,4 +1,4 @@
-"""Race-safe coordination of long-position sell intents.
+"""Race-safe coordination of position-closing intents (SELL a long, BUY_TO_COVER a short).
 
 The coordinator is deliberately a small orchestration boundary.  It owns no
 broker connection and no durable store: the broker order port, clock, and event
@@ -46,7 +46,9 @@ _WORKING = frozenset(
     }
 )
 _STOP_TYPES = frozenset({"STOP", "STOP_LIMIT", "TRAILING_STOP"})
-_STRATEGY_KINDS = frozenset({"STRATEGY", "STRATEGY_EXIT", "EXIT_LONG"})
+#: The order side that closes each position direction.
+_EXIT_SIDE = {"LONG": "SELL", "SHORT": "BUY_TO_COVER"}
+_STRATEGY_KINDS = frozenset({"STRATEGY", "STRATEGY_EXIT", "EXIT_LONG", "EXIT_SHORT"})
 _MANUAL_KINDS = frozenset({"MANUAL", "MANUAL_CLOSE", "CLOSE_ALL", "FLATTEN"})
 _SAFETY_KINDS = frozenset(
     {"SAFETY", "SAFETY_EXIT", "RISK_SAFETY", "DAILY_LOSS", "RECONCILIATION", "END_OF_DAY"}
@@ -201,11 +203,17 @@ class SellIntent:
     minimum_hold: timedelta = timedelta(0)
     protective_order_id: str | None = None
     last_confirmed_stop_price: Decimal | None = None
+    #: "LONG" (default; the exit is a SELL) or "SHORT" (the exit is a BUY_TO_COVER).
+    direction: str | Enum = "LONG"
 
     def __post_init__(self) -> None:
         object.__setattr__(self, "position_id", _text(self.position_id, "position_id"))
         object.__setattr__(self, "symbol", _symbol(self.symbol))
         object.__setattr__(self, "quantity", _decimal(self.quantity, "quantity", positive=True))
+        direction = _enum_text(self.direction)
+        if direction not in _EXIT_SIDE:
+            raise ValueError("direction must be LONG or SHORT")
+        object.__setattr__(self, "direction", direction)
         kind = _enum_text(self.kind)
         if kind not in _STRATEGY_KINDS | _MANUAL_KINDS | _SAFETY_KINDS:
             raise ValueError("kind must be a strategy, manual, or safety exit")
@@ -239,6 +247,10 @@ class SellIntent:
             )
         if self.last_confirmed_stop_price is not None:
             _decimal(self.last_confirmed_stop_price, "last_confirmed_stop_price", positive=True)
+
+    @property
+    def exit_side(self) -> str:
+        return _EXIT_SIDE[str(self.direction)]
 
     @property
     def is_strategy(self) -> bool:
@@ -382,7 +394,7 @@ def detect_orphan_orders(
             continue
         side = _enum_text(_field(order, "side"))
         order_type = _enum_text(_field(order, "order_type", "type"))
-        if side != "SELL" and order_type not in _STOP_TYPES:
+        if side not in ("SELL", "BUY_TO_COVER") and order_type not in _STOP_TYPES:
             continue
         broker_id = _order_id(order)
         symbol_value = _field(order, "symbol")
@@ -486,7 +498,13 @@ class CloseCoordinator:
         stop_price: Decimal,
         client_order_id: str,
         quantity: Decimal | None = None,
+        direction: str | Enum = "LONG",
     ) -> CloseOutcome:
+        """Replace a protective stop; it may only TIGHTEN: a long's rises, a short's falls."""
+        side_direction = _enum_text(direction)
+        if side_direction not in _EXIT_SIDE:
+            raise ValueError("direction must be LONG or SHORT")
+        long = side_direction == "LONG"
         key = _text(position_id, "position_id")
         normalized_symbol = _symbol(symbol)
         old_order_id = _text(order_id, "order_id")
@@ -511,7 +529,7 @@ class CloseCoordinator:
             confirmed = await self._confirmed_quantity(key, normalized_symbol)
             requested = confirmed if quantity is None else quantity
             committed = await self._working_sell_quantity(
-                key, normalized_symbol, exclude={old_order_id}
+                key, normalized_symbol, exclude={old_order_id}, direction=side_direction
             )
             if requested > max(_ZERO, confirmed - committed):
                 return CloseOutcome(
@@ -530,7 +548,7 @@ class CloseCoordinator:
             if (
                 current is not None
                 and current.stop_price is not None
-                and candidate < current.stop_price
+                and (candidate < current.stop_price if long else candidate > current.stop_price)
             ):
                 return CloseOutcome(
                     "REJECTED",
@@ -539,7 +557,12 @@ class CloseCoordinator:
                     confirmed_remaining_quantity=confirmed,
                     protective_order_id=old_order_id,
                     stop_price=current.stop_price,
-                    detail="protective stop replacement may not lower the last confirmed stop",
+                    detail=(
+                        "protective stop replacement may not lower the last confirmed stop"
+                        if long
+                        else "protective stop replacement may not raise the last confirmed "
+                        "short stop"
+                    ),
                 )
             try:
                 raw = await _resolve(
@@ -550,6 +573,7 @@ class CloseCoordinator:
                         min(requested, confirmed - committed),
                         candidate,
                         client_id,
+                        **({} if long else {"direction": "SHORT"}),
                     )
                 )
             except Exception as exc:
@@ -589,7 +613,7 @@ class CloseCoordinator:
                 confirmed_stop = Decimal(confirmed_stop)
             price = _decimal(confirmed_stop, "confirmed stop_price", positive=True)
             if current is not None and current.stop_price is not None:
-                price = max(price, current.stop_price)
+                price = max(price, current.stop_price) if long else min(price, current.stop_price)
             self._protections[key] = _Protection(normalized_symbol, new_order_id, price)
             await self._emit(
                 "PROTECTIVE_STOP_REPLACED",
@@ -679,7 +703,7 @@ class CloseCoordinator:
             else set()
         )
         already_committed = await self._working_sell_quantity(
-            intent.position_id, intent.symbol, exclude=excluded
+            intent.position_id, intent.symbol, exclude=excluded, direction=intent.direction
         )
         available_before = max(_ZERO, confirmed_before - already_committed)
         if intent.quantity > available_before:
@@ -732,7 +756,9 @@ class CloseCoordinator:
                 symbol=intent.symbol,
             )
             return self._outcome("FLAT", intent, remaining=_ZERO)
-        committed = await self._working_sell_quantity(intent.position_id, intent.symbol)
+        committed = await self._working_sell_quantity(
+            intent.position_id, intent.symbol, direction=intent.direction
+        )
         available = max(_ZERO, confirmed - committed)
         quantity = min(intent.quantity, available)
         if quantity == _ZERO:
@@ -838,7 +864,9 @@ class CloseCoordinator:
             return await self._unprotected(
                 intent, submitted, f"{detail}; no last confirmed stop price", remaining=remaining
             )
-        working = await self._working_sell_quantity(intent.position_id, intent.symbol)
+        working = await self._working_sell_quantity(
+            intent.position_id, intent.symbol, direction=intent.direction
+        )
         protectable = max(_ZERO, remaining - working)
         if protectable != remaining:
             return await self._unprotected(
@@ -856,6 +884,7 @@ class CloseCoordinator:
                     remaining,
                     stop_price,
                     protection_client_id,
+                    **({"direction": "SHORT"} if intent.direction == "SHORT" else {}),
                 )
             )
         except Exception as exc:
@@ -929,17 +958,24 @@ class CloseCoordinator:
         return quantity
 
     async def _working_sell_quantity(
-        self, position_id: str, symbol: str, *, exclude: set[str] | None = None
+        self,
+        position_id: str,
+        symbol: str,
+        *,
+        exclude: set[str] | None = None,
+        direction: str = "LONG",
     ) -> Decimal:
+        """Working exit quantity: SELL orders for a long, BUY_TO_COVER orders for a short."""
         del position_id  # the normalized broker order may expose only symbol linkage
         excluded = exclude or set()
+        exit_side = _EXIT_SIDE[direction]
         orders = await _resolve(self._broker.list_open_orders())
         return sum(
             (
                 _remaining(order)
                 for order in orders
                 if _is_working(order)
-                and _enum_text(_field(order, "side")) == "SELL"
+                and _enum_text(_field(order, "side")) == exit_side
                 and _enum_text(_field(order, "symbol")) == symbol
                 and (_order_id(order) or "") not in excluded
             ),
