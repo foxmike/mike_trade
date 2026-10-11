@@ -86,9 +86,13 @@ _SPEC = StrategySpec(
         "close[t-1] < lower[t-1] and close[t] > lower[t]."
     ),
     source=(
-        "John Bollinger, Bollinger on Bollinger Bands (McGraw-Hill, 2001); StockCharts "
-        "ChartSchool, Bollinger Bands (mean reversion setup after lower band penetration): "
-        "https://chartschool.stockcharts.com/table-of-contents/technical-indicators-and-overlays/technical-overlays/bollinger-bands"
+        "Indicator: John Bollinger, Bollinger on Bollinger Bands (McGraw-Hill, 2001) and "
+        "StockCharts ChartSchool, Bollinger Bands (SMA +/- k standard deviations): "
+        "https://chartschool.stockcharts.com/table-of-contents/technical-indicators-and-overlays/technical-overlays/bollinger-bands. "
+        "Trigger: no source is claimed for this exact entry - Bollinger's published guidance is "
+        "that a band tag is not by itself a signal; 'a completed close below the lower band "
+        "followed by a completed close back above it' is this library's deterministic reading "
+        "(the long-side mirror of bollinger_upper_band_reversal)."
     ),
     execution_limitations=(
         "Entry signal only: no stops, sizing, targets, or orders.",

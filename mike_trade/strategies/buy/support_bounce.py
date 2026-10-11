@@ -28,6 +28,7 @@ from mike_trade.strategies.closed_bar import (
     insufficient,
     require_param,
 )
+from mike_trade.strategies.indicators.patterns import contiguous
 from mike_trade.strategies.indicators.windows import swing_pivots
 
 if TYPE_CHECKING:
@@ -95,15 +96,23 @@ _SPEC = StrategySpec(
         "above the setup bar's high and above the support level."
     ),
     source=(
-        "Robert Edwards and John Magee, Technical Analysis of Stock Trends (support levels "
-        "and confirmed bounces); John J. Murphy, Technical Analysis of the Financial Markets "
-        "(1999), ch. 4 (Support and Resistance); Bill Williams, Trading Chaos (fractal swing "
-        "lows as structural support)."
+        "Concept: support as a price level where earlier buying halted a decline (Edwards and "
+        "Magee, Technical Analysis of Stock Trends; John J. Murphy, Technical Analysis of the "
+        "Financial Markets (1999), ch. 4). Pivot: Bill Williams fractal swing low (Trading "
+        "Chaos), a published indicator definition. No published source defines this exact "
+        "trigger: the touch tolerance (tolerance_pct), the support-invalidation test and the "
+        "confirmation (close above the setup bar's high and above support) are this library's "
+        "engineering choices."
     ),
     execution_limitations=(
         "Entry signal only: no stops, sizing, targets, or orders.",
         "Support pivot S is confirmed strictly prior to the test candle (strength bars on each side); no look-ahead.",
         "Setup bar must test support within tolerance_pct without closing below S * (1 - tolerance_pct/100).",
+        "Support is invalidated, and nothing signals, if any bar after the pivot (through the setup "
+        "bar) traded below S * (1 - tolerance_pct/100) - a lower low that is not yet a confirmed pivot "
+        "must not leave an older, already-broken level in force.",
+        "Every bar from the pivot to the signal bar must be consecutive (an overnight or intraday hole "
+        "yields INSUFFICIENT_DATA), so support from a previous session is never carried across the gap.",
         "Distinct from double_bottom_reversal (which requires two lows and enters on an interim peak breakout) "
         "and resistance_breakout (which breaks above a swing high).",
         "Completed adjacent M1 bars; regular session and BUY eligibility apply.",
@@ -156,7 +165,11 @@ class SupportBounceBuy(BuyStrategy):
         if not lows:
             return finish(self.spec, context, bars[-1], state, False)
 
-        support_price = lows[-1][1]
+        pivot_index, support_price = lows[-1]
+        # absolute position of the pivot bar inside ``bars``; history is bars[-need:-2]
+        pivot_position = len(bars) - need + pivot_index
+        if not contiguous(bars[pivot_position:]):
+            return insufficient(self.spec, context)
         setup = bars[-2]
         signal = bars[-1]
 
@@ -166,7 +179,9 @@ class SupportBounceBuy(BuyStrategy):
         # 1. Setup bar touched or reached into the support zone
         # 2. Support held (did not crash below lower_bound, close held >= lower_bound)
         # 3. Signal bar confirmed rebound: close > setup.high and close > support_price
-        test_ok = setup.low <= upper_bound and setup.close >= lower_bound and setup.low >= lower_bound
+        # Support is only "held" if no bar since the pivot (the setup bar included) broke below it
+        held = all(bar.low >= lower_bound for bar in bars[pivot_position + 1:-1])
+        test_ok = setup.low <= upper_bound and setup.close >= lower_bound and held
         confirm_ok = signal.close > setup.high and signal.close > support_price
         triggered = test_ok and confirm_ok
 

@@ -17,6 +17,14 @@ completed bars of the current regular session (resetting at session open):
     StdDev_k = sqrt(max(0, Variance_k))
     LowerBand_k = VWAP_k - multiplier * StdDev_k
 
+``VWAP_k`` is the production session VWAP (same typical price, volume gating and arithmetic as
+the ``vwap`` / ``vwap_prev`` context indicators).  Because the bands are recomputed from the
+candles in the context, the strategy requires the recomputed VWAP at the latest and prior bar
+to equal those shared indicator values; otherwise the supplied history does not reach the
+session open and the result is INSUFFICIENT_DATA rather than bands anchored to an arbitrary
+first bar.  The standard deviation is the volume-weighted population deviation of bar typical
+prices about VWAP (an engineering/charting-platform convention, not a published trading rule).
+
 Materially distinct from:
 - `vwap_bounce`: `vwap_bounce` detects crossing the central VWAP line from below
   (`prior.close <= vwap_prev` and `latest.close > vwap_latest`), whereas
@@ -31,7 +39,6 @@ Materially distinct from:
 from __future__ import annotations
 
 from collections.abc import Mapping
-from datetime import timedelta
 from decimal import Decimal
 from typing import TYPE_CHECKING
 from zoneinfo import ZoneInfo
@@ -49,10 +56,7 @@ from mike_trade.strategies.base import (
     StrategySpec,
     TriggerKind,
 )
-from mike_trade.strategies.indicators.vwap_bands import (
-    VWAPBands,
-    session_vwap_bands,
-)
+from mike_trade.strategies.indicators.vwap_bands import session_bands_series, vwap_matches
 
 if TYPE_CHECKING:
     from mike_trade.market_data.context import MarketContext
@@ -131,14 +135,20 @@ _SPEC = StrategySpec(
         "volume-weighted standard deviation resetting each session."
     ),
     source=(
-        "Brian Shannon, CMT, Technical Analysis Using Multiple Timeframes (2008) and "
-        "Maximum Trading Gains With Anchored VWAP (2023) (VWAP standard deviation bands); "
-        "StockCharts / TradingView canonical session VWAP deviation band calculations."
+        "Indicator: session VWAP (cumulative volume-weighted typical price) with "
+        "volume-weighted standard-deviation bands, as offered by common charting platforms "
+        "(e.g. TradingView's VWAP indicator, standard-deviation band mode). Trigger: no "
+        "published source defines this exact entry; 'prior close below the lower band, latest "
+        "close back above it' and the 2.0 default multiplier are this library's engineering "
+        "choices, parallel to bollinger_band_mean_reversion."
     ),
     execution_limitations=(
         "Entry signal only: no stops, sizing, targets, or orders.",
         "Long entries only; regular session only; completed 1-minute bars with positive volume.",
         "Bars and VWAP windows never span sessions; accumulators reset at session open.",
+        "Needs the session's candles from the open: the recomputed VWAP must equal the shared "
+        "`vwap`/`vwap_prev` context indicators, otherwise INSUFFICIENT_DATA (e.g. a history "
+        "that starts mid-session after a restart).",
         "Materially distinct from vwap_bounce: vwap_bounce triggers on crossing central VWAP, "
         "whereas vwap_band_reversion triggers on recovering above the lower deviation band.",
         "One signal per completed bar: replaying the same bar never emits twice.",
@@ -251,10 +261,20 @@ class VWAPBandReversionBuy(BuyStrategy):
                 self.spec, symbol, (ReasonCode.INSUFFICIENT_DATA,)
             )
 
-        bands = session_vwap_bands(session_bars, multiplier=multiplier)
+        bands = session_bands_series(session_bars, multiplier)
         prior_band = bands[-2]
         latest_band = bands[-1]
         if prior_band is None or latest_band is None:
+            return StrategyEvaluation.no_signal(
+                self.spec, symbol, (ReasonCode.INSUFFICIENT_DATA,)
+            )
+        # The recomputed series must be the production session VWAP, not an anchored VWAP
+        # started at the first candle the context happens to hold.
+        indicators = context.indicators
+        if not isinstance(indicators, Mapping) or not (
+            vwap_matches(latest_band.vwap, indicators.get("vwap"))
+            and vwap_matches(prior_band.vwap, indicators.get("vwap_prev"))
+        ):
             return StrategyEvaluation.no_signal(
                 self.spec, symbol, (ReasonCode.INSUFFICIENT_DATA,)
             )

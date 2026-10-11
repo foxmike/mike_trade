@@ -9,8 +9,13 @@ Captures an upside breakout from a tight intraday consolidation or base:
        Floor = min(Low_{t-consolidation_bars .. t-1})
 2. Compression Qualification: The consolidation base must be tight:
        (Ceiling - Floor) / Floor * 100 <= max_range_pct
-3. Prior Position: The prior completed bar (t-1) closed within or at the base:
-       Close_{t-1} <= Ceiling
+3. First breakout (prior position): the prior completed bar (t-1) did not itself close
+   above the base that preceded it, i.e. with PriorCeiling = max(High_{t-1-consolidation_bars .. t-2}):
+       Close_{t-1} <= PriorCeiling
+   (Without this, a slow steady advance in which every bar closes above the previous N highs
+   satisfies the narrow-range test on each bar and signals repeatedly as the window rolls
+   forward; testing the prior bar against the *same* ceiling that includes bar t-1 is always
+   true because a close never exceeds its own bar's high.)
 4. Breakout Confirmation: The latest completed bar (t) closes strictly above the
    consolidation ceiling:
        Close_t > Ceiling
@@ -56,7 +61,6 @@ from mike_trade.strategies.closed_bar import (
     ELIGIBILITY_WATCHING_BUY,
     REASON_CODES,
     STATE_LAST_SIGNAL_BAR,
-    adjacent,
     finish,
 )
 
@@ -77,13 +81,14 @@ STRATEGY_VERSION = "1.0.0"
 
 DEFAULT_CONSOLIDATION_BARS = 15
 DEFAULT_MAX_RANGE_PCT = Decimal("0.75")
-WARMUP_BARS = DEFAULT_CONSOLIDATION_BARS + 1
+WARMUP_BARS = DEFAULT_CONSOLIDATION_BARS + 2
 
 _NEW_YORK = ZoneInfo("America/New_York")
 
 
 def _required_bars(consolidation_bars: int) -> int:
-    return consolidation_bars + 1
+    # the base, the breakout bar, and one earlier bar for the prior bar's own base test
+    return consolidation_bars + 2
 
 
 _SPEC = StrategySpec(
@@ -123,19 +128,28 @@ _SPEC = StrategySpec(
     methodology=(
         "BUY when price completes a tight intraday rectangular consolidation over N bars "
         "((Ceiling - Floor) / Floor * 100 <= max_range_pct) and the latest bar confirms "
-        "an upside breakout by closing strictly above the consolidation ceiling (close[t] > Ceiling) "
-        "after prior close was within or at the ceiling (close[t-1] <= Ceiling). The breakout candle "
-        "does not participate in defining the consolidation range."
+        "an upside breakout by closing strictly above the consolidation ceiling (close[t] > Ceiling), "
+        "provided the prior bar did not itself close above the base that preceded it "
+        "(close[t-1] <= max high of the N bars before t-1), so only the first breakout bar signals. "
+        "The breakout candle does not participate in defining the consolidation range."
     ),
     source=(
-        "Thomas Bulkowski, Encyclopedia of Chart Patterns (2021), 'Rectangles' / consolidation ranges; "
-        "Toby Crabel, Day Trading with Short Term Price Patterns (1990) (narrow range contraction preceding "
-        "expansion); John J. Murphy, Technical Analysis of the Financial Markets (1999), ch. 6."
+        "Concept: a price range that contracts and is then broken, discussed under rectangles and "
+        "continuation patterns (Thomas Bulkowski, Encyclopedia of Chart Patterns; John J. Murphy, "
+        "Technical Analysis of the Financial Markets (1999), ch. 6) and narrow-range contraction "
+        "before expansion (Toby Crabel, Day Trading with Short Term Price Patterns and Opening Range "
+        "Breakout). No published source gives this exact definition: the 15-bar window, the 0.75% "
+        "maximum range (as a percentage of the range floor), the close-through-ceiling confirmation "
+        "and the first-breakout condition are this library's engineering choices."
     ),
     execution_limitations=(
         "Entry signal only: no stops, sizing, targets, or orders.",
         "Long entries only; regular session only; completed adjacent 1-minute bars.",
         "Consolidation window strictly precedes the breakout bar (no look-ahead).",
+        "Only the first breakout bar signals: a bar whose predecessor already closed above its own "
+        "preceding base does not (a steadily rising price does not signal on every bar).",
+        "A narrow range does not exclude a slow drift: the rule requires compression of the highs and "
+        "lows, not a flat trend.",
         "Consolidation and breakout bars must belong to the same regular intraday session.",
         "One signal per completed bar: replaying the same bar never emits twice.",
     ),
@@ -228,9 +242,10 @@ class IntradayConsolidationBreakoutBuy(BuyStrategy):
                 self.spec, symbol, (ReasonCode.INSUFFICIENT_DATA,)
             )
 
-        consolidation_window = window[:-1]
+        consolidation_window = window[1:-1]  # the N bars before the breakout bar
         breakout_bar = window[-1]
         prior_bar = consolidation_window[-1]
+        prior_ceiling = max(b.high for b in window[:-2])  # the base as it stood before bar t-1
 
         ceiling = max(b.high for b in consolidation_window)
         floor = min(b.low for b in consolidation_window)
@@ -243,10 +258,10 @@ class IntradayConsolidationBreakoutBuy(BuyStrategy):
         range_pct = (ceiling - floor) / floor * Decimal("100")
 
         # 1. Base must satisfy compression threshold
-        # 2. Prior bar close was at or below ceiling
+        # 2. Prior bar did not already break out of the base that preceded it (first breakout)
         # 3. Breakout bar closed strictly above ceiling
         is_compressed = range_pct <= max_range_pct
-        is_breakout = prior_bar.close <= ceiling and breakout_bar.close > ceiling
+        is_breakout = prior_bar.close <= prior_ceiling and breakout_bar.close > ceiling
 
         triggered = is_compressed and is_breakout
 

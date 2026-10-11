@@ -40,8 +40,8 @@ Identifies an oversold price excursion below the lower Bollinger Band followed b
 3. **Execution**: Evaluated on adjacent completed M1 bars.
 
 #### Source / Reference
-- John Bollinger, *Bollinger on Bollinger Bands* (McGraw-Hill, 2001).
-- Official band formulas and reversal interpretations: [Bollinger Bands Official](https://www.bollingerbands.com/bollinger-bands) and [StockCharts ChartSchool Bollinger Bands](https://chartschool.stockcharts.com/table-of-contents/technical-indicators-and-overlays/technical-overlays/bollinger-bands).
+- **Indicator definition (published):** John Bollinger, *Bollinger on Bollinger Bands* (McGraw-Hill, 2001); [Bollinger Bands Official](https://www.bollingerbands.com/bollinger-bands) and [StockCharts ChartSchool Bollinger Bands](https://chartschool.stockcharts.com/table-of-contents/technical-indicators-and-overlays/technical-overlays/bollinger-bands) (SMA +/- k standard deviations).
+- **Trigger (engineering choice):** "close below the lower band, then a close back above it" is this library's deterministic reading of a lower-band reversion; Bollinger's published guidance is that a band tag is not by itself a signal, and no source is claimed for this exact trigger. (Review correction, see `BUY_SELL_BACKLOG_REVIEW.md`.)
 
 #### Parameters and Defaults
 - `period` (INT): Default `20`, min `2`, max `100`. Bollinger SMA window length.
@@ -77,15 +77,16 @@ Identifies an oversold price excursion below the lower Bollinger Band followed b
 
 #### Signal Methodology
 Captures a pullback entry toward session VWAP during an established intraday bullish trend:
-1. **Prior Trend**: Pre-setup session bars (`t - trend_bars - 1` to `t - 2`) were trading strictly above VWAP (`low > vwap_prev * (1 + tolerance_pct/100)` and `close >= vwap_prev`).
-2. **Pullback Test (Setup Bar `t-1`)**: Price pulls back to test session VWAP within tolerance (`low <= vwap_prev * (1 + tolerance_pct/100)`), while close holds VWAP support (`close >= vwap_prev`).
-3. **Confirmation (Signal Bar `t`)**: Latest completed bar confirms continuation by closing strictly above the setup bar's high (`close > setup.high`) and strictly above current session VWAP (`close > vwap_latest`).
+Every comparison uses the session VWAP **as of that bar's own close** (`V_k`), never a later bar's VWAP (review correction: the first release compared every trend bar with the setup bar's `vwap_prev`).
+1. **Prior Trend**: for the `trend_bars` bars `t - trend_bars - 1` to `t - 2`, each bar `k` closes at or above its own VWAP (`close_k >= V_k`), and the last trend bar (`t-2`) traded wholly above its own tolerance zone (`low > V_{t-2} * (1 + tolerance_pct/100)`).
+2. **Pullback Test (Setup Bar `t-1`)**: `low <= V_{t-1} * (1 + tolerance_pct/100)` while the close holds VWAP support (`close >= V_{t-1}`).
+3. **Confirmation (Signal Bar `t`)**: closes strictly above the setup bar's high (`close > setup.high`) and strictly above the current session VWAP (`close > V_t`).
+The per-bar VWAP series is recomputed from the session's candles with the production session-VWAP calculator; the recomputed `V_t` and `V_{t-1}` must equal the context's `vwap` / `vwap_prev`, otherwise (history does not reach the session open) the result is `INSUFFICIENT_DATA`.
 
 #### Source / Reference
-- Brian Shannon, CMT, *Technical Analysis Using Multiple Timeframes* (2008), Chapter on VWAP pullback entries.
-- Andrew Aziz, *How to Day Trade for a Living* (2016), Chapter 7: "VWAP Trading" (note: Brian Pezim authored *How to Swing Trade* (2018)).
-- Indicator Definition: Canonical session VWAP accumulating typical price × volume divided by cumulative volume.
-- Conceptual Foundation vs Engineering Choices: The general concept is buying an intraday pullback that tests and holds VWAP support during an uptrend. Concrete deterministic engineering choices include parameterizing the prior trend duration via `trend_bars` and the pullback proximity via `tolerance_pct`.
+- **Indicator definition (published/standard):** session VWAP = cumulative (typical price x volume) / cumulative volume, typical price = (H+L+C)/3 (the shared production indicator).
+- **Concept (general literature):** buying an intraday pullback that tests and holds VWAP in an uptrend is a common day-trading setup (e.g. Andrew Aziz, *How to Day Trade for a Living*).
+- **Engineering choices (no published source defines them):** the trend window (`trend_bars`), the touch zone (`tolerance_pct`), the hold test, and the confirmation (close above the setup bar's high). The earlier chapter-level citations (Shannon "chapter on VWAP pullback entries", Aziz "Chapter 7: VWAP Trading") could not be verified and were removed (review correction).
 
 #### Parameters and Defaults
 - `trend_bars` (INT): Default `3`, min `1`, max `20`. Minimum prior completed session bars establishing the uptrend above VWAP before the pullback.
@@ -105,7 +106,7 @@ Captures a pullback entry toward session VWAP during an established intraday bul
 #### Distinguishing Features from `vwap_bounce`
 - **Precondition**: `vwap_bounce` requires `prior.close <= vwap_prev` (price was below or at VWAP, an upward crossing/reclaim). In contrast, `vwap_pullback` requires an established trend above VWAP where setup bar `close >= vwap_prev` (support held).
 - **Trigger**: `vwap_bounce` triggers on any bar crossing VWAP. `vwap_pullback` requires a pullback touch followed by a subsequent bar closing above the pullback bar's high (`close > setup.high`).
-- **Mutual Exclusivity**: If `prior.close <= vwap_prev`, `vwap_pullback` never signals; if `prior.close >= vwap_prev`, `vwap_bounce` never signals.
+- **Overlap**: `vwap_pullback` needs the setup close `>= V_{t-1}` and `vwap_bounce` needs `prior.close <= vwap_prev`, so they can both be true only when the setup close equals VWAP exactly (the original text claimed full mutual exclusivity, which is false at equality).
 
 ---
 
@@ -121,13 +122,13 @@ Captures a pullback entry toward session VWAP during an established intraday bul
 #### Signal Methodology
 Buys a confirmed rebound from previously established technical support:
 1. **Point-in-Time Support Level `S`**: Identifies the latest confirmed fractal swing low (`strength` bars on each side) in the lookback window strictly before the setup bar (`bars[-lookback - 2 : -2]`).
-2. **Support Test (Setup Bar `t-1`)**: Price tests the support zone: `setup.low <= S * (1 + tolerance_pct/100)`, while holding support without breaking down: `setup.close >= S * (1 - tolerance_pct/100)` and `setup.low >= S * (1 - tolerance_pct/100)`.
+2. **Support Test (Setup Bar `t-1`)**: Price tests the support zone: `setup.low <= S * (1 + tolerance_pct/100)`, while holding support without breaking down: `setup.close >= S * (1 - tolerance_pct/100)` and no bar after the pivot - through the setup bar - has a low below `S * (1 - tolerance_pct/100)` (review correction: an unconfirmed lower low used to leave a broken level in force). Every bar from the pivot to the signal bar must be consecutive.
 3. **Rebound Confirmation (Signal Bar `t`)**: Confirms the bounce by closing strictly above the setup bar's high (`close > setup.high`) and strictly above the support level (`close > S`).
 
 #### Source / Reference
-- Robert D. Edwards and John Magee, *Technical Analysis of Stock Trends* (support zones and rebound confirmation).
-- John J. Murphy, *Technical Analysis of the Financial Markets* (1999), Chapter 4: "Support and Resistance".
-- Bill Williams, *Trading Chaos* (Fractal swing lows as structural support).
+- **Concept (general literature):** support as a price level where earlier buying halted a decline (Edwards and Magee, *Technical Analysis of Stock Trends*; Murphy, *Technical Analysis of the Financial Markets* (1999), ch. 4).
+- **Pivot (published indicator definition):** Bill Williams fractal swing low (*Trading Chaos*).
+- **Engineering choices (no published source defines them):** `tolerance_pct`, the support-invalidation test, and the confirmation (close above the setup bar's high and above support).
 
 #### Parameters and Defaults
 - `strength` (INT): Default `2`, min `1`, max `10`. Completed bars on each side required to confirm a fractal swing low.
@@ -165,7 +166,7 @@ Buys a confirmed rebound from previously established technical support:
 
 #### Analysis & Reason for Equivalence Determination
 1. **Mathematical Definition**: The middle band of Bollinger Bands is universally defined by John Bollinger as a simple moving average: `middle_band = SMA(close, period)` (default period 20). It contains no standard deviation multiplier, no true range component, and no volatility offset.
-2. **Source Specification**: In John Bollinger's *Bollinger on Bollinger Bands* (McGraw-Hill, 2001, Chapter 15 "Method I: Volatility Breakout"), the middle band exit rule states: *"We exit when the close crosses below the 20-day moving average [middle band]."*
-3. **Existing Implementation**: Mike_Trade already provides `PriceBelowSmaSell` (`price_below_sma`), which evaluates `close[t] < SMA(period)[t]` on completed closed bars, with configurable `period` (default 50, supporting range 2 to 400).
+2. **Source Specification**: *(Review correction.)* The original text here quoted Bollinger's *Bollinger on Bollinger Bands* (Chapter 15, "Method I: Volatility Breakout") as saying "We exit when the close crosses below the 20-day moving average". That chapter number and quotation could not be verified and have been removed; no source for an exact middle-band exit trigger is claimed. The mapping rests only on the definition of the middle band (an SMA of closes) and on the level reading `close < middle band`; see `BUY_SELL_BACKLOG_REVIEW.md` for what is and is not equivalent.
+3. **Existing Implementation**: Mike_Trade already provides `PriceBelowSmaSell` (`price_below_sma`), which evaluates `close[t] < SMA(period)[t]` on completed closed bars as a **level** condition (it signals on every bar below the SMA, `trigger_kind = LEVEL_ON_CLOSED_BAR`), with configurable `period` (default 50, range 2 to 400; use 20 for the standard middle band).
 4. **Duplicate Avoidance**: A dedicated `BollingerMiddleBandExitSell` class checking `close < middle_band` would be line-for-line identical to `PriceBelowSmaSell` configured with `period=20`. Standard deviation and bandwidth are completely unused in the middle-band exit.
 5. In accordance with system design principles and backlog instructions ("Do not create a renamed duplicate of Price Below SMA... Keep the implementation count truthful"), `Bollinger Middle Band Exit` is classified as `EXISTING_EQUIVALENT` to `price_below_sma`.

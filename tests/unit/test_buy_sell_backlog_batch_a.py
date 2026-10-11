@@ -29,6 +29,7 @@ from mike_trade.strategies.buy.bollinger_band_mean_reversion import (
 from mike_trade.strategies.buy.support_bounce import SupportBounceBuy
 from mike_trade.strategies.buy.vwap_bounce import VwapBounceBuy
 from mike_trade.strategies.buy.vwap_pullback import VwapPullbackBuy
+from mike_trade.strategies.indicators.vwap_bands import session_vwap_series
 from mike_trade.strategies.sell.price_below_sma import PriceBelowSmaSell
 
 D = Decimal
@@ -218,61 +219,53 @@ def test_bollinger_band_mean_reversion_parameters_and_warmup() -> None:
 # ==============================================================================
 
 
+def vwap_context(bars: list[Candle]) -> MarketContext:
+    """Context whose ``vwap`` / ``vwap_prev`` are the production session VWAP of ``bars``."""
+    series = session_vwap_series(bars)
+    return make_context(bars, vwap=series[-1], vwap_prev=series[-2])
+
+
+#: A session that opens in an uptrend above its own VWAP, pulls back to VWAP on bar 3 and
+#: rebounds on bar 4 (equal volume, so the session VWAP is the running mean of typical prices).
+PULLBACK_BARS = [
+    make_candle(0, "100", "101", "99", "100.6"),
+    make_candle(1, "101", "103", "100.8", "102.8"),
+    make_candle(2, "102.8", "105", "102.5", "104.8"),
+    make_candle(3, "104.8", "104.9", "100", "102.9"),
+    make_candle(4, "103", "106", "102.9", "105.5"),
+]
+
+
 def test_vwap_pullback_signal() -> None:
     strategy = VwapPullbackBuy()
-    # 5 bars total (trend_bars=3 + setup + signal)
-    # Pre-setup bars 0, 1, 2 trading above VWAP (100.0)
-    bars = [
-        make_candle(0, "102", "103", "101.5", "102.5"),
-        make_candle(1, "102.5", "104", "102.0", "103.5"),
-        make_candle(2, "103.5", "104.5", "102.5", "104.0"),
-    ]
-    # Setup bar 3: pulls back to test VWAP (100.0), low dips to 99.95, close holds at 100.2
-    bars.append(make_candle(3, "104.0", "104.0", "99.95", "100.2"))
-    # Signal bar 4: confirms rebound by closing above setup high (104.0) at 104.5
-    bars.append(make_candle(4, "100.5", "105.0", "100.5", "104.5"))
-
-    ctx = make_context(
-        bars, vwap=D("100.1"), vwap_prev=D("100.0")
-    )
+    ctx = vwap_context(PULLBACK_BARS)
     eval_res = strategy.evaluate(ctx, {}, dict(ELIGIBLE_STATE))
     assert eval_res.is_signal is True
-    assert eval_res.bar_time == bars[-1].start
+    assert eval_res.bar_time == PULLBACK_BARS[-1].start
 
 
 def test_vwap_pullback_vs_vwap_bounce_distinction() -> None:
-    """VWAP Pullback requires holding support (prior.close >= vwap_prev),
-
-    whereas VWAP Bounce requires prior.close <= vwap_prev.
-    They are mutually exclusive on the setup bar condition.
-    """
+    """VWAP Pullback requires holding support (setup close >= VWAP at that bar), whereas
+    VWAP Bounce requires prior.close <= vwap_prev.  They can coincide only at exact equality."""
     pullback = VwapPullbackBuy()
     bounce = VwapBounceBuy()
 
-    # Case A: Qualifying VWAP Pullback
-    bars_pullback = [
-        make_candle(0, "102", "103", "101.5", "102.5"),
-        make_candle(1, "102.5", "104", "102.0", "103.5"),
-        make_candle(2, "103.5", "104.5", "102.5", "104.0"),
-        make_candle(3, "104.0", "104.0", "99.95", "100.2"),  # close 100.2 > vwap_prev 100.0
-        make_candle(4, "100.5", "105.0", "100.5", "104.5"),
-    ]
-    ctx_pullback = make_context(bars_pullback, vwap=D("100.1"), vwap_prev=D("100.0"))
+    # Case A: Qualifying VWAP Pullback; the setup close is above its VWAP so no bounce
+    ctx_pullback = vwap_context(PULLBACK_BARS)
     assert pullback.evaluate(ctx_pullback, {}, dict(ELIGIBLE_STATE)).is_signal is True
-    # VWAP Bounce MUST NOT trigger because prior.close (100.2) > vwap_prev (100.0)
     assert bounce.evaluate(ctx_pullback, {}, dict(ELIGIBLE_STATE)).is_signal is False
 
-    # Case B: Qualifying VWAP Bounce (cross from below)
+    # Case B: Qualifying VWAP Bounce (cross from below the VWAP)
     bars_bounce = [
         make_candle(0, "98", "99", "97", "98"),
         make_candle(1, "98", "99.5", "97.5", "98.5"),
         make_candle(2, "98.5", "99.8", "98", "99.0"),
-        make_candle(3, "99.0", "99.9", "98.5", "99.5"),  # close 99.5 <= vwap_prev 100.0
-        make_candle(4, "99.8", "101.5", "99.7", "101.0"),  # close 101.0 > vwap 100.1
+        make_candle(3, "99.0", "99.1", "98.0", "98.2"),  # close below the session VWAP
+        make_candle(4, "98.4", "101.5", "98.3", "101.0"),  # close back above it
     ]
-    ctx_bounce = make_context(bars_bounce, vwap=D("100.1"), vwap_prev=D("100.0"))
+    ctx_bounce = vwap_context(bars_bounce)
     assert bounce.evaluate(ctx_bounce, {}, dict(ELIGIBLE_STATE)).is_signal is True
-    # VWAP Pullback MUST NOT trigger because prior trend and setup support failed
+    # VWAP Pullback must not trigger: there is no prior trend above VWAP and the setup lost VWAP
     assert pullback.evaluate(ctx_bounce, {}, dict(ELIGIBLE_STATE)).is_signal is False
 
 

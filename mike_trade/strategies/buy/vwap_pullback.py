@@ -3,24 +3,30 @@
 Definition: on completed regular-session 1-minute bars, a BUY signal fires
 edge-triggered when an established bullish trend above session VWAP produces a
 qualifying pullback to test session VWAP, followed by a bullish confirmation
-rebound:
+rebound.  Every comparison uses the session VWAP **as of that bar's own close**
+(point in time), never a later bar's VWAP:
 
-1. Trend: the prior session bar(s) preceding the pullback were trading strictly
-   above VWAP (`low > vwap * (1 + tolerance_pct/100)` and `close >= vwap`).
-2. Pullback (setup bar `t-1`): price pulls back to test session VWAP:
-   `setup.low <= vwap_prev * (1 + tolerance_pct/100)` while holding VWAP support:
-   `setup.close >= vwap_prev`.
-3. Confirmation (signal bar `t`): latest bar confirms continuation:
-   `latest.close > setup.high` and `latest.close > vwap_latest`.
+1. Trend (the ``trend_bars`` bars ``t-trend_bars-1 .. t-2`` before the setup bar):
+   each bar ``k`` closes at or above its own VWAP (``close_k >= vwap_k``), and the
+   last trend bar ``t-2`` traded entirely above its own tolerance zone
+   (``low_{t-2} > vwap_{t-2} * (1 + tolerance_pct/100)``).
+2. Pullback (setup bar ``t-1``): ``setup.low <= vwap_{t-1} * (1 + tolerance_pct/100)``
+   while holding VWAP support: ``setup.close >= vwap_{t-1}``.
+3. Confirmation (signal bar ``t``): ``latest.close > setup.high`` and
+   ``latest.close > vwap_t``.
 
-Both VWAP values are read from the ``MarketContext`` indicator service under
-the ``"vwap"`` (latest completed bar) and ``"vwap_prev"`` (prior completed
-bar) keys.
+The per-bar VWAP series is recomputed from the session's candles with the production
+session-VWAP calculator (``indicators.vwap_bands.session_vwap_series``).  The context
+only publishes the VWAP of the latest bar (``vwap``) and of the bar before it
+(``vwap_prev``); the strategy requires the recomputed values at ``t`` and ``t-1`` to equal
+them, so a history that does not reach the session open (and therefore yields a different,
+anchored VWAP) fails closed with INSUFFICIENT_DATA instead of trading on inconsistent values.
 
-Materially distinct from ``vwap_bounce``: ``vwap_bounce`` requires
-`prior.close <= vwap_prev` (an upward crossing from below), whereas
-``vwap_pullback`` requires an established trend above VWAP where setup
-`close >= vwap_prev` (holding support) confirmed by closing above setup high.
+Distinct from ``vwap_bounce`` (an upward crossing from at/below VWAP to above it):
+``vwap_pullback`` needs a prior trend above VWAP, a setup bar that holds VWAP
+(``close >= vwap``) after touching it, and a close above the setup bar's high.  The two can
+coincide only when the setup close equals VWAP exactly, because ``vwap_bounce`` accepts
+``prior.close <= vwap_prev``.
 """
 
 from __future__ import annotations
@@ -44,6 +50,7 @@ from mike_trade.strategies.base import (
     StrategySpec,
     TriggerKind,
 )
+from mike_trade.strategies.indicators.vwap_bands import session_vwap_series, vwap_matches
 
 if TYPE_CHECKING:
     from mike_trade.market_data.context import MarketContext
@@ -125,20 +132,24 @@ _SPEC = StrategySpec(
         "bar's high (close > setup.high and close > vwap_latest)."
     ),
     source=(
-        "Brian Shannon, Technical Analysis Using Multiple Timeframes (2008), Chapter on VWAP "
-        "pullback entries; Andrew Aziz, How to Day Trade for a Living (2016), Chapter 7: 'VWAP Trading' "
-        "(note: Brian Pezim authored 'How to Swing Trade' (2018)). Indicator definition uses standard "
-        "cumulative session volume-weighted average price. General concept is buying an intraday pullback "
-        "that tests and holds VWAP support in an uptrend; specific deterministic engineering choices "
-        "include parameterizing trend establishment via trend_bars and touch proximity via tolerance_pct."
+        "Indicator: standard cumulative session VWAP of typical price (H+L+C)/3 (the shared "
+        "production indicator). Concept: buying an intraday pullback that tests and holds VWAP "
+        "in an uptrend is a common day-trading setup in the day-trading literature (e.g. Andrew "
+        "Aziz, How to Day Trade for a Living). No published source defines this exact trigger: "
+        "the trend window (trend_bars), the touch zone (tolerance_pct) and the confirmation "
+        "(close above the setup bar's high) are this library's engineering choices."
     ),
     execution_limitations=(
         "Entry signal only: no stops, sizing, targets, or orders.",
         "Long entries only; regular session only; completed 1-minute bars with positive volume.",
         "Requires warmed per-bar session VWAP (`vwap` and `vwap_prev`); missing or invalid VWAP yields INSUFFICIENT_DATA.",
+        "Each trend/setup/confirmation bar is compared with the session VWAP as of its own close, "
+        "recomputed from the session's candles; the recomputed `vwap`/`vwap_prev` must equal the "
+        "shared indicators, so the history must reach the session open (INSUFFICIENT_DATA otherwise, "
+        "e.g. right after a mid-session restart with a short history).",
         "Bars and VWAP windows never span sessions; VWAP resets each session.",
-        "Materially distinct from vwap_bounce: vwap_bounce requires prior close <= vwap_prev, "
-        "whereas vwap_pullback requires setup close >= vwap_prev (holding support) confirmed by closing above setup high.",
+        "Distinct from vwap_bounce (an upward crossing); the two can coincide only when the setup "
+        "close equals VWAP exactly.",
         "One signal per completed bar: replaying the same bar never emits twice.",
     ),
     reason_codes=(
@@ -280,6 +291,17 @@ class VwapPullbackBuy(BuyStrategy):
         setup = session_bars[-2]
         pre_setup_bars = session_bars[-need_bars:-2]
 
+        # Session VWAP as of each bar's own close, from the production calculator.  The
+        # recomputed values at t and t-1 must be the shared indicator values (see module doc).
+        series = session_vwap_series(session_bars)
+        vwap_t, vwap_setup = series[-1], series[-2]
+        if not (vwap_matches(vwap_t, vwap_latest) and vwap_matches(vwap_setup, vwap_prior)):
+            return StrategyEvaluation.no_signal(
+                self.spec, symbol, (ReasonCode.INSUFFICIENT_DATA,)
+            )
+        trend_vwaps = series[-need_bars:-2]
+        assert vwap_t is not None and vwap_setup is not None
+
         if state.get(STATE_LAST_SIGNAL_BAR) == latest.start.isoformat():
             return StrategyEvaluation.no_signal(
                 self.spec,
@@ -292,18 +314,24 @@ class VwapPullbackBuy(BuyStrategy):
                 },
             )
 
-        # 1. Prior trend: pre-setup bars traded strictly above VWAP
-        threshold = vwap_prior * (Decimal(1) + tolerance_pct / Decimal(100))
-        trend_ok = (
-            pre_setup_bars[-1].low > threshold
-            and all(bar.close >= vwap_prior for bar in pre_setup_bars)
+        zone = Decimal(1) + tolerance_pct / Decimal(100)
+
+        # 1. Prior trend, each bar against ITS OWN session VWAP: every trend bar closed at or
+        #    above its VWAP and the last trend bar traded wholly above its tolerance zone
+        trend_ok = all(
+            vwap_k is not None and bar.close >= vwap_k
+            for bar, vwap_k in zip(pre_setup_bars, trend_vwaps, strict=True)
+        ) and (
+            trend_vwaps[-1] is not None
+            and pre_setup_bars[-1].low > trend_vwaps[-1] * zone
         )
 
-        # 2. Pullback test of VWAP: setup bar touched or entered tolerance zone, but close held >= VWAP
-        pullback_ok = setup.low <= threshold and setup.close >= vwap_prior
+        # 2. Pullback test of VWAP: setup bar touched or entered tolerance zone of the setup
+        #    bar's VWAP, but its close held >= that VWAP
+        pullback_ok = setup.low <= vwap_setup * zone and setup.close >= vwap_setup
 
         # 3. Confirmation: latest bar closed above setup high and above latest VWAP
-        confirmation_ok = latest.close > setup.high and latest.close > vwap_latest
+        confirmation_ok = latest.close > setup.high and latest.close > vwap_t
 
         if trend_ok and pullback_ok and confirmation_ok:
             return StrategyEvaluation.for_signal(

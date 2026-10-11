@@ -31,7 +31,8 @@ from mike_trade.strategies.buy.vwap_bounce import VwapBounceBuy
 from mike_trade.strategies.indicators.vwap_bands import (
     VWAPBands,
     VWAPDeviationBandsCalculator,
-    session_vwap_bands,
+    session_bands_series,
+    session_vwap_series,
 )
 
 D = Decimal
@@ -72,6 +73,12 @@ def make_candle(
     )
 
 
+def consistent_vwap(candles: Sequence[Candle]) -> dict[str, object]:
+    """The shared ``vwap`` / ``vwap_prev`` indicators for a session that starts at the first bar."""
+    series = session_vwap_series(list(candles))
+    return {"vwap": series[-1], "vwap_prev": series[-2] if len(series) > 1 else None}
+
+
 def make_context(
     candles: Sequence[Candle],
     *,
@@ -99,7 +106,7 @@ def make_context(
             "DATA_TOO_OLD" if stale else None,
         ),
         candles={CandleTimeframe.M1: tuple(candles)},
-        indicators=indicators or {},
+        indicators=consistent_vwap(candles) if indicators is None else indicators,
     )
 
 
@@ -228,28 +235,23 @@ def test_vwap_bands_calculator_snapshot_restore() -> None:
 # ==============================================================================
 
 
+#: Eight baseline bars around 100, a sharp dip below the lower band, then a rebound into it.
+BASELINE = [(100, 100), (102, 102), (98, 98), (101, 101), (99, 100), (101, 100), (100, 101), (99, 100)]
+
+
+def band_session() -> list[Candle]:
+    bars = [make_candle(i, o, o + 1, o - 1, c, volume=100) for i, (o, c) in enumerate(BASELINE)]
+    bars.append(make_candle(8, 96, 96, 92, 93, volume=100))  # close below the lower band
+    bars.append(make_candle(9, 94, 98, 93, 97, volume=100))  # close back above the lower band
+    return bars
+
+
 def test_vwap_band_reversion_signal() -> None:
     strategy = VWAPBandReversionBuy()
-
-    # Build 5 bars to establish initial VWAP and variance
-    # Bars 0-3: steady baseline around 100
-    bars = [
-        make_candle(0, 100, 101, 99, 100, volume=100),
-        make_candle(1, 102, 103, 101, 102, volume=100),
-        make_candle(2, 98, 99, 97, 98, volume=100),
-        make_candle(3, 101, 102, 100, 101, volume=100),
-    ]
-    # Check bands so far
-    pre_bands = session_vwap_bands(bars, multiplier=D("2.0"))
-
-    # Bar 4: Sharp oversold drop below the lower band
-    # Lower band prior is around 97. We close at 94.
-    bars.append(make_candle(4, 96, 96, 93, 94, volume=150))
-
-    # Bar 5: Rebound crossing back above the lower band
-    bars.append(make_candle(5, 95, 99, 94, 98.5, volume=150))
-
-    all_bands = session_vwap_bands(bars, multiplier=D("2.0"))
+    bars = band_session()
+    all_bands = session_bands_series(bars, D("2.0"))
+    # the bands are genuinely session-cumulative: the eight-bar baseline has a real dispersion
+    assert all_bands[-2].std_dev > D("1") and all_bands[-2].lower < all_bands[-2].vwap
     assert bars[-2].close < all_bands[-2].lower
     assert bars[-1].close > all_bands[-1].lower
 
@@ -279,14 +281,7 @@ def test_vwap_band_reversion_no_signal_when_setup_did_not_penetrate() -> None:
 
 def test_vwap_band_reversion_guards_and_replay() -> None:
     strategy = VWAPBandReversionBuy()
-    bars = [
-        make_candle(0, 100, 101, 99, 100, volume=100),
-        make_candle(1, 102, 103, 101, 102, volume=100),
-        make_candle(2, 98, 99, 97, 98, volume=100),
-        make_candle(3, 101, 102, 100, 101, volume=100),
-        make_candle(4, 96, 96, 93, 94, volume=150),
-        make_candle(5, 95, 99, 94, 98.5, volume=150),
-    ]
+    bars = band_session()
 
     # Stale context
     stale_ctx = make_context(bars, stale=True)
@@ -333,7 +328,7 @@ def test_consolidation_breakout_signal() -> None:
     # Floor = 100.00, Ceiling = 100.40
     # Range pct = (100.40 - 100.00) / 100.00 * 100 = 0.40% <= 0.75%
     bars = []
-    for i in range(n):
+    for i in range(n + 1):
         bars.append(
             make_candle(
                 i,
@@ -347,7 +342,7 @@ def test_consolidation_breakout_signal() -> None:
     # 16th bar (breakout bar, index 15): breaks above ceiling 100.40 with close 100.65
     bars.append(
         make_candle(
-            n,
+            n + 1,
             open_price=100.35,
             high=100.70,
             low=100.30,
@@ -369,7 +364,7 @@ def test_consolidation_breakout_uncompressed_no_signal() -> None:
     # 15 bars with wide range: Floor = 100.00, Ceiling = 101.50
     # Range pct = 1.50% > 0.75%
     bars = []
-    for i in range(n):
+    for i in range(n + 1):
         bars.append(
             make_candle(
                 i,
@@ -383,7 +378,7 @@ def test_consolidation_breakout_uncompressed_no_signal() -> None:
     # Breakout bar closes above 101.50
     bars.append(
         make_candle(
-            n,
+            n + 1,
             open_price=101.40,
             high=102.00,
             low=101.30,
@@ -404,13 +399,13 @@ def test_consolidation_breakout_candle_not_in_range_definition() -> None:
     # 15 bars tightly bounded with ceiling 100.30
     bars = [
         make_candle(i, 100.10, 100.30, 100.00, 100.15)
-        for i in range(n)
+        for i in range(n + 1)
     ]
 
     # Breakout bar with high=101.00, close=100.45.
     # Because breakout bar does NOT participate in defining ceiling,
     # ceiling remains 100.30, and close 100.45 > 100.30 triggers signal.
-    bars.append(make_candle(n, 100.25, 101.00, 100.20, 100.45))
+    bars.append(make_candle(n + 1, 100.25, 101.00, 100.20, 100.45))
 
     ctx = make_context(bars)
     eval_res = strategy.evaluate(ctx, {}, ELIGIBLE_STATE)
@@ -422,9 +417,9 @@ def test_consolidation_breakout_guards_and_replay() -> None:
     n = 15
     bars = [
         make_candle(i, 100.10, 100.40, 100.00, 100.20)
-        for i in range(n)
+        for i in range(n + 1)
     ]
-    bars.append(make_candle(n, 100.35, 100.70, 100.30, 100.65))
+    bars.append(make_candle(n + 1, 100.35, 100.70, 100.30, 100.65))
 
     # Stale context
     stale_ctx = make_context(bars, stale=True)
@@ -434,7 +429,7 @@ def test_consolidation_breakout_guards_and_replay() -> None:
     closed_ctx = make_context(bars, session_status=SessionStatus.CLOSED)
     assert ReasonCode.NOT_ELIGIBLE in strategy.evaluate(closed_ctx, {}, ELIGIBLE_STATE).reason_codes
 
-    # Insufficient bars (fewer than n + 1)
+    # Insufficient bars (fewer than n + 2)
     short_ctx = make_context(bars[:10])
     assert ReasonCode.INSUFFICIENT_DATA in strategy.evaluate(short_ctx, {}, ELIGIBLE_STATE).reason_codes
 
