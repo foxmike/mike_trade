@@ -534,9 +534,67 @@ def _research_registry() -> Any:
     from mike_trade.strategies.short.short_ema_bearish_crossover import ShortEmaBearishCrossover
     from mike_trade.strategies.short.short_supertrend_bearish_flip import ShortSupertrendBearishFlip
     from mike_trade.strategies.short.short_donchian_breakdown import ShortDonchianBreakdown
+    from mike_trade.strategies.short.short_sma_bearish_crossover import ShortSmaBearishCrossover
+    from mike_trade.strategies.short.short_macd_bearish_crossover import ShortMacdBearishCrossover
+    from mike_trade.strategies.short.short_macd_zero_line_breakdown import (
+        ShortMacdZeroLineBreakdown,
+    )
+    from mike_trade.strategies.short.short_rsi_centerline_breakdown import (
+        ShortRsiCenterlineBreakdown,
+    )
+    from mike_trade.strategies.short.short_dmi_bearish_crossover import ShortDmiBearishCrossover
+    from mike_trade.strategies.short.short_aroon_bearish_reversal import ShortAroonBearishReversal
+    from mike_trade.strategies.short.short_parabolic_sar_bearish_reversal import (
+        ShortParabolicSarBearishReversal,
+    )
+    from mike_trade.strategies.short.short_ichimoku_bearish_breakdown import (
+        ShortIchimokuBearishBreakdown,
+    )
+    from mike_trade.strategies.short.short_opening_range_breakdown import (
+        ShortOpeningRangeBreakdown,
+    )
+    from mike_trade.strategies.short.short_vwap_breakdown import ShortVwapBreakdown
+    from mike_trade.strategies.short.short_bollinger_lower_band_breakdown import (
+        ShortBollingerLowerBandBreakdown,
+    )
+    from mike_trade.strategies.short.short_keltner_channel_breakdown import (
+        ShortKeltnerChannelBreakdown,
+    )
+    from mike_trade.strategies.short.short_obv_breakdown import ShortObvBreakdown
+    from mike_trade.strategies.short.short_cci_zero_line_breakdown import (
+        ShortCciZeroLineBreakdown,
+    )
+    from mike_trade.strategies.short.short_adx_bearish_trend_confirmation import (
+        ShortAdxBearishTrendConfirmation,
+    )
     from mike_trade.strategies.cover.cover_ema_bullish_crossover import CoverEmaBullishCrossover
     from mike_trade.strategies.cover.cover_supertrend_bullish_flip import CoverSupertrendBullishFlip
     from mike_trade.strategies.cover.cover_donchian_breakout import CoverDonchianBreakout
+    from mike_trade.strategies.cover.cover_sma_bullish_crossover import CoverSmaBullishCrossover
+    from mike_trade.strategies.cover.cover_macd_bullish_crossover import CoverMacdBullishCrossover
+    from mike_trade.strategies.cover.cover_macd_zero_line_crossover import CoverMacdZeroLineCrossover
+    from mike_trade.strategies.cover.cover_rsi_oversold_reversal import CoverRsiOversoldReversal
+    from mike_trade.strategies.cover.cover_rsi_centerline_crossover import CoverRsiCenterlineCrossover
+    from mike_trade.strategies.cover.cover_dmi_bullish_crossover import CoverDmiBullishCrossover
+    from mike_trade.strategies.cover.cover_aroon_bullish_reversal import CoverAroonBullishReversal
+    from mike_trade.strategies.cover.cover_parabolic_sar_bullish_reversal import CoverParabolicSarBullishReversal
+    from mike_trade.strategies.cover.cover_vwap_reclaim import CoverVwapReclaim
+    from mike_trade.strategies.cover.cover_bollinger_lower_band_reversion import CoverBollingerLowerBandReversion
+    from mike_trade.strategies.cover.cover_keltner_channel_reversion import CoverKeltnerChannelReversion
+    from mike_trade.strategies.cover.cover_cci_oversold_reversal import CoverCciOversoldReversal
+    from mike_trade.strategies.cover.cover_stochastic_bullish_crossover import CoverStochasticBullishCrossover
+    from mike_trade.strategies.cover.cover_williams_r_bullish_reversal import CoverWilliamsRBullishReversal
+    from mike_trade.strategies.cover.cover_chaikin_money_flow_recovery import CoverChaikinMoneyFlowRecovery
+    from mike_trade.strategies.cover.cover_bullish_engulfing import CoverBullishEngulfing
+    from mike_trade.strategies.cover.cover_hammer_reversal import CoverHammerReversal
+    from mike_trade.strategies.cover.cover_double_bottom_reversal import CoverDoubleBottomReversal
+    from mike_trade.strategies.cover.cover_inverse_head_and_shoulders import CoverInverseHeadAndShoulders
+    from mike_trade.strategies.cover.cover_trendline_breakout import CoverTrendlineBreakout
+    from mike_trade.strategies.cover.cover_previous_swing_high_breakout import CoverPreviousSwingHighBreakout
+    from mike_trade.strategies.cover.cover_higher_high_higher_low import CoverHigherHighHigherLow
+    from mike_trade.strategies.cover.cover_bull_flag_breakout import CoverBullFlagBreakout
+    from mike_trade.strategies.cover.cover_obv_breakout import CoverObvBreakout
+    from mike_trade.strategies.cover.cover_bullish_momentum_divergence import CoverBullishMomentumDivergence
     from mike_trade.strategies.buy.previous_close_reclaim import PreviousCloseReclaimBuy
     from mike_trade.strategies.buy.previous_day_high_breakout import PreviousDayHighBreakoutBuy
     from mike_trade.strategies.buy.previous_day_low_reversal import PreviousDayLowReversalBuy
@@ -627,6 +685,20 @@ def _research_registry() -> Any:
     from mike_trade.strategies.sell.obv_breakdown import ObvBreakdownSell
     from mike_trade.strategies.sell.shooting_star_reversal import ShootingStarReversalSell
     from mike_trade.strategies.sell.supertrend_bearish_flip import SupertrendBearishFlipSell
+    from mike_trade.strategies.short.short_bearish_engulfing import ShortBearishEngulfing
+    from mike_trade.strategies.short.short_shooting_star_reversal import ShortShootingStarReversal
+    from mike_trade.strategies.short.short_double_top_breakdown import ShortDoubleTopBreakdown
+    from mike_trade.strategies.short.short_head_and_shoulders_breakdown import (
+        ShortHeadAndShouldersBreakdown,
+    )
+    from mike_trade.strategies.short.short_trendline_breakdown import ShortTrendlineBreakdown
+    from mike_trade.strategies.short.short_previous_swing_low_break import ShortPreviousSwingLowBreak
+    from mike_trade.strategies.short.short_lower_low_confirmation import ShortLowerLowConfirmation
+    from mike_trade.strategies.short.short_failed_breakout_reversal import ShortFailedBreakoutReversal
+    from mike_trade.strategies.short.short_bear_flag_breakdown import ShortBearFlagBreakdown
+    from mike_trade.strategies.short.short_bearish_momentum_divergence import (
+        ShortBearishMomentumDivergence,
+    )
 
     registry = StrategyRegistry()
     for cls in (
@@ -690,9 +762,59 @@ def _research_registry() -> Any:
         ShortEmaBearishCrossover,
         ShortSupertrendBearishFlip,
         ShortDonchianBreakdown,
+        ShortSmaBearishCrossover,
+        ShortMacdBearishCrossover,
+        ShortMacdZeroLineBreakdown,
+        ShortRsiCenterlineBreakdown,
+        ShortDmiBearishCrossover,
+        ShortAroonBearishReversal,
+        ShortParabolicSarBearishReversal,
+        ShortIchimokuBearishBreakdown,
+        ShortOpeningRangeBreakdown,
+        ShortVwapBreakdown,
+        ShortBollingerLowerBandBreakdown,
+        ShortKeltnerChannelBreakdown,
+        ShortObvBreakdown,
+        ShortCciZeroLineBreakdown,
+        ShortAdxBearishTrendConfirmation,
+        ShortBearishEngulfing,
+        ShortShootingStarReversal,
+        ShortDoubleTopBreakdown,
+        ShortHeadAndShouldersBreakdown,
+        ShortTrendlineBreakdown,
+        ShortPreviousSwingLowBreak,
+        ShortLowerLowConfirmation,
+        ShortFailedBreakoutReversal,
+        ShortBearFlagBreakdown,
+        ShortBearishMomentumDivergence,
         CoverEmaBullishCrossover,
         CoverSupertrendBullishFlip,
         CoverDonchianBreakout,
+        CoverSmaBullishCrossover,
+        CoverMacdBullishCrossover,
+        CoverMacdZeroLineCrossover,
+        CoverRsiOversoldReversal,
+        CoverRsiCenterlineCrossover,
+        CoverDmiBullishCrossover,
+        CoverAroonBullishReversal,
+        CoverParabolicSarBullishReversal,
+        CoverVwapReclaim,
+        CoverBollingerLowerBandReversion,
+        CoverKeltnerChannelReversion,
+        CoverCciOversoldReversal,
+        CoverStochasticBullishCrossover,
+        CoverWilliamsRBullishReversal,
+        CoverChaikinMoneyFlowRecovery,
+        CoverBullishEngulfing,
+        CoverHammerReversal,
+        CoverDoubleBottomReversal,
+        CoverInverseHeadAndShoulders,
+        CoverTrendlineBreakout,
+        CoverPreviousSwingHighBreakout,
+        CoverHigherHighHigherLow,
+        CoverBullFlagBreakout,
+        CoverObvBreakout,
+        CoverBullishMomentumDivergence,
         ObvBreakoutBuy,
         AccumulationDistributionBreakoutBuy,
         VolumePriceTrendBreakoutBuy,

@@ -2444,7 +2444,7 @@ downtrend context (and commonly abnormal-volume context), while the deliberately
 contract exposes only one completed prior session. None of these entry primitives sizes a
 position, places an order, or defines an exit.
 
-## 18. SHORT and COVER roles (3 SHORT, 3 COVER)
+## 18. SHORT and COVER roles (28 SHORT, 28 COVER)
 
 `StrategyRole` now has four independent roles: **BUY** opens a long, **SELL** closes a long,
 **SHORT** opens a short and **COVER** closes a short. They are separate strategy classes
@@ -2452,8 +2452,8 @@ position, places an order, or defines an exit.
 in the same `StrategyRegistry`, which keeps one `_SIDE_BASES` entry per role and rejects a class whose
 spec side does not match its base. A SELL signal is never an implicit SHORT and a COVER signal is never
 an implicit BUY; there is no automatic reversal. Signal ids are `make_signal_id(...)` over the
-role, so the same bar yields four distinct ids. The library holds 75 BUY, 40 SELL, 3 SHORT and 3 COVER
-strategies. The original 156-candidate inventory covers BUY and SELL candidates only and is unchanged.
+role, so the same bar yields four distinct ids. The library holds 75 BUY, 40 SELL, 28 SHORT and 28 COVER
+strategies (25 SHORT strategies added by Batches A and B: `docs/SHORT_STRATEGIES_BATCH_A.md`, `docs/SHORT_STRATEGIES_BATCH_B.md`; 25 COVER strategies added by Batches A and B: `docs/COVER_STRATEGIES_BATCH_A.md`, `docs/COVER_STRATEGIES_BATCH_B.md`). The original 156-candidate inventory covers BUY and SELL candidates only and is unchanged.
 
 Strategy-level contract (unchanged `StrategySpec`/`ParameterSchema`/state conventions):
 

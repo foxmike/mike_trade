@@ -28,7 +28,37 @@ D = Decimal
 OPEN = datetime(2026, 10, 8, 9, 30, tzinfo=ZoneInfo("America/New_York")).astimezone(UTC)
 REGISTRY = _research_registry()
 SHORTS = ("short_ema_bearish_crossover", "short_supertrend_bearish_flip", "short_donchian_breakdown")
+ALL_SHORTS = SHORTS + (
+    "short_sma_bearish_crossover", "short_macd_bearish_crossover",
+    "short_macd_zero_line_breakdown", "short_rsi_centerline_breakdown",
+    "short_dmi_bearish_crossover", "short_aroon_bearish_reversal",
+    "short_parabolic_sar_bearish_reversal", "short_ichimoku_bearish_breakdown",
+    "short_opening_range_breakdown", "short_vwap_breakdown",
+    "short_bollinger_lower_band_breakdown", "short_keltner_channel_breakdown",
+    "short_obv_breakdown", "short_cci_zero_line_breakdown",
+    "short_adx_bearish_trend_confirmation",
+    "short_bearish_engulfing", "short_shooting_star_reversal",
+    "short_double_top_breakdown", "short_head_and_shoulders_breakdown",
+    "short_trendline_breakdown", "short_previous_swing_low_break",
+    "short_lower_low_confirmation", "short_failed_breakout_reversal",
+    "short_bear_flag_breakdown", "short_bearish_momentum_divergence",
+)
 COVERS = ("cover_ema_bullish_crossover", "cover_supertrend_bullish_flip", "cover_donchian_breakout")
+ALL_COVERS = COVERS + (
+    "cover_sma_bullish_crossover", "cover_macd_bullish_crossover",
+    "cover_macd_zero_line_crossover", "cover_rsi_oversold_reversal",
+    "cover_rsi_centerline_crossover", "cover_dmi_bullish_crossover",
+    "cover_aroon_bullish_reversal", "cover_parabolic_sar_bullish_reversal",
+    "cover_vwap_reclaim", "cover_bollinger_lower_band_reversion",
+    "cover_keltner_channel_reversion", "cover_cci_oversold_reversal",
+    "cover_stochastic_bullish_crossover", "cover_williams_r_bullish_reversal",
+    "cover_chaikin_money_flow_recovery",
+    "cover_bullish_engulfing", "cover_hammer_reversal",
+    "cover_double_bottom_reversal", "cover_inverse_head_and_shoulders",
+    "cover_trendline_breakout", "cover_previous_swing_high_breakout",
+    "cover_higher_high_higher_low", "cover_bull_flag_breakout",
+    "cover_obv_breakout", "cover_bullish_momentum_divergence",
+)
 ARMED = {"short": {"eligibility": "WATCHING_SHORT"}, "cover": {}}
 
 
@@ -89,11 +119,11 @@ def test_roles_are_independent_and_registered() -> None:
     assert [r.value for r in StrategyRole] == ["BUY", "SELL", "SHORT", "COVER"]
     counts = {r: len(REGISTRY.list_strategies(r)) for r in StrategyRole}
     assert counts == {StrategyRole.BUY: 75, StrategyRole.SELL: 40,
-                      StrategyRole.SHORT: 3, StrategyRole.COVER: 3}
-    assert len(REGISTRY.list_strategies()) == 121
+                      StrategyRole.SHORT: 28, StrategyRole.COVER: 28}
+    assert len(REGISTRY.list_strategies()) == 171
     source = inspect.getsource(app.build_runtime)
-    for ids, role, base in ((SHORTS, StrategyRole.SHORT, ShortStrategy),
-                            (COVERS, StrategyRole.COVER, CoverStrategy)):
+    for ids, role, base in ((ALL_SHORTS, StrategyRole.SHORT, ShortStrategy),
+                            (ALL_COVERS, StrategyRole.COVER, CoverStrategy)):
         assert {c.spec.strategy_id for c in REGISTRY.list_strategies(role)} == set(ids)
         for strategy_id in ids:
             cls = REGISTRY.get(strategy_id)
@@ -103,7 +133,7 @@ def test_roles_are_independent_and_registered() -> None:
             assert cls.spec.trigger_timeframe is CandleTimeframe.M1
             assert cls.spec.warmup_bars == cls.required_bars({})
             assert source.count(f"{cls.__name__},") == 1
-    for ids in (SHORTS, COVERS):
+    for ids in (ALL_SHORTS, ALL_COVERS):
         assert not {c.spec.strategy_id for c in REGISTRY.list_strategies(StrategyRole.BUY)} & set(ids)
 
 
