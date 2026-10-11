@@ -579,6 +579,10 @@ def _research_registry() -> Any:
     from mike_trade.strategies.buy.bollinger_band_mean_reversion import BollingerBandMeanReversionBuy
     from mike_trade.strategies.buy.vwap_pullback import VwapPullbackBuy
     from mike_trade.strategies.buy.support_bounce import SupportBounceBuy
+    from mike_trade.strategies.buy.vwap_band_reversion import VWAPBandReversionBuy
+    from mike_trade.strategies.buy.intraday_consolidation_breakout import (
+        IntradayConsolidationBreakoutBuy,
+    )
     from mike_trade.strategies.sell.aroon_bearish_reversal import AroonBearishReversalSell
     from mike_trade.strategies.sell.cci_zero_line_breakdown import CciZeroLineBreakdownSell
     from mike_trade.strategies.sell.cci_bearish_reversal import CciBearishReversalSell
@@ -720,6 +724,8 @@ def _research_registry() -> Any:
         BollingerBandMeanReversionBuy,
         VwapPullbackBuy,
         SupportBounceBuy,
+        VWAPBandReversionBuy,
+        IntradayConsolidationBreakoutBuy,
         AroonBearishReversalSell,
         CciZeroLineBreakdownSell,
         DmiBearishCrossoverSell,

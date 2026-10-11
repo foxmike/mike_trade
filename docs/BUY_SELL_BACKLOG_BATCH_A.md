@@ -83,8 +83,9 @@ Captures a pullback entry toward session VWAP during an established intraday bul
 
 #### Source / Reference
 - Brian Shannon, CMT, *Technical Analysis Using Multiple Timeframes* (2008), Chapter on VWAP pullback entries.
-- Brian Pezim, *How to Day Trade for a Living* (2016), "VWAP Pullback Strategy".
-- Andrew Aziz, *How to Day Trade for a Living* (2016), Chapter 7: "VWAP Trading".
+- Andrew Aziz, *How to Day Trade for a Living* (2016), Chapter 7: "VWAP Trading" (note: Brian Pezim authored *How to Swing Trade* (2018)).
+- Indicator Definition: Canonical session VWAP accumulating typical price × volume divided by cumulative volume.
+- Conceptual Foundation vs Engineering Choices: The general concept is buying an intraday pullback that tests and holds VWAP support during an uptrend. Concrete deterministic engineering choices include parameterizing the prior trend duration via `trend_bars` and the pullback proximity via `tolerance_pct`.
 
 #### Parameters and Defaults
 - `trend_bars` (INT): Default `3`, min `1`, max `20`. Minimum prior completed session bars establishing the uptrend above VWAP before the pullback.

@@ -88,9 +88,9 @@ def cases() -> dict[str, tuple[dict[str, object], list[Candle], list[Candle]]]:
 def test_roles_are_independent_and_registered() -> None:
     assert [r.value for r in StrategyRole] == ["BUY", "SELL", "SHORT", "COVER"]
     counts = {r: len(REGISTRY.list_strategies(r)) for r in StrategyRole}
-    assert counts == {StrategyRole.BUY: 78, StrategyRole.SELL: 40,
+    assert counts == {StrategyRole.BUY: 80, StrategyRole.SELL: 40,
                       StrategyRole.SHORT: 3, StrategyRole.COVER: 3}
-    assert len(REGISTRY.list_strategies()) == 124
+    assert len(REGISTRY.list_strategies()) == 126
     source = inspect.getsource(app.build_runtime)
     for ids, role, base in ((SHORTS, StrategyRole.SHORT, ShortStrategy),
                             (COVERS, StrategyRole.COVER, CoverStrategy)):

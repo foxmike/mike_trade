@@ -126,8 +126,11 @@ _SPEC = StrategySpec(
     ),
     source=(
         "Brian Shannon, Technical Analysis Using Multiple Timeframes (2008), Chapter on VWAP "
-        "pullback entries; Brian Pezim, How to Day Trade for a Living (2016), VWAP Pullback "
-        "Strategy; Andrew Aziz, How to Day Trade for a Living (2016), Chapter 7."
+        "pullback entries; Andrew Aziz, How to Day Trade for a Living (2016), Chapter 7: 'VWAP Trading' "
+        "(note: Brian Pezim authored 'How to Swing Trade' (2018)). Indicator definition uses standard "
+        "cumulative session volume-weighted average price. General concept is buying an intraday pullback "
+        "that tests and holds VWAP support in an uptrend; specific deterministic engineering choices "
+        "include parameterizing trend establishment via trend_bars and touch proximity via tolerance_pct."
     ),
     execution_limitations=(
         "Entry signal only: no stops, sizing, targets, or orders.",
