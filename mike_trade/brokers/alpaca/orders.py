@@ -79,6 +79,8 @@ class OrderPurpose(Enum):
 
     ENTRY = "entry"
     EXIT = "exit"
+    ENTRY_SHORT = "entry_short"
+    EXIT_SHORT = "exit_short"
     PROTECTIVE_STOP = "protective_stop"
     TRAILING_STOP = "trailing_stop"
     MANUAL_CLOSE = "manual_close"
@@ -89,6 +91,8 @@ class OrderPurpose(Enum):
 _PURPOSE_CODES = {
     OrderPurpose.ENTRY: "en",
     OrderPurpose.EXIT: "ex",
+    OrderPurpose.ENTRY_SHORT: "es",
+    OrderPurpose.EXIT_SHORT: "xs",
     OrderPurpose.PROTECTIVE_STOP: "ps",
     OrderPurpose.TRAILING_STOP: "ts",
     OrderPurpose.MANUAL_CLOSE: "mc",

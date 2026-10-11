@@ -46,6 +46,7 @@ from mike_trade.domain.trading import (
     OrderSide,
     OrderType,
     Position,
+    PositionDirection,
     TimeInForce,
 )
 from mike_trade.execution.coordinator import (
@@ -1835,6 +1836,7 @@ class AlpacaBrokerAdapter:
         clock: ClockPort,
         *,
         authorized: bool,
+        short_authorized: bool = False,
         environ: Mapping[str, str] | None,
     ) -> None:
         self.mode = mode
@@ -1842,6 +1844,7 @@ class AlpacaBrokerAdapter:
         self.scope = AccountScope(self.environment, account_id)
         self.clock = clock
         self.authorized = authorized
+        self.short_authorized = short_authorized
         self.environ = environ
         self._client: object | None = None
         self._account: object | None = None
@@ -1895,7 +1898,7 @@ class AlpacaBrokerAdapter:
             supports_notional=True,
             supports_native_trailing_stop=True,
             supports_extended_hours=False,
-            supports_short=False,
+            supports_short=True,
             paper_verified_combinations=frozenset(
                 {("market", True), ("limit", True)}
             ),
@@ -1939,17 +1942,22 @@ class AlpacaBrokerAdapter:
 
     def _position(self, value: object) -> Position:
         item = cast(Any, value)
-        if item.side != "long" or item.qty <= 0:
-            raise RuntimeError(f"unsupported external short position: {item.symbol}")
+        if item.side not in {"long", "short"} or item.qty == 0:
+            raise RuntimeError(f"unsupported external position: {item.symbol}")
         return Position(
             account_scope_id=self.scope.scope_id,
             symbol=item.symbol,
-            quantity=item.qty,
+            quantity=abs(item.qty),
             avg_entry_price=item.avg_entry_price,
             cost_basis=item.cost_basis,
             as_of=self.clock.now(),
             market_value=item.market_value,
             management=ManagementStatus.UNMANAGED,
+            direction=(
+                PositionDirection.LONG
+                if item.side == "long"
+                else PositionDirection.SHORT
+            ),
         )
 
     def _order(self, value: object | None) -> BrokerOrder | None:
@@ -1962,7 +1970,21 @@ class AlpacaBrokerAdapter:
                 f"Alpaca order {item.order_id} has notional sizing without a quantity"
             )
         try:
-            side = OrderSide(str(item.side).upper())
+            broker_side = str(item.side).lower()
+            side = OrderSide.BUY if broker_side == "buy" else OrderSide.SELL
+            try:
+                from mike_trade.brokers.alpaca.orders import (
+                    OrderPurpose as AlpacaOrderPurpose,
+                    parse_client_order_id,
+                )
+
+                lineage = parse_client_order_id(item.client_order_id)["purpose"]
+                if lineage is AlpacaOrderPurpose.ENTRY_SHORT:
+                    side = OrderSide.SELL_SHORT
+                elif lineage is AlpacaOrderPurpose.EXIT_SHORT:
+                    side = OrderSide.BUY_TO_COVER
+            except (ValueError, KeyError):
+                pass
             order_type = OrderType(str(item.type).upper())
             status = BrokerOrderStatus(str(item.status).upper())
         except ValueError:
@@ -2061,20 +2083,46 @@ class AlpacaBrokerAdapter:
                 f"asset {intent.symbol} is ineligible: {eligibility.reasons!r}",
                 code="ASSET_INELIGIBLE",
             )
+        if intent.side is OrderSide.SELL_SHORT:
+            account = cast(Any, self._account).get_account()
+            if not (
+                self.short_authorized
+                and account.shorting_enabled
+                and account.buying_power > 0
+                and asset.marginable
+                and asset.shortable
+                and asset.standard_short_borrow_available
+            ):
+                raise ConfigurationError(
+                    "short entry requires explicit authorization, margin buying "
+                    "power, and current easy-to-borrow shortability",
+                    code="SHORT_ENTRY_NOT_AUTHORIZED",
+                )
         known_position = None
-        if intent.side is OrderSide.SELL:
+        if intent.side in {OrderSide.SELL, OrderSide.BUY_TO_COVER}:
             observed = cast(Any, self._account).get_position(intent.symbol)
             known_position = None if observed is None else observed.qty
+        from mike_trade.brokers.alpaca.orders import OrderPurpose as AlpacaOrderPurpose
+
+        alpaca_purpose = (
+            AlpacaOrderPurpose.ENTRY_SHORT
+            if intent.side is OrderSide.SELL_SHORT
+            else (
+                AlpacaOrderPurpose.EXIT_SHORT
+                if intent.side is OrderSide.BUY_TO_COVER
+                else intent.purpose
+            )
+        )
         result = cast(Any, self._orders).submit_order(
             asset=asset,
-            side=intent.side.value,
+            side=intent.side.broker_side,
             order_type=intent.order_type.value,
             qty=intent.quantity,
             notional=intent.notional,
             limit_price=intent.limit_price,
             time_in_force=intent.time_in_force.value,
             cycle_id=intent.cycle_id,
-            purpose=intent.purpose,
+            purpose=alpaca_purpose,
             known_position_qty=known_position,
         )
         converted = self._order(result) if hasattr(result, "order_id") else result

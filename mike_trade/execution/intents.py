@@ -23,15 +23,12 @@ _IDEMPOTENCY_PREFIX = "order-intent:"
 
 
 class OrderPurpose(Enum):
-    """Enabled long-only reasons for placing an order.
-
-    Short-entry and short-cover purposes are intentionally absent.  Adding enum
-    names in the future does not enable those capabilities; validation and the
-    broker capability boundary must opt in separately.
-    """
+    """Position-effect-aware reasons for placing an order."""
 
     ENTRY_LONG = "ENTRY_LONG"
     EXIT_LONG = "EXIT_LONG"
+    ENTRY_SHORT = "ENTRY_SHORT"
+    EXIT_SHORT = "EXIT_SHORT"
     PROTECTIVE_STOP = "PROTECTIVE_STOP"
     TRAILING_STOP = "TRAILING_STOP"
     MANUAL_CLOSE = "MANUAL_CLOSE"
@@ -148,11 +145,25 @@ class OrderIntent:
             raise ValueError("exactly one of qty or notional is required")
         self._validate_prices()
 
-        required_side = OrderSide.BUY if self.purpose is OrderPurpose.ENTRY_LONG else OrderSide.SELL
+        required_side = {
+            OrderPurpose.ENTRY_LONG: OrderSide.BUY,
+            OrderPurpose.EXIT_LONG: OrderSide.SELL,
+            OrderPurpose.ENTRY_SHORT: OrderSide.SELL_SHORT,
+            OrderPurpose.EXIT_SHORT: OrderSide.BUY_TO_COVER,
+            OrderPurpose.PROTECTIVE_STOP: self.side,
+            OrderPurpose.TRAILING_STOP: self.side,
+            OrderPurpose.MANUAL_CLOSE: self.side,
+            OrderPurpose.SAFETY_EXIT: self.side,
+        }[self.purpose]
         if self.side is not required_side:
-            if self.purpose is OrderPurpose.ENTRY_LONG:
-                raise ValueError("short-opening sides are disabled; ENTRY_LONG requires BUY")
-            raise ValueError(f"{self.purpose.value} is a long exit and requires SELL")
+            raise ValueError(f"{self.purpose.value} requires {required_side.value}")
+        if self.purpose in {
+            OrderPurpose.PROTECTIVE_STOP,
+            OrderPurpose.TRAILING_STOP,
+            OrderPurpose.MANUAL_CLOSE,
+            OrderPurpose.SAFETY_EXIT,
+        } and not self.side.is_exit:
+            raise ValueError(f"{self.purpose.value} requires a position-closing side")
 
     @property
     def account_scope_id(self) -> str:
@@ -186,6 +197,8 @@ class OrderIntent:
         alpaca_purpose = {
             OrderPurpose.ENTRY_LONG: AlpacaOrderPurpose.ENTRY,
             OrderPurpose.EXIT_LONG: AlpacaOrderPurpose.EXIT,
+            OrderPurpose.ENTRY_SHORT: AlpacaOrderPurpose.ENTRY_SHORT,
+            OrderPurpose.EXIT_SHORT: AlpacaOrderPurpose.EXIT_SHORT,
             OrderPurpose.PROTECTIVE_STOP: AlpacaOrderPurpose.PROTECTIVE_STOP,
             OrderPurpose.TRAILING_STOP: AlpacaOrderPurpose.TRAILING_STOP,
             OrderPurpose.MANUAL_CLOSE: AlpacaOrderPurpose.MANUAL_CLOSE,

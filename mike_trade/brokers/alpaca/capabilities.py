@@ -163,7 +163,7 @@ class CapabilityDescriptor:
 
     ``sizing`` is ``whole`` (whole-share qty), ``fractional`` (fractional qty),
     or ``notional``. ``side`` is ``buy``, ``sell`` (long exit), or ``short``
-    (short sale, always unsupported on the long-only desk). ``operation`` is
+    (short sale). ``operation`` is
     ``submit`` or ``replace``.
     """
 
@@ -233,8 +233,6 @@ class CapabilityUnavailable(UnsupportedOrderCapabilityError):
 
 def _structural_status(descriptor: CapabilityDescriptor) -> CapabilityStatus | None:
     """Structural verdict, or None when the descriptor is structurally possible."""
-    if descriptor.side == "short":
-        return CapabilityStatus.UNSUPPORTED
     if descriptor.order_type == "trailing_stop" and descriptor.order_class != "simple":
         return CapabilityStatus.UNSUPPORTED
     if descriptor.operation == "replace" and descriptor.sizing == "notional":
@@ -244,8 +242,6 @@ def _structural_status(descriptor: CapabilityDescriptor) -> CapabilityStatus | N
 
 def _structural_reason(descriptor: CapabilityDescriptor) -> str | None:
     """Operator-readable reason for a structural UNSUPPORTED verdict."""
-    if descriptor.side == "short":
-        return "short selling is UNSUPPORTED: the desk trades long-only"
     if descriptor.order_type == "trailing_stop" and descriptor.order_class != "simple":
         return (
             "trailing_stop with order_class other than simple is never available: "
@@ -476,8 +472,9 @@ def default_alpaca_capabilities() -> BrokerCapabilities:
     Everything else defaults to UNPROVEN (stop-only OTO, bracket/OCO,
     fractional stop or linked orders, fractional trailing stop, stop-price
     replace, trailing replace, OTO replace, fractional GTC, extended TIFs),
-    except the structural UNSUPPORTED rules (short selling, non-simple
-    trailing_stop, notional replace).
+    except structural UNSUPPORTED rules (non-simple trailing_stop and notional
+    replace). Short-selling combinations deliberately remain UNPROVEN until a
+    paper verification or explicit LIVE promotion is recorded.
     """
     entries: dict[tuple[str, tuple[str, str, str, str, str, str]], _Entry] = {}
     for env in (AlpacaEnvironment.PAPER, AlpacaEnvironment.LIVE):
