@@ -8,14 +8,14 @@ This is the authoritative reconciliation of the original 156 BUY/SELL candidates
 |---|---:|
 | Original BUY candidates | 106 |
 | Original SELL candidates | 50 |
-| Implemented BUY strategies | 58 |
+| Implemented BUY strategies | 61 |
 | Implemented SELL strategies | 23 |
-| Existing equivalents | 42 |
-| Pending candidates | 6 |
-| Deferred candidates | 27 |
+| Existing equivalents | 43 |
+| Pending candidates | 5 |
+| Deferred candidates | 24 |
 
-The registered library contains 75 BUY and 40 SELL strategies after the general BUY,
-current-session BUY, SELL batch-3, BUY batch-4, SELL batch-5, and gap BUY batch-6 additions. Keltner Squeeze maps to `volatility_squeeze_breakout`. There are 42 equivalent candidate rows;
+The registered library contains 78 BUY and 40 SELL strategies after the general BUY,
+current-session BUY, SELL batch-3, BUY batch-4, SELL batch-5, gap BUY batch-6, and backlog batch A additions. Keltner Squeeze maps to `volatility_squeeze_breakout`. There are 43 equivalent candidate rows;
 Volume Surge Breakout maps to `momentum_breakout` and Donchian Trend Following to
 `donchian_channel_breakout`; “RSI Reversal” and “RSI Overbought Exit” describe one existing
 rule, and NR4 uses the NR7 implementation with period=4.
@@ -49,7 +49,7 @@ Each row records the original candidate name, role, original inventory group, su
 | Ascending Triangle Breakout | BUY | breakout | technical | breakout | IMPLEMENTED | ascending_triangle_breakout | Bulkowski, Ascending Triangle (flat top with 3+ touches, rising bottom with 2+). | Three swing highs within 0.2% and rising swing lows; close first breaks the flat top. |
 | Volatility Squeeze Breakout | BUY | breakout | technical | breakout | IMPLEMENTED | volatility_squeeze_breakout | John Carter, Mastering the Trade (TTM Squeeze); StockCharts ChartSchool, TTM Squeeze. | Bollinger(20,2) inside Keltner(SMA20 ± 1.5 × SMA(TR)) turns off with positive regression momentum. Finite windows. |
 | VWAP Bounce | BUY | vwap | technical | vwap | EXISTING_EQUIVALENT | vwap_bounce | Existing module: mike_trade/strategies/buy/vwap_bounce.py | Existing registered method; its source and exact signal are in its strategy module. |
-| VWAP Pullback | BUY | vwap | technical | vwap | PENDING | — | Source review pending; no candidate-specific source selected. | Candidate only; exact rule, source, overlap, and execution contract require review. |
+| VWAP Pullback | BUY | vwap | technical | vwap | IMPLEMENTED | vwap_pullback | Brian Shannon, Technical Analysis Using Multiple Timeframes (2008); Brian Pezim, How to Day Trade for a Living (2016); Andrew Aziz (2016) ch. 7. | In an established intraday trend above session VWAP, setup bar tests VWAP (low <= vwap * (1 + tolerance)) holding support (close >= vwap), confirmed by signal close > setup high and close > VWAP. |
 | VWAP Reclaim | BUY | vwap | technical | vwap | PENDING | — | Source review pending; no candidate-specific source selected. | Candidate only; exact rule, source, overlap, and execution contract require review. |
 | VWAP Rejection | BUY | vwap | technical | vwap | REQUIRES_SOURCE_DEFINITION | — | Source review pending; see candidate ambiguity. | Published use can mean long rejection from VWAP support or short rejection from resistance; role and exact rule need source selection. |
 | VWAP Mean Reversion | BUY | vwap | technical | vwap | PENDING | — | Source review pending; no candidate-specific source selected. | Candidate only; exact rule, source, overlap, and execution contract require review. |
@@ -67,7 +67,7 @@ Each row records the original candidate name, role, original inventory group, su
 | Moving Average Reclaim | BUY | moving_average | technical | moving_average | IMPLEMENTED | moving_average_reclaim | StockCharts ChartSchool, Moving Averages: https://chartschool.stockcharts.com/table-of-contents/technical-indicators-and-overlays/technical-overlays/moving-averages-simple-and-exponential | Close crosses from at-or-below to above its SMA. |
 | Moving Average Compression | BUY | moving_average | technical | moving_average | REQUIRES_SOURCE_DEFINITION | — | Source review pending; no candidate-specific source selected. | Batch 4 research: no published compression threshold or trigger found. |
 | RSI Oversold Reversal | BUY | mean_reversion | technical | mean_reversion | EXISTING_EQUIVALENT | rsi_oversold_reversal | Existing module: mike_trade/strategies/buy/rsi_oversold_reversal.py | Existing registered method; its source and exact signal are in its strategy module. |
-| Bollinger Band Mean Reversion | BUY | mean_reversion | technical | mean_reversion | REQUIRES_SOURCE_DEFINITION | — | Source review pending; no candidate-specific source selected. | Multiple published rules differ (lower-band touch, reclaim, or W-bottom); exact entry not selected. |
+| Bollinger Band Mean Reversion | BUY | mean_reversion | technical | mean_reversion | IMPLEMENTED | bollinger_band_mean_reversion | John Bollinger, Bollinger on Bollinger Bands (2001); StockCharts ChartSchool, Bollinger Bands: https://chartschool.stockcharts.com/table-of-contents/technical-indicators-and-overlays/technical-overlays/bollinger-bands | Reversal setup: prior completed close strictly below lower Bollinger Band and latest completed close crosses back strictly above lower band. |
 | Moving Average Mean Reversion | BUY | mean_reversion | technical | mean_reversion | REQUIRES_SOURCE_DEFINITION | — | Source review pending; no candidate-specific source selected. | Batch 4 research: published variants differ (percent below MA, z-score, envelope); the z-score form is z_score_mean_reversion and the envelope form moving_average_envelope. |
 | CCI Reversion | BUY | mean_reversion | technical | mean_reversion | IMPLEMENTED | cci_reversion | StockCharts, Commodity Channel Index: https://chartschool.stockcharts.com/table-of-contents/technical-indicators-and-overlays/technical-indicators/commodity-channel-index-cci | New registered class; selected rule and source are documented in its module. |
 | Williams %R Reversion | BUY | mean_reversion | technical | mean_reversion | EXISTING_EQUIVALENT | williams_r_reversion | Existing module: mike_trade/strategies/buy/williams_r_reversion.py | Existing registered method; its source and exact signal are in its strategy module. |
@@ -100,7 +100,7 @@ Each row records the original candidate name, role, original inventory group, su
 | Inverse Head and Shoulders | BUY | price_action | technical | price_action | IMPLEMENTED | inverse_head_and_shoulders | Edwards & Magee; Bulkowski, Head-and-Shoulders Bottom; Murphy ch. 7. | Last three swing lows (head lowest, shoulders within 1%, head ≥0.3% deeper); close first breaks the sloped neckline through the two interim peaks. |
 | Cup and Handle | BUY | price_action | technical | price_action | REQUIRES_SOURCE_DEFINITION | — | Source review pending; no candidate-specific source selected. | Batch 4 research: O'Neil's rounded-base depth/duration/handle rules are defined on weekly-scale daily bars and are not quantified for a curvature test. |
 | Higher High/Higher Low | BUY | price_action | technical | price_action | IMPLEMENTED | higher_high_higher_low | Dow Theory (Murphy, Technical Analysis of the Financial Markets); Williams fractals. | Bar that confirms a swing low above the previous swing low while the last two swing highs are rising. |
-| Support Bounce | BUY | price_action | technical | price_action | REQUIRES_SOURCE_DEFINITION | — | Source review pending; no candidate-specific source selected. | Batch 4 research: no published touch tolerance or confirmation for a bounce. |
+| Support Bounce | BUY | price_action | technical | price_action | IMPLEMENTED | support_bounce | Robert Edwards and John Magee, Technical Analysis of Stock Trends; John Murphy, Technical Analysis of the Financial Markets (1999) ch. 4; Bill Williams fractals. | Point-in-time confirmed swing low support is tested within tolerance without closing below it, confirmed by completed close above setup bar's high and above support level. |
 | Resistance Breakout | BUY | price_action | technical | price_action | IMPLEMENTED | resistance_breakout | Edwards & Magee; Murphy ch. 4; Williams fractals. | Close crosses above the latest confirmed swing high of the prior 50 bars. |
 | Engulfing Candle Reversal | BUY | price_action | technical | price_action | IMPLEMENTED | engulfing_candle_reversal | StockCharts, Bullish Engulfing: https://chartschool.stockcharts.com/table-of-contents/chart-analysis/candlestick-charts/candlestick-bullish-reversal-patterns | New registered class; selected rule and source are documented in its module. |
 | Hammer Reversal | BUY | price_action | technical | price_action | IMPLEMENTED | hammer_reversal | Steve Nison, Japanese Candlestick Charting Techniques; TA-Lib CDLHAMMER shadow quantification. | Hammer after a decline (lower shadow >= 2 × body, upper <= 10% of range) confirmed by a next close above its high. |
@@ -177,7 +177,7 @@ Each row records the original candidate name, role, original inventory group, su
 | Chandelier Exit | SELL | volatility_channel | technical | volatility | NOT_APPLICABLE | — | Platform role boundary; no strategy-rule citation applies. | Protective stop policy, not a discretionary strategy signal. |
 | ATR Trailing Exit | SELL | volatility_channel | technical | volatility | NOT_APPLICABLE | — | Platform role boundary; no strategy-rule citation applies. | Protective stop policy, not a discretionary strategy signal. |
 | Donchian Lower Channel Exit | SELL | volatility_channel | technical | breakout | EXISTING_EQUIVALENT | donchian_lower_channel_exit | Existing module: mike_trade/strategies/sell/donchian_lower_channel_exit.py | Existing registered method; its source and exact signal are in its strategy module. |
-| Bollinger Middle Band Exit | SELL | volatility_channel | technical | volatility | REQUIRES_SOURCE_DEFINITION | — | Source review pending; no candidate-specific source selected. | No single source-defined long exit rule selected. |
+| Bollinger Middle Band Exit | SELL | volatility_channel | technical | moving_average | EXISTING_EQUIVALENT | price_below_sma | John Bollinger, Bollinger on Bollinger Bands (Method I Volatility Breakout exit); existing module: mike_trade/strategies/sell/price_below_sma.py | Middle band is mathematically identical to SMA(period). Long exit on close below the 20-period middle band is functionally equivalent to Price Below SMA with period=20. |
 | Bollinger Upper Band Reversal | SELL | volatility_channel | technical | volatility | IMPLEMENTED | bollinger_upper_band_reversal | John Bollinger official: https://www.bollingerbands.com/bollinger-bands; StockCharts Bollinger Bands. | Close outside the upper band followed by a close back inside; a band tag alone does not signal. |
 | Keltner Channel Breakdown | SELL | volatility_channel | technical | volatility | IMPLEMENTED | keltner_channel_breakdown | Chester Keltner; StockCharts ChartSchool, Keltner Channels: https://chartschool.stockcharts.com/table-of-contents/technical-indicators-and-overlays/technical-overlays/keltner-channels | Original Keltner SMA typical-price/range version; close crosses lower channel. |
 | Volatility Expansion Reversal | SELL | volatility_channel | technical | volatility | REQUIRES_SOURCE_DEFINITION | — | Source review completed; no canonical candidate-specific rule selected. | Published descriptions disagree between outside reversals, wide-range bearish bars, ATR/range thresholds, and whether volume or next-bar confirmation is mandatory. |
@@ -192,7 +192,7 @@ Each row records the original candidate name, role, original inventory group, su
 
 ## Deferred candidate notes
 
-`REQUIRES_SOURCE_DEFINITION`: VWAP Rejection, Bollinger Band Mean Reversion, Bollinger Middle Band Exit, Volatility Expansion Reversal, High-Volume Reversal, and Volume Climax Exit, plus the BUY candidates identified in their rows; published descriptions admit multiple materially different rules, so no rule was selected by inference.
+`REQUIRES_SOURCE_DEFINITION`: VWAP Rejection, Volatility Expansion Reversal, High-Volume Reversal, and Volume Climax Exit, plus the BUY candidates identified in their rows; published descriptions admit multiple materially different rules, so no rule was selected by inference.
 
 `BLOCKED_BY_INFRASTRUCTURE`: remaining rows concern unavailable complete-session reference data. Cumulative volume indicators, recursive ATR/Supertrend, and point-in-time displaced-cloud indicators are supported by their respective indicator calculators.
 

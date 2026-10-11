@@ -212,6 +212,9 @@ from mike_trade.strategies.buy.ascending_triangle_breakout import AscendingTrian
 from mike_trade.strategies.buy.trendline_breakout import TrendlineBreakoutBuy
 from mike_trade.strategies.buy.triangle_breakout import TriangleBreakoutBuy
 from mike_trade.strategies.buy.bull_flag_breakout import BullFlagBreakoutBuy
+from mike_trade.strategies.buy.bollinger_band_mean_reversion import BollingerBandMeanReversionBuy
+from mike_trade.strategies.buy.vwap_pullback import VwapPullbackBuy
+from mike_trade.strategies.buy.support_bounce import SupportBounceBuy
 from mike_trade.strategies.indicators.core import VWAPCalculator
 from mike_trade.strategies.presets.pairs import resolve_pair_preset
 from mike_trade.strategies.registry import StrategyRegistry
@@ -2605,6 +2608,9 @@ def build_runtime(
         PreviousCloseReclaimBuy,
         PreviousDayHighBreakoutBuy,
         PreviousDayLowReversalBuy,
+        BollingerBandMeanReversionBuy,
+        VwapPullbackBuy,
+        SupportBounceBuy,
         AroonBearishReversalSell,
         CciZeroLineBreakdownSell,
         DmiBearishCrossoverSell,
