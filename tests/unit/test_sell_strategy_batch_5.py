@@ -206,7 +206,7 @@ def test_eight_new_sells_registered_in_production_and_research() -> None:
         assert cls.spec.source.strip() and cls.spec.completed_bars_only
         assert cls.spec.warmup_bars == cls.required_bars({})
         assert production_source.count(f"{cls.__name__},") == 1
-    assert len(REGISTRY.list_strategies(StrategyRole.BUY)) == 75
+    assert len(REGISTRY.list_strategies(StrategyRole.BUY)) == 80
     assert len(REGISTRY.list_strategies(StrategyRole.SELL)) == 40
 
 
