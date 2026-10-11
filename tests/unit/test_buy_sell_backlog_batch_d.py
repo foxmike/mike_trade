@@ -119,12 +119,12 @@ def make_context(
 def test_batch_d_strategies_registered_in_production_and_research() -> None:
     counts = {role: len(REGISTRY.list_strategies(role)) for role in StrategyRole}
     assert counts == {
-        StrategyRole.BUY: 87,
-        StrategyRole.SELL: 41,
+        StrategyRole.BUY: 93,
+        StrategyRole.SELL: 43,
         StrategyRole.SHORT: 28,
         StrategyRole.COVER: 28,
     }
-    assert len(REGISTRY.list_strategies()) == 184
+    assert len(REGISTRY.list_strategies()) == 192
 
     rvol_cls = REGISTRY.get("relative_volume_momentum")
     assert issubclass(rvol_cls, RelativeVolumeMomentumBuy)

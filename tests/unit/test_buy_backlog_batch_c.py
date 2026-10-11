@@ -159,12 +159,12 @@ def evaluate(
 
 def test_registration_and_equivalence_choices() -> None:
     assert {role: len(REGISTRY.list_strategies(role)) for role in StrategyRole} == {
-        StrategyRole.BUY: 87,
-        StrategyRole.SELL: 41,
+        StrategyRole.BUY: 93,
+        StrategyRole.SELL: 43,
         StrategyRole.SHORT: 28,
         StrategyRole.COVER: 28,
     }
-    assert len(REGISTRY.list_strategies()) == 184
+    assert len(REGISTRY.list_strategies()) == 192
     source = inspect.getsource(app.build_runtime)
     for strategy_id in IDS:
         cls = REGISTRY.get(strategy_id)

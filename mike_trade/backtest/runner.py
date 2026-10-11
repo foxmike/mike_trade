@@ -48,12 +48,15 @@ from mike_trade.domain.trading import (
 )
 from mike_trade.market_data.candles import (
     Candle as StrategyCandle,
+)
+from mike_trade.market_data.candles import (
     CandleOrigin,
     CandleStatus,
     CandleTimeframe,
     PriceBasis,
 )
 from mike_trade.market_data.context import ContextFreshness, MarketContext
+from mike_trade.market_data.session_candles import SessionCandleSource
 from mike_trade.market_data.session_reference import SessionReferenceTracker
 from mike_trade.risk.fixed_stop import ALPACA_EQUITY_TICK_RULES
 from mike_trade.risk.stop_config import normalize_stop_spec, protection_policy_for_entry
@@ -556,8 +559,12 @@ class BacktestRunner:
         position_coordinator: Any = None,
         cycle_accounting: Any = None,
         protection_math: Any = None,
+        session_candles: SessionCandleSource | None = None,
     ) -> None:
         self.registry, self.feed, self.clock, self.execution = registry, feed, clock, execution
+        #: Optional completed D1/W1 history (point-in-time via ``available_at``). Without it a
+        #: strategy that requires D1/W1 candles is refused and M1 behaviour is unchanged.
+        self.session_candles = session_candles
         self.scheduler = scheduler or StrategyScheduler(clock)
         self.intent_factory = intent_factory
         self.policies = (
@@ -657,7 +664,14 @@ class BacktestRunner:
         for plan in plans.values():
             for cls in plan.all:
                 required = {*cls.spec.required_timeframes, cls.spec.trigger_timeframe}
-                unsupported = required - supported_replay_timeframes
+                needs_session = {tf for tf in required if tf.is_session_based}
+                if needs_session and self.session_candles is None:
+                    labels = sorted(tf.value for tf in needs_session)
+                    raise ValueError(
+                        f"strategy {cls.spec.strategy_id} requires completed {labels} candles; "
+                        "supply a session_candles source (daily history dataset) to the runner"
+                    )
+                unsupported = required - supported_replay_timeframes - needs_session
                 if unsupported:
                     labels = sorted(tf.value for tf in unsupported)
                     raise ValueError(
@@ -704,6 +718,12 @@ class BacktestRunner:
                     else LIFECYCLE_SEMANTICS_VERSION
                 ),
                 "context_history_bars": request.context_history_bars,
+                **(
+                    {"session_candles": self.session_candles.fingerprint()}  # type: ignore[attr-defined]
+                    if self.session_candles is not None
+                    and hasattr(self.session_candles, "fingerprint")
+                    else {}
+                ),
                 "strategy_collections": {
                     s: {
                         "buy": [c.spec.strategy_id for c in p.buys],
@@ -945,6 +965,20 @@ class BacktestRunner:
                     reference_cursor += 1
                 backtest_monitor.evaluate(as_of=batch_time)
 
+        session_frames: dict[str, tuple[CandleTimeframe, ...]] = {
+            symbol: tuple(
+                sorted(
+                    {
+                        tf
+                        for cls in plan.all
+                        for tf in cls.spec.required_timeframes
+                        if tf.is_session_based
+                    },
+                    key=lambda tf: tf.value,
+                )
+            )
+            for symbol, plan in plans.items()
+        }
         trigger_rows: set[tuple[str, str, datetime]] = set()
         state: dict[tuple[str, str], dict[str, Any]] = defaultdict(dict)
         for symbol in request.symbols:
@@ -1465,7 +1499,17 @@ class BacktestRunner:
                 session_status,
                 session.session_id,
                 freshness,
-                {tf: tuple(bars) for tf, bars in strategy_candles[symbol].items() if bars},
+                {
+                    **{tf: tuple(bars) for tf, bars in strategy_candles[symbol].items() if bars},
+                    # completed D1/W1 history exactly as knowable at this event's availability
+                    **{
+                        tf: self.session_candles.get_completed_candles(
+                            symbol, tf, None, as_of=ev.available_at
+                        )
+                        for tf in session_frames.get(symbol, ())
+                        if self.session_candles is not None
+                    },
+                },
                 {"vwap": latest_vwap, "vwap_prev": prior_vwap,
                  "rsi": rsi_values.get(symbol, (None, None))[0],
                  "rsi_prev": rsi_values.get(symbol, (None, None))[1]},

@@ -75,14 +75,14 @@ def production_classes(tmp_path: Path) -> list[type]:
     return captured
 
 
-def test_184_counts_production_research_parity_and_preserved_additions(tmp_path: Path) -> None:
+def test_192_counts_production_research_parity_and_preserved_additions(tmp_path: Path) -> None:
     counts = {r: len(REGISTRY.list_strategies(r)) for r in StrategyRole}
-    assert counts == {StrategyRole.BUY: 87, StrategyRole.SELL: 41,
+    assert counts == {StrategyRole.BUY: 93, StrategyRole.SELL: 43,
                       StrategyRole.SHORT: 28, StrategyRole.COVER: 28}
     research = [c.spec.strategy_id for c in REGISTRY.list_strategies()]
-    assert len(research) == len(set(research)) == 184
+    assert len(research) == len(set(research)) == 192
     production = production_classes(tmp_path)
-    assert len(production) == len(set(production)) == 184
+    assert len(production) == len(set(production)) == 192
     assert set(production) == {REGISTRY.get(sid) for sid in research}
     ids = set(research)
     assert set(SIX_CD) <= ids and set(NEW) <= ids

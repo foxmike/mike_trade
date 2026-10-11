@@ -1,4 +1,4 @@
-"""Deterministic multi-timeframe intraday candle builders with closed-bar finalization.
+"""Deterministic multi-timeframe candle types and intraday builders with closed-bar finalization.
 
 Pure in-memory aggregation: no network, provider, or broker I/O, and no raw tick
 archive.  Only bounded per-(symbol, timeframe) candle history is retained.
@@ -22,6 +22,11 @@ Design choices:
    but not its own.
 5. The first accepted input locks the symbol's (feed_id, consolidated, price_basis);
    any later input that differs raises ``SeriesMismatchError`` before state changes.
+6. Daily (``D1``) and weekly (``W1``) candles are *session based*: their span is the exchange
+   calendar's regular-session interval(s), not a fixed duration (early closes are shorter, a
+   week has four or five sessions).  The :class:`Candle` value type validates that span against
+   the NYSE calendar; they are never built by :class:`CandleBuilder` (which only aggregates
+   intraday bars) but supplied by ``market_data.session_candles``.
 """
 
 from __future__ import annotations
@@ -41,9 +46,12 @@ from mike_trade.domain.instruments import (
     require_positive,
     require_utc,
 )
+from mike_trade.scheduling.calendar import is_trading_day, session_for
 
 __all__ = [
     "CandleTimeframe",
+    "INTRADAY_TIMEFRAMES",
+    "SESSION_TIMEFRAMES",
     "PriceBasis",
     "CandleStatus",
     "CandleOrigin",
@@ -87,10 +95,30 @@ class CandleTimeframe(Enum):
     M15 = "15m"
     M30 = "30m"
     M60 = "60m"
+    #: Completed regular-session daily candle (calendar-defined span).
+    D1 = "1d"
+    #: Completed calendar-week candle spanning that week's regular sessions.
+    W1 = "1w"
+
+    @property
+    def is_session_based(self) -> bool:
+        """True for D1/W1: the span follows the exchange calendar, not a fixed duration."""
+        return self in (CandleTimeframe.D1, CandleTimeframe.W1)
 
     @property
     def duration(self) -> timedelta:
+        if self.is_session_based:
+            raise ValueError(f"{self.value} candles have a calendar-defined span, not a duration")
         return timedelta(minutes=int(self.value[:-1]))
+
+
+#: Fixed-duration timeframes the :class:`CandleBuilder` aggregates from 1-minute bars.
+INTRADAY_TIMEFRAMES: tuple[CandleTimeframe, ...] = (
+    CandleTimeframe.M1, CandleTimeframe.M5, CandleTimeframe.M15, CandleTimeframe.M30,
+    CandleTimeframe.M60,
+)
+#: Calendar-defined timeframes supplied by ``market_data.session_candles``.
+SESSION_TIMEFRAMES: tuple[CandleTimeframe, ...] = (CandleTimeframe.D1, CandleTimeframe.W1)
 
 
 class PriceBasis(Enum):
@@ -187,6 +215,37 @@ def _check_ohlc(o: Decimal, h: Decimal, lo: Decimal, c: Decimal) -> None:
         raise _invalid(f"close ({c!s}) must be within [low, high]")
 
 
+def _check_session_span(timeframe: CandleTimeframe, start: datetime, end: datetime) -> None:
+    """A D1/W1 candle spans exactly its regular session(s): open of the first to close of the last.
+
+    D1 is one trading session; W1 is every trading session of one Monday-Friday calendar week
+    (holiday weeks have fewer, early closes end earlier).  Anything else - midnight stamps, a
+    non-trading day, a partial week - is rejected, so a candle can never silently cover a
+    different span than the exchange calendar defines.
+    """
+    day = start.astimezone(NY).date()
+    try:
+        if timeframe is CandleTimeframe.D1:
+            first = last = session_for(day)
+        else:
+            monday = day - timedelta(days=day.weekday())
+            sessions = [
+                session_for(monday + timedelta(days=i))
+                for i in range(5)
+                if is_trading_day(monday + timedelta(days=i))
+            ]
+            if not sessions:
+                raise ValueError("no trading session in that week")
+            first, last = sessions[0], sessions[-1]
+    except (ValueError, TypeError) as exc:
+        raise _invalid(f"{timeframe.value} candle does not start on a trading session: {exc}") from exc
+    if start != first.open_utc or end != last.close_utc:
+        raise _invalid(
+            f"{timeframe.value} candle must span {first.open_utc.isoformat()} .. "
+            f"{last.close_utc.isoformat()} (exchange-calendar regular session span)"
+        )
+
+
 @dataclass(frozen=True, slots=True)
 class Candle:
     """One immutable OHLCV candle over the half-open UTC interval ``[start, end)``."""
@@ -213,7 +272,9 @@ class Candle:
             raise _invalid("timeframe must be CandleTimeframe")
         start = _utc(self.start, "start")
         end = _utc(self.end, "end")
-        if end != start + self.timeframe.duration:
+        if self.timeframe.is_session_based:
+            _check_session_span(self.timeframe, start, end)
+        elif end != start + self.timeframe.duration:
             raise _invalid("end must equal start + timeframe duration")
         object.__setattr__(self, "start", start)
         object.__setattr__(self, "end", end)
@@ -388,7 +449,7 @@ class CandleBuilder:
     def __init__(
         self,
         *,
-        timeframes: tuple[CandleTimeframe, ...] = tuple(CandleTimeframe),
+        timeframes: tuple[CandleTimeframe, ...] = INTRADAY_TIMEFRAMES,
         max_history: int = 500,
         grace: timedelta = timedelta(0),
         clock: ClockLike | None = None,
@@ -396,6 +457,11 @@ class CandleBuilder:
     ) -> None:
         if not timeframes or not all(isinstance(t, CandleTimeframe) for t in timeframes):
             raise _invalid("timeframes must be a non-empty tuple of CandleTimeframe")
+        if any(t.is_session_based for t in timeframes):
+            raise _invalid(
+                "daily/weekly candles are session based and are supplied by "
+                "market_data.session_candles, not aggregated by CandleBuilder"
+            )
         if isinstance(max_history, bool) or not isinstance(max_history, int) or max_history < 1:
             raise _invalid("max_history must be a positive int")
         if not isinstance(grace, timedelta) or grace < timedelta(0):

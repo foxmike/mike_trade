@@ -8,14 +8,14 @@ This is the authoritative reconciliation of the original 156 BUY/SELL candidates
 |---|---:|
 | Original BUY candidates | 106 |
 | Original SELL candidates | 50 |
-| Implemented BUY strategies | 70 |
-| Implemented SELL strategies | 24 |
-| Existing equivalents | 48 |
-| Pending candidates | 0 |
-| Deferred candidates | 14 |
+| IMPLEMENTED BUY candidate rows | 76 |
+| IMPLEMENTED SELL candidate rows | 26 |
+| EXISTING_EQUIVALENT candidate rows | 49 |
+| REQUIRES_SOURCE_DEFINITION candidate rows | 1 |
+| BLOCKED_BY_INFRASTRUCTURE candidate rows | 0 |
+| NOT_APPLICABLE candidate rows | 4 |
 
-The registered library contains 87 BUY and 41 SELL strategies (plus 28 SHORT and 28 COVER, 184 in total) after the general BUY,
-current-session BUY, SELL batch-3, BUY batch-4, SELL batch-5, gap BUY batch-6, and backlog batches A, B, C and D and final-pattern (`gap_exhaustion`, `bull_pennant_breakout`) additions. Keltner Squeeze maps to `volatility_squeeze_breakout`. There are 48 equivalent candidate rows;
+The registered library contains 93 BUY and 43 SELL strategies (plus 28 SHORT and 28 COVER, 192 in total) after all reviewed batches, final momentum and reversal additions, and the daily/weekly-history VCP and Cup and Handle additions. Keltner Squeeze maps to `volatility_squeeze_breakout`. There are 49 equivalent candidate rows;
 Volume Surge Breakout maps to `momentum_breakout` and Donchian Trend Following to
 `donchian_channel_breakout`; “RSI Reversal” and “RSI Overbought Exit” describe one existing
 rule, and NR4 uses the NR7 implementation with period=4.
@@ -89,7 +89,7 @@ Each row records the original candidate name, role, original inventory group, su
 | ATR Expansion Breakout | BUY | volatility | technical | volatility | IMPLEMENTED | atr_expansion_breakout | Wilder, New Concepts (ATR, Volatility System); Kaufman, Trading Systems and Methods (volatility breakout); StockCharts ATR. | close - prior close > multiplier × Wilder ATR of the prior bar (default 2 × ATR14). M1 adaptation of volatility-breakout systems. |
 | Bollinger Squeeze | BUY | volatility | technical | volatility | IMPLEMENTED | bollinger_squeeze | John Bollinger, Bollinger on Bollinger Bands (The Squeeze); StockCharts ChartSchool, Bollinger BandWidth. | Upper-band cross within 5 bars of BandWidth reaching its 125-bar low. Differs from bollinger_band_breakout by the squeeze precondition. Needs ~149 bars. |
 | Keltner Squeeze | BUY | volatility | technical | volatility | EXISTING_EQUIVALENT | volatility_squeeze_breakout | Existing module: mike_trade/strategies/buy/volatility_squeeze_breakout.py | Carter's TTM squeeze is the Bollinger-inside-Keltner squeeze; the existing strategy is that rule. |
-| Volatility Contraction Pattern | BUY | volatility | technical | volatility | BLOCKED_BY_INFRASTRUCTURE | — | Mark Minervini's Volatility Contraction Pattern (Trade Like a Stock Market Wizard): successive tightening pullbacks inside a Stage-2 uptrend with volume dry-up and a pivot breakout. No numeric rule is claimed here. | Needs daily candles: the Stage-2 trend template is expressed with 150/200-day moving averages and the 52-week range, and the base spans weeks. The strategy contract carries only 1/5/15/30/60-minute candles with about 500 M1 bars, and session history is capped at a few sessions, so a faithful rule cannot be evaluated; an M1 squeeze or narrow-range breakout would not be a VCP. See docs/BUY_BACKLOG_FINAL_PATTERNS.md. |
+| Volatility Contraction Pattern | BUY | volatility | technical | volatility | IMPLEMENTED | volatility_contraction_pattern | Minervini, *Trade Like a Stock Market Wizard* (trend template, VCP); thresholds are engineering defaults: docs/DAILY_WEEKLY_HISTORICAL_STRATEGIES.md | Completed RAW D1 history: trend template, 2-6 successively tighter contractions, volume dry-up; signals on the first completed M1 close above the pivot. |
 | NR4 Breakout | BUY | volatility | technical | volatility | EXISTING_EQUIVALENT | nr7_breakout | Toby Crabel; StockCharts ChartSchool, NR7: https://chartschool.stockcharts.com/table-of-contents/trading-strategies-and-models/trading-strategies/narrow-range-day-nr7 | Same narrowest-range rule as NR7 with period=4; no separate class. |
 | NR7 Breakout | BUY | volatility | technical | volatility | IMPLEMENTED | nr7_breakout | Toby Crabel; StockCharts ChartSchool, NR7: https://chartschool.stockcharts.com/table-of-contents/trading-strategies-and-models/trading-strategies/narrow-range-day-nr7 | M1 adaptation: next completed close exceeds the strictly narrowest prior seven-bar range high. |
 | Inside Bar Breakout | BUY | volatility | technical | price_action | EXISTING_EQUIVALENT | inside_bar_breakout | Existing module: mike_trade/strategies/buy/inside_bar_breakout.py | Exact pattern breakout; original inventory groups it under volatility while the registered StrategySpec classifies it as price_action. |
@@ -98,7 +98,7 @@ Each row records the original candidate name, role, original inventory group, su
 | Bull Pennant Breakout | BUY | price_action | technical | price_action | IMPLEMENTED | bull_pennant_breakout | Concept: pennant = short converging triangle after a flagpole (Bulkowski, Encyclopedia of Chart Patterns; Murphy; Edwards & Magee). Pole size, bar limits and retrace limit are intraday engineering choices. | Pole (>= pole_pct within pole_bars up to the pole top), 6-20 bar consolidation with falling swing highs and rising swing lows (converging, breakout before the apex), retrace <= 50% of the pole, first close above the extended upper line; pivots confirmed before the signal bar. Distinct from bull_flag_breakout (no converging lines) and triangle_breakout (no pole or duration limit). |
 | Double Bottom Reversal | BUY | price_action | technical | price_action | IMPLEMENTED | double_bottom_reversal | Edwards & Magee; Bulkowski, Encyclopedia of Chart Patterns, Double Bottom. | Last two swing lows within 0.5% and the interim peak ≥1% above them; close first breaks the peak. Bulkowski's daily percentages replaced by intraday parameters. |
 | Inverse Head and Shoulders | BUY | price_action | technical | price_action | IMPLEMENTED | inverse_head_and_shoulders | Edwards & Magee; Bulkowski, Head-and-Shoulders Bottom; Murphy ch. 7. | Last three swing lows (head lowest, shoulders within 1%, head ≥0.3% deeper); close first breaks the sloped neckline through the two interim peaks. |
-| Cup and Handle | BUY | price_action | technical | price_action | BLOCKED_BY_INFRASTRUCTURE | — | William J. O'Neil's cup-with-handle base (How to Make Money in Stocks): a multi-week rounded base with a short handle and a pivot breakout, defined on daily/weekly charts. No numeric rule is claimed here. | Needs daily/weekly candles spanning many weeks (and a prior uptrend); the platform supplies at most about 500 M1 bars and a few sessions of OHLC. An intraday rounded-bottom rule would be a different, unsourced pattern, and roundness has no published numeric curvature test even with data. See docs/BUY_BACKLOG_FINAL_PATTERNS.md. |
+| Cup and Handle | BUY | price_action | technical | price_action | IMPLEMENTED | cup_and_handle | O'Neil, *How to Make Money in Stocks* (cup with handle); the rounding test is an explicit engineering definition: docs/DAILY_WEEKLY_HISTORICAL_STRATEGIES.md | Completed RAW D1 history: rounded cup (time-in-lower-half and smooth-side tests), shallow quiet handle, prior advance; signals on the first completed M1 close above the pivot. |
 | Higher High/Higher Low | BUY | price_action | technical | price_action | IMPLEMENTED | higher_high_higher_low | Dow Theory (Murphy, Technical Analysis of the Financial Markets); Williams fractals. | Bar that confirms a swing low above the previous swing low while the last two swing highs are rising. |
 | Support Bounce | BUY | price_action | technical | price_action | IMPLEMENTED | support_bounce | Concept: support (Edwards & Magee; Murphy ch. 4). Pivot: Williams fractal. Tolerance, invalidation and confirmation are engineering choices. | Latest confirmed fractal swing low before the setup bar is tested within tolerance without any bar after it trading below the tolerance floor; completed close above the setup bar's high and above support; pivot-to-signal bars must be consecutive. |
 | Resistance Breakout | BUY | price_action | technical | price_action | IMPLEMENTED | resistance_breakout | Edwards & Magee; Murphy ch. 4; Williams fractals. | Close crosses above the latest confirmed swing high of the prior 50 bars. |
@@ -192,10 +192,8 @@ Each row records the original candidate name, role, original inventory group, su
 
 ## Deferred candidate notes
 
-`REQUIRES_SOURCE_DEFINITION`: the BUY candidates still identified in their rows; published descriptions admit multiple materially different rules, so no rule was selected by inference. VWAP Rejection is resolved as a bullish support-rejection BUY (Batch C), High-Volume Reversal as a SELL (Batch D), and Volatility Expansion Reversal and Volume Climax Exit by the final reversals batch.
+`REQUIRES_SOURCE_DEFINITION`: Momentum Ignition remains unresolved because no distinct legitimate mechanical OHLCV rule was established. VWAP Rejection is resolved as a bullish support-rejection BUY (Batch C), High-Volume Reversal as a SELL (Batch D), and Volatility Expansion Reversal and Volume Climax Exit by the final reversals batch.
 
-`BLOCKED_BY_INFRASTRUCTURE`: the remaining rows concern unavailable daily/weekly history (Volatility Contraction Pattern, Cup and Handle: see `docs/BUY_BACKLOG_FINAL_PATTERNS.md`) or other unavailable reference data. Cumulative volume indicators, recursive ATR/Supertrend, and point-in-time displaced-cloud indicators are supported by their respective indicator calculators.
+`BLOCKED_BY_INFRASTRUCTURE`: no candidate rows remain in this status after completed D1/W1 history support enabled Volatility Contraction Pattern and Cup and Handle.
 
 `NOT_APPLICABLE`: Chandelier/ATR trailing exits belong to protective-stop policy; end-of-day and time-based liquidation belong to engine/session lifecycle policy.
-
-`PENDING`: no implementation is implied. Source, exact signal, overlap, parameter/warmup, timeframe, and missing-observation semantics remain to be reviewed before implementation.

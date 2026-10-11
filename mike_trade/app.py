@@ -13,7 +13,7 @@ import hashlib
 import json
 import logging
 import os
-from collections.abc import Mapping, Sequence
+from collections.abc import Callable, Mapping, Sequence
 from dataclasses import dataclass, field
 from datetime import UTC, datetime, time, timedelta
 from decimal import ROUND_DOWN, Decimal
@@ -76,6 +76,11 @@ from mike_trade.market_data.context import (
     IndicatorSpec,
     MarketContext,
 )
+from mike_trade.market_data.session_candles import (
+    SessionCandleError,
+    SessionCandleStore,
+    settled_daily_candles,
+)
 from mike_trade.market_data.session_reference import SessionReferenceTracker
 from mike_trade.market_status import (
     MarketStatusConfig,
@@ -131,156 +136,140 @@ from mike_trade.signals.decisions import (
     arbitrate_exit_decisions,
 )
 from mike_trade.strategies.base import StrategyEvaluation
-from mike_trade.strategies.buy.aroon_trend import AroonTrendBuy
+from mike_trade.strategies.buy.accumulation_distribution_breakout import (
+    AccumulationDistributionBreakoutBuy,
+)
+from mike_trade.strategies.buy.adaptive_moving_average import AdaptiveMovingAverageBuy
+from mike_trade.strategies.buy.adx_trend_following import AdxTrendFollowingBuy
 from mike_trade.strategies.buy.afternoon_breakout import AfternoonBreakoutBuy
-from mike_trade.strategies.buy.cci_zero_line_crossover import CciZeroLineCrossoverBuy
-from mike_trade.strategies.buy.bollinger_band_breakout import BollingerBandBreakoutBuy
-from mike_trade.strategies.buy.cci_reversion import CciReversionBuy
-from mike_trade.strategies.buy.stochastic_oversold_reversal import StochasticOversoldReversalBuy
-from mike_trade.strategies.buy.money_flow_index import MoneyFlowIndexBuy
-from mike_trade.strategies.buy.chaikin_money_flow import ChaikinMoneyFlowBuy
-from mike_trade.strategies.buy.engulfing_candle_reversal import EngulfingCandleReversalBuy
+from mike_trade.strategies.buy.aroon_trend import AroonTrendBuy
+from mike_trade.strategies.buy.ascending_triangle_breakout import AscendingTriangleBreakoutBuy
+from mike_trade.strategies.buy.atr_expansion_breakout import AtrExpansionBreakoutBuy
 from mike_trade.strategies.buy.awesome_oscillator import AwesomeOscillatorBuy
-from mike_trade.strategies.buy.hull_moving_average import HullMovingAverageBuy
-from mike_trade.strategies.buy.high_of_day_momentum import HighOfDayMomentumBuy
+from mike_trade.strategies.buy.bollinger_band_breakout import BollingerBandBreakoutBuy
+from mike_trade.strategies.buy.bollinger_band_mean_reversion import BollingerBandMeanReversionBuy
+from mike_trade.strategies.buy.bollinger_squeeze import BollingerSqueezeBuy
+from mike_trade.strategies.buy.bull_flag_breakout import BullFlagBreakoutBuy
+from mike_trade.strategies.buy.cci_reversion import CciReversionBuy
+from mike_trade.strategies.buy.cci_zero_line_crossover import CciZeroLineCrossoverBuy
+from mike_trade.strategies.buy.chaikin_money_flow import ChaikinMoneyFlowBuy
+from mike_trade.strategies.buy.connors_rsi_mean_reversion import ConnorsRsiMeanReversionBuy
+from mike_trade.strategies.buy.dmi_crossover import DmiCrossoverBuy
+from mike_trade.strategies.buy.donchian_channel_breakout import DonchianChannelBreakoutBuy
+from mike_trade.strategies.buy.double_bottom_reversal import DoubleBottomReversalBuy
+from mike_trade.strategies.buy.ease_of_movement import EaseOfMovementBuy
+from mike_trade.strategies.buy.elder_impulse_system import ElderImpulseSystemBuy
+from mike_trade.strategies.buy.ema_crossover import EmaCrossoverBuy
+from mike_trade.strategies.buy.ema_pullback import EmaPullbackBuy
+from mike_trade.strategies.buy.engulfing_candle_reversal import EngulfingCandleReversalBuy
 from mike_trade.strategies.buy.gap_and_go import GapAndGoBuy
 from mike_trade.strategies.buy.gap_fill import GapFillBuy
 from mike_trade.strategies.buy.gap_reversal import GapReversalBuy
-from mike_trade.strategies.buy.keltner_channel_breakout import KeltnerChannelBreakoutBuy
-from mike_trade.strategies.buy.linear_regression_trend import LinearRegressionTrendBuy
-from mike_trade.strategies.buy.moving_average_envelope import MovingAverageEnvelopeBuy
-from mike_trade.strategies.buy.moving_average_reclaim import MovingAverageReclaimBuy
-from mike_trade.strategies.buy.nr7_breakout import Nr7BreakoutBuy
-from mike_trade.strategies.buy.rate_of_change_momentum import RateOfChangeMomentumBuy
-from mike_trade.strategies.buy.triple_moving_average import TripleMovingAverageBuy
-from mike_trade.strategies.buy.dmi_crossover import DmiCrossoverBuy
-from mike_trade.strategies.buy.donchian_channel_breakout import DonchianChannelBreakoutBuy
-from mike_trade.strategies.buy.ema_crossover import EmaCrossoverBuy
+from mike_trade.strategies.buy.hammer_reversal import HammerReversalBuy
+from mike_trade.strategies.buy.high_of_day_momentum import HighOfDayMomentumBuy
+from mike_trade.strategies.buy.higher_high_higher_low import HigherHighHigherLowBuy
+from mike_trade.strategies.buy.holy_grail_pullback import HolyGrailPullbackBuy
+from mike_trade.strategies.buy.hull_moving_average import HullMovingAverageBuy
+from mike_trade.strategies.buy.ichimoku_cloud_breakout import IchimokuCloudBreakoutBuy
 from mike_trade.strategies.buy.inside_bar_breakout import InsideBarBreakoutBuy
+from mike_trade.strategies.buy.intraday_consolidation_breakout import (
+    IntradayConsolidationBreakoutBuy,
+)
+from mike_trade.strategies.buy.inverse_head_and_shoulders import InverseHeadAndShouldersBuy
+from mike_trade.strategies.buy.keltner_channel_breakout import KeltnerChannelBreakoutBuy
+from mike_trade.strategies.buy.keltner_channel_reversion import KeltnerChannelReversionBuy
+from mike_trade.strategies.buy.linear_regression_trend import LinearRegressionTrendBuy
 from mike_trade.strategies.buy.macd_signal_crossover import MacdSignalCrossoverBuy
 from mike_trade.strategies.buy.macd_zero_line_crossover import MacdZeroLineCrossoverBuy
-from mike_trade.strategies.buy.momentum_breakout import MomentumBreakoutBuy
 from mike_trade.strategies.buy.midday_range_breakout import MiddayRangeBreakoutBuy
+from mike_trade.strategies.buy.momentum_breakout import MomentumBreakoutBuy
+from mike_trade.strategies.buy.money_flow_index import MoneyFlowIndexBuy
+from mike_trade.strategies.buy.moving_average_envelope import MovingAverageEnvelopeBuy
+from mike_trade.strategies.buy.moving_average_reclaim import MovingAverageReclaimBuy
+from mike_trade.strategies.buy.moving_average_ribbon import MovingAverageRibbonBuy
+from mike_trade.strategies.buy.nr7_breakout import Nr7BreakoutBuy
+from mike_trade.strategies.buy.obv_breakout import ObvBreakoutBuy
 from mike_trade.strategies.buy.opening_drive import OpeningDriveBuy
 from mike_trade.strategies.buy.opening_range_breakout import OpeningRangeBreakoutBuy
 from mike_trade.strategies.buy.opening_range_retest import OpeningRangeRetestBuy
 from mike_trade.strategies.buy.parabolic_sar import ParabolicSarBuy
 from mike_trade.strategies.buy.power_hour_momentum import PowerHourMomentumBuy
-from mike_trade.strategies.short.short_ema_bearish_crossover import ShortEmaBearishCrossover
-from mike_trade.strategies.short.short_supertrend_bearish_flip import ShortSupertrendBearishFlip
-from mike_trade.strategies.short.short_donchian_breakdown import ShortDonchianBreakdown
-from mike_trade.strategies.short.short_sma_bearish_crossover import ShortSmaBearishCrossover
-from mike_trade.strategies.short.short_macd_bearish_crossover import ShortMacdBearishCrossover
-from mike_trade.strategies.short.short_macd_zero_line_breakdown import (
-    ShortMacdZeroLineBreakdown,
-)
-from mike_trade.strategies.short.short_rsi_centerline_breakdown import (
-    ShortRsiCenterlineBreakdown,
-)
-from mike_trade.strategies.short.short_dmi_bearish_crossover import ShortDmiBearishCrossover
-from mike_trade.strategies.short.short_aroon_bearish_reversal import ShortAroonBearishReversal
-from mike_trade.strategies.short.short_parabolic_sar_bearish_reversal import (
-    ShortParabolicSarBearishReversal,
-)
-from mike_trade.strategies.short.short_ichimoku_bearish_breakdown import (
-    ShortIchimokuBearishBreakdown,
-)
-from mike_trade.strategies.short.short_opening_range_breakdown import (
-    ShortOpeningRangeBreakdown,
-)
-from mike_trade.strategies.short.short_vwap_breakdown import ShortVwapBreakdown
-from mike_trade.strategies.short.short_bollinger_lower_band_breakdown import (
-    ShortBollingerLowerBandBreakdown,
-)
-from mike_trade.strategies.short.short_keltner_channel_breakdown import (
-    ShortKeltnerChannelBreakdown,
-)
-from mike_trade.strategies.short.short_obv_breakdown import ShortObvBreakdown
-from mike_trade.strategies.short.short_cci_zero_line_breakdown import (
-    ShortCciZeroLineBreakdown,
-)
-from mike_trade.strategies.short.short_adx_bearish_trend_confirmation import (
-    ShortAdxBearishTrendConfirmation,
-)
-from mike_trade.strategies.cover.cover_ema_bullish_crossover import CoverEmaBullishCrossover
-from mike_trade.strategies.cover.cover_supertrend_bullish_flip import CoverSupertrendBullishFlip
-from mike_trade.strategies.cover.cover_donchian_breakout import CoverDonchianBreakout
-from mike_trade.strategies.cover.cover_sma_bullish_crossover import CoverSmaBullishCrossover
-from mike_trade.strategies.cover.cover_macd_bullish_crossover import CoverMacdBullishCrossover
-from mike_trade.strategies.cover.cover_macd_zero_line_crossover import CoverMacdZeroLineCrossover
-from mike_trade.strategies.cover.cover_rsi_oversold_reversal import CoverRsiOversoldReversal
-from mike_trade.strategies.cover.cover_rsi_centerline_crossover import CoverRsiCenterlineCrossover
-from mike_trade.strategies.cover.cover_dmi_bullish_crossover import CoverDmiBullishCrossover
-from mike_trade.strategies.cover.cover_aroon_bullish_reversal import CoverAroonBullishReversal
-from mike_trade.strategies.cover.cover_parabolic_sar_bullish_reversal import CoverParabolicSarBullishReversal
-from mike_trade.strategies.cover.cover_vwap_reclaim import CoverVwapReclaim
-from mike_trade.strategies.cover.cover_bollinger_lower_band_reversion import CoverBollingerLowerBandReversion
-from mike_trade.strategies.cover.cover_keltner_channel_reversion import CoverKeltnerChannelReversion
-from mike_trade.strategies.cover.cover_cci_oversold_reversal import CoverCciOversoldReversal
-from mike_trade.strategies.cover.cover_stochastic_bullish_crossover import CoverStochasticBullishCrossover
-from mike_trade.strategies.cover.cover_williams_r_bullish_reversal import CoverWilliamsRBullishReversal
-from mike_trade.strategies.cover.cover_chaikin_money_flow_recovery import CoverChaikinMoneyFlowRecovery
-from mike_trade.strategies.cover.cover_bullish_engulfing import CoverBullishEngulfing
-from mike_trade.strategies.cover.cover_hammer_reversal import CoverHammerReversal
-from mike_trade.strategies.cover.cover_double_bottom_reversal import CoverDoubleBottomReversal
-from mike_trade.strategies.cover.cover_inverse_head_and_shoulders import CoverInverseHeadAndShoulders
-from mike_trade.strategies.cover.cover_trendline_breakout import CoverTrendlineBreakout
-from mike_trade.strategies.cover.cover_previous_swing_high_breakout import CoverPreviousSwingHighBreakout
-from mike_trade.strategies.cover.cover_higher_high_higher_low import CoverHigherHighHigherLow
-from mike_trade.strategies.cover.cover_bull_flag_breakout import CoverBullFlagBreakout
-from mike_trade.strategies.cover.cover_obv_breakout import CoverObvBreakout
-from mike_trade.strategies.cover.cover_bullish_momentum_divergence import CoverBullishMomentumDivergence
 from mike_trade.strategies.buy.previous_close_reclaim import PreviousCloseReclaimBuy
 from mike_trade.strategies.buy.previous_day_high_breakout import PreviousDayHighBreakoutBuy
 from mike_trade.strategies.buy.previous_day_low_reversal import PreviousDayLowReversalBuy
+from mike_trade.strategies.buy.rate_of_change_momentum import RateOfChangeMomentumBuy
+from mike_trade.strategies.buy.resistance_breakout import ResistanceBreakoutBuy
+from mike_trade.strategies.buy.rsi2_trend_pullback import Rsi2TrendPullbackBuy
 from mike_trade.strategies.buy.rsi_centerline_crossover import RsiCenterlineCrossoverBuy
 from mike_trade.strategies.buy.rsi_oversold_reversal import RsiOversoldReversalBuy
 from mike_trade.strategies.buy.sma_crossover import SmaCrossoverBuy
 from mike_trade.strategies.buy.stochastic_crossover import StochasticCrossoverBuy
-from mike_trade.strategies.buy.vwap_bounce import VwapBounceBuy
-from mike_trade.strategies.buy.williams_r_reversion import WilliamsRReversionBuy
-from mike_trade.strategies.buy.adaptive_moving_average import AdaptiveMovingAverageBuy
-from mike_trade.strategies.buy.adx_trend_following import AdxTrendFollowingBuy
-from mike_trade.strategies.buy.atr_expansion_breakout import AtrExpansionBreakoutBuy
-from mike_trade.strategies.buy.bollinger_squeeze import BollingerSqueezeBuy
-from mike_trade.strategies.buy.connors_rsi_mean_reversion import ConnorsRsiMeanReversionBuy
-from mike_trade.strategies.buy.ease_of_movement import EaseOfMovementBuy
-from mike_trade.strategies.buy.elder_impulse_system import ElderImpulseSystemBuy
-from mike_trade.strategies.buy.ema_pullback import EmaPullbackBuy
-from mike_trade.strategies.buy.hammer_reversal import HammerReversalBuy
-from mike_trade.strategies.buy.higher_high_higher_low import HigherHighHigherLowBuy
-from mike_trade.strategies.buy.ichimoku_cloud_breakout import IchimokuCloudBreakoutBuy
-from mike_trade.strategies.buy.keltner_channel_reversion import KeltnerChannelReversionBuy
-from mike_trade.strategies.buy.moving_average_ribbon import MovingAverageRibbonBuy
-from mike_trade.strategies.buy.resistance_breakout import ResistanceBreakoutBuy
-from mike_trade.strategies.buy.supertrend import SupertrendBuy
-from mike_trade.strategies.buy.volatility_squeeze_breakout import VolatilitySqueezeBreakoutBuy
-from mike_trade.strategies.buy.obv_breakout import ObvBreakoutBuy
-from mike_trade.strategies.buy.accumulation_distribution_breakout import AccumulationDistributionBreakoutBuy
-from mike_trade.strategies.buy.volume_price_trend_breakout import VolumePriceTrendBreakoutBuy
-from mike_trade.strategies.buy.tsi_momentum import TsiMomentumBuy
+from mike_trade.strategies.buy.stochastic_oversold_reversal import StochasticOversoldReversalBuy
 from mike_trade.strategies.buy.stochastic_rsi import StochasticRsiBuy
-from mike_trade.strategies.buy.ultimate_oscillator import UltimateOscillatorBuy
-from mike_trade.strategies.buy.holy_grail_pullback import HolyGrailPullbackBuy
-from mike_trade.strategies.buy.rsi2_trend_pullback import Rsi2TrendPullbackBuy
-from mike_trade.strategies.buy.z_score_mean_reversion import ZScoreMeanReversionBuy
-from mike_trade.strategies.buy.double_bottom_reversal import DoubleBottomReversalBuy
-from mike_trade.strategies.buy.inverse_head_and_shoulders import InverseHeadAndShouldersBuy
-from mike_trade.strategies.buy.ascending_triangle_breakout import AscendingTriangleBreakoutBuy
+from mike_trade.strategies.buy.supertrend import SupertrendBuy
+from mike_trade.strategies.buy.support_bounce import SupportBounceBuy
 from mike_trade.strategies.buy.trendline_breakout import TrendlineBreakoutBuy
 from mike_trade.strategies.buy.triangle_breakout import TriangleBreakoutBuy
-from mike_trade.strategies.buy.bull_flag_breakout import BullFlagBreakoutBuy
-from mike_trade.strategies.buy.bollinger_band_mean_reversion import BollingerBandMeanReversionBuy
-from mike_trade.strategies.buy.vwap_pullback import VwapPullbackBuy
-from mike_trade.strategies.buy.support_bounce import SupportBounceBuy
+from mike_trade.strategies.buy.triple_moving_average import TripleMovingAverageBuy
+from mike_trade.strategies.buy.tsi_momentum import TsiMomentumBuy
+from mike_trade.strategies.buy.ultimate_oscillator import UltimateOscillatorBuy
+from mike_trade.strategies.buy.volatility_squeeze_breakout import VolatilitySqueezeBreakoutBuy
+from mike_trade.strategies.buy.volume_price_trend_breakout import VolumePriceTrendBreakoutBuy
 from mike_trade.strategies.buy.vwap_band_reversion import VWAPBandReversionBuy
+from mike_trade.strategies.buy.volatility_contraction_pattern import VolatilityContractionPatternBuy
+from mike_trade.strategies.buy.cup_and_handle import CupAndHandleBuy
 from mike_trade.strategies.buy.vwap_rejection import VwapRejectionBuy
 from mike_trade.strategies.buy.anchored_vwap_breakout import AnchoredVwapBreakoutBuy
 from mike_trade.strategies.buy.first_pullback_buy import FirstPullbackBuy
 from mike_trade.strategies.buy.gap_exhaustion import GapExhaustionBuy
 from mike_trade.strategies.buy.bull_pennant_breakout import BullPennantBreakoutBuy
-from mike_trade.strategies.buy.intraday_consolidation_breakout import (
-    IntradayConsolidationBreakoutBuy,
+from mike_trade.strategies.buy.vwap_bounce import VwapBounceBuy
+from mike_trade.strategies.buy.vwap_pullback import VwapPullbackBuy
+from mike_trade.strategies.buy.williams_r_reversion import WilliamsRReversionBuy
+from mike_trade.strategies.buy.z_score_mean_reversion import ZScoreMeanReversionBuy
+from mike_trade.strategies.cover.cover_aroon_bullish_reversal import CoverAroonBullishReversal
+from mike_trade.strategies.cover.cover_bollinger_lower_band_reversion import (
+    CoverBollingerLowerBandReversion,
+)
+from mike_trade.strategies.cover.cover_bull_flag_breakout import CoverBullFlagBreakout
+from mike_trade.strategies.cover.cover_bullish_engulfing import CoverBullishEngulfing
+from mike_trade.strategies.cover.cover_bullish_momentum_divergence import (
+    CoverBullishMomentumDivergence,
+)
+from mike_trade.strategies.cover.cover_cci_oversold_reversal import CoverCciOversoldReversal
+from mike_trade.strategies.cover.cover_chaikin_money_flow_recovery import (
+    CoverChaikinMoneyFlowRecovery,
+)
+from mike_trade.strategies.cover.cover_dmi_bullish_crossover import CoverDmiBullishCrossover
+from mike_trade.strategies.cover.cover_donchian_breakout import CoverDonchianBreakout
+from mike_trade.strategies.cover.cover_double_bottom_reversal import CoverDoubleBottomReversal
+from mike_trade.strategies.cover.cover_ema_bullish_crossover import CoverEmaBullishCrossover
+from mike_trade.strategies.cover.cover_hammer_reversal import CoverHammerReversal
+from mike_trade.strategies.cover.cover_higher_high_higher_low import CoverHigherHighHigherLow
+from mike_trade.strategies.cover.cover_inverse_head_and_shoulders import (
+    CoverInverseHeadAndShoulders,
+)
+from mike_trade.strategies.cover.cover_keltner_channel_reversion import CoverKeltnerChannelReversion
+from mike_trade.strategies.cover.cover_macd_bullish_crossover import CoverMacdBullishCrossover
+from mike_trade.strategies.cover.cover_macd_zero_line_crossover import CoverMacdZeroLineCrossover
+from mike_trade.strategies.cover.cover_obv_breakout import CoverObvBreakout
+from mike_trade.strategies.cover.cover_parabolic_sar_bullish_reversal import (
+    CoverParabolicSarBullishReversal,
+)
+from mike_trade.strategies.cover.cover_previous_swing_high_breakout import (
+    CoverPreviousSwingHighBreakout,
+)
+from mike_trade.strategies.cover.cover_rsi_centerline_crossover import CoverRsiCenterlineCrossover
+from mike_trade.strategies.cover.cover_rsi_oversold_reversal import CoverRsiOversoldReversal
+from mike_trade.strategies.cover.cover_sma_bullish_crossover import CoverSmaBullishCrossover
+from mike_trade.strategies.cover.cover_stochastic_bullish_crossover import (
+    CoverStochasticBullishCrossover,
+)
+from mike_trade.strategies.cover.cover_supertrend_bullish_flip import CoverSupertrendBullishFlip
+from mike_trade.strategies.cover.cover_trendline_breakout import CoverTrendlineBreakout
+from mike_trade.strategies.cover.cover_vwap_reclaim import CoverVwapReclaim
+from mike_trade.strategies.cover.cover_williams_r_bullish_reversal import (
+    CoverWilliamsRBullishReversal,
 )
 from mike_trade.strategies.buy.relative_volume_momentum import (
     RelativeVolumeMomentumBuy,
@@ -297,68 +286,104 @@ from mike_trade.strategies.buy.volume_dry_up_pullback import VolumeDryUpPullback
 from mike_trade.strategies.indicators.core import VWAPCalculator
 from mike_trade.strategies.presets.pairs import resolve_pair_preset
 from mike_trade.strategies.registry import StrategyRegistry
+from mike_trade.strategies.sell.accumulation_distribution_breakdown import (
+    AccumulationDistributionBreakdownSell,
+)
+from mike_trade.strategies.sell.adx_trend_weakening import AdxTrendWeakeningSell
 from mike_trade.strategies.sell.aroon_bearish_reversal import AroonBearishReversalSell
-from mike_trade.strategies.sell.base import ExitSource
-from mike_trade.strategies.sell.cci_zero_line_breakdown import CciZeroLineBreakdownSell
-from mike_trade.strategies.sell.cci_bearish_reversal import CciBearishReversalSell
-from mike_trade.strategies.sell.money_flow_index_reversal import MoneyFlowIndexReversalSell
-from mike_trade.strategies.sell.chaikin_money_flow_reversal import ChaikinMoneyFlowReversalSell
-from mike_trade.strategies.sell.bearish_engulfing_exit import BearishEngulfingExitSell
 from mike_trade.strategies.sell.awesome_oscillator_reversal import AwesomeOscillatorReversalSell
-from mike_trade.strategies.sell.keltner_channel_breakdown import KeltnerChannelBreakdownSell
-from mike_trade.strategies.sell.previous_swing_low_break import PreviousSwingLowBreakSell
+from mike_trade.strategies.sell.base import ExitSource
+from mike_trade.strategies.sell.bearish_engulfing_exit import BearishEngulfingExitSell
+from mike_trade.strategies.sell.bearish_momentum_divergence import BearishMomentumDivergenceSell
+from mike_trade.strategies.sell.bollinger_upper_band_reversal import BollingerUpperBandReversalSell
+from mike_trade.strategies.sell.cci_bearish_reversal import CciBearishReversalSell
+from mike_trade.strategies.sell.cci_zero_line_breakdown import CciZeroLineBreakdownSell
+from mike_trade.strategies.sell.chaikin_money_flow_reversal import ChaikinMoneyFlowReversalSell
 from mike_trade.strategies.sell.dmi_bearish_crossover import DmiBearishCrossoverSell
 from mike_trade.strategies.sell.donchian_lower_channel_exit import DonchianLowerChannelExitSell
+from mike_trade.strategies.sell.double_top_reversal import DoubleTopReversalSell
 from mike_trade.strategies.sell.ema_bearish_crossover import EmaBearishCrossoverSell
+from mike_trade.strategies.sell.failed_breakout_exit import FailedBreakoutExitSell
+from mike_trade.strategies.sell.head_and_shoulders_breakdown import HeadAndShouldersBreakdownSell
+from mike_trade.strategies.sell.ichimoku_bearish_exit import IchimokuBearishExitSell
+from mike_trade.strategies.sell.keltner_channel_breakdown import KeltnerChannelBreakdownSell
+from mike_trade.strategies.sell.lower_low_confirmation import LowerLowConfirmationSell
 from mike_trade.strategies.sell.macd_bearish_crossover import MacdBearishCrossoverSell
 from mike_trade.strategies.sell.macd_zero_line_breakdown import MacdZeroLineBreakdownSell
 from mike_trade.strategies.sell.momentum_reversal import MomentumReversalSell
+from mike_trade.strategies.sell.money_flow_index_reversal import MoneyFlowIndexReversalSell
+from mike_trade.strategies.sell.obv_breakdown import ObvBreakdownSell
+from mike_trade.strategies.sell.opening_range_breakdown import OpeningRangeBreakdownSell
 from mike_trade.strategies.sell.parabolic_sar_reversal import ParabolicSarReversalSell
+from mike_trade.strategies.sell.previous_swing_low_break import PreviousSwingLowBreakSell
 from mike_trade.strategies.sell.price_below_ema import PriceBelowEmaSell
 from mike_trade.strategies.sell.price_below_sma import PriceBelowSmaSell
 from mike_trade.strategies.sell.rsi_centerline_breakdown import RsiCenterlineBreakdownSell
 from mike_trade.strategies.sell.rsi_reversal import RsiReversalSell
+from mike_trade.strategies.sell.shooting_star_reversal import ShootingStarReversalSell
 from mike_trade.strategies.sell.sma_bearish_crossover import SmaBearishCrossoverSell
 from mike_trade.strategies.sell.stochastic_bearish_crossover import StochasticBearishCrossoverSell
-from mike_trade.strategies.sell.vwap_breakdown import VwapBreakdownSell
-from mike_trade.strategies.sell.williams_r_reversal import WilliamsRReversalSell
-from mike_trade.strategies.sell.adx_trend_weakening import AdxTrendWeakeningSell
-from mike_trade.strategies.sell.bollinger_upper_band_reversal import BollingerUpperBandReversalSell
-from mike_trade.strategies.sell.failed_breakout_exit import FailedBreakoutExitSell
-from mike_trade.strategies.sell.lower_low_confirmation import LowerLowConfirmationSell
-from mike_trade.strategies.sell.opening_range_breakdown import OpeningRangeBreakdownSell
 from mike_trade.strategies.sell.stochastic_rsi_reversal import StochasticRsiReversalSell
+from mike_trade.strategies.sell.supertrend_bearish_flip import SupertrendBearishFlipSell
 from mike_trade.strategies.sell.trendline_breakdown import TrendlineBreakdownSell
 from mike_trade.strategies.sell.ultimate_oscillator_reversal import UltimateOscillatorReversalSell
-from mike_trade.strategies.sell.accumulation_distribution_breakdown import (
-    AccumulationDistributionBreakdownSell,
+from mike_trade.strategies.sell.vwap_breakdown import VwapBreakdownSell
+from mike_trade.strategies.sell.williams_r_reversal import WilliamsRReversalSell
+from mike_trade.strategies.short.short_adx_bearish_trend_confirmation import (
+    ShortAdxBearishTrendConfirmation,
 )
-from mike_trade.strategies.sell.bearish_momentum_divergence import BearishMomentumDivergenceSell
-from mike_trade.strategies.sell.double_top_reversal import DoubleTopReversalSell
-from mike_trade.strategies.sell.head_and_shoulders_breakdown import HeadAndShouldersBreakdownSell
-from mike_trade.strategies.sell.ichimoku_bearish_exit import IchimokuBearishExitSell
-from mike_trade.strategies.sell.obv_breakdown import ObvBreakdownSell
-from mike_trade.strategies.sell.shooting_star_reversal import ShootingStarReversalSell
-from mike_trade.strategies.sell.supertrend_bearish_flip import SupertrendBearishFlipSell
 from mike_trade.strategies.sell.volatility_expansion_reversal import (
     VolatilityExpansionReversalSell,
 )
 from mike_trade.strategies.sell.volume_climax_exit import VolumeClimaxExitSell
-from mike_trade.strategies.short.short_bearish_engulfing import ShortBearishEngulfing
-from mike_trade.strategies.short.short_shooting_star_reversal import ShortShootingStarReversal
-from mike_trade.strategies.short.short_double_top_breakdown import ShortDoubleTopBreakdown
-from mike_trade.strategies.short.short_head_and_shoulders_breakdown import (
-    ShortHeadAndShouldersBreakdown,
-)
-from mike_trade.strategies.short.short_trendline_breakdown import ShortTrendlineBreakdown
-from mike_trade.strategies.short.short_previous_swing_low_break import ShortPreviousSwingLowBreak
-from mike_trade.strategies.short.short_lower_low_confirmation import ShortLowerLowConfirmation
-from mike_trade.strategies.short.short_failed_breakout_reversal import ShortFailedBreakoutReversal
+from mike_trade.strategies.short.short_aroon_bearish_reversal import ShortAroonBearishReversal
 from mike_trade.strategies.short.short_bear_flag_breakdown import ShortBearFlagBreakdown
+from mike_trade.strategies.short.short_bearish_engulfing import ShortBearishEngulfing
 from mike_trade.strategies.short.short_bearish_momentum_divergence import (
     ShortBearishMomentumDivergence,
 )
 from mike_trade.strategies.sell.high_volume_reversal import HighVolumeReversalSell
+from mike_trade.strategies.short.short_bollinger_lower_band_breakdown import (
+    ShortBollingerLowerBandBreakdown,
+)
+from mike_trade.strategies.short.short_cci_zero_line_breakdown import (
+    ShortCciZeroLineBreakdown,
+)
+from mike_trade.strategies.short.short_dmi_bearish_crossover import ShortDmiBearishCrossover
+from mike_trade.strategies.short.short_donchian_breakdown import ShortDonchianBreakdown
+from mike_trade.strategies.short.short_double_top_breakdown import ShortDoubleTopBreakdown
+from mike_trade.strategies.short.short_ema_bearish_crossover import ShortEmaBearishCrossover
+from mike_trade.strategies.short.short_failed_breakout_reversal import ShortFailedBreakoutReversal
+from mike_trade.strategies.short.short_head_and_shoulders_breakdown import (
+    ShortHeadAndShouldersBreakdown,
+)
+from mike_trade.strategies.short.short_ichimoku_bearish_breakdown import (
+    ShortIchimokuBearishBreakdown,
+)
+from mike_trade.strategies.short.short_keltner_channel_breakdown import (
+    ShortKeltnerChannelBreakdown,
+)
+from mike_trade.strategies.short.short_lower_low_confirmation import ShortLowerLowConfirmation
+from mike_trade.strategies.short.short_macd_bearish_crossover import ShortMacdBearishCrossover
+from mike_trade.strategies.short.short_macd_zero_line_breakdown import (
+    ShortMacdZeroLineBreakdown,
+)
+from mike_trade.strategies.short.short_obv_breakdown import ShortObvBreakdown
+from mike_trade.strategies.short.short_opening_range_breakdown import (
+    ShortOpeningRangeBreakdown,
+)
+from mike_trade.strategies.short.short_parabolic_sar_bearish_reversal import (
+    ShortParabolicSarBearishReversal,
+)
+from mike_trade.strategies.short.short_previous_swing_low_break import ShortPreviousSwingLowBreak
+from mike_trade.strategies.short.short_rsi_centerline_breakdown import (
+    ShortRsiCenterlineBreakdown,
+)
+from mike_trade.strategies.short.short_shooting_star_reversal import ShortShootingStarReversal
+from mike_trade.strategies.short.short_sma_bearish_crossover import ShortSmaBearishCrossover
+from mike_trade.strategies.short.short_supertrend_bearish_flip import ShortSupertrendBearishFlip
+from mike_trade.strategies.short.short_trendline_breakdown import ShortTrendlineBreakdown
+from mike_trade.strategies.short.short_vwap_breakdown import ShortVwapBreakdown
 
 __all__ = [
     "AppSettings",
@@ -710,6 +735,10 @@ class ProductionMarketData:
             session_open=time(9, 30),
         )
         self.session_references = SessionReferenceTracker()
+        #: completed daily candles (weekly derived); fed by REST acquisition, read point-in-time
+        self.session_candles = SessionCandleStore()
+        self._history_sessions: dict[str, int] = {}
+        self._session_frames: dict[str, tuple[CandleTimeframe, ...]] = {}
         specs = {
             "vwap": IndicatorSpec(
                 CandleTimeframe.M1, VWAPCalculator, IndicatorInput.SESSION_BAR
@@ -725,6 +754,7 @@ class ProductionMarketData:
             indicator_specs=specs,
             max_age=max_age,
             session_references=self.session_references,
+            session_candles=self.session_candles,
         )
         self.running = False
         self.closed = False
@@ -746,6 +776,33 @@ class ProductionMarketData:
         self._trading_symbols = tuple(
             dict.fromkeys(s.strip().upper() for s in trading_symbols if s.strip())
         )
+
+    def configure_history(
+        self, requirements: Mapping[str, Mapping[CandleTimeframe, int]]
+    ) -> None:
+        """Declare which symbols need completed D1/W1 history, and how much.
+
+        Called once while the runtime graph is built (from the bound strategies'
+        ``required_history``).  Symbols not listed keep the unchanged 1-minute-only context.
+        """
+        for symbol, needs in requirements.items():
+            frames = tuple(sorted(
+                (tf for tf in needs if tf.is_session_based), key=lambda tf: tf.value
+            ))
+            if not frames:
+                continue
+            key = symbol.upper()
+            sessions = max(
+                (count if tf is CandleTimeframe.D1 else 5 * count + 5)
+                for tf, count in needs.items() if tf.is_session_based
+            )
+            self._history_sessions[key] = max(self._history_sessions.get(key, 0), sessions)
+            self._session_frames[key] = tuple(
+                dict.fromkeys((*self._session_frames.get(key, ()), *frames))
+            )
+
+    def _timeframes_for(self, symbol: str) -> tuple[CandleTimeframe, ...]:
+        return (CandleTimeframe.M1, *self._session_frames.get(symbol.upper(), ()))
 
     def on_candle(self, candle: Candle) -> None:
         self.session_references.add_bar(candle)
@@ -778,7 +835,7 @@ class ProductionMarketData:
             self.acquisitions[symbol] = self.acquisitions.get(symbol, 0) + 1
             result[symbol] = self.contexts.build(
                 symbol,
-                timeframes=(CandleTimeframe.M1,),
+                timeframes=self._timeframes_for(symbol),
                 indicators=("vwap", "vwap_prev"),
             )
         return result
@@ -824,8 +881,13 @@ class AlpacaProductionMarketData(ProductionMarketData):
         warmup_bars: int,
         environ: Mapping[str, str] | None,
         startup_timeout: float = 20.0,
+        history_client_factory: Callable[[], Any] | None = None,
     ) -> None:
         super().__init__(clock, max_age)
+        self._history_client_factory = history_client_factory
+        self._daily_refresh_not_before: dict[str, datetime] = {}
+        self._daily_refreshing: set[str] = set()
+        self._background: set[asyncio.Task[None]] = set()
         self.feed = feed
         self.warmup_bars = warmup_bars
         self.environ = os.environ if environ is None else environ
@@ -870,6 +932,100 @@ class AlpacaProductionMarketData(ProductionMarketData):
             )
         return key_id, secret_key
 
+    def _history_client(self) -> Any:
+        if self._history_client_factory is not None:
+            return self._history_client_factory()
+        key_id, secret_key = self._credentials()
+        return _AlpacaDataHttpClient(key_id, secret_key)
+
+    def _fetch_daily(
+        self, client: Any, symbol: str, now: datetime, sessions: int
+    ) -> tuple[Candle, ...]:
+        """Completed RAW daily bars for the last ``sessions`` sessions (one REST request chain)."""
+        from mike_trade.market_data.alpaca_history import AlpacaHistoricalBars
+
+        today = now.astimezone(exchange_calendar.NEW_YORK).date()
+        first = today - timedelta(days=sessions * 7 // 5 + 14)
+        start = datetime.combine(first, datetime.min.time(), exchange_calendar.NEW_YORK).astimezone(UTC)
+        end = datetime.combine(
+            today + timedelta(days=1), datetime.min.time(), exchange_calendar.NEW_YORK
+        ).astimezone(UTC)
+        bars = AlpacaHistoricalBars(client, max_pages=20).fetch_bars(
+            symbol, "1d", start, end, feed=self.feed, adjustment="raw"
+        )
+        return settled_daily_candles(bars, now=now, settle_delay=self.session_candles.settle_delay)
+
+    def _fetch_daily_all(
+        self, client: Any, now: datetime
+    ) -> dict[str, tuple[Candle, ...] | str]:
+        out: dict[str, tuple[Candle, ...] | str] = {}
+        for symbol, sessions in self._history_sessions.items():
+            try:
+                out[symbol] = self._fetch_daily(client, symbol, now, sessions)
+            except Exception as exc:  # one symbol's failure must not stop startup
+                out[symbol] = f"{type(exc).__name__}: {exc}"
+        return out
+
+    def _ingest_daily(self, symbol: str, fetched: tuple[Candle, ...] | str) -> None:
+        """Store fetched daily candles; any failure leaves history empty (strategies fail closed)."""
+        if isinstance(fetched, str):
+            self._logger.warning(
+                "Daily history unavailable", extra={"symbol": symbol, "error": fetched}
+            )
+            return
+        try:
+            summary = self.session_candles.ingest_daily(symbol, fetched)
+        except (SessionCandleError, Exception) as exc:  # noqa: BLE001 - provenance conflicts etc.
+            self._logger.warning(
+                "Daily history rejected", extra={"symbol": symbol, "error": str(exc)}
+            )
+            return
+        self._logger.info(
+            "Daily history ingested",
+            extra={
+                "symbol": symbol,
+                "added": summary.added,
+                "duplicates": summary.duplicates,
+                "conflicts": summary.conflicts,
+            },
+        )
+
+    def _schedule_daily_refresh(self, symbol: str) -> None:
+        """Fetch the newly settled session once per session, off the evaluation path.
+
+        Until it lands, the context holds yesterday's history and a daily-pattern strategy
+        reports INSUFFICIENT_DATA (its newest candle is not the last settled session).
+        """
+        key = symbol.upper()
+        if key not in self._history_sessions or key in self._daily_refreshing:
+            return
+        now = self.clock.now()
+        if not self.session_candles.needs_refresh(key, now):
+            return
+        if now < self._daily_refresh_not_before.get(key, now):
+            return
+        self._daily_refresh_not_before[key] = now + timedelta(minutes=5)
+        self._daily_refreshing.add(key)
+        task = asyncio.create_task(self._refresh_daily(key), name=f"daily-history-{key}")
+        self._background.add(task)
+        task.add_done_callback(self._background.discard)
+
+    async def _refresh_daily(self, symbol: str) -> None:
+        try:
+            now = self.clock.now()
+            client = self._history_client()
+            try:
+                fetched = await asyncio.to_thread(self._fetch_daily, client, symbol, now, 10)
+            finally:
+                client.close()
+            self._ingest_daily(symbol, fetched)
+        except Exception as exc:  # noqa: BLE001 - never raise into the stream loop
+            self._logger.warning(
+                "Daily history refresh failed", extra={"symbol": symbol, "error": str(exc)}
+            )
+        finally:
+            self._daily_refreshing.discard(symbol)
+
     async def warm(self, symbols: Sequence[str]) -> bool:
         from mike_trade.market_data.alpaca_history import AlpacaHistoricalBars
 
@@ -878,8 +1034,7 @@ class AlpacaProductionMarketData(ProductionMarketData):
         all_symbols = tuple(dict.fromkeys((*trading, *self._reference_symbols)))
         self._symbols = all_symbols
         self.subscribe(self._symbols)
-        key_id, secret_key = self._credentials()
-        client = _AlpacaDataHttpClient(key_id, secret_key)
+        client = self._history_client()
         now = self.clock.now()
 
         def fetch() -> dict[str, tuple[object, ...]]:
@@ -892,10 +1047,15 @@ class AlpacaProductionMarketData(ProductionMarketData):
                 for symbol in self._symbols
             }
 
+        daily: dict[str, tuple[Candle, ...] | str] = {}
         try:
             result = await asyncio.to_thread(fetch)
+            if self._history_sessions:
+                daily = await asyncio.to_thread(self._fetch_daily_all, client, now)
         finally:
             client.close()
+        for symbol, fetched in daily.items():
+            self._ingest_daily(symbol, fetched)
         for symbol, bars in result.items():
             completed_bars = tuple(
                 bar
@@ -1066,11 +1226,12 @@ class AlpacaProductionMarketData(ProductionMarketData):
         due = cast(Any, self._scheduler).on_candle_closed(
             item.symbol, CandleTimeframe.M1, latest.end
         )
+        self._schedule_daily_refresh(item.symbol)
         if not due:
             return
         context = self.contexts.build(
             item.symbol,
-            timeframes=(CandleTimeframe.M1,),
+            timeframes=self._timeframes_for(item.symbol),
             indicators=("vwap", "vwap_prev"),
         )
         actions = await cast(Any, self._lifecycle).process({item.symbol: context})
@@ -1639,11 +1800,13 @@ class VwapReferenceLifecycle:
                     code="STRATEGY_SIDE_MISMATCH",
                 )
             if spec.trigger_timeframe is not CandleTimeframe.M1 or any(
-                tf is not CandleTimeframe.M1 for tf in spec.required_timeframes
+                tf is not CandleTimeframe.M1 and not tf.is_session_based
+                for tf in spec.required_timeframes
             ):
                 raise ConfigurationError(
-                    f"{symbol}: strategy {item.name!r} needs non-1m candles; the SHADOW "
-                    "stream currently builds the 1m shared context only",
+                    f"{symbol}: strategy {item.name!r} needs non-1m intraday candles; the SHADOW "
+                    "stream builds the 1m shared context (plus completed D1/W1 history for "
+                    "strategies that declare it)",
                     code="STRATEGY_TIMEFRAME_UNSUPPORTED",
                 )
             bindings.append(
@@ -1655,6 +1818,21 @@ class VwapReferenceLifecycle:
                 code="STRATEGY_DUPLICATE",
             )
         return tuple(sorted(bindings, key=lambda b: b.strategy_id))
+
+    def history_requirements(self) -> dict[str, dict[CandleTimeframe, int]]:
+        """Completed D1/W1 bars each symbol's bound strategies need (empty: intraday only)."""
+        needs: dict[str, dict[CandleTimeframe, int]] = {}
+        for symbol, collections in self._by_symbol.items():
+            for group in (
+                collections.buys, collections.sells, collections.shorts, collections.covers
+            ):
+                for binding in group:
+                    for frame, count in binding.strategy.required_history(
+                        binding.parameters
+                    ).items():
+                        slot = needs.setdefault(symbol, {})
+                        slot[frame] = max(slot.get(frame, 0), count)
+        return needs
 
     def collections(self, symbol: str) -> _Collections:
         """The BUY/SELL collections evaluated for ``symbol``."""
@@ -2319,6 +2497,8 @@ class AlpacaBrokerAdapter:
             try:
                 from mike_trade.brokers.alpaca.orders import (
                     OrderPurpose as AlpacaOrderPurpose,
+                )
+                from mike_trade.brokers.alpaca.orders import (
                     parse_client_order_id,
                 )
 
@@ -2798,6 +2978,8 @@ def build_runtime(
         RsiMomentumBuy,
         IntradayExhaustionReversalBuy,
         VolumeDryUpPullbackBuy,
+        VolatilityContractionPatternBuy,
+        CupAndHandleBuy,
         AroonBearishReversalSell,
         CciZeroLineBreakdownSell,
         DmiBearishCrossoverSell,
@@ -3026,6 +3208,18 @@ def build_runtime(
         entry_gate=entry_gate,
         heartbeat_interval=settings.heartbeat_interval_seconds,
     )
+    history_needs = (
+        lifecycle.history_requirements() if hasattr(lifecycle, "history_requirements") else {}
+    )
+    if history_needs:
+        configure_history = getattr(market_data, "configure_history", None)
+        if not callable(configure_history):
+            raise ConfigurationError(
+                "strategies require completed daily/weekly history "
+                f"({sorted(history_needs)}) but the market-data service cannot supply it",
+                code="STRATEGY_HISTORY_UNSUPPORTED",
+            )
+        configure_history(history_needs)
     bind_engine = getattr(market_data, "bind_engine", None)
     if callable(bind_engine):
         try:

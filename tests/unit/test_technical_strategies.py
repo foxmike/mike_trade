@@ -172,6 +172,7 @@ SESSION_BUY = {
     "afternoon_breakout", "high_of_day_momentum", "midday_range_breakout",
     "opening_drive", "opening_range_retest", "power_hour_momentum",
 }
+DAILY_PATTERN_BUY = {"volatility_contraction_pattern", "cup_and_handle"}
 GAP_BUY = {
     "gap_and_go", "gap_fill", "gap_reversal", "previous_close_reclaim",
     "previous_day_high_breakout", "previous_day_low_reversal",
@@ -191,7 +192,6 @@ FINAL_MOMENTUM_BUY = {"momentum_continuation", "rsi_momentum"}
 FINAL_REVERSAL_BUY = {
     "intraday_exhaustion_reversal", "volume_dry_up_pullback",
 }
-DAILY_WEEKLY_BUY = {"volatility_contraction_pattern", "cup_and_handle"}
 FINAL_REVERSAL_SELL = {
     "volatility_expansion_reversal", "volume_climax_exit",
 }
@@ -660,7 +660,7 @@ def test_registry_inventory_counts() -> None:
         | FINAL_PATTERN_BUY
         | FINAL_MOMENTUM_BUY
         | FINAL_REVERSAL_BUY
-        | DAILY_WEEKLY_BUY
+        | DAILY_PATTERN_BUY
         | {k for k, v in EXISTING.items() if v[0] == "BUY"}
     )
     assert sells == (

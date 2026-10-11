@@ -107,15 +107,15 @@ def make_context(
 # ==============================================================================
 
 
-def test_research_and_production_registries_hold_180_strategies() -> None:
+def test_research_and_production_registries_hold_192_strategies() -> None:
     counts = {role: len(REGISTRY.list_strategies(role)) for role in StrategyRole}
     assert counts == {
-        StrategyRole.BUY: 82,
-        StrategyRole.SELL: 42,
+        StrategyRole.BUY: 93,
+        StrategyRole.SELL: 43,
         StrategyRole.SHORT: 28,
         StrategyRole.COVER: 28,
     }
-    assert len(REGISTRY.list_strategies()) == 180
+    assert len(REGISTRY.list_strategies()) == 192
 
     source = inspect.getsource(app.build_runtime)
     for strategy_id in NEW_STRATEGIES:

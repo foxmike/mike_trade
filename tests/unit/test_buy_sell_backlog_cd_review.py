@@ -128,12 +128,12 @@ def walk_signals(sid: str, bars: list[Candle], params: dict | None = None):
 # ------------------------------------------------------------------ registration / composition
 
 
-def test_final_182_counts_parity_and_unique_ids() -> None:
+def test_final_192_counts_parity_and_unique_ids() -> None:
     counts = {role: len(REGISTRY.list_strategies(role)) for role in StrategyRole}
-    assert counts == {StrategyRole.BUY: 87, StrategyRole.SELL: 41,
+    assert counts == {StrategyRole.BUY: 93, StrategyRole.SELL: 43,
                       StrategyRole.SHORT: 28, StrategyRole.COVER: 28}
     ids = [c.spec.strategy_id for c in REGISTRY.list_strategies()]
-    assert len(ids) == len(set(ids)) == 184
+    assert len(ids) == len(set(ids)) == 192
     for sid in BUYS + SELLS:
         assert REGISTRY.get(sid).spec.warmup_bars == REGISTRY.get(sid).required_bars({})
     for candidate in EQUIVALENT_CANDIDATES:  # equivalences are not duplicated as strategies

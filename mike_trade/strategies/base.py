@@ -38,7 +38,7 @@ from typing import TYPE_CHECKING, ClassVar
 
 from mike_trade.domain.errors import MikeTradeError
 from mike_trade.domain.strategy_types import StrategyRole
-from mike_trade.market_data.candles import CandleTimeframe
+from mike_trade.market_data.candles import SESSION_TIMEFRAMES, CandleTimeframe
 
 if TYPE_CHECKING:
     from mike_trade.market_data.context import MarketContext
@@ -389,6 +389,10 @@ class StrategySpec:
     source: str
     execution_limitations: tuple[str, ...]
     reason_codes: tuple[ReasonCode, ...]
+    #: Completed daily/weekly bars the rule needs in ``MarketContext.candles`` at default
+    #: parameters, as ``((CandleTimeframe.D1, 252), ...)``.  Empty for intraday-only rules.
+    #: The strategy's ``required_history(params)`` states the exact need for a configuration.
+    history_bars: tuple[tuple[CandleTimeframe, int], ...] = ()
 
     def __post_init__(self) -> None:
         object.__setattr__(
@@ -428,6 +432,26 @@ class StrategySpec:
             raise ValueError("required_timeframes must be unique")
         if self.trigger_timeframe not in self.required_timeframes:
             raise ValueError("trigger_timeframe must be one of required_timeframes")
+        if self.trigger_timeframe.is_session_based:
+            raise ValueError(
+                "trigger_timeframe must be an intraday timeframe: daily/weekly candles are "
+                "context inputs that complete outside the intraday evaluation cadence"
+            )
+        if not isinstance(self.history_bars, tuple):
+            raise ValueError("history_bars must be a tuple")
+        seen_history: set[CandleTimeframe] = set()
+        for item in self.history_bars:
+            if not (isinstance(item, tuple) and len(item) == 2):
+                raise ValueError("history_bars items must be (CandleTimeframe, int) pairs")
+            frame, count = item
+            if frame not in SESSION_TIMEFRAMES or frame not in self.required_timeframes:
+                raise ValueError("history_bars timeframes must be required D1/W1 timeframes")
+            if frame in seen_history or isinstance(count, bool) or not isinstance(count, int) \
+                    or count < 1:
+                raise ValueError("history_bars counts must be unique positive ints")
+            seen_history.add(frame)
+        if any(f.is_session_based for f in self.required_timeframes) and not seen_history:
+            raise ValueError("D1/W1 required_timeframes must declare history_bars")
 
         if isinstance(self.warmup_bars, bool) or not isinstance(self.warmup_bars, int):
             raise ValueError("warmup_bars must be int")
@@ -656,6 +680,15 @@ class _Strategy(ABC):
         (shorter or longer) lookback exactly.
         """
         return cls.spec.warmup_bars
+
+    @classmethod
+    def required_history(cls, params: Mapping[str, object]) -> Mapping[CandleTimeframe, int]:
+        """Completed D1/W1 bars needed in the context for ``params`` (empty if intraday only).
+
+        The default is the spec's ``history_bars`` at default parameters; a strategy whose
+        daily lookback depends on its parameters overrides this exactly like ``required_bars``.
+        """
+        return dict(cls.spec.history_bars)
 
     @abstractmethod
     def evaluate(

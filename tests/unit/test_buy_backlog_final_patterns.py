@@ -83,9 +83,9 @@ NEW_IDS = ("gap_exhaustion", "bull_pennant_breakout")
 
 def test_library_counts_and_registration_parity() -> None:
     counts = {role: len(REGISTRY.list_strategies(role)) for role in StrategyRole}
-    assert counts == {StrategyRole.BUY: 87, StrategyRole.SELL: 41, StrategyRole.SHORT: 28,
+    assert counts == {StrategyRole.BUY: 93, StrategyRole.SELL: 43, StrategyRole.SHORT: 28,
                       StrategyRole.COVER: 28}
-    assert len(REGISTRY.list_strategies()) == 184
+    assert len(REGISTRY.list_strategies()) == 192
     production = inspect.getsource(app.build_runtime)
     research = inspect.getsource(inspect.getmodule(_research_registry)._research_registry)  # type: ignore[union-attr]
     for strategy_id in NEW_IDS:
@@ -98,16 +98,17 @@ def test_library_counts_and_registration_parity() -> None:
     assert len(ids) == len(set(ids))
 
 
-def test_blocked_candidates_are_not_registered_and_the_contract_explains_why() -> None:
-    for blocked in ("volatility_contraction_pattern", "cup_and_handle"):
-        with pytest.raises(Exception):  # noqa: B017 - not registered
-            REGISTRY.get(blocked)
-    # the strategy contract carries intraday timeframes only: there is no daily candle
-    assert {tf.value for tf in CandleTimeframe} == {"1m", "5m", "15m", "30m", "60m"}
+def test_daily_pattern_candidates_are_registered_on_the_separate_d1_history_path() -> None:
+    # VCP / Cup-and-Handle were blocked on missing daily history; D1/W1 support unblocked them
+    for sid in ("volatility_contraction_pattern", "cup_and_handle"):
+        cls = REGISTRY.get(sid)
+        assert CandleTimeframe.D1 in cls.spec.required_timeframes
+        assert cls.spec.history_bars and cls.spec.history_bars[0][0] is CandleTimeframe.D1
+    assert {tf.value for tf in CandleTimeframe} == {"1m", "5m", "15m", "30m", "60m", "1d", "1w"}
     from mike_trade.market_data.session_reference import MAX_HISTORY_SESSIONS
 
-    # ... and the longest multi-session context is a bounded chain of a few sessions (not the
-    # 150/200-day averages and 52-week range of a trend template, nor a multi-week base)
+    # ... while the multi-session intraday reference chain used by gap_exhaustion stays a bounded
+    # few sessions (it is not the D1 store, which carries 150/200-day averages and 52-week ranges)
     assert MAX_HISTORY_SESSIONS < 20
 
 

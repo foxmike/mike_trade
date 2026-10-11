@@ -411,12 +411,12 @@ def test_registration_in_production_and_research() -> None:
 def test_library_counts_after_batch_final_momentum() -> None:
     counts = {r: len(REGISTRY.list_strategies(r)) for r in StrategyRole}
     assert counts == {
-        StrategyRole.BUY: 82,
-        StrategyRole.SELL: 40,
+        StrategyRole.BUY: 93,
+        StrategyRole.SELL: 43,
         StrategyRole.SHORT: 28,
         StrategyRole.COVER: 28,
     }
-    assert len(REGISTRY.list_strategies()) == 178
+    assert len(REGISTRY.list_strategies()) == 192
 
 
 def test_volatility_expansion_continuation_equivalence() -> None:
