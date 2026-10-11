@@ -8,14 +8,15 @@ This is the authoritative reconciliation of the original 156 BUY/SELL candidates
 |---|---:|
 | Original BUY candidates | 106 |
 | Original SELL candidates | 50 |
-| Implemented BUY strategies | 61 |
-| Implemented SELL strategies | 23 |
-| Existing equivalents | 43 |
+| Implemented BUY strategies | 63 |
+| Implemented SELL strategies | 24 |
+| Existing equivalents | 44 |
 | Pending candidates | 5 |
-| Deferred candidates | 24 |
+| Deferred candidates | 20 |
 
-The registered library contains 78 BUY and 40 SELL strategies after the general BUY,
-current-session BUY, SELL batch-3, BUY batch-4, SELL batch-5, gap BUY batch-6, and backlog batch A additions. Keltner Squeeze maps to `volatility_squeeze_breakout`. There are 43 equivalent candidate rows;
+The registered library contains 82 BUY and 41 SELL strategies after the general BUY,
+current-session BUY, SELL batch-3, BUY batch-4, SELL batch-5, gap BUY batch-6,
+backlog batch A, and backlog batch D additions. Keltner Squeeze maps to `volatility_squeeze_breakout`. There are 44 equivalent candidate rows;
 Volume Surge Breakout maps to `momentum_breakout` and Donchian Trend Following to
 `donchian_channel_breakout`; “RSI Reversal” and “RSI Overbought Exit” describe one existing
 rule, and NR4 uses the NR7 implementation with period=4.
@@ -29,7 +30,7 @@ Each row records the original candidate name, role, original inventory group, su
 | Original candidate | Side | Original inventory group | Category | Subcategory | Status | Strategy identifier | Source / reference | Notes |
 |---|---|---|---|---|---|---|---|---|
 | Momentum Breakout | BUY | momentum | technical | momentum | EXISTING_EQUIVALENT | momentum_breakout | Existing module: mike_trade/strategies/buy/momentum_breakout.py | Existing registered method; its source and exact signal are in its strategy module. |
-| Relative Volume Momentum | BUY | momentum | technical | momentum | REQUIRES_SOURCE_DEFINITION | — | Source review pending; no candidate-specific source selected. | Batch 4 research: relative-volume 'momentum' scans are vendor-specific (thresholds, price-change filters); the volume-multiple breakout is momentum_breakout. |
+| Relative Volume Momentum | BUY | momentum | technical | momentum | IMPLEMENTED | relative_volume_momentum | Concept only: RVOL day-trading momentum scans (Warrior Trading, Trade Ideas). Ratio: volume / SMA(volume, 20) of prior bar. Thresholds and momentum filters are engineering choices. | Signal when RVOL crosses from < 2.0 to >= 2.0, close > open, close > close[t-1], and 3-bar rate of change >= 0.1%. Point-in-time prior volume baseline, strictly positive volumes required. |
 | Rate of Change Momentum | BUY | momentum | technical | momentum | IMPLEMENTED | rate_of_change_momentum | StockCharts ChartSchool, Rate of Change (ROC): https://chartschool.stockcharts.com/table-of-contents/technical-indicators-and-overlays/technical-indicators/rate-of-change-roc | ROC zero-line cross using observed M1 closes. |
 | Momentum Ignition | BUY | momentum | technical | momentum | REQUIRES_SOURCE_DEFINITION | — | Source review pending; no candidate-specific source selected. | Batch 4 research: no established exact rule found. |
 | Momentum Continuation | BUY | momentum | technical | momentum | REQUIRES_SOURCE_DEFINITION | — | Source review pending; no candidate-specific source selected. | Batch 4 research: no established exact rule found. |
@@ -65,10 +66,10 @@ Each row records the original candidate name, role, original inventory group, su
 | Adaptive Moving Average | BUY | moving_average | technical | moving_average | IMPLEMENTED | adaptive_moving_average | Perry Kaufman KAMA(10,2,30); StockCharts ChartSchool, KAMA (SMA seed). | Close crosses above KAMA; recursive state persisted. |
 | Moving Average Envelope | BUY | moving_average | technical | moving_average | IMPLEMENTED | moving_average_envelope | StockCharts ChartSchool, Moving Average Envelopes: https://chartschool.stockcharts.com/table-of-contents/technical-indicators-and-overlays/technical-overlays/moving-average-envelopes | Close crosses upper percentage SMA envelope. |
 | Moving Average Reclaim | BUY | moving_average | technical | moving_average | IMPLEMENTED | moving_average_reclaim | StockCharts ChartSchool, Moving Averages: https://chartschool.stockcharts.com/table-of-contents/technical-indicators-and-overlays/technical-overlays/moving-averages-simple-and-exponential | Close crosses from at-or-below to above its SMA. |
-| Moving Average Compression | BUY | moving_average | technical | moving_average | REQUIRES_SOURCE_DEFINITION | — | Source review pending; no candidate-specific source selected. | Batch 4 research: no published compression threshold or trigger found. |
+| Moving Average Compression | BUY | moving_average | technical | moving_average | IMPLEMENTED | moving_average_compression | Concept only: MA convergence/compression before expansion (Murphy ch. 9, Guppy). Compression threshold and breakout confirmation are engineering choices. | Three SMAs (10, 20, 50). Compression bandwidth ((max(SMA) - min(SMA)) / slow_SMA * 100) <= 0.75% for 5 consecutive bars (t-5..t-1), followed by bullish breakout (close[t-1] <= max(SMA)[t-1], close[t] > max(SMA)[t], close[t] > open[t]). |
 | RSI Oversold Reversal | BUY | mean_reversion | technical | mean_reversion | EXISTING_EQUIVALENT | rsi_oversold_reversal | Existing module: mike_trade/strategies/buy/rsi_oversold_reversal.py | Existing registered method; its source and exact signal are in its strategy module. |
 | Bollinger Band Mean Reversion | BUY | mean_reversion | technical | mean_reversion | IMPLEMENTED | bollinger_band_mean_reversion | Indicator: John Bollinger, Bollinger on Bollinger Bands (2001); StockCharts ChartSchool, Bollinger Bands: https://chartschool.stockcharts.com/table-of-contents/technical-indicators-and-overlays/technical-overlays/bollinger-bands. Trigger: engineering choice. | Prior completed close strictly below the lower band computed at t-1 and latest completed close strictly above the lower band computed at t (population SD); the long-side mirror of bollinger_upper_band_reversal. |
-| Moving Average Mean Reversion | BUY | mean_reversion | technical | mean_reversion | REQUIRES_SOURCE_DEFINITION | — | Source review pending; no candidate-specific source selected. | Batch 4 research: published variants differ (percent below MA, z-score, envelope); the z-score form is z_score_mean_reversion and the envelope form moving_average_envelope. |
+| Moving Average Mean Reversion | BUY | mean_reversion | technical | mean_reversion | EXISTING_EQUIVALENT | bollinger_band_mean_reversion | Canonical TA umbrella concept. Normalized forms: Ernest Chan (z-score), John Bollinger (Bollinger Bands), Chester Keltner / Linda Raschke (Keltner Channels). | Dispersed/normalized displacement from MA: z_score_mean_reversion (standard deviation z-score cross), bollinger_band_mean_reversion (lower band reclaim), keltner_channel_reversion (ATR band reclaim), moving_average_reclaim (SMA reclaim). No distinct uninvented trigger. |
 | CCI Reversion | BUY | mean_reversion | technical | mean_reversion | IMPLEMENTED | cci_reversion | StockCharts, Commodity Channel Index: https://chartschool.stockcharts.com/table-of-contents/technical-indicators-and-overlays/technical-indicators/commodity-channel-index-cci | New registered class; selected rule and source are documented in its module. |
 | Williams %R Reversion | BUY | mean_reversion | technical | mean_reversion | EXISTING_EQUIVALENT | williams_r_reversion | Existing module: mike_trade/strategies/buy/williams_r_reversion.py | Existing registered method; its source and exact signal are in its strategy module. |
 | Stochastic Oversold Reversal | BUY | mean_reversion | technical | mean_reversion | IMPLEMENTED | stochastic_oversold_reversal | StockCharts, Stochastic Oscillator: https://chartschool.stockcharts.com/table-of-contents/technical-indicators-and-overlays/technical-indicators/stochastic-oscillator-fast-slow-and-full | New registered class; selected rule and source are documented in its module. |
@@ -185,14 +186,14 @@ Each row records the original candidate name, role, original inventory group, su
 | Chaikin Money Flow Reversal | SELL | volume_session | technical | volume | IMPLEMENTED | chaikin_money_flow_reversal | StockCharts, Chaikin Money Flow: https://chartschool.stockcharts.com/table-of-contents/technical-indicators-and-overlays/technical-indicators/chaikin-money-flow-cmf | New registered class; selected rule and source are documented in its module. |
 | Money Flow Index Reversal | SELL | volume_session | technical | volume | IMPLEMENTED | money_flow_index_reversal | StockCharts, Money Flow Index: https://chartschool.stockcharts.com/table-of-contents/technical-indicators-and-overlays/technical-indicators/money-flow-index-mfi | New registered class; selected rule and source are documented in its module. |
 | Accumulation/Distribution Breakdown | SELL | volume_session | technical | volume | IMPLEMENTED | accumulation_distribution_breakdown | Marc Chaikin; StockCharts A/D Line: https://chartschool.stockcharts.com/table-of-contents/technical-indicators-and-overlays/technical-indicators/accumulation-distribution-line | Snapshot-restored cumulative A/D Line crosses below its lowest value in the preceding configurable window. |
-| High-Volume Reversal | SELL | volume_session | technical | volume | REQUIRES_SOURCE_DEFINITION | — | Source review completed; no canonical candidate-specific rule selected. | Sources vary on relative-volume threshold, bearish candle/pattern, prior trend, and confirmation; selecting a combination would invent the method. |
+| High-Volume Reversal | SELL | volume_session | technical | volume | IMPLEMENTED | high_volume_reversal | Concept only: High-volume churn / climax reversal after an uptrend (Wyckoff, Murphy ch. 10). Thresholds and candle filters are engineering choices. | Prior 5-bar uptrend (close[t-1] > close[t-6]), volume >= 2.0x 20-bar prior volume SMA, bearish candle (close < open, close < close[t-1]), close in bottom 50% of bar range ((close - low) <= 0.5 * (high - low)). Edge trigger: prior bar not already an active reversal. |
 | Volume Climax Exit | SELL | volume_session | technical | volume | REQUIRES_SOURCE_DEFINITION | — | Wyckoff buying-climax descriptions are contextual rather than one mechanical trigger. | No canonical threshold defines “climax,” required spread, close location, prior advance, or secondary confirmation. |
 | End-of-Day Exit | SELL | volume_session | technical | intraday_session | NOT_APPLICABLE | — | Platform role boundary; no strategy-rule citation applies. | Forced liquidation belongs to session/risk operations policy. |
 | Time-Based Exit | SELL | volume_session | technical | intraday_session | NOT_APPLICABLE | — | Platform role boundary; no strategy-rule citation applies. | Position age/open time is an engine-owned lifecycle fact not supplied to technical SellRule; session liquidation remains operations policy. |
 
 ## Deferred candidate notes
 
-`REQUIRES_SOURCE_DEFINITION`: VWAP Rejection, Volatility Expansion Reversal, High-Volume Reversal, and Volume Climax Exit, plus the BUY candidates identified in their rows; published descriptions admit multiple materially different rules, so no rule was selected by inference.
+`REQUIRES_SOURCE_DEFINITION`: VWAP Rejection, Volatility Expansion Reversal, and Volume Climax Exit, plus the BUY candidates identified in their rows; published descriptions admit multiple materially different rules, so no rule was selected by inference.
 
 `BLOCKED_BY_INFRASTRUCTURE`: remaining rows concern unavailable complete-session reference data. Cumulative volume indicators, recursive ATR/Supertrend, and point-in-time displaced-cloud indicators are supported by their respective indicator calculators.
 

@@ -128,12 +128,12 @@ def test_batch_a_strategies_registered_in_production_and_research() -> None:
 
     counts = {r: len(REGISTRY.list_strategies(r)) for r in StrategyRole}
     assert counts == {
-        StrategyRole.BUY: 80,
-        StrategyRole.SELL: 40,
+        StrategyRole.BUY: 82,
+        StrategyRole.SELL: 41,
         StrategyRole.SHORT: 3,
         StrategyRole.COVER: 3,
     }
-    assert len(REGISTRY.list_strategies()) == 126
+    assert len(REGISTRY.list_strategies()) == 129
 
 
 def test_bollinger_middle_band_exit_equivalence() -> None:

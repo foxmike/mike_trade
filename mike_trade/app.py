@@ -219,6 +219,12 @@ from mike_trade.strategies.buy.vwap_band_reversion import VWAPBandReversionBuy
 from mike_trade.strategies.buy.intraday_consolidation_breakout import (
     IntradayConsolidationBreakoutBuy,
 )
+from mike_trade.strategies.buy.relative_volume_momentum import (
+    RelativeVolumeMomentumBuy,
+)
+from mike_trade.strategies.buy.moving_average_compression import (
+    MovingAverageCompressionBuy,
+)
 from mike_trade.strategies.indicators.core import VWAPCalculator
 from mike_trade.strategies.presets.pairs import resolve_pair_preset
 from mike_trade.strategies.registry import StrategyRegistry
@@ -265,6 +271,7 @@ from mike_trade.strategies.sell.ichimoku_bearish_exit import IchimokuBearishExit
 from mike_trade.strategies.sell.obv_breakdown import ObvBreakdownSell
 from mike_trade.strategies.sell.shooting_star_reversal import ShootingStarReversalSell
 from mike_trade.strategies.sell.supertrend_bearish_flip import SupertrendBearishFlipSell
+from mike_trade.strategies.sell.high_volume_reversal import HighVolumeReversalSell
 
 __all__ = [
     "AppSettings",
@@ -2617,6 +2624,8 @@ def build_runtime(
         SupportBounceBuy,
         VWAPBandReversionBuy,
         IntradayConsolidationBreakoutBuy,
+        RelativeVolumeMomentumBuy,
+        MovingAverageCompressionBuy,
         AroonBearishReversalSell,
         CciZeroLineBreakdownSell,
         DmiBearishCrossoverSell,
@@ -2654,6 +2663,7 @@ def build_runtime(
         ObvBreakdownSell,
         ShootingStarReversalSell,
         SupertrendBearishFlipSell,
+        HighVolumeReversalSell,
     ):
         registry.register(strategy_cls)
     strategies = supplied.get("strategies", registry)

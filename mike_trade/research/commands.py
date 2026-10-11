@@ -583,6 +583,8 @@ def _research_registry() -> Any:
     from mike_trade.strategies.buy.intraday_consolidation_breakout import (
         IntradayConsolidationBreakoutBuy,
     )
+    from mike_trade.strategies.buy.relative_volume_momentum import RelativeVolumeMomentumBuy
+    from mike_trade.strategies.buy.moving_average_compression import MovingAverageCompressionBuy
     from mike_trade.strategies.sell.aroon_bearish_reversal import AroonBearishReversalSell
     from mike_trade.strategies.sell.cci_zero_line_breakdown import CciZeroLineBreakdownSell
     from mike_trade.strategies.sell.cci_bearish_reversal import CciBearishReversalSell
@@ -634,6 +636,7 @@ def _research_registry() -> Any:
     from mike_trade.strategies.sell.obv_breakdown import ObvBreakdownSell
     from mike_trade.strategies.sell.shooting_star_reversal import ShootingStarReversalSell
     from mike_trade.strategies.sell.supertrend_bearish_flip import SupertrendBearishFlipSell
+    from mike_trade.strategies.sell.high_volume_reversal import HighVolumeReversalSell
 
     registry = StrategyRegistry()
     for cls in (
@@ -726,6 +729,8 @@ def _research_registry() -> Any:
         SupportBounceBuy,
         VWAPBandReversionBuy,
         IntradayConsolidationBreakoutBuy,
+        RelativeVolumeMomentumBuy,
+        MovingAverageCompressionBuy,
         AroonBearishReversalSell,
         CciZeroLineBreakdownSell,
         DmiBearishCrossoverSell,
@@ -763,6 +768,7 @@ def _research_registry() -> Any:
         ObvBreakdownSell,
         ShootingStarReversalSell,
         SupertrendBearishFlipSell,
+        HighVolumeReversalSell,
     ):
         registry.register(cls)
     return registry
