@@ -594,3 +594,163 @@ export function getResearchTrades(runId: string, filters: TradeFilters = {}, sig
 export function getResearchTrade(runId: string, tradeId: string, signal?: SignalOption) {
   return getJson<TradeInspection>(`/api/research/runs/${enc(runId)}/trades/${enc(tradeId)}`, signal);
 }
+
+// ---------------------------------------------------------------------------
+// Operations cockpit: symbol pipeline + strategy activity + event timeline.
+// ---------------------------------------------------------------------------
+
+export interface StrategyInstanceState {
+  instance_id: string;
+  role: string;
+  strategy_key: string;
+  strategy_version: string | null;
+  enabled: boolean;
+  /** Recorded pipeline stage: ORDER_FILLED / ORDER_SUBMITTED / SIGNAL_PRODUCED /
+   * SIGNAL_REJECTED / NO_SIGNAL / WATCHING_* (engine state) / NOT_EVALUATED. */
+  stage: string;
+  stage_detail: string | null;
+  stage_as_of: string | null;
+  engine_state: string | null;
+  armed: boolean | null;
+  rearm_required: boolean | null;
+  last_signal_bar: string | null;
+}
+
+export interface PipelineCycle {
+  cycle_id: string;
+  state: string;
+  direction: string | null;
+  entry_strategy_key: string | null;
+  opened_at: string | null;
+}
+
+export interface PipelineOrder {
+  broker_order_id: string;
+  client_order_id: string | null;
+  purpose: string | null;
+  side: string;
+  order_type: string | null;
+  status: string;
+  quantity: string | null;
+  filled_quantity: string | null;
+  limit_price: string | null;
+  stop_price: string | null;
+  submitted_at: string | null;
+  updated_at: string | null;
+  is_open: boolean;
+}
+
+export interface PipelineProtection {
+  protection_order_id: string;
+  cycle_id: string;
+  kind: string | null;
+  status: string;
+  stop_price: string | null;
+  high_water_mark: string | null;
+  covered_quantity: string | null;
+  remaining_quantity: string | null;
+  coverage_gap: boolean;
+  updated_at: string | null;
+}
+
+export interface SymbolPipeline {
+  symbol: string;
+  configured: boolean;
+  phase: string;
+  direction: string | null;
+  buy_strategies: string[];
+  sell_strategies: string[];
+  short_strategies: string[];
+  cover_strategies: string[];
+  instances: StrategyInstanceState[];
+  last_evaluation: import("./client").EvaluationSummary | null;
+  last_signal: import("./client").SignalSummary | null;
+  cycle: PipelineCycle | null;
+  position_quantity: string | null;
+  position_entry_price: string | null;
+  unrealized_pnl: string | null;
+  pending_orders: PipelineOrder[];
+  pending_entry_orders: number;
+  pending_exit_orders: number;
+  reserved_budget: string | null;
+  cooldown_until: string | null;
+  lockout_until: string | null;
+  block_reasons: string[];
+  protections: PipelineProtection[];
+  last_activity_at: string | null;
+}
+
+export interface CockpitResponse {
+  account_id: string;
+  mode: string;
+  engine_state: string;
+  server_time: string;
+  entries_allowed: boolean;
+  entries_blocked_reasons: string[];
+  symbols: SymbolPipeline[];
+}
+
+export type ActivityCategory =
+  | "SYSTEM" | "STRATEGY" | "EVALUATION" | "SIGNAL" | "ORDER" | "FILL"
+  | "PROTECTION" | "LIFECYCLE";
+
+export interface ActivityEntry {
+  at: string;
+  category: ActivityCategory;
+  event_type: string;
+  symbol: string | null;
+  strategy_key: string | null;
+  strategy_role: string | null;
+  cycle_id: string | null;
+  ref_id: string | null;
+  side: string | null;
+  quantity: string | null;
+  price: string | null;
+  stop_price: string | null;
+  disposition: string | null;
+  summary: string;
+  payload: Record<string, unknown>;
+}
+
+export interface ActivityResponse {
+  account_id: string;
+  mode: string;
+  engine_state: string;
+  server_time: string;
+  entries: ActivityEntry[];
+  next_before: string | null;
+}
+
+export interface ActivityFilters {
+  symbol?: string;
+  category?: string;
+  strategy?: string;
+  since?: string;
+  until?: string;
+  before?: string;
+  limit?: number;
+}
+
+export function getCockpit(accountId: string, signal?: SignalOption): Promise<CockpitResponse> {
+  return getJson<CockpitResponse>(`/api/accounts/${enc(accountId)}/cockpit`, signal);
+}
+
+export function getActivity(
+  accountId: string,
+  filters: ActivityFilters = {},
+  signal?: SignalOption,
+): Promise<ActivityResponse> {
+  const params = new URLSearchParams();
+  if (filters.symbol) params.set("symbol", filters.symbol);
+  if (filters.category) params.set("category", filters.category);
+  if (filters.strategy) params.set("strategy", filters.strategy);
+  if (filters.since) params.set("since", filters.since);
+  if (filters.until) params.set("until", filters.until);
+  if (filters.before) params.set("before", filters.before);
+  if (filters.limit) params.set("limit", String(filters.limit));
+  const suffix = params.toString();
+  return getJson<ActivityResponse>(
+    `/api/accounts/${enc(accountId)}/activity${suffix ? `?${suffix}` : ""}`,
+    signal,
+  );
+}
