@@ -264,16 +264,18 @@ def test_notional_replace_is_unavailable(caps: BrokerCapabilities) -> None:
     assert checked == 5 * 4 * 6 * 2 * 2
 
 
-# -- (e) short selling is unavailable ------------------------------------------
+# -- (e) short selling is unproven until broker-verified --------------------------
 
 
-def test_short_selling_is_unavailable(caps: BrokerCapabilities) -> None:
+def test_short_selling_is_never_available_until_verified(caps: BrokerCapabilities) -> None:
     checked = 0
     for order_type, operation, env in itertools.product(
         ALL_ORDER_TYPES, ALL_OPERATIONS, ALL_ENVS
     ):
         descriptor = desc(order_type=order_type, side="short", operation=operation)
-        assert caps.status_of(descriptor, env) is CapabilityStatus.UNSUPPORTED
+        # Short combinations are UNPROVEN (never PROVEN by default): fail closed until a
+        # paper verification or explicit promotion is recorded.
+        assert caps.status_of(descriptor, env) is not CapabilityStatus.PROVEN
         assert caps.is_available(descriptor, env) is False
         with pytest.raises(CapabilityUnavailable):
             caps.require(descriptor, env)

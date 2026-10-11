@@ -288,7 +288,7 @@ def test_account_is_shadow_tagged_and_implements_broker_port(h: Harness) -> None
     capabilities = account.capabilities()
     assert capabilities.provider == "shadow"
     assert capabilities.environment is AccountEnvironment.SHADOW
-    assert not capabilities.supports_short and not capabilities.supports_notional
+    assert capabilities.supports_short and not capabilities.supports_notional
 
 
 def test_scenarios_have_independent_accounts(make_harness: Callable[..., Harness]) -> None:
@@ -589,9 +589,9 @@ def test_overfill_unknown_order_and_mismatched_fill_are_rejected(h: Harness) -> 
 
 
 def test_buy_must_be_an_entry_and_notional_is_unsupported(h: Harness) -> None:
-    with pytest.raises(BrokerRejectedError) as raised:
-        run(h.account.submit_order(h.intent("b1", purpose=OrderPurpose.STRATEGY_EXIT)))
-    assert raised.value.code == "buy_must_be_entry"
+    # A BUY can only be an ENTRY: the mismatch is refused when the intent is constructed.
+    with pytest.raises(ValueError, match="exit/protection intents require"):
+        h.intent("b1", purpose=OrderPurpose.STRATEGY_EXIT)
     with pytest.raises(UnsupportedOrderCapabilityError):
         run(h.account.submit_order(h.intent("b2", notional=D("500"))))
     with pytest.raises(BrokerRejectedError) as raised:

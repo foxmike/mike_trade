@@ -162,9 +162,18 @@ def test_fill_ids_are_idempotency_keys_within_a_cycle() -> None:
         opened.apply_entry_fill(fill("same", OrderSide.BUY, "1", "100"))
 
 
-def test_short_entry_intent_is_rejected() -> None:
-    with pytest.raises(ValueError, match="short entry"):
+def test_entry_requires_an_opening_side() -> None:
+    with pytest.raises(ValueError, match="ENTRY requires BUY or SELL_SHORT"):
         intent(side=OrderSide.SELL)
+    with pytest.raises(ValueError, match="ENTRY requires BUY or SELL_SHORT"):
+        intent(side=OrderSide.BUY_TO_COVER)
+    assert intent(side=OrderSide.SELL_SHORT).side is OrderSide.SELL_SHORT
+
+
+def test_exit_intents_require_a_closing_side() -> None:
+    with pytest.raises(ValueError, match="exit/protection intents require"):
+        intent(side=OrderSide.SELL_SHORT, purpose=OrderPurpose.STRATEGY_EXIT)
+    assert intent(side=OrderSide.BUY_TO_COVER, purpose=OrderPurpose.STRATEGY_EXIT)
 
 
 @pytest.mark.parametrize(

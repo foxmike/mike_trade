@@ -1,8 +1,14 @@
-"""Ledger-backed shadow simulation of long protective stops.
+"""Ledger-backed shadow simulation of long and short protective stops.
 
 This module is deliberately broker-free.  Stop prices come from the shared
 provider-neutral protection policies, while executions are ordinary shadow
 account fills against quote evidence.
+
+A long stop sits below the market, triggers when the bid falls to it and sells at the bid.
+A short stop sits above the market, triggers when the ask rises to it and covers at the ask
+(``BUY_TO_COVER``); a short trailing stop ratchets DOWN as the ask makes new lows and never
+loosens upward.  ``trigger_source="BID"`` means the closing-side quote: bid for a long,
+ask for a short.
 """
 
 from __future__ import annotations
@@ -18,7 +24,9 @@ from uuid import uuid4
 from mike_trade.brokers.shadow.account import ShadowAccount
 from mike_trade.brokers.shadow.ledger import ORDER_CANCELED, ORDER_REPLACED, SIMULATOR_VERSION, ShadowLedgerEvent
 from mike_trade.domain.protection import ProtectionKind, ProtectionPolicy, start_protection
-from mike_trade.domain.trading import Fill, OrderIntent, OrderPurpose, OrderSide, OrderType, TimeInForce
+from mike_trade.domain.trading import (
+    Fill, OrderIntent, OrderPurpose, OrderSide, OrderType, PositionDirection, TimeInForce,
+)
 from mike_trade.market_data.context import QuoteSnapshot, TradeSnapshot
 from mike_trade.risk.trailing import (
     DistanceKind,
@@ -72,7 +80,7 @@ class StopTriggerAssumptions:
             "trigger_source": self.trigger_source,
             "max_quote_age_us": str(self.max_quote_age // timedelta(microseconds=1)),
             "stop_slippage": str(self.stop_slippage),
-            "execution_price": "available_bid_minus_stop_slippage",
+            "execution_price": "long:available_bid_minus_stop_slippage;short:available_ask_plus_stop_slippage",
             "estimated": "True",
             "broker_confirmed": "False",
         }
@@ -99,6 +107,7 @@ class ShadowStopState:
     provenance: str | None = None
     estimated: bool = True
     broker_confirmed: bool = False
+    direction: PositionDirection = PositionDirection.LONG
 
     def __post_init__(self) -> None:
         if self.as_of.tzinfo is None or self.as_of.utcoffset() != timedelta(0):
@@ -143,18 +152,23 @@ class ShadowStopSimulator:
         _utc(at)
         previous = self._states.get(cycle_id)
         reference = position.avg_cost
-        cycle = _PositionLike(cycle_id, self.account.scope.scope_id, position.symbol, position.quantity)
+        direction = position.direction
+        long = direction is PositionDirection.LONG
+        cycle = _PositionLike(cycle_id, self.account.scope.scope_id, position.symbol,
+                              position.quantity, direction)
         proposed = start_protection(policy, cycle, reference)
-        stop = proposed.stop_price if previous is None else max(previous.stop_price, proposed.stop_price)
-        high = reference if previous is None else max(previous.high_water_mark, reference)
+        tighter = max if long else min  # a long stop only rises, a short stop only falls
+        stop = proposed.stop_price if previous is None else tighter(previous.stop_price, proposed.stop_price)
+        high = reference if previous is None else tighter(previous.high_water_mark, reference)
         step_state = previous.stepped_state if previous is not None else None
         if policy.kind is ProtectionKind.STEPPED_TRAILING_STOP and step_state is None:
-            step_state = initial_state(reference, self._step_policy(policy))
+            step_state = initial_state(reference, self._step_policy(policy), side=direction.value)
         order_id = previous.order_id if previous is not None else None
         state = self._new_state(cycle_id, position.symbol, policy, "ACTIVE", StopTriggerOutcome.NOT_TRIGGERED,
                                 stop, high, position.quantity, position.quantity,
                                 previous.entry_reference if previous is not None else reference, order_id, at,
-                                stepped_state=step_state, provenance="shadow_fill")
+                                stepped_state=step_state, provenance="shadow_fill",
+                                direction=direction)
         if order_id is None:
             order_id = await self._submit_stop(state, at)
             state = replace(state, order_id=order_id)
@@ -187,31 +201,41 @@ class ShadowStopSimulator:
             return self._save(replace(state, outcome=StopTriggerOutcome.UNKNOWN, status="UNKNOWN",
                                       as_of=at, reason=quote_reason), at, "EVALUATION_UNKNOWN", quote)
         assert quote is not None
-        high = max(state.high_water_mark, quote.bid)
+        direction = position.direction
+        long = direction is PositionDirection.LONG
+        state = replace(state, direction=direction)
+        # Favorable extreme: the highest bid for a long, the lowest ask for a short.
+        touch = quote.bid if long else quote.ask
+        high = max(state.high_water_mark, touch) if long else min(state.high_water_mark, touch)
         stop = state.stop_price
         step_state = state.stepped_state
+        tighter = max if long else min
         if state.policy.kind is ProtectionKind.BROKER_TRAILING_STOP:
             moved = start_protection(state.policy, _PositionLike(state.cycle_id, self.account.scope.scope_id,
-                                      state.symbol, position.quantity), high)
-            stop = max(stop, moved.stop_price)
+                                      state.symbol, position.quantity, direction), high)
+            stop = tighter(stop, moved.stop_price)
         elif state.policy.kind is ProtectionKind.STEPPED_TRAILING_STOP:
             assert step_state is not None
             activation = state.policy.activation_gain or _ZERO
-            if high >= state.entry_reference + activation:
+            activated = (high >= state.entry_reference + activation if long
+                         else high <= state.entry_reference - activation)
+            if activated:
                 step_state = advance(step_state, high, self._step_policy(state.policy))
-                stop = max(stop, step_state.candidate_stop)
+                stop = tighter(stop, step_state.candidate_stop)
         state = replace(state, high_water_mark=high, stop_price=stop, stepped_state=step_state,
                         as_of=at, status="ACTIVE", reason=None, provenance=self._provenance(quote))
-        if stop > (self.account.state.orders[state.order_id].stop_price or _ZERO):
+        resting = self.account.state.orders[state.order_id].stop_price
+        if (stop > (resting or _ZERO)) if long else (resting is None or stop < resting):
             await self.account.replace_order(state.order_id, stop_price=stop, at=at)
-        trigger = self._trigger_value(quote, trade, at)
+        trigger = self._trigger_value(quote, trade, at, direction)
         if trigger is None:
             state = replace(state, outcome=StopTriggerOutcome.UNKNOWN, status="UNKNOWN", reason="TRIGGER_INPUT_MISSING")
             return self._save(state, at, "EVALUATION_UNKNOWN", quote)
-        if trigger > stop:
+        if (trigger > stop) if long else (trigger < stop):
             state = replace(state, outcome=StopTriggerOutcome.NOT_TRIGGERED)
             return self._save(state, at, "EVALUATED_NOT_TRIGGERED", quote)
-        fill_price = quote.bid - self.assumptions.stop_slippage
+        # Adverse slippage: a long sells below the bid, a short covers above the ask.
+        fill_price = touch - self.assumptions.stop_slippage if long else touch + self.assumptions.stop_slippage
         if fill_price <= _ZERO:
             state = replace(state, outcome=StopTriggerOutcome.UNKNOWN, status="UNKNOWN", reason="NON_POSITIVE_EXECUTION_PRICE")
             return self._save(state, at, "EVALUATION_UNKNOWN", quote)
@@ -220,9 +244,10 @@ class ShadowStopSimulator:
         self._record(terminal_state, at, "TRIGGERED", quote)
         order = self.account.state.orders[state.order_id]
         remaining = order.remaining
-        fill = Fill(fill_id=f"shadow-stop:{cycle_id}:{quote.provider_ts.isoformat()}:{quote.bid}",
+        fill = Fill(fill_id=f"shadow-stop:{cycle_id}:{quote.provider_ts.isoformat()}:{touch}",
                     broker_order_id=state.order_id, account_scope_id=self.account.scope.scope_id,
-                    symbol=state.symbol, side=OrderSide.SELL, quantity=min(remaining, position.quantity),
+                    symbol=state.symbol, side=OrderSide.SELL if long else OrderSide.BUY_TO_COVER,
+                    quantity=min(remaining, position.quantity),
                     price=fill_price, fee=_ZERO, filled_at=quote.provider_ts)
         self.account.apply_fill(fill, slippage=self.assumptions.stop_slippage, feed=self._provenance(quote))
         result = terminal_state
@@ -237,13 +262,13 @@ class ShadowStopSimulator:
 
     async def submit_discretionary_exit(self, intent: OrderIntent):
         """Cancel protection and submit the ordinary exit as one coordinated operation."""
-        if not isinstance(intent, OrderIntent) or intent.side is not OrderSide.SELL:
-            raise TypeError("intent must be a SELL OrderIntent")
+        if not isinstance(intent, OrderIntent) or not intent.side.is_exit:
+            raise TypeError("intent must be a SELL or BUY_TO_COVER OrderIntent")
         await self.prepare_discretionary_exit(intent.cycle_id, at=intent.created_at)
         return await self.account.submit_order(intent)
 
     def _pending_exit(self, symbol: str) -> bool:
-        return any(order.symbol == symbol and order.side is OrderSide.SELL
+        return any(order.symbol == symbol and order.side.is_exit
                    and order.purpose is not OrderPurpose.PROTECTIVE_STOP and order.is_open
                    for order in self.account.state.orders.values())
 
@@ -264,7 +289,9 @@ class ShadowStopSimulator:
         intent = OrderIntent(
             intent_id=f"stop-intent-{uuid4().hex}", client_order_id=client_id,
             account_scope_id=self.account.scope.scope_id, cycle_id=state.cycle_id,
-            symbol=state.symbol, side=OrderSide.SELL, purpose=OrderPurpose.PROTECTIVE_STOP,
+            symbol=state.symbol,
+            side=OrderSide.SELL if state.direction is PositionDirection.LONG else OrderSide.BUY_TO_COVER,
+            purpose=OrderPurpose.PROTECTIVE_STOP,
             order_type=OrderType.STOP, time_in_force=TimeInForce.GTC, created_at=at,
             quantity=state.covered_quantity, stop_price=state.stop_price)
         order = await self.account.submit_order(intent)
@@ -274,10 +301,12 @@ class ShadowStopSimulator:
                    outcome: StopTriggerOutcome, stop: Decimal, high: Decimal, covered: Decimal,
                    remaining: Decimal, entry: Decimal, order_id: str | None, at: datetime,
                    *, stepped_state: SteppedTrailingState | None = None,
-                   reason: str | None = None, provenance: str | None = None) -> ShadowStopState:
+                   reason: str | None = None, provenance: str | None = None,
+                   direction: PositionDirection = PositionDirection.LONG) -> ShadowStopState:
         return ShadowStopState(cycle, symbol, policy, status, outcome, stop, high, covered,
                                remaining, entry, order_id, at, reason, stepped_state, self.version,
-                               tuple(sorted(self.assumptions.as_mapping().items())), provenance)
+                               tuple(sorted(self.assumptions.as_mapping().items())), provenance,
+                               direction=direction)
 
     def _save(self, state: ShadowStopState, at: datetime, event: str,
               quote: QuoteSnapshot | None) -> ShadowStopState:
@@ -298,6 +327,7 @@ class ShadowStopSimulator:
                 "reason": state.reason, "policy": _policy_data(state.policy),
                 "stepped_state": _step_state_data(state.stepped_state),
                 "assumptions": dict(state.assumptions), "provenance": provenance,
+                "direction": state.direction.value,
                 "estimated": True, "broker_confirmed": False}
         order_id = state.order_id
         if order_id is None:
@@ -334,9 +364,9 @@ class ShadowStopSimulator:
         return None
 
     def _trigger_value(self, quote: QuoteSnapshot, trade: TradeSnapshot | None,
-                       at: datetime) -> Decimal | None:
+                       at: datetime, direction: PositionDirection = PositionDirection.LONG) -> Decimal | None:
         if self.assumptions.trigger_source == "BID":
-            return quote.bid
+            return quote.bid if direction is PositionDirection.LONG else quote.ask
         if trade is None or trade.symbol != quote.symbol or trade.provider_ts > at or trade.receive_ts > at:
             return None
         if at - trade.provider_ts > self.assumptions.max_quote_age:
@@ -364,6 +394,7 @@ class _PositionLike:
     account_scope_id: str
     symbol: str
     quantity: Decimal
+    direction: PositionDirection = PositionDirection.LONG
 
     @property
     def entry_quantity(self) -> Decimal:
@@ -390,7 +421,7 @@ def _policy_data(policy: ProtectionPolicy) -> dict[str, object]:
 def _step_state_data(state: SteppedTrailingState | None) -> dict[str, object] | None:
     if state is None:
         return None
-    return {name: str(getattr(state, name)) for name in ("entry_reference", "high_watermark", "ratchet_anchor", "candidate_stop", "steps_advanced")}
+    return {name: str(getattr(state, name)) for name in ("entry_reference", "high_watermark", "ratchet_anchor", "candidate_stop", "steps_advanced", "direction")}
 
 
 def _state_from_record(data: dict[str, Any], at: datetime, version: str) -> ShadowStopState:
@@ -401,10 +432,12 @@ def _state_from_record(data: dict[str, Any], at: datetime, version: str) -> Shad
     raw_step = data.get("stepped_state")
     step = None if raw_step is None else SteppedTrailingState(
         Decimal(raw_step["entry_reference"]), Decimal(raw_step["high_watermark"]),
-        Decimal(raw_step["ratchet_anchor"]), Decimal(raw_step["candidate_stop"]), int(raw_step["steps_advanced"]))
+        Decimal(raw_step["ratchet_anchor"]), Decimal(raw_step["candidate_stop"]), int(raw_step["steps_advanced"]),
+        str(raw_step.get("direction", "LONG")))
     return ShadowStopState(data["cycle_id"], data["symbol"], policy, data["status"],
         StopTriggerOutcome(data["outcome"]), Decimal(data["stop_price"]), Decimal(data["high_water_mark"]),
         Decimal(data["covered_quantity"]), Decimal(data["remaining_quantity"]), Decimal(data["entry_reference"]),
         data["order_id"], at, data.get("reason"), step, version,
         tuple(sorted(data["assumptions"].items())), data.get("provenance"),
-        data["estimated"], data["broker_confirmed"])
+        data["estimated"], data["broker_confirmed"],
+        PositionDirection(data.get("direction", PositionDirection.LONG.value)))
