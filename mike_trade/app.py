@@ -32,7 +32,13 @@ from mike_trade.domain.accounts import (
     BrokerCapabilities,
     HealthStatus,
 )
-from mike_trade.domain.errors import ConfigurationError, LiveTradingNotAuthorizedError
+from mike_trade.domain.errors import (
+    BrokerRejectedError,
+    ConfigurationError,
+    EntryBlockedError,
+    InsufficientBuyingPowerError,
+    LiveTradingNotAuthorizedError,
+)
 from mike_trade.domain.protection import ProtectionKind, ProtectionPolicy
 from mike_trade.domain.strategy_types import StrategyRole
 from mike_trade.domain.trading import (
@@ -274,10 +280,21 @@ class ShadowScenarioSettings:
     minimum_hold: timedelta = timedelta(minutes=1)
     allow_fractional: bool = False
     fill_assumptions: FillAssumptions = field(default_factory=FillAssumptions)
+    #: Opt-in (fail closed): SHORT strategies are only eligible when the scenario authorizes
+    #: short selling.  The margin multiplier (>= 1) is the Regulation T style requirement:
+    #: sale proceeds stay locked and ``multiplier - 1`` x notional of own cash is required.
+    #: ``short_borrow_bps_per_day`` is an explicit *estimated* stock-borrow assumption.
+    short_selling_enabled: bool = False
+    short_margin_multiplier: Decimal = Decimal("1.5")
+    short_borrow_bps_per_day: Decimal = Decimal("0")
 
     def __post_init__(self) -> None:
         if not self.name.strip() or ":" in self.name:
             raise ValueError("scenario name must be non-empty and contain no ':'")
+        if self.short_margin_multiplier < Decimal("1"):
+            raise ValueError("short_margin_multiplier must be >= 1")
+        if self.short_borrow_bps_per_day < Decimal("0"):
+            raise ValueError("short_borrow_bps_per_day must be >= 0")
         if self.name.upper() in {"PAPER", "LIVE"}:
             raise ValueError("scenario name collides with a broker environment")
         if self.total_budget < self.per_symbol_budget:
@@ -300,21 +317,26 @@ class StrategyAssignment:
 
 @dataclass(frozen=True, slots=True)
 class SymbolStrategySettings:
-    """One symbol's independent BUY and SELL strategy collections.
+    """One symbol's independent BUY, SELL, SHORT and COVER strategy collections.
 
-    Both collections are arbitrary-length. ``sells`` may be empty: the symbol
-    is then protected by its stop policy alone.
+    Every collection is arbitrary-length. ``sells`` and ``covers`` may be empty: the symbol
+    is then protected by its stop policy alone.  A symbol needs at least one entry strategy
+    (BUY, or SHORT for a short-only symbol).
     """
 
     symbol: str
     buys: tuple[StrategyAssignment, ...]
     sells: tuple[StrategyAssignment, ...] = ()
+    shorts: tuple[StrategyAssignment, ...] = ()
+    covers: tuple[StrategyAssignment, ...] = ()
 
     def __post_init__(self) -> None:
         object.__setattr__(self, "symbol", self.symbol.strip().upper())
         object.__setattr__(self, "buys", tuple(self.buys))
         object.__setattr__(self, "sells", tuple(self.sells))
-        if not self.buys:
+        object.__setattr__(self, "shorts", tuple(self.shorts))
+        object.__setattr__(self, "covers", tuple(self.covers))
+        if not self.buys and not self.shorts:
             raise ValueError(f"{self.symbol}: at least one BUY strategy is required")
 
 
@@ -324,6 +346,9 @@ class AppSettings:
 
     mode: ExecutionMode = ExecutionMode.SHADOW
     enable_live_trading: bool = False
+    #: ``execution.short_selling_enabled``.  Never activates LIVE shorting: a LIVE broker
+    #: adapter is always constructed with ``short_authorized=False``.
+    short_selling_enabled: bool = False
     log_level: str = "INFO"
     db_path: str | Path | None = None
     data_dir: str | Path = Path("data")
@@ -957,6 +982,7 @@ def load_app_settings(
                 ),
                 minimum_hold=timedelta(seconds=int(one_value("min_hold_seconds"))),
                 allow_fractional=bool(execution["fractional_enabled"]),
+                short_selling_enabled=bool(execution["short_selling_enabled"]),
             )
         )
 
@@ -997,6 +1023,8 @@ def load_app_settings(
             name,
             assignments(symbol_map[name]["buy_strategies"]),
             assignments(symbol_map[name]["sell_strategies"]),
+            assignments(symbol_map[name].get("short_strategies", ())),
+            assignments(symbol_map[name].get("cover_strategies", ())),
         )
         for name in symbols
     )
@@ -1005,6 +1033,7 @@ def load_app_settings(
     return AppSettings(
         mode=mode,
         enable_live_trading=bool(execution["live_trading_enabled"]),
+        short_selling_enabled=bool(execution["short_selling_enabled"]),
         db_path=db_path,
         data_dir=data_dir,
         symbols=symbols,
@@ -1041,6 +1070,13 @@ class _ShadowScenario:
 
 
 class _CoordinatorProviders:
+    """Account facts for the order-command coordinator, direction-aware.
+
+    A long exit counts only a LONG position and SELL orders; a short exit (cover) counts only
+    a SHORT position and BUY_TO_COVER orders.  Cash is *unrestricted* cash: the proceeds of
+    open shorts are restricted collateral and never available to reserve for another entry.
+    """
+
     def __init__(self, account: ShadowAccount) -> None:
         self.account = account
 
@@ -1052,35 +1088,53 @@ class _CoordinatorProviders:
         for order in self.account.state.orders.values():
             if not order.is_open or order.symbol != symbol:
                 continue
-            if purpose == "ENTRY_LONG" and order.side is OrderSide.BUY:
-                return True
+            if purpose in ("ENTRY_LONG", "ENTRY_SHORT") and order.side.is_entry:
+                return True  # one working entry per symbol, whichever direction
             if purpose == "EXIT_LONG" and order.side is OrderSide.SELL and (
+                order.purpose is not OrderPurpose.PROTECTIVE_STOP
+            ):
+                return True
+            if purpose == "EXIT_SHORT" and order.side is OrderSide.BUY_TO_COVER and (
                 order.purpose is not OrderPurpose.PROTECTIVE_STOP
             ):
                 return True
         return False
 
-    def confirmed_long_quantity(self, key: object) -> Decimal:
+    def _confirmed(self, key: object, direction: PositionDirection) -> Decimal:
         position = self.account.state.positions.get(cast(Any, key).symbol)
-        return Decimal("0") if position is None else position.quantity
+        if position is None or position.direction is not direction:
+            return Decimal("0")
+        return position.quantity
+
+    def confirmed_long_quantity(self, key: object) -> Decimal:
+        return self._confirmed(key, PositionDirection.LONG)
+
+    def confirmed_short_quantity(self, key: object) -> Decimal:
+        return self._confirmed(key, PositionDirection.SHORT)
+
+    def _committed(self, key: object, side: OrderSide, *, protective_only: bool) -> Decimal:
+        return sum(
+            (order.remaining for order in self.account.state.open_orders()
+             if order.symbol == cast(Any, key).symbol and order.side is side
+             and (not protective_only or order.purpose is OrderPurpose.PROTECTIVE_STOP)),
+            Decimal("0"),
+        )
 
     def committed_sell_quantity(self, key: object) -> Decimal:
-        return sum(
-            (order.remaining for order in self.account.state.open_orders()
-             if order.symbol == cast(Any, key).symbol and order.side is OrderSide.SELL),
-            Decimal("0"),
-        )
+        return self._committed(key, OrderSide.SELL, protective_only=False)
 
     def protective_sell_quantity(self, key: object) -> Decimal:
-        return sum(
-            (order.remaining for order in self.account.state.open_orders()
-             if order.symbol == cast(Any, key).symbol
-             and order.purpose is OrderPurpose.PROTECTIVE_STOP),
-            Decimal("0"),
-        )
+        return self._committed(key, OrderSide.SELL, protective_only=True)
+
+    def committed_cover_quantity(self, key: object) -> Decimal:
+        return self._committed(key, OrderSide.BUY_TO_COVER, protective_only=False)
+
+    def protective_cover_quantity(self, key: object) -> Decimal:
+        return self._committed(key, OrderSide.BUY_TO_COVER, protective_only=True)
 
     async def available_cash(self, _key: object) -> Decimal:
-        return (await self.account.get_account()).cash
+        state = self.account.state
+        return state.cash - state.restricted_collateral()
 
 
 @dataclass(frozen=True, slots=True)
@@ -1156,6 +1210,8 @@ class ShadowBrokerGroup:
                         config.minimum_hold,
                     ),
                     allow_fractional=config.allow_fractional,
+                    short_margin_multiplier=config.short_margin_multiplier,
+                    short_borrow_bps_per_day=config.short_borrow_bps_per_day,
                     assumptions=config.fill_assumptions.as_mapping(),
                     feed="iex:shadow",
                 )
@@ -1273,17 +1329,19 @@ class _Binding:
 
     strategy_id: str
     version: str
-    role: str  # "buy" | "sell"
+    role: str  # "buy" | "sell" | "short" | "cover"
     strategy: Any
     parameters: Mapping[str, object]
 
 
 @dataclass(frozen=True, slots=True)
 class _Collections:
-    """A symbol's BUY and SELL strategies in deterministic (strategy_id) order."""
+    """A symbol's BUY/SELL/SHORT/COVER strategies in deterministic (strategy_id) order."""
 
     buys: tuple[_Binding, ...]
     sells: tuple[_Binding, ...]
+    shorts: tuple[_Binding, ...] = ()
+    covers: tuple[_Binding, ...] = ()
 
 
 #: The reference pair keeps its original persisted strategy-instance ids so a
@@ -1351,6 +1409,8 @@ class VwapReferenceLifecycle:
                 self._by_symbol[item.symbol] = _Collections(
                     self._bind(registry, item.symbol, StrategyRole.BUY, item.buys),
                     self._bind(registry, item.symbol, StrategyRole.SELL, item.sells),
+                    self._bind(registry, item.symbol, StrategyRole.SHORT, item.shorts),
+                    self._bind(registry, item.symbol, StrategyRole.COVER, item.covers),
                 )
         self._in_flight = 0
 
@@ -1455,9 +1515,9 @@ class VwapReferenceLifecycle:
         )
 
     @staticmethod
-    def _open_orders(account: ShadowAccount, symbol: str, side: OrderSide) -> bool:
+    def _open_orders(account: ShadowAccount, symbol: str, *sides: OrderSide) -> bool:
         return any(
-            order.symbol == symbol and order.side is side and order.is_open
+            order.symbol == symbol and order.side in sides and order.is_open
             and order.purpose is not OrderPurpose.PROTECTIVE_STOP
             for order in account.state.orders.values()
         )
@@ -1482,7 +1542,7 @@ class VwapReferenceLifecycle:
             )
             if fill.is_fill:
                 actions.append(f"FILL:{order.side.value}:{fill.quantity}")
-                if order.side is OrderSide.BUY:
+                if order.side.is_entry:  # BUY or SELL_SHORT: protect the new position
                     await self._arm(scenario, stored.cycle_id, context.symbol, context.as_of)
 
         position = account.state.positions.get(context.symbol)
@@ -1500,17 +1560,29 @@ class VwapReferenceLifecycle:
         collections = self.collections(context.symbol)
         position = account.state.positions.get(context.symbol)
         if position is not None:
-            # BUY side while held: advance the indicators only. Clearing the eligibility
-            # flag makes the gate block every signal, so no entry can result.
-            for binding in collections.buys:
+            # A position is held.  Only the exit role of its own direction may act: SELL
+            # closes a long, COVER closes a short.  Every other role keeps its indicator
+            # state continuous (advance-only): it can never signal an order, and any signal
+            # it would raise is discarded.  Clearing the eligibility flag makes the strategy
+            # gate block every entry signal.
+            long_held = position.direction is PositionDirection.LONG
+            exit_bindings = collections.sells if long_held else collections.covers
+            other_exit_bindings = collections.covers if long_held else collections.sells
+            exit_source = ExitSource.STRATEGY_SELL if long_held else ExitSource.STRATEGY_COVER
+            exit_side = OrderSide.SELL if long_held else OrderSide.BUY_TO_COVER
+            for binding in (*collections.buys, *collections.shorts):
                 state = self._state(scenario, binding, context.symbol)
                 state.pop("eligibility", None)
                 evaluation = binding.strategy.evaluate(context, binding.parameters, state)
                 self._save_state(scenario, binding, context.symbol, evaluation.state_updates)
-            # SELL side: every configured SELL strategy evaluates the held position
+            for binding in other_exit_bindings:
+                state = self._state(scenario, binding, context.symbol)
+                evaluation = binding.strategy.evaluate(context, binding.parameters, state)
+                self._save_state(scenario, binding, context.symbol, evaluation.state_updates)
+            # Every configured exit strategy of this direction evaluates the held position
             # (its state advances even when a hold or pending exit blocks the exit).
             exits: dict[str, _Binding] = {}
-            for binding in collections.sells:
+            for binding in exit_bindings:
                 state = self._state(scenario, binding, context.symbol)
                 evaluation = binding.strategy.evaluate(context, binding.parameters, state)
                 self._save_state(scenario, binding, context.symbol, evaluation.state_updates)
@@ -1521,11 +1593,12 @@ class VwapReferenceLifecycle:
                     account.scope.scope_id, position.symbol, position.quantity,
                     position.avg_cost, position.cost_basis, context.as_of,
                     management=ManagementStatus.MANAGED, cycle_id=position.cycle_id,
+                    direction=position.direction,
                 )
                 decision = arbitrate_exit_decisions(
                     [
                         ExitCandidate(
-                            signal_id=signal_id, source=ExitSource.STRATEGY_SELL,
+                            signal_id=signal_id, source=exit_source,
                             symbol=context.symbol, strategy_id=binding.strategy_id,
                             version=binding.version, position_cycle_id=position.cycle_id,
                             bar_time=self._bar_time(context),
@@ -1537,8 +1610,8 @@ class VwapReferenceLifecycle:
                     minimum_hold=scenario.settings.minimum_hold,
                     entry_filled_at=position.opened_at,
                     pending_exit_source=(
-                        ExitSource.STRATEGY_SELL
-                        if self._open_orders(account, context.symbol, OrderSide.SELL)
+                        exit_source
+                        if self._open_orders(account, context.symbol, exit_side)
                         else None
                     ),
                 )
@@ -1548,14 +1621,12 @@ class VwapReferenceLifecycle:
                     )
             return actions
 
-        # SELL side while flat: advance the indicators only; there is no position to
-        # exit, so any signal is discarded.
-        for binding in collections.sells:
+        # Flat.  SELL and COVER have nothing to close: keep their indicators advancing and
+        # discard any signal.  BUY and (when authorized) SHORT compete for the one entry.
+        for binding in (*collections.sells, *collections.covers):
             state = self._state(scenario, binding, context.symbol)
             evaluation = binding.strategy.evaluate(context, binding.parameters, state)
             self._save_state(scenario, binding, context.symbol, evaluation.state_updates)
-        # BUY side: every configured BUY strategy evaluates the flat symbol; the
-        # shared arbitration lets at most one entry through.
         entries: dict[str, tuple[_Binding, StrategyEvaluation]] = {}
         for binding in collections.buys:
             state = self._state(scenario, binding, context.symbol)
@@ -1564,6 +1635,17 @@ class VwapReferenceLifecycle:
             self._save_state(scenario, binding, context.symbol, evaluation.state_updates)
             if evaluation.is_signal:
                 entries[evaluation.signal_id or ""] = (binding, evaluation)
+        for binding in collections.shorts:
+            state = self._state(scenario, binding, context.symbol)
+            authorized = scenario.settings.short_selling_enabled
+            if authorized:
+                state["eligibility"] = "WATCHING_SHORT"
+            else:
+                state.pop("eligibility", None)  # not authorized: ineligible, advance-only
+            evaluation = binding.strategy.evaluate(context, binding.parameters, state)
+            self._save_state(scenario, binding, context.symbol, evaluation.state_updates)
+            if authorized and evaluation.is_signal:
+                entries[evaluation.signal_id or ""] = (binding, evaluation)
         if not entries:
             return actions
         arbitration = arbitrate_entry_decisions(
@@ -1571,15 +1653,19 @@ class VwapReferenceLifecycle:
                 EntryCandidate(
                     signal_id, binding.strategy_id, binding.version, context.symbol,
                     evaluation.bar_time,
+                    PositionDirection.SHORT if binding.role == "short" else PositionDirection.LONG,
                 )
                 for signal_id, (binding, evaluation) in entries.items()
             ],
             symbol=context.symbol, evaluation_time=context.as_of, position_open=False,
-            entry_pending=self._open_orders(account, context.symbol, OrderSide.BUY),
+            entry_pending=self._open_orders(
+                account, context.symbol, OrderSide.BUY, OrderSide.SELL_SHORT
+            ),
         )
         if arbitration.selected is None or not self.entry_gate.authorized:
             return actions
         binding, evaluation = entries[arbitration.selected.signal_id]
+        short = binding.role == "short"
         local_day = context.as_of.astimezone(exchange_calendar.NEW_YORK).date()
         session = exchange_calendar.session_for(local_day)
         if context.as_of >= exchange_calendar.entry_cutoff(session, self.cutoff_minutes):
@@ -1587,6 +1673,8 @@ class VwapReferenceLifecycle:
         reference = evaluation.reference_price
         if reference is None:
             return actions
+        # Size on the ask for both directions: the account validates the budget at the quote
+        # mid, so the higher side guarantees the order fits (a short sells at the lower bid).
         sizing_price = (
             context.latest_quote.ask if context.latest_quote is not None else reference
         )
@@ -1600,29 +1688,53 @@ class VwapReferenceLifecycle:
         cycle_id = f"{context.symbol}-{evaluation.signal_id}"
         client_id = f"shadow-entry-{evaluation.signal_id}"
         command_intent = _CommandIntent(
-            "SHADOW", scenario.account.scope.scope_id, context.symbol, "ENTRY_LONG",
+            "SHADOW", scenario.account.scope.scope_id, context.symbol,
+            "ENTRY_SHORT" if short else "ENTRY_LONG",
             context.as_of + timedelta(minutes=1), context.as_of,
             quantity, None, reference,
         )
-        command = OrderCommand(command_intent, reservation_amount=quantity * reference)
+        if short:
+            # Short-sale proceeds are restricted collateral: only the own-cash margin part
+            # (multiplier - 1) x notional is reserved from available cash.
+            multiplier = account.state.short_margin_multiplier
+            reservation_amount = max(
+                quantity * reference * (multiplier - 1), Decimal("0.01")
+            )
+        else:
+            reservation_amount = quantity * reference
+        command = OrderCommand(command_intent, reservation_amount=reservation_amount)
         decision = await scenario.coordinator.authorize(command)
         if not decision.authorized:
             return actions
         intent = OrderIntent(
             intent_id=f"intent-{evaluation.signal_id}", client_order_id=client_id,
             account_scope_id=account.scope.scope_id, cycle_id=cycle_id,
-            symbol=context.symbol, side=OrderSide.BUY, purpose=OrderPurpose.ENTRY,
+            symbol=context.symbol,
+            side=OrderSide.SELL_SHORT if short else OrderSide.BUY,
+            purpose=OrderPurpose.ENTRY,
             order_type=OrderType.MARKET, time_in_force=TimeInForce.DAY,
             created_at=context.as_of, quantity=quantity, signal_id=evaluation.signal_id,
         )
-        order = await account.submit_order(intent, strategy_key=binding.strategy_id)
+        try:
+            order = await account.submit_order(intent, strategy_key=binding.strategy_id)
+        except (BrokerRejectedError, EntryBlockedError, InsufficientBuyingPowerError) as exc:
+            if not short:
+                raise
+            # The account's own margin / exposure / eligibility rules refused the short:
+            # release the authorization hold and record the refusal; nothing was submitted.
+            if decision.reservation is not None:
+                await scenario.coordinator.release_reservation(decision.reservation)
+            else:
+                await scenario.coordinator.complete(command)
+            actions.append(f"ENTRY_REFUSED:SHORT:{getattr(exc, 'code', 'refused')}")
+            return actions
         actions.append(f"ENTRY:{order.broker_order_id}")
         if context.latest_quote is not None:
             fill = scenario.fills.apply_fill_to_account(
                 account, order.broker_order_id, context, as_of=context.as_of
             )
             if fill.is_fill:
-                actions.append(f"FILL:BUY:{fill.quantity}")
+                actions.append(f"FILL:{intent.side.value}:{fill.quantity}")
                 await self._arm(scenario, cycle_id, context.symbol, context.as_of)
         if decision.reservation is not None:
             # The shadow account now durably owns both the filled commitment and any
@@ -1642,8 +1754,10 @@ class VwapReferenceLifecycle:
         self, scenario: _ShadowScenario, context: MarketContext, signal_id: str
     ) -> list[str]:
         position = scenario.account.state.positions[context.symbol]
+        long_held = position.direction is PositionDirection.LONG
         command_intent = _CommandIntent(
-            "SHADOW", scenario.account.scope.scope_id, context.symbol, "EXIT_LONG",
+            "SHADOW", scenario.account.scope.scope_id, context.symbol,
+            "EXIT_LONG" if long_held else "EXIT_SHORT",
             context.as_of + timedelta(minutes=1), context.as_of,
             position.quantity, None, None,
         )
@@ -1661,7 +1775,8 @@ class VwapReferenceLifecycle:
             client_order_id=f"shadow-exit-{signal_id}",
             account_scope_id=scenario.account.scope.scope_id,
             cycle_id=position.cycle_id, symbol=context.symbol,
-            side=OrderSide.SELL, purpose=OrderPurpose.STRATEGY_EXIT,
+            side=OrderSide.SELL if long_held else OrderSide.BUY_TO_COVER,
+            purpose=OrderPurpose.STRATEGY_EXIT,
             order_type=OrderType.MARKET, time_in_force=TimeInForce.DAY,
             created_at=context.as_of, quantity=position.quantity, signal_id=signal_id,
         )
@@ -1672,7 +1787,7 @@ class VwapReferenceLifecycle:
                 scenario.account, order.broker_order_id, context, as_of=context.as_of
             )
             if fill.is_fill:
-                actions.append(f"FILL:SELL:{fill.quantity}")
+                actions.append(f"FILL:{intent.side.value}:{fill.quantity}")
         await scenario.coordinator.complete(command)
         return actions
 
@@ -2161,6 +2276,7 @@ def _scopes(settings: AppSettings) -> tuple[AccountScope, ...]:
 def _is_legacy_pair(item: SymbolStrategySettings) -> bool:
     return (
         len(item.buys) == 1 and len(item.sells) == 1
+        and not item.shorts and not item.covers
         and item.buys[0].plugin == "vwap_bounce" and not item.buys[0].parameters
         and item.sells[0].plugin == "vwap_breakdown" and not item.sells[0].parameters
     )
@@ -2177,6 +2293,15 @@ def _fingerprint(settings: AppSettings) -> str:
                 "starting_cash": str(item.starting_cash),
                 "per_symbol_budget": str(item.per_symbol_budget),
                 "total_budget": str(item.total_budget),
+                **(
+                    {
+                        "short_selling": True,
+                        "short_margin_multiplier": str(item.short_margin_multiplier),
+                        "short_borrow_bps_per_day": str(item.short_borrow_bps_per_day),
+                    }
+                    if item.short_selling_enabled
+                    else {}
+                ),
             }
             for item in settings.shadow_scenarios
         ],
@@ -2192,6 +2317,14 @@ def _fingerprint(settings: AppSettings) -> str:
             "symbol": item.symbol,
             "buy": [[a.plugin, dict(a.parameters)] for a in item.buys],
             "sell": [[a.plugin, dict(a.parameters)] for a in item.sells],
+            **(
+                {
+                    "short": [[a.plugin, dict(a.parameters)] for a in item.shorts],
+                    "cover": [[a.plugin, dict(a.parameters)] for a in item.covers],
+                }
+                if item.shorts or item.covers
+                else {}
+            ),
         }
         for item in settings.symbol_strategies
         if not _is_legacy_pair(item)
@@ -2403,6 +2536,8 @@ def build_runtime(
                 if item is None
                 else [(a.plugin, StrategyRole.BUY) for a in item.buys]
                 + [(a.plugin, StrategyRole.SELL) for a in item.sells]
+                + [(a.plugin, StrategyRole.SHORT) for a in item.shorts]
+                + [(a.plugin, StrategyRole.COVER) for a in item.covers]
             )
             for strategy_id, side in plan:
                 scheduler.register(
@@ -2437,6 +2572,10 @@ def build_runtime(
         broker = AlpacaBrokerAdapter(
             settings.mode, settings.account_id, clock,
             authorized=settings.enable_live_trading,
+            # Shorting is opt-in and PAPER-only here; LIVE shorting is never activated.
+            short_authorized=(
+                settings.short_selling_enabled and settings.mode is ExecutionMode.PAPER
+            ),
             environ=settings.credential_environment,
         )
 
