@@ -212,10 +212,10 @@ def test_production_and_research_registration_counts_and_roles() -> None:
     assert counts == {
         StrategyRole.BUY: 75,
         StrategyRole.SELL: 40,
-        StrategyRole.SHORT: 18,
+        StrategyRole.SHORT: 28,
         StrategyRole.COVER: 18,
     }
-    assert len(REGISTRY.list_strategies()) == 151
+    assert len(REGISTRY.list_strategies()) == 161
     source = inspect.getsource(app.build_runtime)
     for strategy_id in BATCH_A:
         cls = REGISTRY.get(strategy_id)

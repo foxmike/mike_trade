@@ -37,6 +37,11 @@ ALL_SHORTS = SHORTS + (
     "short_bollinger_lower_band_breakdown", "short_keltner_channel_breakdown",
     "short_obv_breakdown", "short_cci_zero_line_breakdown",
     "short_adx_bearish_trend_confirmation",
+    "short_bearish_engulfing", "short_shooting_star_reversal",
+    "short_double_top_breakdown", "short_head_and_shoulders_breakdown",
+    "short_trendline_breakdown", "short_previous_swing_low_break",
+    "short_lower_low_confirmation", "short_failed_breakout_reversal",
+    "short_bear_flag_breakdown", "short_bearish_momentum_divergence",
 )
 COVERS = ("cover_ema_bullish_crossover", "cover_supertrend_bullish_flip", "cover_donchian_breakout")
 ALL_COVERS = COVERS + (
@@ -109,8 +114,8 @@ def test_roles_are_independent_and_registered() -> None:
     assert [r.value for r in StrategyRole] == ["BUY", "SELL", "SHORT", "COVER"]
     counts = {r: len(REGISTRY.list_strategies(r)) for r in StrategyRole}
     assert counts == {StrategyRole.BUY: 75, StrategyRole.SELL: 40,
-                      StrategyRole.SHORT: 18, StrategyRole.COVER: 18}
-    assert len(REGISTRY.list_strategies()) == 151
+                      StrategyRole.SHORT: 28, StrategyRole.COVER: 18}
+    assert len(REGISTRY.list_strategies()) == 161
     source = inspect.getsource(app.build_runtime)
     for ids, role, base in ((ALL_SHORTS, StrategyRole.SHORT, ShortStrategy),
                             (ALL_COVERS, StrategyRole.COVER, CoverStrategy)):
