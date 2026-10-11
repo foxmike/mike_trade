@@ -161,12 +161,16 @@ def case(strategy_id: str) -> tuple[list[Candle], list[Candle]]:
 # ------------------------------------------------------------------- registration and roles
 
 
-def test_the_registry_holds_151_strategies_with_18_cover_entries() -> None:
+def test_the_registry_holds_171_strategies_with_28_cover_entries() -> None:
     counts = {role: len(REGISTRY.list_strategies(role)) for role in StrategyRole}
-    assert counts == {StrategyRole.BUY: 75, StrategyRole.SELL: 40, StrategyRole.SHORT: 18,
-                      StrategyRole.COVER: 18}
-    assert len(REGISTRY.list_strategies()) == 151
-    assert {c.spec.strategy_id for c in REGISTRY.list_strategies(StrategyRole.COVER)} == set(
+    assert counts == {
+        StrategyRole.BUY: 75,
+        StrategyRole.SELL: 40,
+        StrategyRole.SHORT: 28,
+        StrategyRole.COVER: 28,
+    }
+    assert len(REGISTRY.list_strategies()) == 171
+    assert {c.spec.strategy_id for c in REGISTRY.list_strategies(StrategyRole.COVER)} >= set(
         OLD_IDS + NEW_IDS)
     assert len(set(NEW_IDS)) == 15
     all_ids = [c.spec.strategy_id for c in REGISTRY.list_strategies()]
@@ -199,7 +203,7 @@ def test_the_new_strategies_compose_into_a_shadow_runtime_as_per_symbol_covers(t
             shorts=(StrategyAssignment("short", "short_ema_bearish_crossover"),),
             covers=tuple(StrategyAssignment(i, i) for i in NEW_IDS)),))
     covers = build_runtime(settings).lifecycle.collections("SPY").covers
-    assert [b.strategy_id for b in covers] == sorted(NEW_IDS)
+    assert [b.strategy_id for b in covers] == sorted(NEW_IDS)  # only these were assigned
     assert {b.role for b in covers} == {"cover"}
 
 

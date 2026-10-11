@@ -585,6 +585,16 @@ def _research_registry() -> Any:
     from mike_trade.strategies.cover.cover_stochastic_bullish_crossover import CoverStochasticBullishCrossover
     from mike_trade.strategies.cover.cover_williams_r_bullish_reversal import CoverWilliamsRBullishReversal
     from mike_trade.strategies.cover.cover_chaikin_money_flow_recovery import CoverChaikinMoneyFlowRecovery
+    from mike_trade.strategies.cover.cover_bullish_engulfing import CoverBullishEngulfing
+    from mike_trade.strategies.cover.cover_hammer_reversal import CoverHammerReversal
+    from mike_trade.strategies.cover.cover_double_bottom_reversal import CoverDoubleBottomReversal
+    from mike_trade.strategies.cover.cover_inverse_head_and_shoulders import CoverInverseHeadAndShoulders
+    from mike_trade.strategies.cover.cover_trendline_breakout import CoverTrendlineBreakout
+    from mike_trade.strategies.cover.cover_previous_swing_high_breakout import CoverPreviousSwingHighBreakout
+    from mike_trade.strategies.cover.cover_higher_high_higher_low import CoverHigherHighHigherLow
+    from mike_trade.strategies.cover.cover_bull_flag_breakout import CoverBullFlagBreakout
+    from mike_trade.strategies.cover.cover_obv_breakout import CoverObvBreakout
+    from mike_trade.strategies.cover.cover_bullish_momentum_divergence import CoverBullishMomentumDivergence
     from mike_trade.strategies.buy.previous_close_reclaim import PreviousCloseReclaimBuy
     from mike_trade.strategies.buy.previous_day_high_breakout import PreviousDayHighBreakoutBuy
     from mike_trade.strategies.buy.previous_day_low_reversal import PreviousDayLowReversalBuy
@@ -795,6 +805,16 @@ def _research_registry() -> Any:
         CoverStochasticBullishCrossover,
         CoverWilliamsRBullishReversal,
         CoverChaikinMoneyFlowRecovery,
+        CoverBullishEngulfing,
+        CoverHammerReversal,
+        CoverDoubleBottomReversal,
+        CoverInverseHeadAndShoulders,
+        CoverTrendlineBreakout,
+        CoverPreviousSwingHighBreakout,
+        CoverHigherHighHigherLow,
+        CoverBullFlagBreakout,
+        CoverObvBreakout,
+        CoverBullishMomentumDivergence,
         ObvBreakoutBuy,
         AccumulationDistributionBreakoutBuy,
         VolumePriceTrendBreakoutBuy,
