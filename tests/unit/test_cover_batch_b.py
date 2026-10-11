@@ -239,11 +239,11 @@ def signal(strategy_id: str, bars: list[Candle], params: dict[str, object] | Non
 # ------------------------------------------------------------------ registration and roles
 
 
-def test_the_registry_holds_182_strategies_with_28_cover_entries() -> None:
+def test_the_registry_holds_184_strategies_with_28_cover_entries() -> None:
     counts = {role: len(REGISTRY.list_strategies(role)) for role in StrategyRole}
-    assert counts == {StrategyRole.BUY: 85, StrategyRole.SELL: 41, StrategyRole.SHORT: 28,
+    assert counts == {StrategyRole.BUY: 87, StrategyRole.SELL: 41, StrategyRole.SHORT: 28,
                       StrategyRole.COVER: 28}
-    assert len(REGISTRY.list_strategies()) == 182
+    assert len(REGISTRY.list_strategies()) == 184
     covers = {c.spec.strategy_id for c in REGISTRY.list_strategies(StrategyRole.COVER)}
     assert len(set(NEW_IDS)) == 10 and set(NEW_IDS) <= covers and set(BATCH_A_IDS) <= covers
     all_ids = [c.spec.strategy_id for c in REGISTRY.list_strategies()]

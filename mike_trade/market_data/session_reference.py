@@ -1,14 +1,21 @@
 """Point-in-time regular-session OHLC references from completed M1 candles.
 
 The tracker is deliberately small and bounded: for each symbol it retains one
-in-progress session and the immediately preceding session result.  A session
-OHLC exists only when every expected NYSE regular-session minute was observed.
-Premarket and after-hours bars are ignored, and an incomplete session is never
-replaced with an older complete one.
+in-progress session and a bounded chain (``MAX_HISTORY_SESSIONS``) of the immediately
+preceding sessions.  A session OHLC exists only when every expected NYSE regular-session
+minute was observed.  Premarket and after-hours bars are ignored, and an incomplete
+session is never replaced with an older complete one.
+
+The chain exposed as :attr:`SessionReference.history` is always *consecutive*: every entry
+is the exchange session immediately before the next one, and the newest entry is the
+session immediately before the current one.  An incomplete or missing session breaks the
+chain (everything older is dropped), so a multi-session trend is never inferred across a
+hole.  Each entry carries its regular-session volume.
 """
 
 from __future__ import annotations
 
+from collections import deque
 from dataclasses import dataclass
 from datetime import UTC, datetime, timedelta
 from decimal import Decimal
@@ -27,7 +34,16 @@ from mike_trade.scheduling.calendar import (
     session_for,
 )
 
-__all__ = ["RegularSessionOHLC", "SessionReference", "SessionReferenceTracker"]
+__all__ = [
+    "MAX_HISTORY_SESSIONS",
+    "RegularSessionOHLC",
+    "SessionReference",
+    "SessionReferenceTracker",
+]
+
+#: Completed regular sessions retained per symbol (the production warmup fetches 14 calendar
+#: days of 1-minute bars, i.e. about nine sessions before the current one).
+MAX_HISTORY_SESSIONS = 10
 
 _MINUTE = timedelta(minutes=1)
 
@@ -57,10 +73,19 @@ class RegularSessionOHLC:
     close: Decimal
     open_time: datetime
     close_time: datetime
+    #: Total regular-session volume (sum of the session's M1 volumes); ``None`` if unknown.
+    volume: Decimal | None = None
 
     def __post_init__(self) -> None:
         if not isinstance(self.session_id, str) or not self.session_id:
             raise ValueError("session_id must be a non-empty str")
+        if self.volume is not None and (
+            isinstance(self.volume, bool)
+            or not isinstance(self.volume, Decimal)
+            or not self.volume.is_finite()
+            or self.volume < 0
+        ):
+            raise ValueError("volume must be a finite non-negative Decimal or None")
         for name in ("open", "high", "low", "close"):
             object.__setattr__(self, name, _price(getattr(self, name), name))
         object.__setattr__(self, "open_time", _aware_utc(self.open_time, "open_time"))
@@ -81,6 +106,9 @@ class SessionReference:
     previous_session_id: str
     current_open: Decimal | None
     previous: RegularSessionOHLC | None
+    #: Consecutive complete sessions ending at ``previous`` (oldest first, ``previous`` last);
+    #: empty when ``previous`` is unavailable.  Never spans an incomplete or missing session.
+    history: tuple[RegularSessionOHLC, ...] = ()
 
     def __post_init__(self) -> None:
         for name in ("current_session_id", "previous_session_id"):
@@ -94,6 +122,16 @@ class SessionReference:
                 raise ValueError("previous must be RegularSessionOHLC or None")
             if self.previous.session_id != self.previous_session_id:
                 raise ValueError("previous session id does not match previous_session_id")
+        object.__setattr__(self, "history", tuple(self.history))
+        if any(not isinstance(item, RegularSessionOHLC) for item in self.history):
+            raise ValueError("history must contain RegularSessionOHLC items")
+        if self.history and (self.previous is None or self.history[-1] != self.previous):
+            raise ValueError("history must end with the previous session")
+        ids = [item.session_id for item in self.history]
+        if len(set(ids)) != len(ids) or any(
+            a.close_time > b.open_time for a, b in zip(self.history, self.history[1:], strict=False)
+        ):
+            raise ValueError("history must be distinct sessions in chronological order")
 
 
 @dataclass(slots=True)
@@ -106,6 +144,7 @@ class _Accumulator:
     high: Decimal | None = None
     low: Decimal | None = None
     close: Decimal | None = None
+    volume: Decimal = Decimal(0)
     feed_identity: tuple[str, bool, PriceBasis] | None = None
     valid: bool = True
 
@@ -126,6 +165,7 @@ class _Accumulator:
         self.high = bar.high if self.high is None else max(self.high, bar.high)
         self.low = bar.low if self.low is None else min(self.low, bar.low)
         self.close = bar.close
+        self.volume += bar.volume
         self.expected_start = bar.end
         self.count += 1
 
@@ -149,6 +189,7 @@ class _Accumulator:
             close=self.close,
             open_time=self.session.open_utc,
             close_time=self.session.close_utc,
+            volume=self.volume,
         )
 
 
@@ -158,6 +199,8 @@ class _SymbolState:
     previous_session_id: str | None = None
     previous: RegularSessionOHLC | None = None
     latest_end: datetime | None = None
+    #: consecutive complete sessions, oldest first; its last item is ``previous`` when set
+    chain: deque[RegularSessionOHLC] | None = None
 
 
 class SessionReferenceTracker:
@@ -199,6 +242,16 @@ class SessionReferenceTracker:
                 if completed is not None and completed.session_id == expected_previous
                 else None
             )
+            chain = state.chain if state.chain is not None else deque(maxlen=MAX_HISTORY_SESSIONS)
+            state.chain = chain
+            if completed is None:
+                chain.clear()  # an incomplete session breaks the consecutive chain
+            else:
+                if chain and chain[-1].session_id != previous_session(
+                    completed.open_time.astimezone(NEW_YORK).date()
+                ).session_id:
+                    chain.clear()  # not the session immediately after the chain's newest
+                chain.append(completed)
             state.active = _Accumulator.create(session, bar.symbol)
         assert state.active is not None
         state.active.add(bar)
@@ -235,4 +288,10 @@ class SessionReferenceTracker:
             and state.previous.session_id == previous_id
             else None
         )
-        return SessionReference(current.session_id, previous_id, current_open, previous)
+        chain = state.chain
+        history = (
+            tuple(chain)
+            if previous is not None and chain and chain[-1] == previous
+            else ()
+        )
+        return SessionReference(current.session_id, previous_id, current_open, previous, history)

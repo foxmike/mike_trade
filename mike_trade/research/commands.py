@@ -641,6 +641,8 @@ def _research_registry() -> Any:
     from mike_trade.strategies.buy.vwap_rejection import VwapRejectionBuy
     from mike_trade.strategies.buy.anchored_vwap_breakout import AnchoredVwapBreakoutBuy
     from mike_trade.strategies.buy.first_pullback_buy import FirstPullbackBuy
+    from mike_trade.strategies.buy.gap_exhaustion import GapExhaustionBuy
+    from mike_trade.strategies.buy.bull_pennant_breakout import BullPennantBreakoutBuy
     from mike_trade.strategies.buy.intraday_consolidation_breakout import (
         IntradayConsolidationBreakoutBuy,
     )
@@ -859,6 +861,8 @@ def _research_registry() -> Any:
         IntradayConsolidationBreakoutBuy,
         RelativeVolumeMomentumBuy,
         MovingAverageCompressionBuy,
+        GapExhaustionBuy,
+        BullPennantBreakoutBuy,
         AroonBearishReversalSell,
         CciZeroLineBreakdownSell,
         DmiBearishCrossoverSell,

@@ -169,3 +169,86 @@ def test_reference_fails_closed_when_tracker_contains_later_data() -> None:
     assert reference is not None
     assert reference.current_open is None
     assert reference.previous is None
+
+
+# ------------------------------------------------------------- multi-session history chain
+
+
+def sessions_before(day: date, count: int) -> list[date]:
+    """The ``count`` NYSE sessions immediately before ``day`` (oldest first)."""
+    from mike_trade.scheduling.calendar import previous_session
+
+    found: list[date] = []
+    cursor = day
+    for _ in range(count):
+        cursor = previous_session(cursor).open_utc.astimezone(NEW_YORK).date()
+        found.append(cursor)
+    return found[::-1]
+
+
+def test_history_is_the_consecutive_complete_sessions_ending_at_the_previous_one() -> None:
+    today = date(2026, 10, 14)
+    days = sessions_before(today, 4)  # crosses a weekend
+    tracker = SessionReferenceTracker()
+    for index, day in enumerate(days):
+        add_session(tracker, day, open_=str(100 + index), close=str(101 + index))
+    reference = tracker.reference("SPY", open_current(tracker, today))
+    assert reference is not None and reference.previous is not None
+    assert [item.session_id for item in reference.history] == [session_for(d).session_id for d in days]
+    assert [item.close for item in reference.history] == [D("101"), D("102"), D("103"), D("104")]
+    assert reference.history[-1] == reference.previous
+    # volume is the sum of the session's M1 volumes (1000 per minute in these fixtures)
+    full = int((session_for(days[0]).close_utc - session_for(days[0]).open_utc) / timedelta(minutes=1))
+    assert reference.history[0].volume == D(1000) * full
+
+
+def test_history_is_cut_at_an_incomplete_session_and_never_spans_it() -> None:
+    today = date(2026, 10, 14)
+    days = sessions_before(today, 5)
+    tracker = SessionReferenceTracker()
+    for index, day in enumerate(days):
+        add_session(tracker, day, skip=100 if index == 1 else None, close=str(100 + index))
+    reference = tracker.reference("SPY", open_current(tracker, today))
+    assert reference is not None
+    # sessions 2..4 are complete and consecutive; session 1 is incomplete and 0 lies behind it
+    assert [item.close for item in reference.history] == [D("102"), D("103"), D("104")]
+
+
+def test_history_is_cut_at_a_missing_session() -> None:
+    today = date(2026, 10, 14)
+    days = sessions_before(today, 5)
+    tracker = SessionReferenceTracker()
+    for index, day in enumerate(days):
+        if index != 2:  # no bars at all for one session
+            add_session(tracker, day, close=str(100 + index))
+    reference = tracker.reference("SPY", open_current(tracker, today))
+    assert reference is not None
+    assert [item.close for item in reference.history] == [D("103"), D("104")]
+
+
+def test_history_is_empty_when_the_previous_session_is_missing_or_incomplete() -> None:
+    today = date(2026, 10, 14)
+    days = sessions_before(today, 3)
+    tracker = SessionReferenceTracker()
+    add_session(tracker, days[0])
+    add_session(tracker, days[1])
+    add_session(tracker, days[2], skip=10)  # previous session incomplete
+    reference = tracker.reference("SPY", open_current(tracker, today))
+    assert reference is not None and reference.previous is None and reference.history == ()
+
+
+def test_history_is_bounded_and_fails_closed_on_future_data() -> None:
+    from mike_trade.market_data.session_reference import MAX_HISTORY_SESSIONS
+
+    today = date(2026, 10, 14)
+    days = sessions_before(today, MAX_HISTORY_SESSIONS + 3)
+    tracker = SessionReferenceTracker()
+    for index, day in enumerate(days):
+        add_session(tracker, day, close=str(100 + index))
+    as_of = open_current(tracker, today)
+    reference = tracker.reference("SPY", as_of)
+    assert reference is not None and len(reference.history) == MAX_HISTORY_SESSIONS
+    assert reference.history[-1].close == D(100 + len(days) - 1)
+    # an observation later than ``as_of`` hides everything, history included
+    earlier = tracker.reference("SPY", session_for(today).open_utc + timedelta(seconds=30))
+    assert earlier is not None and earlier.history == () and earlier.previous is None

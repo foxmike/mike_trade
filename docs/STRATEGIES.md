@@ -2439,10 +2439,10 @@ bar. Alpaca warmup discards a still-forming REST minute before aggregation.
 `gap_continuation` and `opening_gap_breakout` are inventory aliases of
 `gap_and_go`: under the selected published long rule all three are the same gap-up
 opening-range breakout, so separate classes would duplicate a signal. `gap_exhaustion`
-remains blocked: a defensible downside-exhaustion BUY needs confirmed multi-session/daily
-downtrend context (and commonly abnormal-volume context), while the deliberately narrow
-contract exposes only one completed prior session. None of these entry primitives sizes a
-position, places an order, or defines an exit.
+was blocked while the contract exposed only one completed prior session; `SessionReference`
+now also carries a bounded chain of consecutive, fully observed prior sessions (OHLC and
+volume) and `gap_exhaustion` is implemented on it (see `docs/BUY_BACKLOG_FINAL_PATTERNS.md`).
+None of these entry primitives sizes a position, places an order, or defines an exit.
 
 ## 18. SHORT and COVER roles (28 SHORT, 28 COVER)
 

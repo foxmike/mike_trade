@@ -157,7 +157,7 @@ def test_fifteen_new_buys_registered_in_production_and_research() -> None:
         assert cls.spec.trigger_timeframe is CandleTimeframe.M1
         assert len(re.findall(rf"\b{cls.__name__},", source)) == 1
         assert cls.spec.warmup_bars == cls.required_bars({}), strategy_id
-    assert len(REGISTRY.list_strategies(StrategyRole.BUY)) == 85
+    assert len(REGISTRY.list_strategies(StrategyRole.BUY)) == 87
     assert len(REGISTRY.list_strategies(StrategyRole.SELL)) == 41
 
 
