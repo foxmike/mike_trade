@@ -1,10 +1,10 @@
 /** Research catalog API abstraction.
  *
- * The v2 research endpoints (/api/v2/research/*) are being implemented by a
- * separate backend agent. This adapter probes for them once per session and
- * falls back to the existing v1 read-only endpoints (/api/research/*) when
- * they are unavailable, so the frontend can switch during integration with
- * no component changes. Both implementations satisfy the same interface.
+ * The run list / run / trade-inspection accessors probe /api/v2/research once
+ * per session and fall back to the legacy v1 read-only endpoints, which keeps
+ * the trade pages that share them working. The Research Lab analytics
+ * (facets, aggregates, run analysis, journal, compare) are v2-only and are
+ * exposed as plain functions at the bottom of this file.
  */
 
 import {
@@ -19,24 +19,71 @@ import {
   type TradeFilters,
   type TradeInspection,
   type TradeListResponse,
+  type TradeRecord,
 } from "./client";
 
-export interface RunQuery {
-  page?: number;
-  pageSize?: number;
-  sort?: string;
-  direction?: string;
+/** Server-side run filters shared by the explorer and the performance views. */
+export interface RunFilters {
   search?: string;
   symbol?: string;
   buyStrategy?: string;
   sellStrategy?: string;
+  shortStrategy?: string;
+  coverStrategy?: string;
   purpose?: string;
+  /** Stop-policy label as listed by the facets endpoint. */
+  stopPolicy?: string;
+  /** Legacy alias of stopPolicy (substring match on the recorded stop configuration). */
   stopSetting?: string;
+  status?: string;
+  periodRole?: string;
+  windowStart?: string;
+  windowEnd?: string;
+  windowKey?: string;
   executionDate?: string;
+  minTrades?: number;
+  minWinRate?: number;
+  minReturn?: number;
+  minProfitFactor?: number;
+  maxDrawdown?: number;
 }
 
+export interface RunQuery extends RunFilters {
+  page?: number;
+  pageSize?: number;
+  sort?: string;
+  direction?: string;
+}
+
+/** Closed-trade statistics recorded per run (money values are Decimal strings). */
+export interface TradeStats {
+  closed_trades: number;
+  winning_trades: number;
+  losing_trades: number;
+  breakeven_trades: number;
+  gross_profit: string | null;
+  gross_loss: string | null;
+  realized_pnl: string | null;
+  average_win: string | null;
+  average_loss: string | null;
+  expectancy: string | null;
+  payoff_ratio: string | null;
+  best_trade: string | null;
+  worst_trade: string | null;
+  top3_profit_share: string | null;
+  realized_pnl_ex_top3: string | null;
+}
+
+/** Run row as served by the v2 catalog (legacy v1 rows get safe defaults). */
+export type ResearchRunRow = ResearchRun & {
+  short_strategies: string[];
+  cover_strategies: string[];
+  stop_policy: string | null;
+  trade_stats: Partial<TradeStats>;
+};
+
 export interface RunListResult {
-  runs: ResearchRun[];
+  runs: ResearchRunRow[];
   page: number;
   page_size: number;
   total: number;
@@ -45,21 +92,49 @@ export interface RunListResult {
 
 export interface ResearchDatasetMember {
   symbol: string;
+  asset_class?: string;
+  group?: string;
   status: "DATASET_AND_BACKTEST" | "DATASET_ONLY" | "MISSING_DATASET";
   dataset_available: boolean;
   has_backtest_results: boolean;
   dataset_id: string | null;
+  feed?: string | null;
+  timeframe?: string | null;
+  adjustment?: string | null;
+  start?: string | null;
+  end?: string | null;
   bar_count: number | null;
+  sha256?: string | null;
   backtest_run_count: number;
+  latest_backtest_run_id?: string | null;
+}
+
+export interface ResearchDatasetSnapshot {
+  dataset_id: string;
+  provider: string;
+  feed: string;
+  symbol: string;
+  asset_class: string;
+  timeframe: string;
+  adjustment: string;
+  acquired_at: string;
+  start: string;
+  end: string;
+  bar_count: number;
+  data_file: string;
+  sha256: string;
 }
 
 export interface ResearchDatasetInventory {
   universe_id: string;
+  selected_at?: string | null;
   total_universe_symbols: number;
   available_dataset_symbols: number;
   missing_dataset_symbols: number;
   backtested_symbols: number;
   symbols: ResearchDatasetMember[];
+  snapshots?: ResearchDatasetSnapshot[];
+  duckdb_catalog_available?: boolean;
 }
 
 export const emptyRunList: RunListResult = {
@@ -98,6 +173,39 @@ interface V2TradeListResponse {
   available_exit_reasons?: string[];
 }
 
+/** Query-string encoding of the shared server-side run filters. */
+export function runFilterParams(filters: RunFilters): URLSearchParams {
+  const params = new URLSearchParams();
+  const text: Array<[string, string | undefined]> = [
+    ["search", filters.search],
+    ["symbol", filters.symbol],
+    ["buy_strategy", filters.buyStrategy],
+    ["sell_strategy", filters.sellStrategy],
+    ["short_strategy", filters.shortStrategy],
+    ["cover_strategy", filters.coverStrategy],
+    ["run_purpose", filters.purpose],
+    ["stop_policy", filters.stopPolicy ?? filters.stopSetting],
+    ["status", filters.status],
+    ["period_role", filters.periodRole],
+    ["window_start", filters.windowStart],
+    ["window_end", filters.windowEnd],
+    ["window_key", filters.windowKey],
+    ["execution_date", filters.executionDate],
+  ];
+  for (const [key, value] of text) if (value) params.set(key, value);
+  const numeric: Array<[string, number | undefined]> = [
+    ["min_trades", filters.minTrades],
+    ["min_win_rate", filters.minWinRate],
+    ["min_return", filters.minReturn],
+    ["min_profit_factor", filters.minProfitFactor],
+    ["max_drawdown", filters.maxDrawdown],
+  ];
+  for (const [key, value] of numeric) {
+    if (value !== undefined && Number.isFinite(value)) params.set(key, String(value));
+  }
+  return params;
+}
+
 function assertV2RunList(value: unknown): asserts value is V2RunListResponse {
   if (
     value === null ||
@@ -109,13 +217,18 @@ function assertV2RunList(value: unknown): asserts value is V2RunListResponse {
   }
 }
 
-function normalizeRun(run: ResearchRun): ResearchRun {
+export function normalizeRun(run: ResearchRun): ResearchRunRow {
+  const extra = run as Partial<ResearchRunRow>;
   return {
     ...run,
     strategies: Array.isArray(run.strategies) ? run.strategies : [],
     buy_strategies: Array.isArray(run.buy_strategies) ? run.buy_strategies : [],
     sell_strategies: Array.isArray(run.sell_strategies) ? run.sell_strategies : [],
+    short_strategies: Array.isArray(extra.short_strategies) ? extra.short_strategies : [],
+    cover_strategies: Array.isArray(extra.cover_strategies) ? extra.cover_strategies : [],
     stop_configuration: run.stop_configuration ?? {},
+    stop_policy: extra.stop_policy ?? null,
+    trade_stats: extra.trade_stats ?? {},
     provenance: run.provenance ?? {},
   };
 }
@@ -166,9 +279,12 @@ function normalizeTrade(
 // sorting and paging happen client-side over the full result).
 // ---------------------------------------------------------------------------
 
-function compareRuns(sort: string | undefined, direction: string): ((a: ResearchRun, b: ResearchRun) => number) | null {
+function compareRuns(
+  sort: string | undefined,
+  direction: string,
+): ((a: ResearchRunRow, b: ResearchRunRow) => number) | null {
   if (!sort) return null;
-  const numeric = (run: ResearchRun): number | null => {
+  const numeric = (run: ResearchRunRow): number | null => {
     switch (sort) {
       case "net_pnl":
         return run.net_pnl === null ? null : Number(run.net_pnl);
@@ -189,7 +305,7 @@ function compareRuns(sort: string | undefined, direction: string): ((a: Research
     }
   };
   const factor = direction === "asc" ? 1 : -1;
-  return (a: ResearchRun, b: ResearchRun): number => {
+  return (a: ResearchRunRow, b: ResearchRunRow): number => {
     if (sort === "execution_at") {
       const av = a.execution_at ?? "";
       const bv = b.execution_at ?? "";
@@ -216,7 +332,7 @@ class V1Catalog implements ResearchCatalog {
    * v2 server would produce for the same query. */
   async listRuns(query: RunQuery, signal?: AbortSignal): Promise<RunListResult> {
     const body = await getResearchRuns(signal);
-    let runs = [...body.runs];
+    let runs = body.runs.map(normalizeRun);
 
     if (query.search) {
       const needle = query.search.toLowerCase();
@@ -238,8 +354,9 @@ class V1Catalog implements ResearchCatalog {
         (run) => (run.run_purpose ?? run.artifact_group ?? "legacy/unknown") === query.purpose,
       );
     }
-    if (query.stopSetting) {
-      const needle = query.stopSetting.toLowerCase();
+    const stopNeedle = query.stopPolicy ?? query.stopSetting;
+    if (stopNeedle) {
+      const needle = stopNeedle.toLowerCase();
       runs = runs.filter((run) => JSON.stringify(run.stop_configuration).toLowerCase().includes(needle));
     }
     if (query.executionDate) {
@@ -286,18 +403,11 @@ class V2Catalog implements ResearchCatalog {
   }
 
   async listRuns(query: RunQuery = {}, signal?: AbortSignal): Promise<RunListResult> {
-    const params = new URLSearchParams();
+    const params = runFilterParams(query);
     if (query.page) params.set("page", String(query.page));
     if (query.pageSize) params.set("page_size", String(query.pageSize));
     if (query.sort) params.set("sort_by", query.sort);
     if (query.direction) params.set("sort_order", query.direction);
-    if (query.search) params.set("search", query.search);
-    if (query.symbol) params.set("symbol", query.symbol);
-    if (query.buyStrategy) params.set("buy_strategy", query.buyStrategy);
-    if (query.sellStrategy) params.set("sell_strategy", query.sellStrategy);
-    if (query.purpose) params.set("run_purpose", query.purpose);
-    if (query.stopSetting) params.set("stop_policy", query.stopSetting);
-    if (query.executionDate) params.set("execution_date", query.executionDate);
     const suffix = params.toString();
     const body = await getJson<unknown>(`/api/v2/research/runs${suffix ? `?${suffix}` : ""}`, signal);
     assertV2RunList(body);
@@ -388,4 +498,283 @@ export async function resolveResearchCatalog(): Promise<ResearchCatalog> {
 
 export function researchFlavor(): "v1" | "v2" | "unresolved" {
   return resolved === null ? "unresolved" : resolved.flavor;
+}
+
+// ---------------------------------------------------------------------------
+// Research Lab analytics (v2-only, read-only).
+// ---------------------------------------------------------------------------
+
+export interface FacetOption {
+  value: string;
+  count: number;
+}
+
+export interface RunFacets {
+  total_runs: number;
+  runs_without_stop_policy: number;
+  buy_strategies: FacetOption[];
+  sell_strategies: FacetOption[];
+  short_strategies: FacetOption[];
+  cover_strategies: FacetOption[];
+  symbols: FacetOption[];
+  stop_policies: FacetOption[];
+  period_roles: FacetOption[];
+  run_purposes: FacetOption[];
+  statuses: FacetOption[];
+  windows: FacetOption[];
+  artifact_groups: FacetOption[];
+  earliest_window_start: string | null;
+  latest_window_end: string | null;
+  bounds: Record<string, number | null>;
+}
+
+export type AggregateDimension =
+  | "buy_strategy"
+  | "sell_strategy"
+  | "short_strategy"
+  | "cover_strategy"
+  | "symbol"
+  | "stop_policy"
+  | "period_role"
+  | "run_purpose"
+  | "status"
+  | "window"
+  | "artifact_group";
+
+export interface AggregateGroup {
+  key: string;
+  run_count: number;
+  distinct_outcomes: number;
+  trade_count: number;
+  profitable_runs: number;
+  profitable_run_rate: number | null;
+  min_return: number | null;
+  p25_return: number | null;
+  median_return: number | null;
+  p75_return: number | null;
+  max_return: number | null;
+  mean_return: number | null;
+  median_profit_factor: number | null;
+  profit_factor_runs: number;
+  median_win_rate: number | null;
+  median_drawdown: number | null;
+  worst_drawdown: number | null;
+  median_expectancy: number | null;
+  median_top3_share: number | null;
+  max_top3_share: number | null;
+  distinct_symbol_sets: number;
+  distinct_windows: number;
+  first_window_start: string | null;
+  last_window_end: string | null;
+  best_run_id: string | null;
+  worst_run_id: string | null;
+}
+
+export interface AggregateResponse {
+  group_by: AggregateDimension;
+  runs_considered: number;
+  multi_symbol_runs_excluded: number;
+  groups: AggregateGroup[];
+  notes: string[];
+}
+
+export interface AggregateQuery extends RunFilters {
+  groupBy: AggregateDimension;
+  sort?: string;
+  direction?: string;
+  minRuns?: number;
+  limit?: number;
+}
+
+export interface EquityPoint {
+  time: string;
+  equity: number;
+}
+export interface DrawdownPoint {
+  time: string;
+  drawdown_percent: number;
+}
+export interface TradeSeriesPoint {
+  trade_index: number;
+  time: string;
+  trade_id: string;
+  symbol: string;
+  trade_pnl: number;
+  cumulative_pnl: number;
+}
+export interface DistributionBin {
+  lower: number;
+  upper: number;
+  count: number;
+}
+export interface PnlDistribution {
+  available: boolean;
+  count?: number;
+  min?: number;
+  max?: number;
+  mean?: number;
+  median?: number;
+  stdev?: number;
+  winners?: number;
+  losers?: number;
+  bins: DistributionBin[];
+}
+export interface PeriodRow {
+  period: string;
+  start_equity: string | null;
+  end_equity: string | null;
+  equity_change: string | null;
+  return_percent: string | null;
+  closed_trades: number;
+  winning_trades: number;
+  realized_pnl: string;
+}
+export interface DrawdownDetail {
+  available: boolean;
+  max_drawdown_percent?: string;
+  max_drawdown_amount?: string;
+  peak_equity?: string;
+  peak_time?: string;
+  trough_equity?: string;
+  trough_time?: string;
+  recovered?: boolean;
+  recovered_at?: string | null;
+}
+
+export interface RunAnalysis {
+  run: ResearchRunRow;
+  configuration: Record<string, unknown>;
+  artifact_locations: string[];
+  equity_curve: EquityPoint[];
+  equity_curve_total_points: number;
+  drawdown_curve: DrawdownPoint[];
+  trade_series: TradeSeriesPoint[];
+  trade_series_total: number;
+  pnl_distribution: PnlDistribution;
+  period_performance: { granularity: "day" | "week" | "month"; periods: PeriodRow[] };
+  drawdown_detail: DrawdownDetail;
+  assumptions: Record<string, unknown>;
+  metric_definitions: Record<string, string>;
+  diagnostics: Record<string, string | number | boolean | null>;
+}
+
+export interface JournalTrade extends TradeRecord {
+  direction: string;
+}
+
+export interface JournalResponse {
+  run_id: string;
+  selection_id: string;
+  page: number;
+  page_size: number;
+  total: number;
+  total_pages: number;
+  items: JournalTrade[];
+  available_entry_strategies: string[];
+  available_exit_reasons: string[];
+  available_symbols: string[];
+  available_directions: string[];
+  filtered_summary: {
+    trade_count: number;
+    closed_with_pnl: number;
+    winning: number;
+    losing: number;
+    realized_pnl: string;
+  };
+}
+
+export interface JournalQuery {
+  page?: number;
+  pageSize?: number;
+  symbol?: string;
+  entryStrategy?: string;
+  exitReason?: string;
+  outcome?: "WIN" | "LOSS";
+  direction?: "LONG" | "SHORT";
+  positionStatus?: string;
+  sort?: string;
+  order?: "asc" | "desc";
+}
+
+export interface ComparePeriod {
+  comparable: boolean;
+  identical_windows?: boolean;
+  overlap_start?: string | null;
+  overlap_end?: string | null;
+  overlap_days?: number;
+  reason?: string | null;
+}
+
+export interface CompareResponse {
+  runs: ResearchRunRow[];
+  comparative_metrics: {
+    runs_count: number;
+    symbols_union: string[];
+    highest_net_pnl_run: string;
+    lowest_drawdown_run: string;
+    leaders: Record<string, string | null>;
+    period: ComparePeriod;
+  };
+  curves: Record<string, Array<{ time: string; index: number }>>;
+  differences: Array<{ field: string; label: string; values: Record<string, unknown> }>;
+}
+
+export function getRunFacets(signal?: AbortSignal): Promise<RunFacets> {
+  return getJson<RunFacets>("/api/v2/research/runs/facets", signal);
+}
+
+export function getDatasetInventory(signal?: AbortSignal): Promise<ResearchDatasetInventory> {
+  return getJson<ResearchDatasetInventory>("/api/v2/research/datasets", signal);
+}
+
+export function aggregateRuns(query: AggregateQuery, signal?: AbortSignal): Promise<AggregateResponse> {
+  const params = runFilterParams(query);
+  params.set("group_by", query.groupBy);
+  if (query.sort) params.set("sort_by", query.sort);
+  if (query.direction) params.set("sort_order", query.direction);
+  if (query.minRuns) params.set("min_runs", String(query.minRuns));
+  if (query.limit) params.set("limit", String(query.limit));
+  return getJson<AggregateResponse>(`/api/v2/research/runs/aggregate?${params.toString()}`, signal);
+}
+
+export function getRunAnalysis(
+  selectionId: string,
+  maxPoints = 1200,
+  signal?: AbortSignal,
+): Promise<RunAnalysis> {
+  return getJson<RunAnalysis>(
+    `/api/v2/research/runs/${encodeURIComponent(selectionId)}?max_points=${String(maxPoints)}`,
+    signal,
+  ).then((body) => ({ ...body, run: normalizeRun(body.run) }));
+}
+
+export function getRunJournal(
+  selectionId: string,
+  query: JournalQuery,
+  signal?: AbortSignal,
+): Promise<JournalResponse> {
+  const params = new URLSearchParams();
+  if (query.page) params.set("page", String(query.page));
+  if (query.pageSize) params.set("page_size", String(query.pageSize));
+  if (query.symbol) params.set("symbol", query.symbol);
+  if (query.entryStrategy) params.set("entry_strategy", query.entryStrategy);
+  if (query.exitReason) params.set("exit_filter", query.exitReason);
+  if (query.outcome) params.set("outcome", query.outcome);
+  if (query.direction) params.set("direction", query.direction);
+  if (query.positionStatus) params.set("position_status", query.positionStatus);
+  if (query.sort) params.set("sort_by", query.sort);
+  if (query.order) params.set("sort_order", query.order);
+  const suffix = params.toString();
+  return getJson<JournalResponse>(
+    `/api/v2/research/runs/${encodeURIComponent(selectionId)}/trades${suffix ? `?${suffix}` : ""}`,
+    signal,
+  );
+}
+
+export function compareRunIds(selectionIds: string[], signal?: AbortSignal): Promise<CompareResponse> {
+  const params = new URLSearchParams();
+  for (const id of selectionIds) params.append("run_id", id);
+  return getJson<CompareResponse>(`/api/v2/research/runs/compare?${params.toString()}`, signal).then(
+    (body) => ({ ...body, runs: body.runs.map(normalizeRun) }),
+  );
 }
