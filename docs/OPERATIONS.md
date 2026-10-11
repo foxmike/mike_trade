@@ -112,10 +112,12 @@ liability, and exposure ceilings and the session entry cap count shorts like
 longs. Enabling shorting changes the config fingerprint (the same
 acknowledgement as any strategy drift).
 
-**BACKTEST / research.** `ExperimentSpec` and `BacktestRequest.config` accept
-`short_strategies`, `cover_strategies`, `short_selling_enabled` (required for
-any short entry), `short_margin_multiplier`, `short_borrow_bps_per_day` and an
-optional `max_gross_exposure` ceiling. Runs that include SHORT/COVER strategies
+**BACKTEST / research.** `ExperimentSpec` takes `short_strategies`,
+`cover_strategies`, `short_selling_enabled` (required for any short strategy)
+and `short_borrow_bps_per_day`; `BacktestRequest.config` accepts those keys
+plus `short_margin_multiplier` (default 1.5) and an optional
+`max_gross_exposure` ceiling that applies to long and short entries alike.
+Runs that include SHORT/COVER strategies
 use lifecycle semantics `"3"` (long-only runs keep `"2"` and their hashes).
 Artifacts add, for shorts only: fill `direction` and `borrow_cost`, cycle
 `direction`, equity-curve `restricted_collateral` / `available_cash`, and
