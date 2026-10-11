@@ -333,6 +333,8 @@ class WatchRow(_Model):
     phase: Sourced[str]
     active_buy_strategies: Sourced[list[str]]
     active_sell_strategies: Sourced[list[str]]
+    active_short_strategies: Sourced[list[str]] | None = None
+    active_cover_strategies: Sourced[list[str]] | None = None
     next_due_trigger: Sourced[datetime]
     last_evaluation: Sourced[EvaluationSummary]
     last_signal: Sourced[SignalSummary]
@@ -1283,6 +1285,8 @@ class DashboardReadService:
         ).fetchall()
         buys = [r[1] for r in instances if r[0] == "BUY"]
         sells = [r[1] for r in instances if r[0] == "SELL"]
+        shorts = [r[1] for r in instances if r[0] == "SHORT"]
+        covers = [r[1] for r in instances if r[0] == "COVER"]
         last_eval_row = q(
             "SELECT e.evaluated_at, e.status, e.reason, e.bar_time, i.strategy_key, i.role "
             "FROM strategy_evaluations e LEFT JOIN strategy_instances i "
@@ -1372,6 +1376,12 @@ class DashboardReadService:
             phase=v.of(phase, "engine", as_of=now, provenance="position_cycles+entry_controls"),
             active_buy_strategies=v.of(buys, "engine", provenance="strategy_instances"),
             active_sell_strategies=v.of(sells, "engine", provenance="strategy_instances"),
+            active_short_strategies=(
+                v.of(shorts, "engine", provenance="strategy_instances") if shorts else None
+            ),
+            active_cover_strategies=(
+                v.of(covers, "engine", provenance="strategy_instances") if covers else None
+            ),
             next_due_trigger=unavailable("scheduler"),
             last_evaluation=last_eval, last_signal=last_signal,
             confirmed_quantity=v.of(quantity, "broker", as_of=position_as_of,
@@ -1601,9 +1611,10 @@ class DashboardReadService:
                 ).fetchone()
                 refs[key] = _dec(ref[0]) if ref else None
             avg: dict[str, Decimal | None] = {}
-            for side, key in (("BUY", "entry"), ("SELL", "exit")):
+            for sides, key in ((("BUY", "SELL_SHORT"), "entry"), (("SELL", "BUY_TO_COVER"), "exit")):
                 fills = q("SELECT quantity, price FROM fills WHERE account_scope_id = ? "
-                          "AND cycle_id = ? AND side = ?", (ctx.scope, cycle_id, side)).fetchall()
+                          "AND cycle_id = ? AND side IN (?, ?)",
+                          (ctx.scope, cycle_id, *sides)).fetchall()
                 qty = sum((schema.decimal_from_db(x[0]) for x in fills), _ZERO)
                 avg[key] = (sum((schema.decimal_from_db(x[0]) * schema.decimal_from_db(x[1])
                                  for x in fills), _ZERO) / qty) if qty else None

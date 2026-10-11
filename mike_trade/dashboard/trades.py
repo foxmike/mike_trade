@@ -73,6 +73,10 @@ class TradeRecord(_Model):
     holding_duration_seconds: Decimal | None = None
     data_provenance: str | None = None
     attribution_complete: bool
+    #: "LONG" (BUY ... SELL) or "SHORT" (SELL_SHORT ... BUY_TO_COVER).  For a short the entry
+    #: price is the average sale price, the exit price the average cover price, and the
+    #: realized P&L is (entry - exit) x quantity net of fees.
+    direction: str = "LONG"
 
 
 class TradeList(_Model):
@@ -242,6 +246,38 @@ def _weighted(rows: list[dict[str, Any]]) -> tuple[Decimal, Decimal | None, Deci
     return qty, (notional / qty if qty else None), notional, fees
 
 
+_ENTRY_SIDES = frozenset({"BUY", "SELL_SHORT"})
+_EXIT_SIDES = frozenset({"SELL", "BUY_TO_COVER"})
+
+
+def _side_text(row: Any) -> str:
+    raw = row.get("side") if isinstance(row, dict) else getattr(row, "side", "")
+    return str(raw).upper()
+
+
+def _direction(entries: list[Any]) -> str:
+    """"SHORT" when the cycle opened with a short sale, else "LONG"."""
+    return "SHORT" if any(_side_text(row) == "SELL_SHORT" for row in entries) else "LONG"
+
+
+def _realized_pnl(
+    direction: str,
+    entry_price: Decimal | None,
+    entry_qty: Decimal,
+    entry_fees: Decimal,
+    exit_qty: Decimal,
+    exit_notional: Decimal,
+    exit_fees: Decimal,
+) -> Decimal | None:
+    """Net realized P&L of the exited quantity, for a long and for a short alike."""
+    if not exit_qty or entry_price is None:
+        return None
+    entry_fee_share = entry_fees * min(Decimal(1), exit_qty / entry_qty) if entry_qty else ZERO
+    cost = entry_price * exit_qty
+    gross = exit_notional - cost if direction == "LONG" else cost - exit_notional
+    return gross - exit_fees - entry_fee_share
+
+
 def _status(state: str, bought: Decimal, sold: Decimal) -> str:
     if state == "CLOSED" or (bought > ZERO and sold >= bought):
         return "CLOSED"
@@ -349,8 +385,9 @@ class TradeJournalService:
                         }
                         for r in raw_fills
                     ]
-                    buys = [f for f in fills if f["side"] == "BUY"]
-                    sells = [f for f in fills if f["side"] == "SELL"]
+                    buys = [f for f in fills if f["side"] in _ENTRY_SIDES]
+                    sells = [f for f in fills if f["side"] in _EXIT_SIDES]
+                    direction = _direction(buys)
                     bq, bp, bn, bf = _weighted(buys)
                     sq, sp, sn, sf = _weighted(sells)
                     entry = self._attribution(conn, account_id, cycle, "ENTRY")
@@ -359,7 +396,7 @@ class TradeJournalService:
                         "SELECT n.purpose,n.signal_id,n.created_at,b.broker_order_id "
                         "FROM order_intents n LEFT JOIN broker_orders b "
                         "ON b.account_scope_id=n.account_scope_id AND b.intent_id=n.intent_id "
-                        "WHERE n.account_scope_id=? AND n.cycle_id=? AND n.side='SELL' "
+                        "WHERE n.account_scope_id=? AND n.cycle_id=? AND n.side IN ('SELL','BUY_TO_COVER') "
                         "ORDER BY n.created_at",
                         (account_id, cycle),
                     ).fetchall()
@@ -394,7 +431,7 @@ class TradeJournalService:
                     realized_return = None
                     if bp is not None and sq > ZERO:
                         entry_fee_share = bf * min(Decimal(1), sq / bq) if bq else ZERO
-                        realized = sn - bp * sq - sf - entry_fee_share
+                        realized = _realized_pnl(direction, bp, bq, bf, sq, sn, sf)
                         basis = bp * sq + entry_fee_share
                         realized_return = realized / basis * Decimal(100) if basis else None
                     entry_at = _time(buys[0]["time"]) if buys else _time(opened or created)
@@ -452,6 +489,7 @@ class TradeJournalService:
                             attribution_complete=bool(
                                 entry.get("signal_id") and entry.get("strategy")
                             ),
+                            direction=direction,
                         )
                     )
                 return records
@@ -744,24 +782,33 @@ class TradeJournalService:
         ]
         best = max((b.high for b in holding), default=None)
         worst = min((b.low for b in holding), default=None)
+        short = trade.direction == "SHORT"
         favorable: list[Decimal] = []
         adverse: list[Decimal] = []
         for bar in holding:
             known = [fill for fill in fills if fill.timestamp <= bar.timestamp]
-            buys = [fill for fill in known if fill.side == "BUY"]
-            sells = [fill for fill in known if fill.side == "SELL"]
+            buys = [fill for fill in known if fill.side.upper() in _ENTRY_SIDES]
+            sells = [fill for fill in known if fill.side.upper() in _EXIT_SIDES]
             bought = sum((fill.quantity for fill in buys), ZERO)
             held = bought - sum((fill.quantity for fill in sells), ZERO)
             if bought <= ZERO or held <= ZERO:
                 continue
             average = sum((fill.quantity * fill.price for fill in buys), ZERO) / bought
-            favorable.append((bar.high - average) * held)
-            adverse.append((bar.low - average) * held)
+            if short:  # a short gains as the price FALLS and loses as it RISES
+                favorable.append((average - bar.low) * held)
+                adverse.append((average - bar.high) * held)
+            else:
+                favorable.append((bar.high - average) * held)
+                adverse.append((bar.low - average) * held)
         if holding and not favorable and trade.entry_price is not None:
             # Legacy cycles can retain bars without individual fills.
             quantity = trade.open_quantity or trade.filled_quantity
-            favorable = [(bar.high - trade.entry_price) * quantity for bar in holding]
-            adverse = [(bar.low - trade.entry_price) * quantity for bar in holding]
+            if short:
+                favorable = [(trade.entry_price - bar.low) * quantity for bar in holding]
+                adverse = [(trade.entry_price - bar.high) * quantity for bar in holding]
+            else:
+                favorable = [(bar.high - trade.entry_price) * quantity for bar in holding]
+                adverse = [(bar.low - trade.entry_price) * quantity for bar in holding]
         mfe = max(ZERO, max(favorable)) if favorable else None
         mae = min(ZERO, min(adverse)) if adverse else None
         return TradeDiagnostics(
@@ -782,12 +829,14 @@ class TradeJournalService:
             best_price=best,
             worst_price=worst,
             initial_stop_distance=(
-                trade.entry_price - trade.initial_stop_price
+                (trade.initial_stop_price - trade.entry_price if short
+                 else trade.entry_price - trade.initial_stop_price)
                 if trade.entry_price is not None and trade.initial_stop_price is not None
                 else None
             ),
             final_stop_distance=(
-                trade.entry_price - trade.final_stop_price
+                (trade.final_stop_price - trade.entry_price if short
+                 else trade.entry_price - trade.final_stop_price)
                 if trade.entry_price is not None and trade.final_stop_price is not None
                 else None
             ),
@@ -1049,21 +1098,18 @@ class TradeJournalService:
                 legacy_match = bool(
                     opened
                     and (
-                        (side == "BUY" and at >= opened and (closed is None or at < closed))
-                        or (side == "SELL" and at > opened and (closed is None or at <= closed))
+                        (side in _ENTRY_SIDES and at >= opened and (closed is None or at < closed))
+                        or (side in _EXIT_SIDES and at > opened and (closed is None or at <= closed))
                     )
                 )
                 if fill.get("cycle_id") == cycle_id or (not fill.get("cycle_id") and legacy_match):
                     related.append(fill)
-            buys = [f for f in related if str(f.get("side")).upper() == "BUY"]
-            sells = [f for f in related if str(f.get("side")).upper() == "SELL"]
+            buys = [f for f in related if str(f.get("side")).upper() in _ENTRY_SIDES]
+            sells = [f for f in related if str(f.get("side")).upper() in _EXIT_SIDES]
+            direction = _direction(buys)
             bq, bp, bn, bf = _weighted(buys)
             sq, sp, sn, sf = _weighted(sells)
-            realized = (
-                (sn - (bp or ZERO) * sq - bf * (sq / bq if bq else ZERO) - sf)
-                if sq and bp is not None
-                else None
-            )
+            realized = _realized_pnl(direction, bp, bq, bf, sq, sn, sf)
             basis = (bp or ZERO) * sq + (bf * (sq / bq if bq else ZERO) if bq else ZERO)
             entry_strategy = cycle.get("entry_strategy") or (
                 buys[0].get("strategy") if buys else None
@@ -1074,7 +1120,7 @@ class TradeJournalService:
             exit_reason = cycle.get("exit_reason") or (
                 sells[-1].get("exit_reason") if sells else None
             )
-            if exit_reason == "STRATEGY_SELL":
+            if exit_reason in ("STRATEGY_SELL", "STRATEGY_COVER"):
                 exit_reason = "STRATEGY_EXIT"
             if exit_reason == "PROTECTIVE_STOP":
                 exit_strategy = None
@@ -1150,6 +1196,7 @@ class TradeJournalService:
                         entry_strategy
                         and (cycle.get("entry_signal_id") or (buys and buys[0].get("signal_id")))
                     ),
+                    direction=direction,
                 )
             )
         return records
@@ -1219,12 +1266,12 @@ class TradeJournalService:
                 and str(raw_fill.get("symbol", "")).upper() == trade.symbol
                 and (
                     (
-                        side == "BUY"
+                        side in _ENTRY_SIDES
                         and at >= trade.entry_timestamp
                         and (trade.exit_timestamp is None or at < trade.exit_timestamp)
                     )
                     or (
-                        side == "SELL"
+                        side in _EXIT_SIDES
                         and at > trade.entry_timestamp
                         and (trade.exit_timestamp is None or at <= trade.exit_timestamp)
                     )

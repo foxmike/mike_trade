@@ -395,6 +395,8 @@ class _CycleProjection:
     entry_strategy_key: str | None
     opened_at: datetime | None
     closed_at: datetime | None
+    #: "LONG" (BUY ... SELL) or "SHORT" (SELL_SHORT ... BUY_TO_COVER).
+    direction: str = "LONG"
     entry_fills: list[_FillLeg] = field(default_factory=list)
     exit_fills: list[_FillLeg] = field(default_factory=list)
     # order_id -> (purpose, signal_id, submitted_at); entry/exit order maps
@@ -535,8 +537,12 @@ def _record_from_projection(
     elif exit_qty == _ZERO:
         gross = _ZERO
     else:
-        gross = sum((leg.quantity * leg.price for leg in projection.exit_fills), _ZERO) - (
-            entry_avg * exit_qty
+        exit_value = sum((leg.quantity * leg.price for leg in projection.exit_fills), _ZERO)
+        # long: proceeds - cost; short: sale proceeds - cover cost (a falling price gains)
+        gross = (
+            exit_value - entry_avg * exit_qty
+            if projection.direction == "LONG"
+            else entry_avg * exit_qty - exit_value
         )
     net = gross - confirmed - estimated
     filled_quantity = exit_qty if exit_qty > _ZERO else entry_qty
@@ -703,7 +709,7 @@ def _load_projections(conn: Any, scope: str) -> tuple[
         return {}, {}, "PAPER"  # unknown scope: no cycles, nothing to attribute
     projections: dict[str, _CycleProjection] = {}
     for row in conn.execute(
-        "SELECT cycle_id, symbol, state, entry_strategy_key, opened_at, closed_at "
+        "SELECT cycle_id, symbol, state, entry_strategy_key, opened_at, closed_at, direction "
         "FROM position_cycles WHERE account_scope_id = ? ORDER BY cycle_id",
         (scope,),
     ).fetchall():
@@ -714,6 +720,7 @@ def _load_projections(conn: Any, scope: str) -> tuple[
             entry_strategy_key=None if row[3] is None else str(row[3]),
             opened_at=_schema.from_db_timestamp(row[4]) if row[4] is not None else None,
             closed_at=_schema.from_db_timestamp(row[5]) if row[5] is not None else None,
+            direction=str(row[6]),
         )
 
     order_purpose: dict[str, str] = {}
@@ -813,7 +820,7 @@ def _load_projections(conn: Any, scope: str) -> tuple[
                 filled_at=_schema.from_db_timestamp(row[6]),
                 broker_order_id=broker_id,
             )
-            if str(row[2]) == "SELL":
+            if str(row[2]) in ("SELL", "BUY_TO_COVER"):  # the closing sides
                 projection.exit_fills.append(leg)
             else:
                 projection.entry_fills.append(leg)
@@ -955,6 +962,7 @@ def _projection_from_fixture(raw: Mapping[str, Any]) -> tuple[
         ),
         opened_at=_parse_timestamp(raw.get("opened_at"), field="opened_at"),
         closed_at=_parse_timestamp(raw.get("closed_at"), field="closed_at"),
+        direction=str(raw.get("direction", "LONG")).upper(),
     )
     for key, bucket in (("entry_fills", projection.entry_fills),
                         ("exit_fills", projection.exit_fills)):
@@ -1233,11 +1241,11 @@ def _strategy_scope_ids(
         "WHERE account_scope_id = ?",
         (scope,),
     ).fetchall():
-        if report_filter.buy_strategy is not None and str(role) == "BUY" and str(
+        if report_filter.buy_strategy is not None and str(role) in ("BUY", "SHORT") and str(
             strategy_key
         ) == report_filter.buy_strategy:
             buys.add(str(instance_id))
-        if report_filter.sell_strategy is not None and str(role) == "SELL" and str(
+        if report_filter.sell_strategy is not None and str(role) in ("SELL", "COVER") and str(
             strategy_key
         ) == report_filter.sell_strategy:
             sells.add(str(instance_id))
