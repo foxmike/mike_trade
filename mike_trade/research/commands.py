@@ -508,6 +508,12 @@ def _research_registry() -> Any:
     from mike_trade.strategies.buy.opening_range_retest import OpeningRangeRetestBuy
     from mike_trade.strategies.buy.parabolic_sar import ParabolicSarBuy
     from mike_trade.strategies.buy.power_hour_momentum import PowerHourMomentumBuy
+    from mike_trade.strategies.short.short_ema_bearish_crossover import ShortEmaBearishCrossover
+    from mike_trade.strategies.short.short_supertrend_bearish_flip import ShortSupertrendBearishFlip
+    from mike_trade.strategies.short.short_donchian_breakdown import ShortDonchianBreakdown
+    from mike_trade.strategies.cover.cover_ema_bullish_crossover import CoverEmaBullishCrossover
+    from mike_trade.strategies.cover.cover_supertrend_bullish_flip import CoverSupertrendBullishFlip
+    from mike_trade.strategies.cover.cover_donchian_breakout import CoverDonchianBreakout
     from mike_trade.strategies.buy.previous_close_reclaim import PreviousCloseReclaimBuy
     from mike_trade.strategies.buy.previous_day_high_breakout import PreviousDayHighBreakoutBuy
     from mike_trade.strategies.buy.previous_day_low_reversal import PreviousDayLowReversalBuy
@@ -658,6 +664,12 @@ def _research_registry() -> Any:
         MiddayRangeBreakoutBuy,
         AfternoonBreakoutBuy,
         PowerHourMomentumBuy,
+        ShortEmaBearishCrossover,
+        ShortSupertrendBearishFlip,
+        ShortDonchianBreakdown,
+        CoverEmaBullishCrossover,
+        CoverSupertrendBullishFlip,
+        CoverDonchianBreakout,
         ObvBreakoutBuy,
         AccumulationDistributionBreakoutBuy,
         VolumePriceTrendBreakoutBuy,

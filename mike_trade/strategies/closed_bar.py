@@ -6,7 +6,7 @@ helpers only de-duplicate the guards every closed-bar rule must apply identicall
 
 * **Timeframe comes from the strategy's own ``StrategySpec``** (``trigger_timeframe``);
   nothing here assumes a particular interval.
-* stale data, non-regular sessions and (BUY only) the engine-owned ``eligibility``
+* stale data, non-regular sessions and (BUY and SHORT) the engine-owned ``eligibility``
   key are rejected before any signal is produced;
 * crossing comparisons use one inclusive/strict convention (prior at-or-on the
   reference, latest strictly beyond it);
@@ -49,6 +49,7 @@ if TYPE_CHECKING:
 __all__ = [
     "ELIGIBILITY_KEY",
     "ELIGIBILITY_WATCHING_BUY",
+    "ELIGIBILITY_WATCHING_SHORT",
     "STATE_LAST_SIGNAL_BAR",
     "STATE_INDICATOR",
     "REASON_CODES",
@@ -71,12 +72,21 @@ __all__ = [
 #: Engine-owned key; BUY strategies only read it.
 ELIGIBILITY_KEY = "eligibility"
 ELIGIBILITY_WATCHING_BUY = "WATCHING_BUY"
+#: Engine-owned value that arms SHORT strategies (flat, short entries allowed); SHORT only reads it.
+ELIGIBILITY_WATCHING_SHORT = "WATCHING_SHORT"
 #: Strategy-owned key: ISO start of the bar that last fired.
 STATE_LAST_SIGNAL_BAR = "last_signal_bar"
 #: Strategy-owned key: snapshot of the recursive indicator state (see :func:`advance`).
 STATE_INDICATOR = "indicator_state"
 
 _STATE_VERSION = 1
+
+#: Entry roles are gated on the engine-owned eligibility value; exit roles (SELL, COVER) are only
+#: evaluated by the engine while it holds the matching position and carry no such key.
+_ENTRY_ELIGIBILITY = {
+    StrategyRole.BUY: ELIGIBILITY_WATCHING_BUY,
+    StrategyRole.SHORT: ELIGIBILITY_WATCHING_SHORT,
+}
 
 REASON_CODES: tuple[ReasonCode, ...] = (
     ReasonCode.SIGNAL,
@@ -98,9 +108,9 @@ def gate(
         return ReasonCode.STALE_DATA
     if context.session_status is not SessionStatus.REGULAR:
         return ReasonCode.NOT_ELIGIBLE
-    if spec.side is StrategyRole.BUY and (
-        not isinstance(state, Mapping)
-        or state.get(ELIGIBILITY_KEY) != ELIGIBILITY_WATCHING_BUY
+    armed = _ENTRY_ELIGIBILITY.get(spec.side)
+    if armed is not None and (
+        not isinstance(state, Mapping) or state.get(ELIGIBILITY_KEY) != armed
     ):
         return ReasonCode.NOT_ELIGIBLE
     return None

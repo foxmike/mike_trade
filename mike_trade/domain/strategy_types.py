@@ -84,10 +84,18 @@ def _string_tuple(value: object, *, field: str) -> tuple[str, ...]:
 
 
 class StrategyRole(Enum):
-    """A strategy's independently registered entry or exit role."""
+    """A strategy's independently registered entry or exit role.
+
+    BUY opens a long and SELL closes a long; SHORT opens a short and COVER closes a short.
+    The four roles are independent: a SELL signal never implies SHORT and a COVER signal never
+    implies BUY.  Signal actions (``ENTER_LONG``, ``EXIT_LONG``, ``ENTER_SHORT``,
+    ``COVER_SHORT``) map one-to-one onto the roles and are chosen by the engine.
+    """
 
     BUY = "BUY"
     SELL = "SELL"
+    SHORT = "SHORT"
+    COVER = "COVER"
 
 
 @dataclass(frozen=True, slots=True)
@@ -131,7 +139,7 @@ class StrategyDefinition:
 
 @dataclass(frozen=True, slots=True)
 class StrategyInstance:
-    """One configured BUY or SELL strategy registration."""
+    """One configured BUY, SELL, SHORT or COVER strategy registration."""
 
     instance_id: str
     strategy_key: str

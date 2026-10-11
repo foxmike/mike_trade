@@ -6,7 +6,7 @@ filesystem handle, or network/session client, and this module imports none of
 those (only the standard library and pure domain/market-data value types).
 
 Design choices:
-1. ``StrategyRole`` (BUY/SELL) from ``domain.strategy_types`` is the side type;
+1. ``StrategyRole`` (BUY/SELL/SHORT/COVER) from ``domain.strategy_types`` is the side type;
    ``CandleTimeframe`` from ``market_data.candles`` is the timeframe type.  The
    strategy-facing ``MarketContext`` is ``market_data.context.MarketContext``,
    imported for type checking only.
@@ -57,6 +57,8 @@ __all__ = [
     "make_signal_id",
     "BuyStrategy",
     "SellStrategy",
+    "ShortStrategy",
+    "CoverStrategy",
 ]
 
 #: Stable ``StrategySpec.category`` identifiers.
@@ -679,3 +681,23 @@ class SellStrategy(_Strategy):
     """Base class for exit (SELL) strategies."""
 
     _side: ClassVar[StrategyRole] = StrategyRole.SELL
+
+
+class ShortStrategy(_Strategy):
+    """Base class for short-entry (SHORT) strategies.
+
+    Like BUY, a SHORT strategy only reports that a short entry is warranted; sizing, order
+    submission, borrow checks and protective stops belong to the engine.
+    """
+
+    _side: ClassVar[StrategyRole] = StrategyRole.SHORT
+
+
+class CoverStrategy(_Strategy):
+    """Base class for short-exit (COVER) strategies.
+
+    Like SELL, a COVER strategy is only evaluated by the engine while a managed short exists and
+    never opens a long position.
+    """
+
+    _side: ClassVar[StrategyRole] = StrategyRole.COVER
