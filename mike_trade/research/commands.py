@@ -13,7 +13,7 @@ import traceback
 from collections.abc import Mapping
 from concurrent.futures import FIRST_COMPLETED, ProcessPoolExecutor, wait
 from dataclasses import asdict, dataclass, replace
-from datetime import UTC, datetime, time, timedelta
+from datetime import UTC, datetime, time as dt_time, timedelta
 from decimal import ROUND_DOWN, Decimal
 from functools import lru_cache
 from pathlib import Path
@@ -32,6 +32,7 @@ class ExperimentSpec:
     end: str
     seed: int = 271828
     dataset_id: str | None = None
+    feed: str | None = None
     parameters: Mapping[str, Mapping[str, Any]] | None = None
     starting_capital: str = "10000"
     execution: Mapping[str, Any] | None = None
@@ -50,7 +51,7 @@ class ExperimentSpec:
     #: ``stop_policy``-shaped protective stop (fixed / native_trailing /
     #: stepped_trailing); omitted keeps the reference 1.5% native trailing stop.
     protective_stop: Mapping[str, Any] | None = None
-    #: Optional replay EOD close policy: {"enabled": true, "at": "15:55"}.
+    #: Optional replay EOD close policy: {"enabled": bool, "at": "HH:MM"}.
     end_of_day_close: Mapping[str, Any] | None = None
 
     def validate(self) -> None:
@@ -86,21 +87,6 @@ class ExperimentSpec:
             from mike_trade.risk.stop_config import normalize_stop_spec
 
             normalize_stop_spec(self.protective_stop)
-        if self.end_of_day_close is not None:
-            if not isinstance(self.end_of_day_close, Mapping):
-                raise ValueError("end_of_day_close must be a mapping")
-            if set(self.end_of_day_close) - {"enabled", "at"}:
-                raise ValueError("end_of_day_close accepts only enabled and at")
-            enabled = self.end_of_day_close.get("enabled", False)
-            at = self.end_of_day_close.get("at", "15:55")
-            if not isinstance(enabled, bool) or not isinstance(at, str):
-                raise ValueError("end_of_day_close requires bool enabled and HH:MM at")
-            try:
-                time.fromisoformat(at)
-                if len(at) != 5 or time.fromisoformat(at) >= time(16, 0):
-                    raise ValueError
-            except ValueError as exc:
-                raise ValueError("end_of_day_close.at must be HH:MM") from exc
         if self.seed < 0:
             raise ValueError("experiment seed must be nonnegative")
         if _moment(self.start) >= _moment(self.end):
@@ -111,6 +97,24 @@ class ExperimentSpec:
             raise ValueError("starting_capital must be a positive decimal string")
         if self.execution is not None and not isinstance(self.execution, Mapping):
             raise ValueError("execution assumptions must be a mapping")
+        if self.feed is not None:
+            if not isinstance(self.feed, str) or self.feed.strip().lower() not in ("iex", "sip"):
+                raise ValueError("experiment feed must be 'iex' or 'sip'")
+        if self.end_of_day_close is not None:
+            if not isinstance(self.end_of_day_close, Mapping):
+                raise ValueError("end_of_day_close must be a mapping")
+            if set(self.end_of_day_close) - {"enabled", "at"}:
+                raise ValueError("end_of_day_close accepts only enabled and at")
+            enabled = self.end_of_day_close.get("enabled", False)
+            at = self.end_of_day_close.get("at", "15:55")
+            if not isinstance(enabled, bool) or not isinstance(at, str):
+                raise ValueError("end_of_day_close requires bool enabled and HH:MM at")
+            try:
+                parsed_time = dt_time.fromisoformat(at)
+                if len(at) != 5 or parsed_time >= dt_time(16, 0):
+                    raise ValueError
+            except ValueError as exc:
+                raise ValueError("end_of_day_close.at must be HH:MM before 16:00") from exc
 
 
 def available_cpu_count() -> int:
@@ -196,11 +200,12 @@ def run_experiment_batch(
         job.validate()
         if job.dataset_id is None:
             start, end = _moment(job.start), _moment(job.end)
+            target_feed = (job.feed or "iex").lower()
             candidates = [
                 snapshot
                 for snapshot in repository.snapshots()
                 if snapshot.symbol == job.symbol.upper()
-                and snapshot.feed == "iex"
+                and snapshot.feed == target_feed
                 and snapshot.adjustment == "raw"
                 and datetime.fromisoformat(snapshot.start) <= start
                 and datetime.fromisoformat(snapshot.end) >= end
@@ -306,6 +311,7 @@ def _execute_experiment(job_data: dict[str, Any], root: str, results: str) -> di
         spec.seed,
         spec.strategy,
         dataset_id=spec.dataset_id,
+        feed=spec.feed,
         parameters=spec.parameters,
         starting_capital=Decimal(spec.starting_capital),
         execution=spec.execution,
@@ -325,11 +331,19 @@ def _execute_experiment(job_data: dict[str, Any], root: str, results: str) -> di
 
 @lru_cache(maxsize=2)
 def _cached_snapshot_bars(
-    root: str, symbol: str, start: str, end: str, dataset_id: str
+    root: str, symbol: str, start: str, end: str, dataset_id: str, feed: str | None = None
 ) -> tuple[Any, ...]:
     """Bounded per-process cache of validated rows from immutable snapshots."""
+    effective_feed = (feed or "").strip().lower()
+    if not effective_feed:
+        parts = dataset_id.split("-")
+        effective_feed = (
+            parts[1].lower()
+            if len(parts) >= 2 and parts[1].lower() in ("iex", "sip", "delayed_sip")
+            else "iex"
+        )
     return HistoricalDatasetRepository(root).available(
-        symbol, _moment(start), _moment(end), feed="iex", adjustment="raw", dataset_id=dataset_id
+        symbol, _moment(start), _moment(end), feed=effective_feed, adjustment="raw", dataset_id=dataset_id
     )
 
 
@@ -340,6 +354,7 @@ def _daily_history(
     start: datetime,
     end: datetime,
     strategy_params: Mapping[str, Mapping[str, Any]],
+    feed: str = "iex",
 ) -> tuple[Any, str | None]:
     """Completed RAW D1 history (point-in-time store) for strategies that require it.
 
@@ -362,10 +377,31 @@ def _daily_history(
     for _ in range(needed + 10):
         first = previous_session(first).session_date
     last = end.astimezone(NY).date()
-    candles = repo.daily_candles(symbol, first, last)
+    candles = repo.daily_candles(symbol, first, last, feed=feed)
     store = SessionCandleStore()
     store.ingest_daily(symbol, candles)
     return store, store.fingerprint()[:20]
+
+
+MULTIDAY_STRATEGIES = frozenset({"cup_and_handle", "volatility_contraction_pattern"})
+
+
+def _resolve_eod_close(
+    end_of_day_close: Mapping[str, Any] | None,
+    strategy_ids: Iterable[str],
+) -> dict[str, Any] | None:
+    """Resolve effective EOD close configuration for research backtests.
+
+    Intraday research backtests default to {"enabled": True, "at": "15:55"} in New York time.
+    Explicit per-experiment configurations override this (including {"enabled": False}).
+    Intentionally multi-day strategies do not have EOD liquidation forced upon them.
+    """
+    if end_of_day_close is not None:
+        return dict(end_of_day_close)
+    active = {s for s in strategy_ids if s}
+    if any(s in MULTIDAY_STRATEGIES for s in active):
+        return None
+    return {"enabled": True, "at": "15:55"}
 
 
 def _moment(text: str) -> datetime:
@@ -410,6 +446,19 @@ def register(subparsers: Any) -> None:
     backtest.add_argument("--strategy", required=True, choices=("vwap_bounce", "vwap_breakdown"))
     backtest.add_argument("--start", required=True)
     backtest.add_argument("--end", required=True)
+    backtest.add_argument(
+        "--feed", default=None, choices=("iex", "sip"), help="historical bars feed ('iex' or 'sip')"
+    )
+    backtest.add_argument("--dataset-id", default=None, help="explicit snapshot dataset_id")
+    backtest.add_argument(
+        "--eod-close-at", default=None, help="explicit EOD close time HH:MM (e.g. 15:55)"
+    )
+    backtest.add_argument(
+        "--disable-eod-close",
+        action="store_true",
+        default=False,
+        help="explicitly disable EOD liquidation",
+    )
     backtest.add_argument("--root", default=os.environ.get("MIKE_TRADE_RESEARCH_DIR", "research"))
     backtest.add_argument(
         "--results", default=os.environ.get("MIKE_TRADE_RESULTS_DIR", "research/results")
@@ -425,6 +474,9 @@ def register(subparsers: Any) -> None:
     )
     six.add_argument("--start", required=True)
     six.add_argument("--end", required=True)
+    six.add_argument(
+        "--feed", default=None, choices=("iex", "sip"), help="historical bars feed ('iex' or 'sip')"
+    )
     six.add_argument("--root", default=os.environ.get("MIKE_TRADE_RESEARCH_DIR", "research"))
     six.add_argument(
         "--results", default=os.environ.get("MIKE_TRADE_RESULTS_DIR", "research/results")
@@ -1028,6 +1080,7 @@ def _run_one(
     strategy_name: str,
     *,
     dataset_id: str | None = None,
+    feed: str | None = None,
     parameters: Mapping[str, Mapping[str, Any]] | None = None,
     starting_capital: Decimal = Decimal("10000"),
     execution: Mapping[str, Any] | None = None,
@@ -1068,23 +1121,41 @@ def _run_one(
     from mike_trade.strategies.presets.pairs import resolve_pair_preset
 
     repo = HistoricalDatasetRepository(root)
-    snapshots = [
+    target_feed = feed.strip().lower() if feed is not None else None
+    if target_feed is not None and target_feed not in ("iex", "sip"):
+        raise ValueError(f"unsupported feed: {feed}")
+
+    candidate_snapshots = [
         s
         for s in repo.snapshots()
         if s.symbol == symbol
-        and s.feed == "iex"
         and s.adjustment == "raw"
         and datetime.fromisoformat(s.start) <= start
         and datetime.fromisoformat(s.end) >= end
-        and (dataset_id is None or s.dataset_id == dataset_id)
     ]
+    if dataset_id is not None:
+        snapshots = [s for s in candidate_snapshots if s.dataset_id == dataset_id]
+        if snapshots and target_feed is not None and snapshots[0].feed != target_feed:
+            raise ValueError(
+                f"dataset_id {dataset_id} has feed '{snapshots[0].feed}', which does not match requested feed '{target_feed}'"
+            )
+    else:
+        effective_feed = target_feed if target_feed is not None else "iex"
+        snapshots = [s for s in candidate_snapshots if s.feed == effective_feed]
+
     if not snapshots:
+        feed_desc = f" feed={target_feed or ('(any)' if dataset_id else 'iex')}"
         raise ValueError(
-            f"no matching immutable snapshot covers {symbol} {start.isoformat()}..{end.isoformat()}"
+            f"no matching immutable snapshot covers {symbol} {start.isoformat()}..{end.isoformat()}{feed_desc}"
         )
-    snapshot = max(snapshots, key=lambda s: s.acquired_at)
+    snapshot = max(snapshots, key=lambda s: (s.acquired_at, s.dataset_id))
     bars = _cached_snapshot_bars(
-        str(Path(root).resolve()), symbol, start.isoformat(), end.isoformat(), snapshot.dataset_id
+        str(Path(root).resolve()),
+        symbol,
+        start.isoformat(),
+        end.isoformat(),
+        snapshot.dataset_id,
+        feed=snapshot.feed,
     )
     bars = tuple(
         bar
@@ -1095,9 +1166,10 @@ def _run_one(
     )
     if not bars:
         raise ValueError(
-            f"no stored IEX bars cover {symbol} {start.isoformat()}..{end.isoformat()}"
+            f"no stored {snapshot.feed.upper()} bars cover {symbol} {start.isoformat()}..{end.isoformat()}"
         )
-    provenance = FeedProvenance("replay", "IEX", "alpaca", False)
+    is_consolidated = snapshot.feed == "sip"
+    provenance = FeedProvenance("replay", snapshot.feed.upper(), "alpaca", is_consolidated)
     events = [
         ReplayEvent.bar(
             Candle(
@@ -1118,10 +1190,16 @@ def _run_one(
         for bar in bars
     ]
     clock = ReplayClock(start)
-    feed = HistoricalReplayFeed(
+    replay_feed = HistoricalReplayFeed(
         events,
         DataProvenance(
-            "alpaca", "IEX", False, snapshot.dataset_id, "RAW", False, QuoteFidelity.UNAVAILABLE
+            "alpaca",
+            snapshot.feed.upper(),
+            is_consolidated,
+            snapshot.dataset_id,
+            "RAW",
+            False,
+            QuoteFidelity.UNAVAILABLE,
         ),
         clock=clock,
         seed=seed,
@@ -1173,7 +1251,7 @@ def _run_one(
             for value in assumption_values["fractional_order_types"]
         )
     assumptions = ExecutionAssumptions(**assumption_values)
-    sim = HistoricalExecutionSimulator(feed, clock, assumptions)
+    sim = HistoricalExecutionSimulator(replay_feed, clock, assumptions)
     registry = _research_registry()
     explicit_roles = any(
         item is not None
@@ -1214,7 +1292,7 @@ def _run_one(
             )
         strategy_params[strategy_id].update(values)
     session_candles, daily_dataset = _daily_history(
-        repo, registry, symbol, start, end, strategy_params
+        repo, registry, symbol, start, end, strategy_params, feed=snapshot.feed
     )
     stop_config: dict[str, Any] = (
         {"protective_trailing_percent": "1.5"}
@@ -1261,6 +1339,10 @@ def _run_one(
             quantity=quantity,
         )
 
+    effective_eod = _resolve_eod_close(
+        end_of_day_close,
+        (*buy_ids, *sell_ids, *short_ids, *cover_ids, strategy_name),
+    )
     request = BacktestRequest(
         (symbol,),
         start,
@@ -1269,6 +1351,7 @@ def _run_one(
         {
             "dataset_id": snapshot.dataset_id,
             **({"daily_dataset_id": daily_dataset} if daily_dataset else {}),
+            **({"end_of_day_close": effective_eod} if effective_eod is not None else {}),
             "mode": "BACKTEST",
             "lifecycle": lifecycle,
             "focus_strategy": strategy_name,
@@ -1298,7 +1381,11 @@ def _run_one(
     )
     result = asyncio.run(
         BacktestRunner(
-            registry, feed, clock, sim, intent_factory=intent_factory,
+            registry,
+            replay_feed,
+            clock,
+            sim,
+            intent_factory=intent_factory,
             session_candles=session_candles,
         ).run(request)
     )
@@ -1336,11 +1423,13 @@ def _run_one(
         "strategy_is_label": lifecycle == "vwap_reference",
         "legs": {"buy": list(buy_ids), "sell": list(sell_ids)},
         "protective_stop": stop_config.get("protective_stop", "native_trailing 1.5%"),
+        "end_of_day_close": effective_eod,
         "exit_reasons": {
             reason: sum(t.get("exit_reason") == reason for t in metrics.trades)
             for reason in sorted({str(t.get("exit_reason")) for t in metrics.trades})
         },
         "dataset_id": snapshot.dataset_id,
+        "feed": snapshot.feed,
         "start": start.isoformat(),
         "end": end.isoformat(),
         "bars": len(bars),
@@ -1370,6 +1459,11 @@ def _run_one(
 
 def run_backtest(args: argparse.Namespace) -> int:
     resolve_worker_count(args.workers, 1)
+    eod_close: dict[str, Any] | None = None
+    if getattr(args, "disable_eod_close", False):
+        eod_close = {"enabled": False}
+    elif getattr(args, "eod_close_at", None):
+        eod_close = {"enabled": True, "at": args.eod_close_at}
     result = _run_one(
         args.symbol.upper(),
         _moment(args.start),
@@ -1378,6 +1472,9 @@ def run_backtest(args: argparse.Namespace) -> int:
         args.results,
         args.seed,
         args.strategy,
+        dataset_id=getattr(args, "dataset_id", None),
+        feed=getattr(args, "feed", None),
+        end_of_day_close=eod_close,
     )
     print(
         json.dumps(
@@ -1405,11 +1502,14 @@ def run_batch(args: argparse.Namespace) -> int:
 
 def run_six(args: argparse.Namespace) -> int:
     start, end = _moment(args.start), _moment(args.end)
+    feed = getattr(args, "feed", None)
     records: list[ExperimentSpec] = []
     for symbol in ("NVDA", "IBM", "TSLA"):
         for strategy in ("vwap_bounce", "vwap_breakdown"):
             records.append(
-                ExperimentSpec(symbol, strategy, start.isoformat(), end.isoformat(), args.seed)
+                ExperimentSpec(
+                    symbol, strategy, start.isoformat(), end.isoformat(), args.seed, feed=feed
+                )
             )
     output = Path(args.results) / "initial-six-experiment.json"
     batch = run_experiment_batch(
