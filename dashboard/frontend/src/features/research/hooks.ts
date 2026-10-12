@@ -42,6 +42,7 @@ export function useRunPage(query: RunQuery, enabled = true) {
       resolveResearchCatalog().then((catalog) => catalog.listRuns(query, signal)),
     placeholderData: keepPreviousData,
     staleTime: 15_000,
+    refetchInterval: 15_000,
     enabled,
     retry: 1,
   });

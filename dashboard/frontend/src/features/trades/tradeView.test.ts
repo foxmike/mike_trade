@@ -1,8 +1,19 @@
 import { describe, expect, it } from "vitest";
-import { contextQuery, exitLabel, toneOf } from "./tradeView";
+import { contextQuery, exitLabel, selectResearchRun, toneOf } from "./tradeView";
 import type { TradeRecord } from "../../api/client";
 
 describe("tradeView", () => {
+  it("selects the first IBM run once research results arrive", () => {
+    expect(selectResearchRun(null, "", [])).toBe("");
+    expect(selectResearchRun(null, "", [{ selection_id: "IBM-first" }])).toBe("IBM-first");
+    expect(selectResearchRun("", "", [{ selection_id: "IBM-first" }])).toBe("IBM-first");
+  });
+  it("preserves explicit choices and deep links even outside the listed page", () => {
+    const runs = [{ selection_id: "IBM-first" }];
+    expect(selectResearchRun(null, "IBM-choice", runs)).toBe("IBM-choice");
+    expect(selectResearchRun("IBM-linked", "IBM-choice", runs)).toBe("IBM-linked");
+    expect(selectResearchRun("IBM-linked", "", [])).toBe("IBM-linked");
+  });
   it("toneOf handles null and non-numeric values", () => {
     expect(toneOf(null)).toBeUndefined();
     expect(toneOf("abc")).toBeUndefined();

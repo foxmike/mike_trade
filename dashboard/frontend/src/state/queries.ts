@@ -148,6 +148,7 @@ export function useResearchRuns(query: RunQuery): UseQueryResult<RunListResult> 
     queryFn: ({ signal }) =>
       resolveResearchCatalog().then((catalog) => catalog.listRuns(query, signal)),
     staleTime: 30000,
+    refetchInterval: 30000,
     retry: 1,
   });
 }

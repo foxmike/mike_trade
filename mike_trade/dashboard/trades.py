@@ -9,13 +9,16 @@ from dataclasses import dataclass
 from datetime import UTC, datetime, timedelta
 from decimal import Decimal, InvalidOperation
 from pathlib import Path
-from typing import Any, Literal
+from typing import TYPE_CHECKING, Any, Literal
 from zoneinfo import ZoneInfo
 
 from pydantic import BaseModel, ConfigDict
 
 from mike_trade.persistence import schema
 from mike_trade.persistence.readstore import ReadStore, ReadStoreUnavailableError
+
+if TYPE_CHECKING:
+    from mike_trade.research.run_catalog import ResearchRunCatalog
 
 NY = ZoneInfo("America/New_York")
 ZERO = Decimal("0")
@@ -317,11 +320,14 @@ class TradeJournalService:
         research_root: Path,
         dataset_root: Path,
         now: Callable[[], datetime] | None = None,
+        *,
+        catalog: ResearchRunCatalog | None = None,
     ) -> None:
         self.db_path = Path(db_path)
         self.research_root = Path(research_root)
         self.dataset_root = Path(dataset_root)
         self._now = now or (lambda: datetime.now(UTC))
+        self._run_catalog = catalog
         self._catalog_cache: list[dict[str, Any]] | None = None
         self._catalog_fingerprint: tuple[int, float] | None = None
 
@@ -1086,7 +1092,11 @@ class TradeJournalService:
         )
 
     def _artifact(self, run_id: str) -> tuple[dict[str, Any], dict[str, Any]]:
-        paths = self._artifact_paths().get(run_id)
+        if self._run_catalog is not None:
+            run = self._run_catalog.get_run(run_id)
+            paths = (Path(run["_manifest_path"]), Path(run["_results_path"])) if run else None
+        else:
+            paths = self._artifact_paths().get(run_id)
         if paths is None:
             raise LookupError(run_id)
         return (

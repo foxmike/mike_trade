@@ -4,6 +4,15 @@
 import type { TradeEvent, TradeInspection, TradeRecord } from "../../api/client";
 import { epochSeconds, num } from "../charts/chartModel";
 
+/** Preserve deep links and explicit choices; an empty choice falls back to the first run. */
+export function selectResearchRun(
+  runParam: string | null,
+  chosenRun: string,
+  runs: ReadonlyArray<{ selection_id: string }>,
+): string {
+  return runParam || chosenRun || runs[0]?.selection_id || "";
+}
+
 export function toneOf(value: string | null | undefined): "positive" | "negative" | undefined {
   const n = num(value);
   if (n === null || n === 0) return undefined;

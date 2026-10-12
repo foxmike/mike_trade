@@ -12,6 +12,7 @@ import { ErrorBanner, Loading, PageHeader, Section } from "../../components/ui";
 import { TradeFilterBar, TradesTable, DEFAULT_TRADE_FILTERS } from "./TradesTable";
 import type { TradeFilters, TradeRecord } from "../../api/client";
 import { dateTimeEt } from "../../lib/format";
+import { selectResearchRun } from "./tradeView";
 
 type Source = "account" | "backtest";
 
@@ -27,7 +28,7 @@ export default function TradeJournalPage() {
   const runs = runsQuery.data?.runs ?? [];
   const runParam = params.get("run");
   const [chosenRun, setChosenRun] = useState<string>("");
-  const selectedRun = runParam ?? chosenRun ?? runs[0]?.selection_id ?? "";
+  const selectedRun = selectResearchRun(runParam, chosenRun, runs);
 
   const setSource = (next: Source) => {
     const nextParams = new URLSearchParams(params);
@@ -52,8 +53,10 @@ export default function TradeJournalPage() {
   );
 
   const list = source === "account" ? tradesQuery.data : runTradesQuery.data;
-  const loading = source === "account" ? tradesQuery.isPending : runTradesQuery.isPending;
-  const error = source === "account" ? tradesQuery.error : runTradesQuery.error;
+  const loading = source === "account" ? tradesQuery.isPending :
+    runsQuery.isPending || (selectedRun !== "" && runTradesQuery.isPending);
+  const error = source === "account" ? tradesQuery.error :
+    runTradesQuery.error ?? runsQuery.error;
 
   const patchFilter = (patch: Partial<TradeFilters>) =>
     setFilters((current) => ({ ...current, ...patch, page: patch.page ?? 1 }));

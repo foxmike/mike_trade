@@ -119,9 +119,9 @@ def lab(tmp_path: Path) -> tuple[TestClient, ResearchRunCatalog, dict[str, str]]
         research_root=research, research_dataset_root=data
     ))
     app = FastAPI()
-    router = create_research_v2_router(service)
-    app.include_router(router)
     catalog = ResearchRunCatalog(research, data / "research_runs.duckdb")
+    catalog.sync()
+    app.include_router(create_research_v2_router(service, catalog))
     return TestClient(app), catalog, ids
 
 
@@ -142,6 +142,23 @@ def test_trade_statistics_come_from_recorded_fills_including_shorts(lab: Any) ->
     short = next(t for t in trades["items"] if t["direction"] == "SHORT")
     assert float(short["realized_pnl"]) == pytest.approx(20.0)
     assert trades["available_directions"] == ["LONG", "SHORT"]
+
+
+def test_wave2_trade_inspection_uses_indexed_artifact_paths(lab: Any, monkeypatch) -> None:
+    client, _, ids = lab
+    from mike_trade.dashboard.trades import TradeJournalService
+
+    def reject_full_scan(*args):
+        raise AssertionError("Trade inspection must not scan every research result")
+
+    monkeypatch.setattr(TradeJournalService, "_artifact_catalog", reject_full_scan)
+    journal = client.get(f"/api/v2/research/runs/{ids['a']}/trades").json()
+    trade_id = journal["items"][0]["trade_id"]
+    inspection = client.get(f"/api/v2/research/runs/{ids['a']}/trades/{trade_id}")
+    assert inspection.status_code == 200
+    assert inspection.json()["trade"]["trade_id"] == trade_id
+    assert inspection.json()["fills"]
+    assert client.get(f"/api/v2/research/runs/{ids['a']}/trades/missing").status_code == 404
 
 
 def test_run_analysis_separates_equity_and_closed_trade_series(lab: Any) -> None:
@@ -305,6 +322,7 @@ def test_stale_persisted_index_is_rebuilt_on_schema_change(lab: Any) -> None:
     con.execute("UPDATE catalog_meta SET value = '1' WHERE key = 'index_schema_version'")
     con.close()
     reopened = ResearchRunCatalog(catalog.research_root, catalog.catalog_path)
+    reopened.sync()
     assert reopened.query_runs(ResearchRunQuery()).total == 3
 
 

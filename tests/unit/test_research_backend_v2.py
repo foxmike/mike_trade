@@ -403,6 +403,9 @@ def test_research_api_v2_endpoints(tmp_path: Path) -> None:
     (run_dir / "test-run-100.manifest.json").write_text(json.dumps(manifest))
     (run_dir / "test-run-100.results.json").write_text(json.dumps(result))
 
+    # Population is asynchronous for normal requests; prepare the fixture explicitly.
+    ResearchRunCatalog(research_dir, data_dir / "research_runs.duckdb").sync()
+
     settings = DashboardSettings(
         bind_host="127.0.0.1",
         port=8000,

@@ -3,6 +3,7 @@
 from __future__ import annotations
 
 import json
+import os
 from datetime import UTC, datetime
 from decimal import Decimal
 from pathlib import Path
@@ -10,6 +11,7 @@ from typing import Annotated, Any
 
 from fastapi import APIRouter, Depends, HTTPException, Query
 
+from mike_trade.dashboard.trades import TradeInspection, TradeJournalService
 from mike_trade.dashboard.v2 import research_analytics as analytics
 from mike_trade.dashboard.v2.models import (
     DatasetSnapshotSummary,
@@ -111,8 +113,14 @@ def create_research_v2_router(
     dataset_root = Path(settings.research_dataset_root if settings else "research/data")
 
     # Use persistent duckdb index in dataset_root
-    catalog_db_path = dataset_root / "research_runs.duckdb"
+    catalog_db_path = Path(os.environ.get(
+        "MIKE_TRADE_RESEARCH_RUN_CATALOG", str(dataset_root / "research_runs.duckdb")
+    ))
     run_catalog = catalog or ResearchRunCatalog(research_root, catalog_db_path)
+    # This projector uses only research artifacts; its operational DB path is unused.
+    trade_journal = TradeJournalService(
+        Path("."), research_root, dataset_root, catalog=run_catalog
+    )
     universe_service = UniverseService(dataset_root)
 
     @router.get("/datasets", response_model=UniverseResponse)
@@ -421,6 +429,14 @@ def create_research_v2_router(
             metric_definitions=analytics.METRIC_DEFINITIONS,
             diagnostics=diagnostics,
         )
+
+    @router.get("/runs/{run_id}/trades/{trade_id}", response_model=TradeInspection)
+    def inspect_run_trade(run_id: str, trade_id: str) -> TradeInspection:
+        """Serve the Wave 2 chart route without loading the entire artifact catalog."""
+        try:
+            return trade_journal.research_inspection(run_id, trade_id)
+        except LookupError as err:
+            raise HTTPException(status_code=404, detail="unknown research run or trade") from err
 
     @router.get("/runs/{run_id}/trades", response_model=ResearchTradeListResponse)
     def get_run_trades(

@@ -24,7 +24,7 @@ export default function ResearchPage() {
   const handleRefresh = async () => {
     try {
       setRefreshing(true);
-      const res = await refreshResearchCatalog(true);
+      const res = await refreshResearchCatalog();
       await queryClient.invalidateQueries({
         predicate: (query) => {
           const key = query.queryKey[0];

@@ -4,10 +4,11 @@ from __future__ import annotations
 
 import hashlib
 import json
+import logging
 import os
 import threading
 import time
-from collections import OrderedDict
+from collections import Counter, OrderedDict
 from dataclasses import dataclass
 from datetime import UTC, datetime
 from decimal import Decimal
@@ -22,6 +23,8 @@ from mike_trade.research.attribution import (
     recover_run_strategies,
     recover_stop_configuration,
 )
+
+logger = logging.getLogger(__name__)
 
 ZERO = Decimal("0")
 
@@ -448,6 +451,9 @@ class ResearchRunCatalog:
         else:
             self.catalog_path = Path(catalog_path).resolve()
         self._lock = threading.Lock()
+        self._sync_lock = threading.Lock()
+        self._refresh_lock = threading.Lock()
+        self._refresh_thread: threading.Thread | None = None
         self._con: duckdb.DuckDBPyConnection | None = None
         self._last_sync_time: float = 0.0
         self._trade_cache: OrderedDict[
@@ -459,12 +465,11 @@ class ResearchRunCatalog:
         if str(self.catalog_path) == ":memory:":
             if self._con is None:
                 self._con = duckdb.connect(":memory:")
-            return self._con
+            return self._con.cursor()
         return duckdb.connect(str(self.catalog_path))
 
     def _release(self, con: duckdb.DuckDBPyConnection) -> None:
-        if str(self.catalog_path) != ":memory:":
-            con.close()
+        con.close()
 
     def _init_database(self) -> None:
         """Create the DuckDB tables if they do not exist; rebuild a stale index."""
@@ -516,20 +521,28 @@ class ResearchRunCatalog:
         if not self.research_root.is_dir():
             return 0
 
-        with self._lock:
+        with self._sync_lock:
             con = self._get_connection()
             try:
                 # Load existing artifact file metadata
                 cached_files: dict[str, tuple[float, int, float, int, str, str | None, str]] = {}
-                if not force:
-                    rows = con.execute("""
-                        SELECT manifest_path, manifest_mtime, manifest_size,
-                               results_mtime, results_size,
-                               run_id, execution_id, result_hash
-                        FROM artifact_files_meta
+                rows = con.execute("""
+                    SELECT manifest_path, manifest_mtime, manifest_size,
+                           results_mtime, results_size, run_id, execution_id, result_hash
+                    FROM artifact_files_meta
+                """).fetchall()
+                for r in rows:
+                    cached_files[r[0]] = (r[1], r[2], r[3], r[4], r[5], r[6], r[7])
+                existing = {
+                    row[0]: row[1:]
+                    for row in con.execute("""
+                        SELECT selection_id, manifest_path, results_path,
+                               manifest_mtime, manifest_size, results_mtime, results_size,
+                               result_hash, locations
+                        FROM research_runs_index
                     """).fetchall()
-                    for r in rows:
-                        cached_files[r[0]] = (r[1], r[2], r[3], r[4], r[5], r[6], r[7])
+                }
+                changed_paths: set[str] = set()
 
                 # Discover pairs
                 discovered_pairs: list[tuple[Path, Path, os.stat_result, os.stat_result]] = []
@@ -554,7 +567,8 @@ class ResearchRunCatalog:
                     cached = cached_files.get(m_str)
 
                     if (
-                        cached
+                        not force
+                        and cached
                         and cached[0] == m_stat.st_mtime
                         and cached[1] == m_stat.st_size
                         and cached[2] == r_stat.st_mtime
@@ -564,6 +578,7 @@ class ResearchRunCatalog:
                         execution_id = cached[5]
                         result_hash = cached[6]
                     else:
+                        changed_paths.add(m_str)
                         # File changed or new: parse JSON and calculate content hash once
                         try:
                             m_raw = json.loads(m_path.read_text(encoding="utf-8"))
@@ -603,10 +618,12 @@ class ResearchRunCatalog:
                     })
 
                 # Now process distinct variant groups into research_runs_index
-                con.execute("DELETE FROM research_runs_index")
+                # Only new/changed groups need ledger parsing and derived metrics.
+                legacy_counts = Counter(key[0] for key in groups if key[1] != "execution")
+                discovered_ids: set[str] = set()
 
                 insert_sql = (
-                    f"INSERT INTO research_runs_index ({', '.join(n for n, _ in _INDEX_COLUMNS)}) "
+                    f"INSERT OR REPLACE INTO research_runs_index ({', '.join(n for n, _ in _INDEX_COLUMNS)}) "
                     f"VALUES ({', '.join('?' for _ in _INDEX_COLUMNS)})"
                 )
                 indexed_count = 0
@@ -616,10 +633,9 @@ class ResearchRunCatalog:
                     run_id = chosen["run_id"]
                     execution_id = chosen["execution_id"]
 
-                    groups_for_run = [key for key in groups if key[0] == run_id]
                     if execution_id:
                         selection_id = execution_id
-                    elif len(groups_for_run) == 1:
+                    elif legacy_counts[run_id] == 1:
                         selection_id = run_id
                     else:
                         selection_id = f"legacy-{run_id}-{chosen['result_hash'][:16]}"
@@ -628,6 +644,20 @@ class ResearchRunCatalog:
                         str(item["manifest_path"].parent.relative_to(self.research_root))
                         for item in copies
                     ]
+
+                    discovered_ids.add(selection_id)
+                    signature = (
+                        chosen["manifest_path"].as_posix(), chosen["results_path"].as_posix(),
+                        chosen["manifest_mtime"], chosen["manifest_size"],
+                        chosen["results_mtime"], chosen["results_size"],
+                        chosen["result_hash"], locations,
+                    )
+                    if (
+                        not force
+                        and existing.get(selection_id) == signature
+                        and not any(c["manifest_path"].as_posix() in changed_paths for c in copies)
+                    ):
+                        continue
 
                     # Parse chosen artifact to build summary record
                     try:
@@ -825,10 +855,27 @@ class ResearchRunCatalog:
                         "indexed_at": datetime.now(UTC),
                         "payload_json": json.dumps(run_row, sort_keys=True),
                     }
-                    con.execute(insert_sql, [values[name] for name, _ in _INDEX_COLUMNS])
+                    # Publishing one completed summary is brief; artifact I/O and
+                    # ledger calculations above never hold the request lock.
+                    with self._lock:
+                        con.execute(insert_sql, [values[name] for name, _ in _INDEX_COLUMNS])
                     indexed_count += 1
 
-                return indexed_count
+                stale_ids = set(existing) - discovered_ids
+                seen_paths = {p.as_posix() for p, _, _, _ in discovered_pairs}
+                with self._lock:
+                    if stale_ids:
+                        con.executemany(
+                            "DELETE FROM research_runs_index WHERE selection_id = ?",
+                            [(sid,) for sid in stale_ids],
+                        )
+                    stale_paths = set(cached_files) - seen_paths
+                    if stale_paths:
+                        con.executemany(
+                            "DELETE FROM artifact_files_meta WHERE manifest_path = ?",
+                            [(path,) for path in stale_paths],
+                        )
+                    return int(con.execute("SELECT count(*) FROM research_runs_index").fetchone()[0])
             finally:
                 self._last_sync_time = time.monotonic()
                 self._release(con)
@@ -844,19 +891,27 @@ class ResearchRunCatalog:
         return self.sync()
 
     def _ensure_indexed(self) -> None:
-        row_count = 0
-        with self._lock:
-            con = self._get_connection()
-            try:
-                row_count = con.execute("SELECT count(*) FROM research_runs_index").fetchone()[0]
-            finally:
-                self._release(con)
-        if row_count == 0:
+        """Read the persisted index immediately; discovery runs off the request path.
+
+        An empty index is a valid response while the initial population proceeds.
+        One daemon performs incremental refresh; slow artifacts never hold up reads.
+        """
+        with self._refresh_lock:
+            if self._refresh_thread is not None and self._refresh_thread.is_alive():
+                return
+            if time.monotonic() - self._last_sync_time <= 30.0:
+                return
+            self._refresh_thread = threading.Thread(
+                target=self._background_sync, name="research-catalog-sync", daemon=True
+            )
+            self._refresh_thread.start()
+
+    def _background_sync(self) -> None:
+        try:
             self.sync()
-        else:
-            now = time.monotonic()
-            if now - self._last_sync_time > 10.0:
-                self.sync()
+        except Exception:
+            # A failed scan must not take down readers of the last valid index.
+            logger.exception("Research catalog incremental refresh failed")
 
     @staticmethod
     def _build_where(query: ResearchRunQuery) -> tuple[str, list[Any]]:
