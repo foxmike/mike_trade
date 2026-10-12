@@ -259,3 +259,53 @@ order:
 
 Until all five steps are complete, live trading stays disabled and any
 live order attempt fails closed.
+
+## 8. PAPER / LIVE strategy execution and reconciliation
+
+`mike_trade/live/` completes the Alpaca runtime. PAPER and LIVE now evaluate the same BUY/SELL
+collections as SHADOW (inherited from `VwapReferenceLifecycle`; Michelle's rules are identical
+in every mode) and route orders through `AlpacaBrokerAdapter`.
+
+| Module | Responsibility |
+| :--- | :--- |
+| `live/gateway.py` | Synchronous Alpaca facade: consistent snapshots, executions (activity ids), stop submit/replace, attempt-numbered `client_order_id`s |
+| `live/ledger.py` | Typed-repository accounting: cycle, intent, order, fill (activity id), stop state; external fills |
+| `live/executor.py` | Port behind `CloseCoordinator`; establish / ratchet / resize / restore protective stops |
+| `live/reconciler.py` | Startup + periodic + stream-triggered + pre-decision reconciliation |
+| `live/lifecycle.py` | Strategy evaluation, entry/exit, EOD liquidation, safety exit |
+| `live/stream.py` | `trade_updates` -> reconciler wake-up (advisory; REST/activities are the record) |
+| `live/capability_records.py` | Operator capability evidence file (below) |
+
+**Stop capabilities need operator evidence.** The default matrix proves only market/limit and
+trailing-stop orders. Fixed and fixed-to-trailing (Michelle) protection needs a standalone
+`stop` SELL (whole, GTC) and a `stop_price` replace. Record them in
+`<data_dir>/alpaca_capabilities.json` after verifying on PAPER (see
+`live/capability_records.py` for the format); a PAPER record never promotes LIVE, which needs an
+`operator_record`. Without them the runtime refuses to start (`CAPABILITY_UNPROVEN:stop_submit`)
+rather than trade unprotected.
+
+**Protection.** After the broker reports a fill the engine places a GTC stop for the filled
+quantity. Michelle: ORB high - $0.25 / session VWAP at the BUY fill - $0.25, then a 0.5% trail of
+the highest traded price, active only when `0.995 x high > reference + $0.25`, only ever tightened.
+A ratchet is a PATCH that is believed only once the broker shows the old order `replaced`; until
+then the old stop is the protection (Alpaca's replace is not atomic and is never claimed to be).
+A discretionary/EOD exit cancels and *confirms* the stop before selling and re-protects if the
+sale fails. A protection that cannot be established or restored triggers a safety exit.
+
+**Manual trades.** Broker state wins. A full external sale closes the cycle (recorded as
+`ExternalFillApplied`, never a strategy win); a partial sale resizes the stop to the remaining
+shares; an external buy is journaled and never adopted (`UNMANAGED_EXCESS`; a symbol held
+outside the engine is never entered); a cancelled stop is re-placed; a pending exit cancelled by
+a human's "close position" is reconciled without a second sale. Fills are keyed by Alpaca
+activity id exactly once.
+
+**EOD.** `execution.end_of_day_close` (`enabled`, `at`, default 15:55 ET) liquidates through the
+normal broker path, starting `16:00 - at` before the actual close (early closes included),
+blocks new entries from then on, cancels working entries, and never marks a position closed
+without broker fills.
+
+Known limitations: long-only (PAPER/LIVE shorts stay unverified/disabled); the stream does not
+write fills (its execution id differs from the activity id); a fill whose activity record lags
+beyond 2 minutes freezes entries for that symbol rather than being synthesized; Alpaca trailing-stop
+quantity cannot be replaced, so native trailing coverage is resized by cancel + resubmit; REST
+calls are synchronous.

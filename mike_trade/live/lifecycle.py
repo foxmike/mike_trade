@@ -593,7 +593,12 @@ class LiveStrategyLifecycle(VwapReferenceLifecycle):
         except EntryBlockedError as exc:
             self.ledger.abandon_cycle(cycle_id, f"budget: {exc}")
             return [f"ENTRY_BLOCKED:{getattr(exc, 'code', 'budget')}"]
-        except (BrokerError, OrderNotSubmitted, UnknownOrderOutcome) as exc:
+        except UnknownOrderOutcome as exc:
+            # The order may exist at the broker: keep the cycle and the UNKNOWN intent; the
+            # reconciler resolves it by client_order_id and either adopts or retires it.
+            self.alerts.append(f"{symbol}: entry outcome unknown: {exc}")
+            return ["ENTRY_UNKNOWN"]
+        except (BrokerError, OrderNotSubmitted) as exc:
             self.ledger.abandon_cycle(cycle_id, f"submit failed: {exc}")
             self.alerts.append(f"{symbol}: entry submit failed: {exc}")
             return [f"ENTRY_FAILED:{type(exc).__name__}"]
@@ -749,7 +754,7 @@ class LiveStrategyLifecycle(VwapReferenceLifecycle):
 
     async def _eod_loop(self) -> None:
         while True:
-            await self.sleep(self.settings.eod_interval)
+            await asyncio.sleep(self.settings.eod_interval)
             try:
                 await self.eod_tick()
             except asyncio.CancelledError:

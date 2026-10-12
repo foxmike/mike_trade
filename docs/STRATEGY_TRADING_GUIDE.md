@@ -2148,7 +2148,7 @@ Four execution modes exist with strictly separated credentials, ledgers and conf
 
 ### 12.3 PAPER and LIVE — read carefully
 
-The **four-role lifecycle (BUY/SELL/SHORT/COVER) is implemented in SHADOW and BACKTEST**. As of this release, the PAPER/LIVE runtime composition is built **without automatic strategy evaluation** (`lifecycle=None`): strategies are not run, so no autonomous signals become paper or live orders. The order, position, reconciliation and protection layers are direction-aware and complete, but operator-driven order flow is the only path today. PAPER short order shapes have never been verified end-to-end, and LIVE short selling is refused by configuration (`short_selling_enabled` cannot be set for `account_mode: live`).
+The **four-role lifecycle (BUY/SELL/SHORT/COVER) is implemented in SHADOW and BACKTEST**. PAPER/LIVE now run the BUY/SELL lifecycle automatically (long-only; see `docs/ALPACA.md` §8), with broker-held stops, continuous reconciliation of manual trades and EOD liquidation. The order, position, reconciliation and protection layers are direction-aware and complete, but operator-driven order flow is the only path today. PAPER short order shapes have never been verified end-to-end, and LIVE short selling is refused by configuration (`short_selling_enabled` cannot be set for `account_mode: live`).
 
 **Bottom line:** the environment for testing strategies is SHADOW (live feed, forward) and BACKTEST (history, replay). PAPER and LIVE are not yet autonomous strategy environments.
 
@@ -2248,7 +2248,7 @@ Values that need a live authority (engine, broker link, feed) are explicitly mar
 
 Checked against the current source on `feature/strategy-library-192-final`:
 
-1. **PAPER/LIVE autonomous strategy execution is not implemented.** Only SHADOW and BACKTEST evaluate strategies: the PAPER/LIVE runtime composition builds no strategy lifecycle (`lifecycle=None`). Until that changes, PAPER/LIVE do not run strategies automatically. LIVE short selling is additionally refused by configuration.
+1. **PAPER/LIVE execution is long-only.** BUY/SELL strategies run automatically (stop capabilities must be recorded by the operator first); SHORT/COVER stay SHADOW/BACKTEST. LIVE short selling is refused by configuration.
 2. **PAPER/LIVE short flows are unverified.** No paper or live short order flow has been tested end-to-end; the order service requires a recorded capability verification before a paper short could even be attempted.
 3. **Historical backtests using the market monitor need monitor warm-up.** The backtest monitor starts empty at the window start (reference candles before the window are not replayed), so entries are blocked until two of the three reference symbols have data; the `research-batch` interface does not yet expose the market-status switch at all.
 4. **SHADOW and BACKTEST are not guaranteed identical.** SHADOW consumes the live stream with a bounded start-up warm-up (default 60 bars) and live-session references; BACKTEST replays stored bars deterministically. Strategies whose lookback exceeds the SHADOW warm-up return `INSUFFICIENT_DATA` until enough live bars accrue, and recursive-indicator state can therefore differ between the two for the same period. Research sizing also differs (planned-loss-based vs. symbol-budget-based).
