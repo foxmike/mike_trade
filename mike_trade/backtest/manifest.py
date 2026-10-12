@@ -11,7 +11,7 @@ import json
 import os
 import subprocess
 from dataclasses import dataclass, fields, is_dataclass
-from datetime import UTC, datetime
+from datetime import UTC, datetime, time
 from decimal import Decimal
 from enum import StrEnum
 from pathlib import Path
@@ -36,6 +36,8 @@ def canonical_json(value: Any) -> str:
             if item.tzinfo is None or item.utcoffset() is None:
                 raise ValueError("datetimes must be timezone-aware")
             return item.astimezone(UTC).isoformat(timespec="microseconds").replace("+00:00", "Z")
+        if isinstance(item, time):
+            return item.isoformat(timespec="microseconds")
         if hasattr(item, "value") and isinstance(item.value, (str, int)):
             return item.value
         if isinstance(item, float):
