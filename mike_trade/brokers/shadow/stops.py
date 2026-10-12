@@ -204,9 +204,20 @@ class ShadowStopSimulator:
         direction = position.direction
         long = direction is PositionDirection.LONG
         state = replace(state, direction=direction)
-        # Favorable extreme: the highest bid for a long, the lowest ask for a short.
+        # Michelle's transition policy explicitly follows traded prices. Existing
+        # policies retain their quote-side high-water semantics.
         touch = quote.bid if long else quote.ask
-        high = max(state.high_water_mark, touch) if long else min(state.high_water_mark, touch)
+        favorable = touch
+        if state.policy.kind is ProtectionKind.FIXED_THEN_TRAILING_STOP:
+            if (
+                trade is not None
+                and trade.symbol == state.symbol
+                and trade.provider_ts <= at
+                and trade.receive_ts <= at
+                and at - trade.provider_ts <= self.assumptions.max_quote_age
+            ):
+                favorable = trade.price
+        high = max(state.high_water_mark, favorable) if long else min(state.high_water_mark, favorable)
         stop = state.stop_price
         step_state = state.stepped_state
         tighter = max if long else min
@@ -222,6 +233,17 @@ class ShadowStopSimulator:
             if activated:
                 step_state = advance(step_state, high, self._step_policy(state.policy))
                 stop = tighter(stop, step_state.candidate_stop)
+        elif state.policy.kind is ProtectionKind.FIXED_THEN_TRAILING_STOP:
+            assert state.policy.trail_percent is not None
+            assert state.policy.activation_reference is not None
+            distance = state.policy.trail_percent / Decimal(100)
+            candidate = high * (Decimal(1) - distance) if long else high * (Decimal(1) + distance)
+            activated = (
+                candidate > state.policy.activation_reference
+                if long else candidate < state.policy.activation_reference
+            )
+            if activated:
+                stop = tighter(stop, candidate)
         state = replace(state, high_water_mark=high, stop_price=stop, stepped_state=step_state,
                         as_of=at, status="ACTIVE", reason=None, provenance=self._provenance(quote))
         resting = self.account.state.orders[state.order_id].stop_price
@@ -412,7 +434,10 @@ def _utc(value: datetime) -> None:
 
 def _policy_data(policy: ProtectionPolicy) -> dict[str, object]:
     values: dict[str, object] = {"kind": policy.kind.value, "require_broker_held": policy.require_broker_held}
-    for name in ("stop_offset_percent", "stop_offset_amount", "trail_percent", "trail_amount", "step_size", "activation_gain"):
+    for name in (
+        "stop_offset_percent", "stop_offset_amount", "trail_percent", "trail_amount",
+        "step_size", "activation_gain", "initial_stop_price", "activation_reference",
+    ):
         value = getattr(policy, name)
         values[name] = None if value is None else str(value)
     return values
@@ -428,7 +453,11 @@ def _state_from_record(data: dict[str, Any], at: datetime, version: str) -> Shad
     raw = data["policy"]
     policy = ProtectionPolicy(kind=ProtectionKind(raw["kind"]), **{
         name: (None if raw[name] is None else Decimal(raw[name])) if name != "require_broker_held" else raw[name]
-        for name in ("stop_offset_percent", "stop_offset_amount", "trail_percent", "trail_amount", "step_size", "activation_gain", "require_broker_held")})
+        for name in (
+            "stop_offset_percent", "stop_offset_amount", "trail_percent", "trail_amount",
+            "step_size", "activation_gain", "initial_stop_price", "activation_reference",
+            "require_broker_held",
+        )})
     raw_step = data.get("stepped_state")
     step = None if raw_step is None else SteppedTrailingState(
         Decimal(raw_step["entry_reference"]), Decimal(raw_step["high_watermark"]),

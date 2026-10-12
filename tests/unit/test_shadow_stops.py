@@ -104,6 +104,47 @@ def test_continuous_trail_tracks_quote_high_and_stop_never_decreases(tmp_path):
     assert [state.stop_price for state in states] == [D("97"), D("101"), D("101")]
 
 
+def test_michelle_fixed_stop_activates_monotonic_trail_from_trade_high(tmp_path):
+    h = Harness(tmp_path / "michelle-transition.db")
+    h.buy()
+    policy = ProtectionPolicy(
+        ProtectionKind.FIXED_THEN_TRAILING_STOP,
+        trail_percent=D("0.5"),
+        initial_stop_price=D("99.75"),
+        activation_reference=D("100.25"),
+    )
+    sim = ShadowStopSimulator(h.account)
+    armed = run(sim.arm("cycle-1", "ABC", policy, at=NOW))
+    assert armed.stop_price == D("99.75")
+
+    def trade(price: str, sec: int) -> TradeSnapshot:
+        timestamp = NOW + timedelta(seconds=sec)
+        return TradeSnapshot("ABC", D(price), D("1"), timestamp, timestamp, "sip")
+
+    below = run(
+        sim.evaluate(
+            "cycle-1", h.quote("100.70", 1), at=NOW + timedelta(seconds=1),
+            trade=trade("100.75", 1),
+        )
+    )
+    activated = run(
+        sim.evaluate(
+            "cycle-1", h.quote("100.70", 2), at=NOW + timedelta(seconds=2),
+            trade=trade("100.76", 2),
+        )
+    )
+    pullback = run(
+        sim.evaluate(
+            "cycle-1", h.quote("100.70", 3), at=NOW + timedelta(seconds=3),
+            trade=trade("100.60", 3),
+        )
+    )
+    assert below.stop_price == D("99.75")
+    assert activated.high_water_mark == D("100.76")
+    assert activated.stop_price == D("100.25620")
+    assert pullback.stop_price == activated.stop_price
+
+
 def test_stepped_trail_ratchets_at_thresholds_only(tmp_path):
     h = Harness(tmp_path / "stepped.db")
     h.buy()

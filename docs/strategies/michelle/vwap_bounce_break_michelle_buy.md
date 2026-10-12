@@ -3,155 +3,58 @@
 ## Identity and status
 
 - Original document: `VWAP_Bounce_Break_Formatted.docx`
-- Original strategy name: **VWAP BOUNCE AND BREAK ORIGINAL STRATEGY**
-- Proposed Mike_Trade identifier: `vwap_bounce_break_michelle_buy`
-- Role: BUY (independent long-entry signal)
-- Source attribution: Michelle; the original document above is authoritative
-- Purpose: buy an immediate VWAP recross after a qualified below-VWAP reversal cycle
-- Status: **BLOCKED — no Python class or registry entry exists**
+- Original name: **VWAP BOUNCE AND BREAK ORIGINAL STRATEGY**
+- Role: independent BUY
+- Source: Michelle, with approved October 2026 clarifications taking precedence
+- Status: **implemented; ready for targeted historical backtesting and SHADOW evaluation**
 
-## Formal contract
+## Contract
 
-### Required market data
+Purpose: enter the second qualified green opportunity after a below-VWAP bottom and confirmed
+VWAP recovery, rather than buying the first recross.
 
-- Completed RAW 1-minute OHLCV for the current session, sufficient to calculate EMA(9), EMA(20),
-  each bottoming pattern, and three-minute comparisons.
-- Ordered real-time trade ticks and a contemporaneous bid/ask snapshot for the immediate VWAP cross.
-- A causal per-bar/session VWAP series anchored at 09:30 ET, plus VWAP at the cycle low and fill.
-- Previous Day Close, Yesterday's High, Yesterday's Low, Premarket High, and Premarket Low. The
-  document marks these required but does not use them in any predicate.
-- Exchange session identity and America/New_York time.
+Required data: completed regular-session M1 OHLCV, ordered live trades/developing M1, VWAP from
+09:30, and SMA-seeded EMA9/EMA20 from completed M1 closes. Previous-day and premarket reference
+levels are metadata only when already available.
 
-### Required indicators
+Rules:
 
-- VWAP anchored at 09:30 ET.
-- EMA(9) and EMA(20) of completed 1-minute closes.
-- Dip depth: `VWAP_at_cycle_low - lowest_low_since_price_first_lost_VWAP`.
-- Hammer/wick rejection, three-candle base consolidation, and bullish engulfing detectors.
-- EMA recovery comparisons: `EMA9[k] > EMA9[k-3]` and the EMA9/EMA20 gap at `k` smaller than at
-  `k-3`.
+1. Start a cycle on a completed regular-session bar with price below VWAP, EMA9 and EMA20 and
+   strict `EMA9 < EMA20 < VWAP`.
+2. Retain the cycle low through minor recoveries. Invalidate if VWAP at the cycle low minus the
+   lowest price exceeds $2.00, or if VWAP recovery does not occur within 30 minutes.
+3. Below VWAP, require at least one deterministic pattern: (a) lower wick at least twice body and
+   close in top 40% of range; (b) three candles with combined range no more than 0.15% of the third
+   close; or (c) green body inclusively engulfing the preceding red body.
+4. Require `EMA9[k] > EMA9[k-3]` and absolute EMA9/EMA20 spread smaller than at `k-3`.
+5. First confirmation must be green, cross VWAP during the minute, and close above it. Record its
+   close/time/cycle; do not buy.
+6. A later (not necessarily consecutive) green candle qualifies when current price is above VWAP,
+   reaches the first confirmation close, and is no more than `$0.50` over VWAP.
+7. Before 11:30 ET, emit a MARKET BUY during that live developing candle. Replay uses the completed
+   second green and the existing next-M1-open fill model.
+8. Consume the cycle only when the entry is submitted. A later entry requires a genuinely new
+   breakdown, bottom, recovery, and second green, plus the shared attempt gate.
 
-### Timeframes and lookback
+No configurable parameters and no exclusive symbol list. State contains session/cycle identity,
+breakdown and low facts, bottom type, first confirmation, signal identity, consumed timestamp,
+entry VWAP/reference, attempts, and position identity.
 
-- Setup/recovery: completed 1-minute candles.
-- Trigger: intrabar trade tick.
-- EMA20 requires at least 20 completed closes under a conventional SMA seed, but the source does
-  not state the EMA seed or initialization convention.
-- Recovery comparisons require valid EMA readings at `k` and `k-3`.
-- Bottoming alternatives require one candle, two candles, or three consecutive candles.
-- Cycle history begins when price first loses VWAP and continues until entry, rejection, or an
-  undefined reset event.
+Superseded source statements: entry is on the second green rather than immediate first recross;
+maximum extension is fixed $0.50 rather than 0.10%; recovery limit is 30 minutes; absolute EMA
+spread is authoritative; reference levels are optional context; VWAP/pattern setup is regular
+session; the fixed universe is not exclusive.
 
-### Explicit setup and entry rules (A — stated in the document)
+## Traceability
 
-1. Trade window is 09:30–11:30 ET; 09:30–10:30 ET is the “highest priority” window.
-2. Symbol is one of `AAPL, PLTR, MSFT, GOOGL, NVDA, TSLA, AMD, SPCX, ORCL, INTC, DELL`.
-3. Initially price drops below VWAP, EMA20, and EMA9; EMA9 is below EMA20; EMA20 is below VWAP.
-4. Track the lowest low since price first lost VWAP. Dip must never exceed fixed `MAX_DIP = $2.00`.
-5. While below VWAP, form at least one:
-   - Hammer/wick rejection: lower wick length `>= 2 * body length` and close in the top 40% of
-     candle range.
-   - Base consolidation: three consecutive candles with combined high-to-low range `<= 0.15% of price`.
-   - Bullish engulfing: a green candle body completely engulfs the prior red candle body.
-6. Price moves back up toward VWAP.
-7. On latest completed minute `k`, `EMA9[k] > EMA9[k-3]`, and the EMA9/EMA20 spread is smaller
-   than it was at `k-3`.
-8. Buy at market the instant trade price crosses above VWAP (`intrabar trade price > VWAP`).
-9. Reject if the dip exceeded MAX_DIP at any point in the cycle.
-10. Reject if actual entry/fill price is more than 0.10% above VWAP at fill.
-
-Signal confirmation is the selected immediate-cross mode; the document lists no alternative mode.
-The qualifying bottom and both recovery tests must precede the tick crossing.
-
-### Parameters and constraints
-
-The document fixes these values:
-
-| Value | Source value | Constraint |
-|---|---:|---|
-| Allowed window | 09:30–11:30 ET | Endpoint inclusion missing |
-| Priority window | 09:30–10:30 ET | Priority behavior missing |
-| MAX_DIP | $2.00 | Dip must never exceed; equality allowed |
-| Hammer wick/body | 2 × | Inclusive |
-| Hammer close zone | Top 40% of range | Zero-range treatment missing |
-| Base length | 3 candles | Consecutive completed M1 |
-| Base combined range | 0.15% of price | Denominator missing; inclusive |
-| EMA periods | 9 and 20 | Seed convention missing |
-| EMA comparison lag | 3 completed candles | `k` versus `k-3` |
-| Maximum fill extension | 0.10% above VWAP | Strict `>` rejection |
-
-### State, rearming, and timing
-
-- Required per-session state: cycle start, first loss of VWAP, cycle-low time/price/VWAP, maximum
-  dip, initial hierarchy qualification, bottom-pattern qualification, recovery qualification,
-  previous trade price, and consumed/rejected state.
-- The source does not say when an invalid or completed cycle rearms, whether multiple entries are
-  allowed per day, or whether a recovery above VWAP without entry resets the cycle.
-- Expected signal time is the first qualifying intrabar trade-price cross. Engine-owned arbitration,
-  sizing, protection, submission, and fills follow.
-
-## B — rules inferred from examples or explanations
-
-- “Narrowing the spread” most naturally means `(EMA20 - EMA9)[k] < (EMA20 - EMA9)[k-3]` while
-  EMA9 remains below EMA20, but the document defines only “gap” and does not state absolute/signed
-  handling or whether a crossover is permitted.
-- “Completely engulfing” commonly means current open at/below prior close and current close at/above
-  prior open, but strict versus inclusive boundaries are unstated.
-- An immediate cross requires a preceding trade at/below contemporaneous VWAP, not merely a current
-  trade above VWAP.
-
-These inferences are not approved implementation rules.
-
-## C — missing or conflicting information
-
-- Whether “price drops below” is determined by trade, candle low, or completed close.
-- Exact EMA seed/initialization and whether premarket closes participate.
-- What “below VWAP” means for a bottoming candle (high, body, close, or pattern point).
-- Numerical definition of “price moves back up toward VWAP.”
-- Signed versus absolute EMA spread and behavior after EMA9 crosses EMA20.
-- Base-range “price” denominator.
-- Strict/inclusive engulfing boundaries and zero-body/zero-range candle handling.
-- Why the five required reference levels are needed and what conditions use them.
-- Entry-window endpoint inclusion and what “highest priority” changes in a single-strategy decision.
-- Cycle reset/rearm and daily attempt limits.
-- VWAP price basis and whether the intrabar VWAP changes with the triggering tick.
-- Whether `SPCX` is intentional.
-- A fill-dependent extension rejection cannot determine whether to emit the pre-fill signal.
-
-## D — implementation assumptions requiring operator approval
-
-None have been applied. All choices in section C, plus the required tick/fill lifecycle contract,
-need operator approval.
-
-## E — rules unsupported by the existing system
-
-- Immediate intrabar first-cross evaluation under the closed-bar-only `StrategySpec`/scheduler.
-- Historical per-bar VWAP at the cycle low is not supplied as a series by the scalar indicator map;
-  exact strategy-local calculation needs an approved price/volume formula.
-- Actual fill/VWAP-at-fill extension validation has no post-fill strategy callback.
-- “Priority window” has no strategy arbitration meaning defined by the source or platform.
-- Required-but-unused reference levels cannot be invented as filters.
-
-## Known implementation limitations
-
-Replacing the trade-price crossing with a completed close above VWAP would be a different strategy
-and is prohibited. The unresolved subjective recovery rule also prevents a faithful deterministic
-test oracle. This strategy is not ready for backtesting.
-
-## Traceability matrix
-
-| Original rule or condition | Python implementation location | Verification test |
+| Rule | Python | Verification |
 |---|---|---|
-| Time and universe restrictions | Blocked; none | Pending endpoint, priority, symbol tests |
-| Initial price/EMA/VWAP hierarchy | Blocked by event-definition ambiguity | Pending strict hierarchy tests |
-| Cycle dip and $2 maximum | Blocked by cycle/VWAP definition | Pending equality, exceed-once, persistent rejection tests |
-| Hammer/wick pattern | Blocked by below-VWAP/zero-range details | Pending shape and boundary tests |
-| Three-candle base | Blocked by denominator definition | Pending adjacency/range boundary tests |
-| Bullish engulfing | Blocked by boundary definition | Pending color and engulfing equality tests |
-| Price recovers toward VWAP | Blocked as subjective/unnumbered | Pending approved deterministic rule tests |
-| EMA9 slope and narrowing spread | Blocked by spread/EMA details | Pending `k`/`k-3`, equality, crossover tests |
-| Immediate VWAP cross | Blocked by tick scheduling | Pending first-cross/replay/no-look-forward tests |
-| Fill no more than 0.10% above VWAP | Blocked by post-fill lifecycle | Pending equality and overextension tests |
-| Reference levels | Blocked because no predicate is supplied | Pending only after rule is supplied |
-| Cycle rearming | Blocked because reset rules are absent | Pending same-cycle/session reset tests |
+| Bearish hierarchy and EMA recovery | `strategies/buy/vwap_bounce_break_michelle.py` | VWAP cycle positive/negative tests |
+| Hammer/base/engulfing | `_hammer`, `_base`, `_engulfing` | `test_vwap_patterns_and_historical_second_green_with_red_between` |
+| $2 dip and 30-minute expiry | `_scan_cycle` | `test_vwap_cycle_invalidates_deep_dip_expiry_extension_and_consumption` |
+| First then second green; intervening red | `_scan_cycle` and live evaluator | second-green focused test |
+| $0.50 extension and cycle consumption | evaluator plus lifecycle submission state | invalidation/consumption focused test |
+| Stable signal and shared attempts | strategy state plus lifecycle | identity and attempt tests |
 
+Known limitation: historical M1 replay cannot reconstruct the second candle's intrabar ordering;
+it uses only the completed bar and submits for the next bar open without favorable look-ahead.

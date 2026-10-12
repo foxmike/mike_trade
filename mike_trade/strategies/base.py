@@ -359,6 +359,7 @@ class TriggerKind(Enum):
 
     EDGE_ON_CLOSED_BAR = "EDGE_ON_CLOSED_BAR"
     LEVEL_ON_CLOSED_BAR = "LEVEL_ON_CLOSED_BAR"
+    EDGE_ON_TRADE = "EDGE_ON_TRADE"
 
 
 @dataclass(frozen=True, slots=True)
@@ -462,7 +463,7 @@ class StrategySpec:
                 raise ValueError(f"{name} must be bool")
         if not isinstance(self.trigger_kind, TriggerKind):
             raise ValueError("trigger_kind must be TriggerKind")
-        if not self.completed_bars_only:
+        if not self.completed_bars_only and self.trigger_kind is not TriggerKind.EDGE_ON_TRADE:
             raise ValueError(f"{self.trigger_kind.value} requires completed_bars_only=True")
         if not isinstance(self.parameter_schema, ParameterSchema):
             raise ValueError("parameter_schema must be ParameterSchema")

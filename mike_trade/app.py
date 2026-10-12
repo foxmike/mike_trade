@@ -15,7 +15,7 @@ import logging
 import os
 from collections import OrderedDict
 from collections.abc import Callable, Mapping, Sequence
-from dataclasses import dataclass, field
+from dataclasses import dataclass, field, replace
 from datetime import UTC, datetime, time, timedelta
 from decimal import ROUND_DOWN, Decimal
 from pathlib import Path
@@ -130,7 +130,7 @@ from mike_trade.runtime import (
 )
 from mike_trade.scheduling import calendar as exchange_calendar
 from mike_trade.scheduling.scheduler import StrategyScheduler
-from mike_trade.scheduling.triggers import CANDLE_CLOSED
+from mike_trade.scheduling.triggers import CANDLE_CLOSED, MARKET_DATA_ARRIVAL
 from mike_trade.signals.decisions import (
     EntryCandidate,
     ExitCandidate,
@@ -138,6 +138,17 @@ from mike_trade.signals.decisions import (
     arbitrate_exit_decisions,
 )
 from mike_trade.strategies.base import StrategyEvaluation
+from mike_trade.strategies.michelle_common import (
+    MICHELLE_BUY_IDS,
+    current_session_vwap,
+    decode_attempts,
+    encode_attempts,
+    entry_attempt_allowed,
+    normalized_attempts,
+    regular_session_bars,
+    safe_decimal,
+    signal_facts,
+)
 from mike_trade.strategies.buy.accumulation_distribution_breakout import (
     AccumulationDistributionBreakoutBuy,
 )
@@ -167,11 +178,13 @@ from mike_trade.strategies.buy.engulfing_candle_reversal import EngulfingCandleR
 from mike_trade.strategies.buy.gap_and_go import GapAndGoBuy
 from mike_trade.strategies.buy.gap_fill import GapFillBuy
 from mike_trade.strategies.buy.gap_reversal import GapReversalBuy
+from mike_trade.strategies.buy.five_minute_orb_michelle import FiveMinuteOrbMichelleBuy
 from mike_trade.strategies.buy.hammer_reversal import HammerReversalBuy
 from mike_trade.strategies.buy.high_of_day_momentum import HighOfDayMomentumBuy
 from mike_trade.strategies.buy.higher_high_higher_low import HigherHighHigherLowBuy
 from mike_trade.strategies.buy.holy_grail_pullback import HolyGrailPullbackBuy
 from mike_trade.strategies.buy.hull_moving_average import HullMovingAverageBuy
+from mike_trade.strategies.buy.vwap_bounce_break_michelle import VwapBounceBreakMichelleBuy
 from mike_trade.strategies.buy.ichimoku_cloud_breakout import IchimokuCloudBreakoutBuy
 from mike_trade.strategies.buy.inside_bar_breakout import InsideBarBreakoutBuy
 from mike_trade.strategies.buy.intraday_consolidation_breakout import (
@@ -330,6 +343,8 @@ from mike_trade.strategies.sell.supertrend_bearish_flip import SupertrendBearish
 from mike_trade.strategies.sell.trendline_breakdown import TrendlineBreakdownSell
 from mike_trade.strategies.sell.ultimate_oscillator_reversal import UltimateOscillatorReversalSell
 from mike_trade.strategies.sell.vwap_breakdown import VwapBreakdownSell
+from mike_trade.strategies.sell.five_minute_orb_michelle import FiveMinuteOrbMichelleSell
+from mike_trade.strategies.sell.vwap_bounce_break_michelle import VwapBounceBreakMichelleSell
 from mike_trade.strategies.sell.williams_r_reversal import WilliamsRReversalSell
 from mike_trade.strategies.short.short_adx_bearish_trend_confirmation import (
     ShortAdxBearishTrendConfirmation,
@@ -823,6 +838,14 @@ class ProductionMarketData:
     def _timeframes_for(self, symbol: str) -> tuple[CandleTimeframe, ...]:
         return (CandleTimeframe.M1, *self._session_frames.get(symbol.upper(), ()))
 
+    def _with_spy_closes(self, context: MarketContext) -> MarketContext:
+        """Attach the optional Michelle SPY confirmation from the shared M1 store."""
+        spy = self.candles.get_completed_candles("SPY", CandleTimeframe.M1, 2)
+        indicators = dict(context.indicators)
+        indicators["spy_close"] = spy[-1].close if len(spy) >= 1 else None
+        indicators["spy_close_prev"] = spy[-2].close if len(spy) >= 2 else None
+        return replace(context, indicators=indicators)
+
     def on_candle(self, candle: Candle) -> None:
         self.session_references.add_bar(candle)
         if (
@@ -852,10 +875,12 @@ class ProductionMarketData:
         result: dict[str, MarketContext] = {}
         for symbol in tuple(dict.fromkeys(item.upper() for item in symbols)):
             self.acquisitions[symbol] = self.acquisitions.get(symbol, 0) + 1
-            result[symbol] = self.contexts.build(
-                symbol,
-                timeframes=self._timeframes_for(symbol),
-                indicators=("vwap", "vwap_prev"),
+            result[symbol] = self._with_spy_closes(
+                self.contexts.build(
+                    symbol,
+                    timeframes=self._timeframes_for(symbol),
+                    indicators=("vwap", "vwap_prev"),
+                )
             )
         return result
 
@@ -927,6 +952,7 @@ class AlpacaProductionMarketData(ProductionMarketData):
         self._pending_vwap: OrderedDict[
             tuple[str, datetime, str], Decimal | None
         ] = OrderedDict()
+        self._developing_trade_bars: dict[str, Candle] = {}
 
     def _start_bar_writer(self) -> None:
         if self._bar_persistence is None:
@@ -1252,7 +1278,7 @@ class AlpacaProductionMarketData(ProductionMarketData):
         raise TimeoutError("Alpaca market-data subscription acknowledgement timed out")
 
     async def _consume(self) -> None:
-        from mike_trade.market_data.alpaca_stream import StreamBar, SubscriptionUpdate
+        from mike_trade.market_data.alpaca_stream import StreamBar, StreamTrade, SubscriptionUpdate
 
         assert self._stream is not None
         async for event in cast(Any, self._stream).events():
@@ -1270,6 +1296,80 @@ class AlpacaProductionMarketData(ProductionMarketData):
             self.cache.store_event(event, source="stream")
             if isinstance(event, StreamBar):
                 await self._on_bar(event)
+            elif isinstance(event, StreamTrade):
+                await self._on_trade(event)
+
+    async def _on_trade(self, event: object) -> None:
+        """Evaluate EDGE_ON_TRADE strategies without changing closed-bar strategies."""
+        item = cast(Any, event)
+        symbol = item.symbol.upper()
+        if self._trading_symbols and symbol not in self._trading_symbols:
+            return
+        local = item.provider_source_ts.astimezone(exchange_calendar.NEW_YORK)
+        minute_local = local.replace(second=0, microsecond=0)
+        start = minute_local.astimezone(UTC)
+        end = start + timedelta(minutes=1)
+        prior = self._developing_trade_bars.get(symbol)
+        if prior is not None and start < prior.start:
+            return
+        if prior is None or prior.start != start:
+            developing = Candle(
+                symbol=symbol,
+                timeframe=CandleTimeframe.M1,
+                start=start,
+                end=end,
+                open=item.price,
+                high=item.price,
+                low=item.price,
+                close=item.price,
+                volume=item.size,
+                feed_id=item.feed_id,
+                consolidated=item.feed_id == "sip",
+                origin=CandleOrigin.STREAM_TRADE,
+                price_basis=PriceBasis.RAW,
+                status=CandleStatus.DEVELOPING,
+                trade_count=1,
+            )
+        else:
+            developing = replace(
+                prior,
+                high=max(prior.high, item.price),
+                low=min(prior.low, item.price),
+                close=item.price,
+                volume=prior.volume + item.size,
+                trade_count=(prior.trade_count or 0) + 1,
+            )
+        self._developing_trade_bars[symbol] = developing
+        if self._scheduler is None or self._lifecycle is None:
+            return
+        base = self.contexts.build(
+            symbol,
+            timeframes=self._timeframes_for(symbol),
+            indicators=("vwap", "vwap_prev"),
+        )
+        context = self._with_spy_closes(
+            replace(
+                base,
+                completed_bars_only=False,
+                developing_candles={CandleTimeframe.M1: developing},
+            )
+        )
+        due = cast(Any, self._scheduler).on_market_data_arrival(
+            symbol, context.version, item.provider_source_ts
+        )
+        if not due:
+            return
+        actions = await cast(Any, self._lifecycle).process({symbol: context})
+        self._evaluations += 1
+        self._logger.info(
+            "Event-driven strategy evaluation completed",
+            extra={
+                "symbol": symbol,
+                "trade_time": item.provider_source_ts,
+                "evaluation_count": self._evaluations,
+                "actions": actions,
+            },
+        )
 
     async def _on_bar(self, event: object) -> None:
         item = cast(Any, event)
@@ -1322,10 +1422,12 @@ class AlpacaProductionMarketData(ProductionMarketData):
         self._schedule_daily_refresh(item.symbol)
         if not due:
             return
-        context = self.contexts.build(
-            item.symbol,
-            timeframes=self._timeframes_for(item.symbol),
-            indicators=("vwap", "vwap_prev"),
+        context = self._with_spy_closes(
+            self.contexts.build(
+                item.symbol,
+                timeframes=self._timeframes_for(item.symbol),
+                indicators=("vwap", "vwap_prev"),
+            )
         )
         actions = await cast(Any, self._lifecycle).process({item.symbol: context})
         self._evaluations += 1
@@ -1870,6 +1972,7 @@ class VwapReferenceLifecycle:
                     self._bind(registry, item.symbol, StrategyRole.COVER, item.covers),
                 )
         self._in_flight = 0
+        self._entry_facts: dict[tuple[str, str], dict[str, object]] = {}
 
     @staticmethod
     def _bind(
@@ -1978,15 +2081,171 @@ class VwapReferenceLifecycle:
             return self.protection_policy
         return protection_policy_for_entry(spec, entry_price)
 
+    def _michelle_entry_facts(
+        self,
+        scenario: _ShadowScenario,
+        collections: _Collections,
+        cycle_id: str,
+        symbol: str,
+    ) -> dict[str, object] | None:
+        key = (scenario.account.scope.scope_id, cycle_id)
+        facts = self._entry_facts.get(key)
+        if facts is not None:
+            return facts
+        for binding in collections.buys:
+            if binding.strategy_id not in MICHELLE_BUY_IDS:
+                continue
+            state = self._state(scenario, binding, symbol)
+            if state.get("position_cycle_id") == cycle_id:
+                facts = {"entry_strategy_id": binding.strategy_id, **signal_facts(state)}
+                self._entry_facts[key] = facts
+                return facts
+        return None
+
+    def _michelle_policy(
+        self,
+        scenario: _ShadowScenario,
+        context: MarketContext,
+        cycle_id: str,
+    ) -> ProtectionPolicy | None:
+        collections = self.collections(context.symbol)
+        facts = self._michelle_entry_facts(
+            scenario, collections, cycle_id, context.symbol
+        )
+        if facts is None:
+            return None
+        sell_ids = {binding.strategy_id for binding in collections.sells}
+        strategy_id = facts.get("entry_strategy_id")
+        reference: Decimal | None = None
+        if (
+            strategy_id == "five_minute_orb_michelle_buy"
+            and "five_minute_orb_michelle_sell" in sell_ids
+        ):
+            reference = safe_decimal(facts.get("entry_orb_high"))
+        elif (
+            strategy_id == "vwap_bounce_break_michelle_buy"
+            and "vwap_bounce_break_michelle_sell" in sell_ids
+        ):
+            if "position_vwap_at_entry" not in facts:
+                bars = regular_session_bars(
+                    context.candles.get(CandleTimeframe.M1, ()), context.session_id
+                )
+                fill_vwap = current_session_vwap(context, bars)
+                if fill_vwap is not None:
+                    facts["position_vwap_at_entry"] = str(fill_vwap)
+            reference = safe_decimal(
+                facts.get("position_vwap_at_entry") or facts.get("entry_vwap")
+            )
+        if reference is None or reference <= Decimal("0.25"):
+            return None
+        return ProtectionPolicy(
+            ProtectionKind.FIXED_THEN_TRAILING_STOP,
+            trail_percent=Decimal("0.5"),
+            initial_stop_price=reference - Decimal("0.25"),
+            activation_reference=reference + Decimal("0.25"),
+            require_broker_held=True,
+        )
+
     async def _arm(
-        self, scenario: _ShadowScenario, cycle_id: str, symbol: str, at: datetime
+        self,
+        scenario: _ShadowScenario,
+        cycle_id: str,
+        symbol: str,
+        context: MarketContext,
     ) -> None:
         position = scenario.account.state.positions.get(symbol)
         if position is None:
             return
-        await scenario.stops.arm(
-            cycle_id, symbol, self._policy_for(symbol, position.avg_cost), at=at
+        facts = self._michelle_entry_facts(
+            scenario, self.collections(symbol), cycle_id, symbol
         )
+        if facts is not None:
+            facts.setdefault("position_fill_price", str(position.avg_cost))
+            facts.setdefault("position_fill_time", position.opened_at.isoformat())
+            facts["position_cycle_id"] = cycle_id
+        policy = self._michelle_policy(scenario, context, cycle_id)
+        if facts is not None:
+            entry_strategy_id = facts.get("entry_strategy_id")
+            for binding in self.collections(symbol).buys:
+                if binding.strategy_id == entry_strategy_id:
+                    self._save_state(scenario, binding, symbol, facts)
+                    break
+        await scenario.stops.arm(
+            cycle_id,
+            symbol,
+            policy or self._policy_for(symbol, position.avg_cost),
+            at=context.as_of,
+        )
+
+    def _shared_attempts(
+        self, scenario: _ShadowScenario, collections: _Collections, symbol: str
+    ) -> tuple[datetime, ...]:
+        values: set[datetime] = set()
+        for binding in collections.buys:
+            if binding.strategy_id in MICHELLE_BUY_IDS:
+                values.update(
+                    decode_attempts(
+                        self._state(scenario, binding, symbol).get("attempt_times")
+                    )
+                )
+        return tuple(sorted(values))
+
+    def _record_michelle_attempt(
+        self,
+        scenario: _ShadowScenario,
+        collections: _Collections,
+        symbol: str,
+        at: datetime,
+    ) -> None:
+        history = (*normalized_attempts(self._shared_attempts(scenario, collections, symbol), at), at)
+        encoded = encode_attempts(history)
+        for binding in collections.buys:
+            if binding.strategy_id in MICHELLE_BUY_IDS:
+                self._save_state(
+                    scenario, binding, symbol, {"attempt_times": encoded}
+                )
+
+    def _inject_michelle_position_state(
+        self,
+        scenario: _ShadowScenario,
+        collections: _Collections,
+        binding: _Binding,
+        context: MarketContext,
+        position: Any,
+        state: dict[str, object],
+    ) -> None:
+        if binding.strategy_id not in {
+            "five_minute_orb_michelle_sell",
+            "vwap_bounce_break_michelle_sell",
+        }:
+            return
+        facts = self._michelle_entry_facts(
+            scenario, collections, position.cycle_id, context.symbol
+        )
+        if facts is None:
+            return
+        state.update(
+            {
+                "position_cycle_id": position.cycle_id,
+                "position_fill_price": str(position.avg_cost),
+                "position_fill_time": position.opened_at.isoformat(),
+            }
+        )
+        if binding.strategy_id == "five_minute_orb_michelle_sell":
+            if "entry_orb_high" in facts:
+                state["position_orb_high"] = facts["entry_orb_high"]
+        elif "position_vwap_at_entry" in facts:
+            state["position_vwap_at_entry"] = facts["position_vwap_at_entry"]
+        stop = scenario.stops.state(position.cycle_id)
+        if stop is not None:
+            state["highest_trade_price"] = str(stop.high_water_mark)
+            state["active_stop_price"] = str(stop.stop_price)
+            initial = stop.policy.initial_stop_price
+            state["active_stop_mode"] = (
+                "TRAILING"
+                if initial is not None and stop.stop_price > initial
+                else "FIXED"
+            )
 
     def _entry_permitted(self, direction: PositionDirection) -> bool:
         """Runtime gate (and, when enabled, market-state policy) for one entry direction."""
@@ -2024,7 +2283,9 @@ class VwapReferenceLifecycle:
             if fill.is_fill:
                 actions.append(f"FILL:{order.side.value}:{fill.quantity}")
                 if order.side.is_entry:  # BUY or SELL_SHORT: protect the new position
-                    await self._arm(scenario, stored.cycle_id, context.symbol, context.as_of)
+                    await self._arm(
+                        scenario, stored.cycle_id, context.symbol, context
+                    )
 
         position = account.state.positions.get(context.symbol)
         if position is not None and quote is not None:
@@ -2065,9 +2326,15 @@ class VwapReferenceLifecycle:
             exits: dict[str, _Binding] = {}
             for binding in exit_bindings:
                 state = self._state(scenario, binding, context.symbol)
+                self._inject_michelle_position_state(
+                    scenario, collections, binding, context, position, state
+                )
                 evaluation = binding.strategy.evaluate(context, binding.parameters, state)
                 self._save_state(scenario, binding, context.symbol, evaluation.state_updates)
-                if evaluation.is_signal:
+                if evaluation.is_signal and binding.strategy_id not in {
+                    "five_minute_orb_michelle_sell",
+                    "vwap_bounce_break_michelle_sell",
+                }:
                     exits[evaluation.signal_id or ""] = binding
             if exits:
                 domain_position = Position(
@@ -2159,6 +2426,14 @@ class VwapReferenceLifecycle:
             return actions
         binding, evaluation = entries[arbitration.selected.signal_id]
         short = binding.role == "short"
+        if (
+            binding.strategy_id in MICHELLE_BUY_IDS
+            and not entry_attempt_allowed(
+                self._shared_attempts(scenario, collections, context.symbol),
+                context.as_of,
+            )
+        ):
+            return actions
         local_day = context.as_of.astimezone(exchange_calendar.NEW_YORK).date()
         session = exchange_calendar.session_for(local_day)
         if context.as_of >= exchange_calendar.entry_cutoff(session, self.cutoff_minutes):
@@ -2199,6 +2474,22 @@ class VwapReferenceLifecycle:
         decision = await scenario.coordinator.authorize(command)
         if not decision.authorized:
             return actions
+        if binding.strategy_id in MICHELLE_BUY_IDS:
+            self._record_michelle_attempt(
+                scenario, collections, context.symbol, context.as_of
+            )
+            entry_state = self._state(scenario, binding, context.symbol)
+            entry_state["position_cycle_id"] = cycle_id
+            if binding.strategy_id == "vwap_bounce_break_michelle_buy":
+                entry_state["consumed_after"] = context.as_of.isoformat()
+            self._save_state(scenario, binding, context.symbol, entry_state)
+            self._entry_facts[
+                (scenario.account.scope.scope_id, cycle_id)
+            ] = {
+                "entry_strategy_id": binding.strategy_id,
+                **signal_facts(entry_state),
+                "position_cycle_id": cycle_id,
+            }
         intent = OrderIntent(
             intent_id=f"intent-{evaluation.signal_id}", client_order_id=client_id,
             account_scope_id=account.scope.scope_id, cycle_id=cycle_id,
@@ -2228,7 +2519,7 @@ class VwapReferenceLifecycle:
             )
             if fill.is_fill:
                 actions.append(f"FILL:{intent.side.value}:{fill.quantity}")
-                await self._arm(scenario, cycle_id, context.symbol, context.as_of)
+                await self._arm(scenario, cycle_id, context.symbol, context)
         if decision.reservation is not None:
             # The shadow account now durably owns both the filled commitment and any
             # open-order remainder; the coordinator's short-lived authorization hold
@@ -2932,6 +3223,8 @@ def build_runtime(
     for strategy_cls in (
         VwapBounceBuy, MomentumBreakoutBuy, OpeningRangeBreakoutBuy,
         VwapBreakdownSell, MomentumReversalSell, RsiReversalSell,
+        FiveMinuteOrbMichelleBuy, VwapBounceBreakMichelleBuy,
+        FiveMinuteOrbMichelleSell, VwapBounceBreakMichelleSell,
         AroonTrendBuy,
         CciZeroLineCrossoverBuy,
         DmiCrossoverBuy,
@@ -3146,9 +3439,16 @@ def build_runtime(
                 + [(a.plugin, StrategyRole.COVER) for a in item.covers]
             )
             for strategy_id, side in plan:
+                triggers = [CANDLE_CLOSED(CandleTimeframe.M1)]
+                if strategy_id in {
+                    *MICHELLE_BUY_IDS,
+                    "five_minute_orb_michelle_sell",
+                    "vwap_bounce_break_michelle_sell",
+                }:
+                    triggers.append(MARKET_DATA_ARRIVAL)
                 scheduler.register(
                     symbol=symbol, strategy_id=strategy_id, side=side,
-                    triggers=(CANDLE_CLOSED(CandleTimeframe.M1),),
+                    triggers=tuple(triggers),
                 )
 
     scopes = _scopes(settings)

@@ -78,6 +78,15 @@ from mike_trade.signals.decisions import (
 )
 from mike_trade.strategies.base import StrategyEvaluation
 from mike_trade.strategies.indicators.core import rsi as calculate_rsi
+from mike_trade.strategies.michelle_common import (
+    MICHELLE_BUY_IDS,
+    decode_attempts,
+    encode_attempts,
+    entry_attempt_allowed,
+    normalized_attempts,
+    safe_decimal,
+    signal_facts,
+)
 from mike_trade.strategies.registry import StrategyRegistry
 from mike_trade.strategies.sell.base import ExitSource
 
@@ -993,10 +1002,41 @@ class BacktestRunner:
             order = await self.execution.get_order(order_id)
             return order is not None and order.status not in TERMINAL_ORDER_STATUSES
 
+        def michelle_policy(symbol: str) -> tuple[Mapping[str, Any], ProtectionPolicy] | None:
+            cycle = open_cycles.get(symbol)
+            plan = plans.get(symbol)
+            if cycle is None or plan is None:
+                return None
+            sell_ids = {cls.spec.strategy_id for cls in plan.sells}
+            entry_strategy = cycle.get("entry_strategy")
+            reference: Decimal | None = None
+            if (
+                entry_strategy == "five_minute_orb_michelle_buy"
+                and "five_minute_orb_michelle_sell" in sell_ids
+            ):
+                reference = safe_decimal(cycle.get("entry_orb_high"))
+            elif (
+                entry_strategy == "vwap_bounce_break_michelle_buy"
+                and "vwap_bounce_break_michelle_sell" in sell_ids
+            ):
+                reference = safe_decimal(cycle.get("position_vwap_at_entry"))
+            if reference is None or reference <= Decimal("0.25"):
+                return None
+            spec: Mapping[str, Any] = {"type": "fixed_then_trailing"}
+            return spec, ProtectionPolicy(
+                ProtectionKind.FIXED_THEN_TRAILING_STOP,
+                trail_percent=Decimal("0.5"),
+                initial_stop_price=reference - Decimal("0.25"),
+                activation_reference=reference + Decimal("0.25"),
+                require_broker_held=True,
+            )
+
         async def arm_protection(symbol: str, reference: Decimal) -> None:
             """Cover the held quantity with the configured stop (post-fill, GTC)."""
             nonlocal protection_count
-            if stop_spec is None or quantities[symbol] <= ZERO:
+            resolved = michelle_policy(symbol)
+            active_spec = resolved[0] if resolved is not None else stop_spec
+            if active_spec is None or quantities[symbol] <= ZERO:
                 return
             cycle_id = str(open_cycles[symbol]["cycle_id"])
             current = protections.get(symbol)
@@ -1009,7 +1049,11 @@ class BacktestRunner:
                     )
                 return
             entry_reference = current.entry_reference if current is not None else reference
-            policy = protection_policy_for_entry(stop_spec, entry_reference)
+            policy = (
+                resolved[1]
+                if resolved is not None
+                else protection_policy_for_entry(active_spec, entry_reference)
+            )
             direction = directions.get(symbol, PositionDirection.LONG)
             long = direction is PositionDirection.LONG
             floor_stop = current.current_stop if current is not None else ZERO
@@ -1036,7 +1080,10 @@ class BacktestRunner:
                 )
                 stop_now = ZERO
             else:
-                if policy.kind is ProtectionKind.FIXED_STOP:
+                if policy.kind is ProtectionKind.FIXED_THEN_TRAILING_STOP:
+                    assert policy.initial_stop_price is not None
+                    raw_stop = policy.initial_stop_price
+                elif policy.kind is ProtectionKind.FIXED_STOP:
                     offset = (
                         policy.stop_offset_amount
                         if policy.stop_offset_amount is not None
@@ -1079,7 +1126,7 @@ class BacktestRunner:
             order_meta[order.broker_order_id] = {
                 "purpose": OrderPurpose.PROTECTIVE_STOP.value,
                 "strategy": None,
-                "protection_mode": str(spec_type(stop_spec)),
+                "protection_mode": str(spec_type(active_spec)),
             }
             recorded_stop = stop_now
             if policy.kind is ProtectionKind.BROKER_TRAILING_STOP:
@@ -1087,17 +1134,17 @@ class BacktestRunner:
                 if native_state is not None:
                     recorded_stop = native_state.stop_price
             protections[symbol] = _Protection(
-                order.broker_order_id, stop_spec, policy, entry_reference, recorded_stop, stepped,
+                order.broker_order_id, active_spec, policy, entry_reference, recorded_stop, stepped,
                 direction,
             )
-            open_cycles[symbol]["protection_mode"] = str(spec_type(stop_spec))
+            open_cycles[symbol]["protection_mode"] = str(spec_type(active_spec))
             if recorded_stop > ZERO:
                 open_cycles[symbol].setdefault("initial_stop_price", recorded_stop)
                 open_cycles[symbol]["final_stop_price"] = recorded_stop
             protection_events.append({
                 "cycle_id": cycle_id, "symbol": symbol,
                 "event_type": "INITIAL_STOP_ESTABLISHED", "time": self.clock.now(),
-                "protection_mode": str(spec_type(stop_spec)),
+                "protection_mode": str(spec_type(active_spec)),
                 "order_id": order.broker_order_id,
                 "stop_price": None if recorded_stop == ZERO else recorded_stop,
                 "quantity": quantities[symbol],
@@ -1108,17 +1155,62 @@ class BacktestRunner:
 
             A long's stop only rises with new highs; a short's stop only falls with new lows.
             """
+            cycle = open_cycles.get(symbol)
+            if cycle is not None:
+                previous_high = safe_decimal(cycle.get("highest_trade_price")) or high
+                cycle["highest_trade_price"] = str(max(previous_high, high))
             protection = protections.get(symbol)
-            if (
-                protection is None
-                or protection.stepped is None
-                or protection.policy.kind is not ProtectionKind.STEPPED_TRAILING_STOP
-                or not await order_is_open(protection.order_id)
-            ):
+            if protection is None or not await order_is_open(protection.order_id):
                 return
             policy = protection.policy
             long = protection.direction is PositionDirection.LONG
             favorable = high if long else low
+            if policy.kind is ProtectionKind.FIXED_THEN_TRAILING_STOP:
+                assert policy.trail_percent is not None
+                assert policy.activation_reference is not None
+                distance = policy.trail_percent / Decimal(100)
+                raw_candidate = (
+                    favorable * (Decimal(1) - distance)
+                    if long
+                    else favorable * (Decimal(1) + distance)
+                )
+                activated = (
+                    raw_candidate > policy.activation_reference
+                    if long
+                    else raw_candidate < policy.activation_reference
+                )
+                candidate = (
+                    _floor_stop(raw_candidate) if long else _ceil_stop(raw_candidate)
+                )
+                if activated and (
+                    candidate > protection.current_stop
+                    if long
+                    else candidate < protection.current_stop
+                ):
+                    previous = protection.current_stop
+                    await self.execution.replace_order(
+                        protection.order_id, stop_price=candidate
+                    )
+                    protection.current_stop = candidate
+                    cycle_id = str(open_cycles[symbol]["cycle_id"])
+                    open_cycles[symbol]["final_stop_price"] = candidate
+                    protection_events.append({
+                        "cycle_id": cycle_id,
+                        "symbol": symbol,
+                        "event_type": "STOP_MOVED",
+                        "time": self.clock.now(),
+                        "protection_mode": "FIXED_THEN_TRAILING",
+                        "order_id": protection.order_id,
+                        "previous_stop_price": previous,
+                        "new_stop_price": candidate,
+                        "stop_price": candidate,
+                    })
+                return
+            if (
+                protection.stepped is None
+                or policy.kind is not ProtectionKind.STEPPED_TRAILING_STOP
+            ):
+                return
             activation = policy.activation_gain or ZERO
             if (
                 favorable < protection.entry_reference + activation
@@ -1189,7 +1281,29 @@ class BacktestRunner:
                 "fixed": "FIXED",
                 "native_trailing": "TRAILING_NATIVE",
                 "stepped_trailing": "TRAILING_STEPPED",
+                "fixed_then_trailing": "FIXED_THEN_TRAILING",
             }[spec["type"]]
+
+        def shared_michelle_attempts(symbol: str) -> tuple[datetime, ...]:
+            attempts: set[datetime] = set()
+            for cls in plans[symbol].buys:
+                if cls.spec.strategy_id in MICHELLE_BUY_IDS:
+                    attempts.update(
+                        decode_attempts(
+                            state[(symbol, cls.spec.strategy_id)].get("attempt_times")
+                        )
+                    )
+            return tuple(sorted(attempts))
+
+        def record_michelle_attempt(symbol: str, at: datetime) -> None:
+            history = (
+                *normalized_attempts(shared_michelle_attempts(symbol), at),
+                at,
+            )
+            encoded = encode_attempts(history)
+            for cls in plans[symbol].buys:
+                if cls.spec.strategy_id in MICHELLE_BUY_IDS:
+                    state[(symbol, cls.spec.strategy_id)]["attempt_times"] = encoded
 
         async def submit(
             evaluation: StrategyEvaluation, context: MarketContext, symbol: str
@@ -1221,6 +1335,22 @@ class BacktestRunner:
                         "side": intent.side.value, "reason": refusal,
                     })
                     return
+                if (
+                    evaluation.strategy_id in MICHELLE_BUY_IDS
+                    and not entry_attempt_allowed(
+                        shared_michelle_attempts(symbol), context.as_of
+                    )
+                ):
+                    decisions.append({
+                        "kind": "ENTRY_REFUSED",
+                        "time": context.as_of,
+                        "symbol": symbol,
+                        "signal_id": evaluation.signal_id,
+                        "strategy_id": evaluation.strategy_id,
+                        "side": intent.side.value,
+                        "reason": "MICHELLE_ATTEMPT_LIMIT",
+                    })
+                    return
             if intent.side.is_exit:
                 # Make way for the discretionary exit exactly as the engine does:
                 # the stop is cancelled first and re-armed if the exit never fills.
@@ -1242,7 +1372,17 @@ class BacktestRunner:
                     "intent_id": getattr(intent, "intent_id", None),
                 }
             )
+            if intent.side.is_entry and evaluation.strategy_id in MICHELLE_BUY_IDS:
+                record_michelle_attempt(symbol, context.as_of)
+                entry_state = state[(symbol, evaluation.strategy_id)]
+                if evaluation.strategy_id == "vwap_bounce_break_michelle_buy":
+                    entry_state["consumed_after"] = context.as_of.isoformat()
             order = await self.execution.submit_order(intent)
+            facts = (
+                signal_facts(state[(symbol, evaluation.strategy_id)])
+                if evaluation.strategy_id in MICHELLE_BUY_IDS
+                else {}
+            )
             intents[-1]["order_id"] = order.broker_order_id
             order_meta[order.broker_order_id] = {
                 "purpose": intent.purpose.value,
@@ -1251,6 +1391,7 @@ class BacktestRunner:
                 "signal_id": evaluation.signal_id,
                 "signal_time": context.as_of,
                 "intent_id": getattr(intent, "intent_id", None),
+                **facts,
             }
             if intent.side.is_entry:
                 pending_entry[symbol] = order.broker_order_id
@@ -1337,6 +1478,10 @@ class BacktestRunner:
                             "entry_signal_id": meta.get("signal_id"),
                             "entry_signal_timestamp": meta.get("signal_time"),
                             "entry_decision": "SELECTED",
+                            "entry_orb_high": meta.get("entry_orb_high"),
+                            "position_vwap_at_entry": meta.get("entry_vwap"),
+                            "entry_reference_price": meta.get("entry_reference_price"),
+                            "highest_trade_price": str(x.price),
                             "exit_reason": None,
                             "exit_strategy": None,
                             **(
@@ -1591,10 +1736,53 @@ class BacktestRunner:
                     evaluate(cls, record=False)
                 for cls in other_exit_cls:
                     evaluate(cls, record=False)
+                cycle = open_cycles[symbol]
+                protection = protections.get(symbol)
+                for cls in exit_cls:
+                    exit_state = state[(symbol, cls.spec.strategy_id)]
+                    if cls.spec.strategy_id == "five_minute_orb_michelle_sell":
+                        exit_state.update({
+                            "position_cycle_id": str(cycle["cycle_id"]),
+                            "position_fill_price": str(costs[symbol] / quantities[symbol]),
+                            "position_fill_time": cycle["opened_at"].isoformat(),
+                            "position_orb_high": cycle.get("entry_orb_high", ""),
+                            "highest_trade_price": cycle.get("highest_trade_price", ""),
+                        })
+                    elif cls.spec.strategy_id == "vwap_bounce_break_michelle_sell":
+                        exit_state.update({
+                            "position_cycle_id": str(cycle["cycle_id"]),
+                            "position_fill_price": str(costs[symbol] / quantities[symbol]),
+                            "position_fill_time": cycle["opened_at"].isoformat(),
+                            "position_vwap_at_entry": cycle.get(
+                                "position_vwap_at_entry", ""
+                            ),
+                            "highest_trade_price": cycle.get("highest_trade_price", ""),
+                        })
+                    if (
+                        protection is not None
+                        and cls.spec.strategy_id in {
+                            "five_minute_orb_michelle_sell",
+                            "vwap_bounce_break_michelle_sell",
+                        }
+                    ):
+                        exit_state["active_stop_price"] = str(
+                            protection.current_stop
+                        )
+                        initial = protection.policy.initial_stop_price
+                        exit_state["active_stop_mode"] = (
+                            "TRAILING"
+                            if initial is not None
+                            and protection.current_stop > initial
+                            else "FIXED"
+                        )
                 winners = {
                     e.signal_id: (cls, e)
                     for cls in exit_cls
                     if (e := evaluate(cls)) is not None
+                    and cls.spec.strategy_id not in {
+                        "five_minute_orb_michelle_sell",
+                        "vwap_bounce_break_michelle_sell",
+                    }
                 }
                 if winners and self.intent_factory is not None:
                     cycle = open_cycles[symbol]

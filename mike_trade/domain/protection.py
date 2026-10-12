@@ -90,6 +90,7 @@ class ProtectionKind(Enum):
     FIXED_STOP = "FIXED_STOP"
     BROKER_TRAILING_STOP = "BROKER_TRAILING_STOP"
     STEPPED_TRAILING_STOP = "STEPPED_TRAILING_STOP"
+    FIXED_THEN_TRAILING_STOP = "FIXED_THEN_TRAILING_STOP"
 
 
 class ProtectionStatus(Enum):
@@ -112,6 +113,8 @@ class ProtectionPolicy:
     step_size: Decimal | None = None
     activation_gain: Decimal | None = None
     require_broker_held: bool = True
+    initial_stop_price: Decimal | None = None
+    activation_reference: Decimal | None = None
 
     def __post_init__(self) -> None:
         if not isinstance(self.kind, ProtectionKind):
@@ -122,6 +125,8 @@ class ProtectionPolicy:
             "trail_percent",
             "trail_amount",
             "step_size",
+            "initial_stop_price",
+            "activation_reference",
         ):
             object.__setattr__(
                 self, field, _optional_decimal(getattr(self, field), field=field)
@@ -143,20 +148,35 @@ class ProtectionPolicy:
         if self.kind is ProtectionKind.FIXED_STOP:
             if stop_count != 1:
                 raise ValueError("FIXED_STOP requires exactly one stop offset")
-            if trail_count or self.step_size is not None or self.activation_gain is not None:
+            if (
+                trail_count or self.step_size is not None or self.activation_gain is not None
+                or self.initial_stop_price is not None or self.activation_reference is not None
+            ):
                 raise ValueError("FIXED_STOP does not accept trailing or stepped fields")
         elif self.kind is ProtectionKind.BROKER_TRAILING_STOP:
             if trail_count != 1:
                 raise ValueError("BROKER_TRAILING_STOP requires exactly one trail value")
-            if stop_count or self.step_size is not None or self.activation_gain is not None:
+            if (
+                stop_count or self.step_size is not None or self.activation_gain is not None
+                or self.initial_stop_price is not None or self.activation_reference is not None
+            ):
                 raise ValueError("BROKER_TRAILING_STOP accepts only a trail value")
-        else:
+        elif self.kind is ProtectionKind.STEPPED_TRAILING_STOP:
             if trail_count != 1:
                 raise ValueError("STEPPED_TRAILING_STOP requires exactly one trail value")
             if self.step_size is None or self.activation_gain is None:
                 raise ValueError("STEPPED_TRAILING_STOP requires step_size and activation_gain")
-            if stop_count:
+            if stop_count or self.initial_stop_price is not None or self.activation_reference is not None:
                 raise ValueError("STEPPED_TRAILING_STOP does not accept fixed-stop fields")
+        else:
+            if self.trail_percent is None or self.trail_amount is not None:
+                raise ValueError("FIXED_THEN_TRAILING_STOP requires trail_percent")
+            if self.initial_stop_price is None or self.activation_reference is None:
+                raise ValueError(
+                    "FIXED_THEN_TRAILING_STOP requires initial_stop_price and activation_reference"
+                )
+            if stop_count or self.step_size is not None or self.activation_gain is not None:
+                raise ValueError("FIXED_THEN_TRAILING_STOP does not accept offset/step fields")
 
 
 @dataclass(frozen=True, slots=True)
@@ -299,7 +319,10 @@ def start_protection(
     if not isinstance(direction, PositionDirection):
         raise ValueError("cycle direction must be PositionDirection")
 
-    if policy.kind is ProtectionKind.FIXED_STOP:
+    if policy.kind is ProtectionKind.FIXED_THEN_TRAILING_STOP:
+        assert policy.initial_stop_price is not None
+        stop = policy.initial_stop_price
+    elif policy.kind is ProtectionKind.FIXED_STOP:
         stop = _offset_price(
             price,
             percent=policy.stop_offset_percent,
