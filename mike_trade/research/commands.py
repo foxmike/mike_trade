@@ -10,7 +10,7 @@ import json
 import os
 import time
 import traceback
-from collections.abc import Mapping
+from collections.abc import Iterable, Mapping
 from concurrent.futures import FIRST_COMPLETED, ProcessPoolExecutor, wait
 from dataclasses import asdict, dataclass, replace
 from datetime import UTC, datetime, time as dt_time, timedelta
