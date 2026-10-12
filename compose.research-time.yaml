@@ -1,4 +1,5 @@
 # Research-only image override; operational services retain their existing image.
 services:
   mike-trade-research:
+    build: !reset null
     image: mike-trade:research-time-fix-20261011
