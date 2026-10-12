@@ -489,6 +489,19 @@ class SymbolStrategySettings:
             raise ValueError(f"{self.symbol}: at least one BUY strategy is required")
 
 
+def _parse_eod_time(value: str) -> tuple[int, int]:
+    """Validate the configured EOD liquidation time (HH:MM, before the 16:00 close)."""
+    try:
+        parsed = time.fromisoformat(value)
+        if len(value) != 5 or parsed >= time(16, 0) or parsed <= time(9, 30):
+            raise ValueError
+    except (TypeError, ValueError) as exc:
+        raise ValueError(
+            "eod_close_at must be HH:MM strictly between 09:30 and 16:00"
+        ) from exc
+    return parsed.hour, parsed.minute
+
+
 @dataclass(frozen=True, slots=True)
 class AppSettings:
     """Non-secret application composition inputs."""
@@ -517,6 +530,8 @@ class AppSettings:
     heartbeat_interval_seconds: float = 5.0
     backtest_start: datetime = datetime(2024, 1, 2, 14, 30, tzinfo=UTC)
     auto_eod_liquidation: bool = False
+    #: New-York wall-clock time (HH:MM) at which enabled EOD liquidation begins.
+    eod_close_at: str = "15:55"
     #: Per-symbol strategy collections; symbols without an entry run the
     #: production ``vwap_reference`` pair.
     symbol_strategies: tuple[SymbolStrategySettings, ...] = ()
@@ -556,9 +571,11 @@ class AppSettings:
         names = [scenario.name for scenario in self.shadow_scenarios]
         if len(names) != len(set(names)):
             raise ValueError("shadow scenario names must be unique")
-        if self.auto_eod_liquidation:
+        _parse_eod_time(self.eod_close_at)
+        if self.auto_eod_liquidation and self.mode is not ExecutionMode.SHADOW:
             raise ConfigurationError(
-                "automatic EOD liquidation is intentionally opt-in outside vwap_reference",
+                "automatic EOD liquidation is implemented for SHADOW only; PAPER/LIVE have "
+                "no strategy execution lifecycle to hook it into",
                 code="EOD_LIQUIDATION_NOT_CONFIGURED",
             )
         if self.market_data_provider not in {"memory", "alpaca"}:
@@ -1613,6 +1630,7 @@ def load_app_settings(
         market_data_warmup_bars=int(market_data["warmup_bars"]),
         heartbeat_interval_seconds=float(service["engine_heartbeat_interval_seconds"]),
         auto_eod_liquidation=bool(execution["end_of_day_close"]["enabled"]),
+        eod_close_at=str(execution["end_of_day_close"].get("at", "15:55")),
         credential_environment=source,
     )
 
@@ -1940,6 +1958,7 @@ class VwapReferenceLifecycle:
         assignments: Sequence[SymbolStrategySettings] = (),
         registry: StrategyRegistry | None = None,
         stop_specs: Mapping[str, Mapping[str, object]] | None = None,
+        eod_close_at: str | None = None,
     ) -> None:
         self.group = group
         self.clock = clock
@@ -1973,6 +1992,11 @@ class VwapReferenceLifecycle:
                 )
         self._in_flight = 0
         self._entry_facts: dict[tuple[str, str], dict[str, object]] = {}
+        #: (hour, minute) New York time at which EOD liquidation begins; None = disabled.
+        self._eod: tuple[int, int] | None = (
+            None if eod_close_at is None else _parse_eod_time(eod_close_at)
+        )
+        self._context_provider: Callable[[Sequence[str]], Mapping[str, MarketContext]] | None = None
 
     @staticmethod
     def _bind(
@@ -2044,6 +2068,12 @@ class VwapReferenceLifecycle:
         self.group.validate_startup()
         for name, scenario in self.group.scenarios.items():
             for symbol, position in scenario.account.state.positions.items():
+                if self._open_orders(
+                    scenario.account, symbol, OrderSide.SELL, OrderSide.BUY_TO_COVER
+                ):
+                    # A pending discretionary/EOD exit supersedes (cancelled) protection;
+                    # it is finished by the EOD step before any entry is accepted.
+                    continue
                 stop = scenario.stops.state(position.cycle_id)
                 if (
                     stop is None
@@ -2277,6 +2307,10 @@ class VwapReferenceLifecycle:
             stored = account.state.orders[order.broker_order_id]
             if stored.purpose is OrderPurpose.PROTECTIVE_STOP or quote is None:
                 continue
+            if stored.side.is_entry and self._eod_begun(context.as_of):
+                await account.cancel_order(order.broker_order_id, at=context.as_of)
+                actions.append(f"EOD_ENTRY_CANCELED:{order.broker_order_id}")
+                continue
             fill = scenario.fills.apply_fill_to_account(
                 account, order.broker_order_id, context, as_of=context.as_of
             )
@@ -2287,17 +2321,15 @@ class VwapReferenceLifecycle:
                         scenario, stored.cycle_id, context.symbol, context
                     )
 
-        position = account.state.positions.get(context.symbol)
-        if position is not None and quote is not None:
-            stop = scenario.stops.state(position.cycle_id)
-            if stop is not None and stop.status not in {"CANCELED", "TRIGGERED"}:
-                updated = await scenario.stops.evaluate(
-                    position.cycle_id, quote, at=context.as_of,
-                    trade=context.latest_trade,
-                )
-                if updated.status == "TRIGGERED":
-                    actions.append("STOP_EXIT")
-                    return actions
+        if await self._evaluate_stop(scenario, context, context.as_of):
+            actions.append("STOP_EXIT")
+            return actions
+
+        # End-of-day liquidation outranks every strategy: once it has begun, the held
+        # position is closed (or its exit is in flight) and no discretionary exit or
+        # entry is evaluated for this symbol.
+        if await self._eod_step(scenario, context, context.as_of, actions, fill_open=False):
+            return actions
 
         collections = self.collections(context.symbol)
         position = account.state.positions.get(context.symbol)
@@ -2395,6 +2427,8 @@ class VwapReferenceLifecycle:
             if authorized and evaluation.is_signal:
                 entries[evaluation.signal_id or ""] = (binding, evaluation)
         if not entries:
+            return actions
+        if self._eod_begun(context.as_of):
             return actions
         # Runtime / market-state authorization is per entry direction.  Candidates of a
         # direction that is not currently authorized are dropped *before* arbitration, so a
@@ -2529,20 +2563,185 @@ class VwapReferenceLifecycle:
             await scenario.coordinator.complete(command)
         return actions
 
+    # ---- end-of-day liquidation -------------------------------------------------
+
+    def bind_context_provider(
+        self, provider: Callable[[Sequence[str]], Mapping[str, MarketContext]]
+    ) -> None:
+        """Supply fresh per-symbol snapshots so EOD can act without a new candle."""
+        self._context_provider = provider
+
+    def _eod_begun(self, at: datetime) -> bool:
+        """Whether EOD liquidation is enabled and in effect at ``at`` (regular session)."""
+        if self._eod is None:
+            return False
+        day = at.astimezone(exchange_calendar.NEW_YORK).date()
+        if not exchange_calendar.is_trading_day(day):
+            return False
+        session = exchange_calendar.session_for(day)
+        return exchange_calendar.eod_close_time(session, *self._eod) <= at < session.close_utc
+
+    async def _evaluate_stop(
+        self, scenario: _ShadowScenario, context: MarketContext, at: datetime
+    ) -> bool:
+        """Evaluate the protective stop first; True when it triggered and exited."""
+        position = scenario.account.state.positions.get(context.symbol)
+        quote = context.latest_quote
+        if position is None or quote is None:
+            return False
+        stop = scenario.stops.state(position.cycle_id)
+        if stop is None or stop.status in {"CANCELED", "TRIGGERED"}:
+            return False
+        updated = await scenario.stops.evaluate(
+            position.cycle_id, quote, at=at, trade=context.latest_trade
+        )
+        return updated.status == "TRIGGERED"
+
+    async def _eod_step(
+        self,
+        scenario: _ShadowScenario,
+        context: MarketContext,
+        now: datetime,
+        actions: list[str],
+        *,
+        fill_open: bool,
+    ) -> bool:
+        """Advance end-of-day liquidation for one symbol; True when it owns the symbol.
+
+        At most one EOD order exists per position: an open one is only ever filled
+        further, never duplicated.  Competing open exits (a part-filled strategy exit)
+        are cancelled so the EOD order closes the full remainder.  The order is
+        submitted only against a fresh observation, so the protective stop is never
+        dropped without the ability to fill, and no fill is fabricated without one.
+        """
+        if self._eod is None:
+            return False
+        account = scenario.account
+        symbol = context.symbol
+        today = now.astimezone(exchange_calendar.NEW_YORK).date()
+        orders = [
+            o for o in account.state.orders.values()
+            if o.symbol == symbol and o.is_open and o.purpose is not OrderPurpose.PROTECTIVE_STOP
+        ]
+        for order in orders:
+            # A DAY EOD order from an earlier session is dead: drop it, a new one follows.
+            if (
+                order.purpose is OrderPurpose.EOD_CLOSE
+                and order.submitted_at.astimezone(exchange_calendar.NEW_YORK).date() < today
+            ):
+                await account.cancel_order(order.broker_order_id, at=now)
+                actions.append(f"EOD_STALE_CANCELED:{order.broker_order_id}")
+        if not self._eod_begun(now):
+            return False
+        orders = [o for o in orders if o.is_open]
+        for order in orders:
+            if order.side.is_entry:
+                await account.cancel_order(order.broker_order_id, at=now)
+                actions.append(f"EOD_ENTRY_CANCELED:{order.broker_order_id}")
+        position = account.state.positions.get(symbol)
+        if position is None:
+            for order in orders:
+                if order.purpose is OrderPurpose.EOD_CLOSE:
+                    await account.cancel_order(order.broker_order_id, at=now)
+            return False
+        in_flight = [
+            o for o in orders if o.purpose is OrderPurpose.EOD_CLOSE and o.is_open
+        ]
+        observable = context.latest_quote is not None and not context.freshness.stale
+        if in_flight:
+            if fill_open and observable:
+                for order in in_flight:
+                    fill = scenario.fills.apply_fill_to_account(
+                        account, order.broker_order_id, context, as_of=now
+                    )
+                    if fill.is_fill:
+                        actions.append(f"FILL:{order.side.value}:{fill.quantity}")
+            return True
+        if not observable:
+            actions.append("EOD_WAITING_FOR_QUOTE")
+            return True
+        for order in orders:
+            if order.side.is_exit:  # a competing discretionary exit: EOD supersedes it
+                await account.cancel_order(order.broker_order_id, at=now)
+        sequence = 1 + sum(
+            1 for o in account.state.orders.values()
+            if o.purpose is OrderPurpose.EOD_CLOSE and o.cycle_id == position.cycle_id
+        )
+        actions.extend(
+            await self._exit(
+                scenario,
+                context,
+                None,
+                purpose=OrderPurpose.EOD_CLOSE,
+                client_order_id=f"shadow-eod-{position.cycle_id}-{today.isoformat()}-{sequence}",
+                now=now,
+            )
+        )
+        return True
+
+    async def on_tick(self) -> dict[str, list[str]]:
+        """Time-driven EOD pass for held symbols; needs no newly completed candle."""
+        if self._eod is None or self._context_provider is None:
+            return {}
+        now = self.clock.now()
+        if not self._eod_begun(now):
+            return {}
+        result: dict[str, list[str]] = {}
+        self._in_flight += 1
+        try:
+            for name, scenario in self.group.scenarios.items():
+                symbols = sorted(
+                    {
+                        o.symbol for o in scenario.account.state.open_orders()
+                        if o.purpose is OrderPurpose.EOD_CLOSE
+                    }
+                    | set(scenario.account.state.positions)
+                )
+                if not symbols:
+                    continue
+                contexts = self._context_provider(symbols)
+                actions: list[str] = []
+                for symbol in symbols:
+                    context = contexts.get(symbol)
+                    if context is None:
+                        continue
+                    quote = context.latest_quote
+                    if quote is not None:
+                        scenario.account.update_quote(
+                            symbol, (quote.bid + quote.ask) / Decimal("2")
+                        )
+                    if await self._evaluate_stop(scenario, context, now):
+                        actions.append("STOP_EXIT")
+                        continue
+                    await self._eod_step(scenario, context, now, actions, fill_open=True)
+                if actions:
+                    result[name] = actions
+            return result
+        finally:
+            self._in_flight -= 1
+
     @staticmethod
     def _bar_time(context: MarketContext) -> datetime | None:
         bars = context.candles.get(CandleTimeframe.M1, ())
         return bars[-1].start if bars else None
 
     async def _exit(
-        self, scenario: _ShadowScenario, context: MarketContext, signal_id: str
+        self,
+        scenario: _ShadowScenario,
+        context: MarketContext,
+        signal_id: str | None,
+        *,
+        purpose: OrderPurpose = OrderPurpose.STRATEGY_EXIT,
+        client_order_id: str | None = None,
+        now: datetime | None = None,
     ) -> list[str]:
+        at = now or context.as_of
         position = scenario.account.state.positions[context.symbol]
         long_held = position.direction is PositionDirection.LONG
         command_intent = _CommandIntent(
             "SHADOW", scenario.account.scope.scope_id, context.symbol,
             "EXIT_LONG" if long_held else "EXIT_SHORT",
-            context.as_of + timedelta(minutes=1), context.as_of,
+            at + timedelta(minutes=1), at,
             position.quantity, None, None,
         )
         command = OrderCommand(command_intent, cancel_protective_first=True)
@@ -2551,24 +2750,25 @@ class VwapReferenceLifecycle:
             DecisionReason.AUTHORIZED, DecisionReason.REQUIRES_PROTECTIVE_CANCEL
         }:
             return []
-        await scenario.stops.prepare_discretionary_exit(
-            position.cycle_id, at=context.as_of
-        )
+        await scenario.stops.prepare_discretionary_exit(position.cycle_id, at=at)
         intent = OrderIntent(
-            intent_id=f"exit-intent-{signal_id}",
-            client_order_id=f"shadow-exit-{signal_id}",
+            intent_id=f"exit-intent-{signal_id or client_order_id}",
+            client_order_id=client_order_id or f"shadow-exit-{signal_id}",
             account_scope_id=scenario.account.scope.scope_id,
             cycle_id=position.cycle_id, symbol=context.symbol,
             side=OrderSide.SELL if long_held else OrderSide.BUY_TO_COVER,
-            purpose=OrderPurpose.STRATEGY_EXIT,
+            purpose=purpose,
             order_type=OrderType.MARKET, time_in_force=TimeInForce.DAY,
-            created_at=context.as_of, quantity=position.quantity, signal_id=signal_id,
+            created_at=at, quantity=position.quantity, signal_id=signal_id,
         )
         order = await scenario.stops.submit_discretionary_exit(intent)
-        actions = [f"EXIT:{order.broker_order_id}"]
+        actions = [
+            f"{'EOD_EXIT' if purpose is OrderPurpose.EOD_CLOSE else 'EXIT'}:"
+            f"{order.broker_order_id}"
+        ]
         if context.latest_quote is not None:
             fill = scenario.fills.apply_fill_to_account(
-                scenario.account, order.broker_order_id, context, as_of=context.as_of
+                scenario.account, order.broker_order_id, context, as_of=at
             )
             if fill.is_fill:
                 actions.append(f"FILL:{intent.side.value}:{fill.quantity}")
@@ -3555,7 +3755,11 @@ def build_runtime(
                     and spec.get("trail_percent") == settings.stop_trail_percent
                 )
             },
+            eod_close_at=settings.eod_close_at if settings.auto_eod_liquidation else None,
         )
+        snapshot = getattr(market_data, "snapshot", None)
+        if callable(snapshot):
+            lifecycle.bind_context_provider(snapshot)
     execution = supplied.get("execution", lifecycle or broker)
     protection = supplied.get(
         "protection",

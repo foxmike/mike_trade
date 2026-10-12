@@ -370,12 +370,20 @@ class Runtime:
                 feed_details,
             )
 
+    async def _lifecycle_tick(self) -> None:
+        """Time-driven lifecycle work (e.g. EOD liquidation) that needs no new candle."""
+        try:
+            await _call_optional(self.lifecycle, ("on_tick",))
+        except Exception as exc:  # a failed tick must never stop the heartbeat
+            self.logger.error("Lifecycle tick failed", exc_info=exc)
+
     async def _heartbeat_loop(self) -> None:
         try:
             while self.state in {StartupState.RUNNING, StartupState.PAUSED}:
                 await asyncio.sleep(self.heartbeat_interval)
                 if self.state in {StartupState.RUNNING, StartupState.PAUSED}:
                     await self._heartbeat()
+                    await self._lifecycle_tick()
         except asyncio.CancelledError:
             raise
         except Exception as exc:
@@ -505,6 +513,9 @@ class Runtime:
             )
             if order_fresh is False:
                 raise RuntimeError("broker order-update stream is not fresh")
+
+            # Restart recovery: finish any pending end-of-day exit before entries open.
+            await self._lifecycle_tick()
 
             operator_authorized = True
             persisted_enabled = await _call_optional(
