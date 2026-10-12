@@ -91,9 +91,27 @@ open, never at midnight or on weekends. View with `make entry-limits` and
 - **Early close:** handled through the real session calendar
   (`mike_trade/scheduling/calendar.py`), so the cutoff tracks the actual
   close of the day.
-- **Optional end-of-day close** (`end_of_day_close_enabled`, default
-  **false**): position closing at end of day is opt-in metadata only and is
-  disabled unless the operator explicitly enables it.
+- **Optional end-of-day close** (`execution.end_of_day_close.enabled`, default
+  **false**; `at`, default `15:55` New York time): implemented for **SHADOW
+  only** (PAPER/LIVE refuse to start with it enabled). From the configured time
+  until the close the lifecycle cancels unfilled entry orders, blocks new entries,
+  stops evaluating discretionary exits, and submits one full-quantity `EOD_CLOSE`
+  market exit per held position through the normal SHADOW fill/cost model. The
+  protective stop is evaluated first; a stop that triggers wins and no EOD order is
+  made. The order is submitted only against a fresh quote (the stop stays armed
+  until then). The coordinator forbids a stop and an exit resting together, so an
+  EOD order that does not complete (partial fill, no liquidity, past its fill
+  latency) is cancelled in the same pass and the residual position is immediately
+  re-covered by a stop sized to exactly what is still held (policy and stop level
+  preserved, never loosened); liquidation is retried at most once a minute with a
+  fresh order for the remaining quantity. A dead `DAY` EOD order from an earlier
+  session is cancelled and, like any held position found without a matching stop
+  (including after a restart, before entries open), the protective stop is
+  restored. On early-close sessions the configured time that falls at or after
+  the close keeps its lead before 16:00 relative to the actual close. The runtime
+  heartbeat drives a time-based pass (`lifecycle.on_tick`), so EOD does not wait for
+  a new candle. Limitation: with a non-zero fill latency the position is unprotected
+  for at most that latency while a freshly submitted EOD order is in flight.
 
 ## 4. Protective stop coverage
 

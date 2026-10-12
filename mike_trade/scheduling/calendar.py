@@ -200,6 +200,23 @@ def entry_cutoff(session: Session, minutes_before_close: int) -> datetime:
     return session.close_utc - timedelta(minutes=minutes_before_close)
 
 
+def eod_close_time(session: Session, hour: int, minute: int) -> datetime:
+    """Return the UTC instant at which end-of-day liquidation begins for this session.
+
+    ``hour:minute`` is New York wall-clock time.  When it falls at or after an early
+    session close, the same interval before the normal 16:00 close is kept relative to the
+    actual close, so early-close sessions still liquidate before the bell.
+    """
+    if not isinstance(session, Session):
+        raise TypeError("session must be a Session")
+    configured = datetime.combine(
+        session.session_date, time(hour, minute), tzinfo=NEW_YORK
+    ).astimezone(UTC)
+    if configured >= session.close_utc:
+        return session.close_utc - timedelta(minutes=16 * 60 - (hour * 60 + minute))
+    return configured
+
+
 def entries_allowed_by_time(at_utc: datetime, cutoff_minutes: int) -> bool:
     """Return whether entries are allowed at this instant before the close cutoff."""
     instant = _normalize_utc(at_utc)
