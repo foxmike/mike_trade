@@ -20,6 +20,7 @@ from typing import Any, Callable, Mapping, Sequence
 from zoneinfo import ZoneInfo
 
 from mike_trade.backtest.clock import ReplayClock
+from mike_trade.backtest.excursions import compute_excursion
 from mike_trade.backtest.execution import HistoricalExecutionSimulator
 from mike_trade.backtest.feed import HistoricalReplayFeed, ReplayEvent
 from mike_trade.backtest.manifest import (
@@ -218,7 +219,9 @@ def _dt(value: Any) -> datetime:
     )
 
 
-def _trade_records(fills: Sequence[Mapping[str, Any]]) -> list[dict[str, Any]]:
+def _trade_records(
+    fills: Sequence[Mapping[str, Any]], bars: Sequence[Mapping[str, Any]] = ()
+) -> list[dict[str, Any]]:
     """Pair entries with the opposite-side exits FIFO, preserving costs and timestamps.
 
     ``BUY`` opens a long closed by ``SELL``; ``SELL_SHORT`` opens a short closed by
@@ -245,8 +248,6 @@ def _trade_records(fills: Sequence[Mapping[str, Any]]) -> list[dict[str, Any]]:
                     "price": price,
                     "fee": fee,
                     "time": at,
-                    "high": _decimal(fill.get("high", price)),
-                    "low": _decimal(fill.get("low", price)),
                     "entry_time": at,
                     "entry_strategy": fill.get("strategy"),
                 }
@@ -269,12 +270,8 @@ def _trade_records(fills: Sequence[Mapping[str, Any]]) -> list[dict[str, Any]]:
             exit_borrow = borrow * fraction
             if direction == "LONG":
                 gross = (price - lot["price"]) * matched
-                mfe = (lot["high"] - lot["price"]) * matched
-                mae = (lot["low"] - lot["price"]) * matched
             else:  # a short gains when the price falls
                 gross = (lot["price"] - price) * matched
-                mfe = (lot["price"] - lot["low"]) * matched
-                mae = (lot["price"] - lot["high"]) * matched
             pnl = gross - entry_fee - exit_fee - exit_borrow
             trade = {
                 "symbol": symbol,
@@ -287,8 +284,16 @@ def _trade_records(fills: Sequence[Mapping[str, Any]]) -> list[dict[str, Any]]:
                 "costs": entry_fee + exit_fee + exit_borrow,
                 "pnl": pnl,
                 "hold_duration_seconds": Decimal(str((at - lot["time"]).total_seconds())),
-                "mfe": mfe,
-                "mae": mae,
+                **compute_excursion(
+                    symbol=symbol,
+                    direction=direction,
+                    entry_time=lot["time"],
+                    exit_time=at,
+                    entry_price=lot["price"],
+                    exit_price=price,
+                    quantity=matched,
+                    bars=bars,
+                ),
                 "entry_strategy": lot.get("entry_strategy"),
                 "exit_reason": fill.get("exit_reason"),
                 "exit_strategy": fill.get("strategy"),
@@ -342,9 +347,22 @@ def compute_metrics(
             )
             item["mfe"] = _decimal(item.get("mfe", "0"))
             item["mae"] = _decimal(item.get("mae", "0"))
+            if bars and "exit_price" in item:
+                item.update(
+                    compute_excursion(
+                        symbol=item["symbol"],
+                        direction=str(item.get("direction", "LONG")),
+                        entry_time=item["entry_time"],
+                        exit_time=item["exit_time"],
+                        entry_price=item["entry_price"],
+                        exit_price=_decimal(item["exit_price"]),
+                        quantity=item["quantity"],
+                        bars=bars,
+                    )
+                )
             trades.append(item)
     else:
-        trades = _trade_records(fills)
+        trades = _trade_records(fills, bars)
     cumulative = capital
     generated_curve: list[dict[str, Any]] = []
     peak = capital
@@ -399,26 +417,10 @@ def compute_metrics(
         if n < small_sample_threshold
         else ()
     )
-    excursions: list[dict[str, Any]] = []
-    for t in trades:
-        holding = [
-            b
-            for b in bars
-            if str(b["symbol"]).upper() == t["symbol"]
-            and t["entry_time"] <= _dt(b["time"]) <= t["exit_time"]
-        ]
-        if holding:
-            high = max(_decimal(b["high"]) for b in holding)
-            low = min(_decimal(b["low"]) for b in holding)
-            if t.get("direction") == "SHORT":
-                t["mfe"] = max(ZERO, t["entry_price"] - low) * t["quantity"]
-                t["mae"] = min(ZERO, t["entry_price"] - high) * t["quantity"]
-            else:
-                t["mfe"] = max(ZERO, high - t["entry_price"]) * t["quantity"]
-                t["mae"] = min(ZERO, low - t["entry_price"]) * t["quantity"]
-        excursions.append(
-            {"symbol": t["symbol"], "entry_time": t["entry_time"], "mfe": t["mfe"], "mae": t["mae"]}
-        )
+    excursions = [
+        {"symbol": t["symbol"], "entry_time": t["entry_time"], "mfe": t["mfe"], "mae": t["mae"]}
+        for t in trades
+    ]
     utilization = ZERO
     if fills:
         exposure: dict[str, Decimal] = defaultdict(lambda: ZERO)

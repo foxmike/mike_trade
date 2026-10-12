@@ -1274,7 +1274,15 @@ def _run_one(
             session_candles=session_candles,
         ).run(request)
     )
-    metrics = compute_metrics(result, starting_capital=starting_capital, seed=seed)
+    metrics = compute_metrics(
+        result,
+        starting_capital=starting_capital,
+        seed=seed,
+        bars=[
+            {"symbol": symbol, "time": bar.timestamp, "high": bar.high, "low": bar.low}
+            for bar in bars
+        ],
+    )
     bar_open = {bar.timestamp: bar.open for bar in bars}
     estimated_slippage = sum(
         (
