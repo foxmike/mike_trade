@@ -506,8 +506,10 @@ async def test_time_driven_tick_liquidates_without_a_new_candle(tmp_path):
 
 
 def test_eod_setting_validation():
-    with pytest.raises(ConfigurationError):
-        AppSettings(mode=ExecutionMode.PAPER, auto_eod_liquidation=True)
+    # PAPER/LIVE EOD liquidation is supported by the Alpaca execution lifecycle.
+    AppSettings(mode=ExecutionMode.PAPER, auto_eod_liquidation=True)
+    with pytest.raises(ValueError):
+        AppSettings(mode=ExecutionMode.PAPER, auto_eod_liquidation=True, eod_close_at="16:00")
     with pytest.raises(ValueError):
         AppSettings(mode=ExecutionMode.SHADOW, eod_close_at="16:00")
     with pytest.raises(ValueError):
