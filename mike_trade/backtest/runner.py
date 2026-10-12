@@ -13,7 +13,7 @@ import random
 import uuid
 from collections import defaultdict, deque
 from dataclasses import dataclass, field, replace
-from datetime import UTC, datetime, timedelta
+from datetime import UTC, datetime, time, timedelta
 from decimal import Decimal
 from pathlib import Path
 from typing import Any, Callable, Mapping, Sequence
@@ -831,6 +831,24 @@ class BacktestRunner:
         root = Path(request.result_directory)
         scope_id = str(request.config.get("research_scope_id", "backtest:research"))
         minimum_hold = timedelta(seconds=float(request.config.get("minimum_hold_seconds") or 0))
+        eod_config = request.config.get("end_of_day_close") or {}
+        if not isinstance(eod_config, Mapping):
+            raise ValueError("end_of_day_close must be a mapping")
+        eod_enabled = eod_config.get("enabled", False)
+        if not isinstance(eod_enabled, bool):
+            raise ValueError("end_of_day_close.enabled must be bool")
+        eod_at = eod_config.get("at", "15:55")
+        if not isinstance(eod_at, str):
+            raise ValueError("end_of_day_close.at must be HH:MM")
+        try:
+            eod_hour, eod_minute = (int(part) for part in eod_at.split(":"))
+            if (
+                len(eod_at.split(":")) != 2
+                or not (0 <= eod_hour < 16 and 0 <= eod_minute < 60)
+            ):
+                raise ValueError
+        except ValueError as exc:
+            raise ValueError("end_of_day_close.at must be HH:MM") from exc
         evaluations: list[Mapping[str, Any]] = []
         signals: list[Mapping[str, Any]] = []
         intents: list[Mapping[str, Any]] = []
@@ -908,6 +926,7 @@ class BacktestRunner:
         pending_entry: dict[str, str] = {}
         pending_exit: dict[str, str] = {}
         protections: dict[str, _Protection] = {}
+        eod_submitted: set[tuple[str, str]] = set()
         protection_count = 0
         candles_by_symbol: dict[str, list[Candle]] = defaultdict(list)
         strategy_candles: dict[str, dict[CandleTimeframe, deque[StrategyCandle]]] = defaultdict(
@@ -1400,6 +1419,79 @@ class BacktestRunner:
             else:
                 pending_exit[symbol] = order.broker_order_id
 
+        async def submit_eod_close(symbol: str, at: datetime) -> None:
+            """Submit a regular-session DAY market close at the configured cutoff."""
+            if not eod_enabled or quantities[symbol] <= ZERO:
+                return
+            session = session_for(at.astimezone(NEW_YORK).date())
+            configured = datetime.combine(
+                session.session_date,
+                time(eod_hour, eod_minute),
+                tzinfo=NEW_YORK,
+            ).astimezone(UTC)
+            # If the configured wall time is beyond an early close, keep its
+            # minutes-before-16:00 interval relative to that session's close.
+            if configured >= session.close_utc:
+                minutes_before_close = 16 * 60 - (eod_hour * 60 + eod_minute)
+                trigger = session.close_utc - timedelta(minutes=minutes_before_close)
+            else:
+                trigger = configured
+            if not (trigger <= at < session.close_utc):
+                return
+            session_key = (symbol, session.session_date.isoformat())
+            if session_key in eod_submitted:
+                return
+            direction = directions.get(symbol)
+            if direction is None:
+                return
+            # A pending strategy exit is superseded by the mandatory EOD order.
+            pending = pending_exit.pop(symbol, None)
+            if pending is not None:
+                await self.execution.cancel_order(pending)
+            protection = protections.get(symbol)
+            if protection is not None and await order_is_open(protection.order_id):
+                await self.execution.cancel_order(protection.order_id)
+            side = (
+                OrderSide.SELL
+                if direction is PositionDirection.LONG
+                else OrderSide.BUY_TO_COVER
+            )
+            cycle = open_cycles[symbol]
+            intent = OrderIntent(
+                intent_id=f"eod-{symbol}-{session.session_date.isoformat()}",
+                client_order_id=f"eod-{symbol}-{session.session_date.isoformat()}",
+                account_scope_id=scope_id,
+                cycle_id=str(cycle["cycle_id"]),
+                symbol=symbol,
+                side=side,
+                purpose=OrderPurpose.EOD_CLOSE,
+                order_type=OrderType.MARKET,
+                time_in_force=TimeInForce.DAY,
+                created_at=at,
+                quantity=quantities[symbol],
+            )
+            order = await self.execution.submit_order(intent)
+            order_meta[order.broker_order_id] = {
+                "purpose": OrderPurpose.EOD_CLOSE.value,
+                "strategy": None,
+                "exit_reason": "END_OF_DAY",
+            }
+            intents.append({
+                "symbol": symbol,
+                "strategy": None,
+                "signal_id": None,
+                "signal_time": at,
+                "signal_bar_time": None,
+                "cycle_id": str(cycle["cycle_id"]),
+                "side": side.value,
+                "purpose": OrderPurpose.EOD_CLOSE.value,
+                "time": at,
+                "intent_id": intent.intent_id,
+                "order_id": order.broker_order_id,
+            })
+            pending_exit[symbol] = order.broker_order_id
+            eod_submitted.add(session_key)
+
         for ev in replay_events:
             assert ev.available_at
             self.clock.advance_to(ev.available_at)
@@ -1434,12 +1526,16 @@ class BacktestRunner:
                     "exit_reason": None
                     if is_buy
                     else (
-                        ExitSource.PROTECTIVE_STOP.value
-                        if x.purpose is OrderPurpose.PROTECTIVE_STOP
+                        str(meta["exit_reason"])
+                        if meta.get("exit_reason") is not None
                         else (
-                            ExitSource.STRATEGY_SELL.value
-                            if direction is PositionDirection.LONG
-                            else ExitSource.STRATEGY_COVER.value
+                            ExitSource.PROTECTIVE_STOP.value
+                            if x.purpose is OrderPurpose.PROTECTIVE_STOP
+                            else (
+                                ExitSource.STRATEGY_SELL.value
+                                if direction is PositionDirection.LONG
+                                else ExitSource.STRATEGY_COVER.value
+                            )
                         )
                     ),
                 }
@@ -1523,6 +1619,7 @@ class BacktestRunner:
                             cycle["closed_at"] = x.fill.filled_at
                             cycles.append(cycle)
                 equity_curve.append(equity_row(x.fill.filled_at))
+            await submit_eod_close(ev.symbol, ev.available_at)
             if ev.kind != ReplayEvent.KIND_BAR or ev.candle is None:
                 continue
             symbol = ev.symbol

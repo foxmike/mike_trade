@@ -13,7 +13,7 @@ import traceback
 from collections.abc import Mapping
 from concurrent.futures import FIRST_COMPLETED, ProcessPoolExecutor, wait
 from dataclasses import asdict, dataclass, replace
-from datetime import UTC, datetime, timedelta
+from datetime import UTC, datetime, time, timedelta
 from decimal import ROUND_DOWN, Decimal
 from functools import lru_cache
 from pathlib import Path
@@ -50,6 +50,8 @@ class ExperimentSpec:
     #: ``stop_policy``-shaped protective stop (fixed / native_trailing /
     #: stepped_trailing); omitted keeps the reference 1.5% native trailing stop.
     protective_stop: Mapping[str, Any] | None = None
+    #: Optional replay EOD close policy: {"enabled": true, "at": "15:55"}.
+    end_of_day_close: Mapping[str, Any] | None = None
 
     def validate(self) -> None:
         if not self.symbol or not self.symbol.replace(".", "").isalnum():
@@ -84,6 +86,21 @@ class ExperimentSpec:
             from mike_trade.risk.stop_config import normalize_stop_spec
 
             normalize_stop_spec(self.protective_stop)
+        if self.end_of_day_close is not None:
+            if not isinstance(self.end_of_day_close, Mapping):
+                raise ValueError("end_of_day_close must be a mapping")
+            if set(self.end_of_day_close) - {"enabled", "at"}:
+                raise ValueError("end_of_day_close accepts only enabled and at")
+            enabled = self.end_of_day_close.get("enabled", False)
+            at = self.end_of_day_close.get("at", "15:55")
+            if not isinstance(enabled, bool) or not isinstance(at, str):
+                raise ValueError("end_of_day_close requires bool enabled and HH:MM at")
+            try:
+                time.fromisoformat(at)
+                if len(at) != 5 or time.fromisoformat(at) >= time(16, 0):
+                    raise ValueError
+            except ValueError as exc:
+                raise ValueError("end_of_day_close.at must be HH:MM") from exc
         if self.seed < 0:
             raise ValueError("experiment seed must be nonnegative")
         if _moment(self.start) >= _moment(self.end):
@@ -299,6 +316,7 @@ def _execute_experiment(job_data: dict[str, Any], root: str, results: str) -> di
         short_selling_enabled=spec.short_selling_enabled,
         short_borrow_bps_per_day=Decimal(spec.short_borrow_bps_per_day),
         protective_stop=spec.protective_stop,
+        end_of_day_close=spec.end_of_day_close,
     )
     result.pop("trade_ledger", None)  # Ledger remains in the immutable per-run artifact.
     result.update(status="completed", worker_pid=os.getpid())
@@ -1020,6 +1038,7 @@ def _run_one(
     short_selling_enabled: bool = False,
     short_borrow_bps_per_day: Decimal = Decimal("0"),
     protective_stop: Mapping[str, Any] | None = None,
+    end_of_day_close: Mapping[str, Any] | None = None,
 ) -> dict[str, Any]:
     from mike_trade.backtest.clock import ReplayClock
     from mike_trade.backtest.execution import (
@@ -1258,6 +1277,7 @@ def _run_one(
             "entry_cutoff_minutes": 30,
             "minimum_hold_seconds": 60,
             "max_entry_cycles_per_session": 1,
+            **({"end_of_day_close": dict(end_of_day_close)} if end_of_day_close is not None else {}),
             **(
                 {
                     "short_selling_enabled": True,
