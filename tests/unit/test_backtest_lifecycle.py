@@ -149,6 +149,69 @@ def test_one_buy_and_one_sell_strategy(tmp_path):
     assert cycle["entry_strategy"] == "buy_alpha" and cycle["exit_reason"] == "STRATEGY_SELL"
 
 
+def test_eod_close_enabled_closes_using_next_bar_and_keeps_protective_stop_safe(tmp_path):
+    result = _run_sync(
+        {"AAA": _quiet(9)},
+        ("buy_alpha",),
+        params={"buy_alpha": {"fire_at": 3}},
+        config={
+            "end_of_day_close": {"enabled": True, "at": "09:35"},
+            "protective_stop": {"type": "fixed", "stop_amount": "5"},
+        },
+        result_dir=tmp_path,
+    )
+    close = next(fill for fill in result.fills if fill["purpose"] == "EOD_CLOSE")
+    entry = next(fill for fill in result.fills if fill["side"] == "BUY")
+    order = next(intent for intent in result.intents if intent["purpose"] == "EOD_CLOSE")
+    assert any(
+        event["event_type"] == "INITIAL_STOP_ESTABLISHED"
+        for event in result.protection_events
+    )
+    assert close["exit_reason"] == "END_OF_DAY"
+    assert close["time"] > entry["time"]
+    assert close["time"] >= order["time"]
+    assert close["evidence"] == "BAR"
+    assert result.cycles[0]["closed_at"] == close["time"]
+
+
+def test_eod_close_disabled_preserves_open_position(tmp_path):
+    result = _run_sync(
+        {"AAA": _quiet(9)},
+        ("buy_alpha",),
+        params={"buy_alpha": {"fire_at": 3}},
+        config={"end_of_day_close": {"enabled": False, "at": "09:35"}},
+        result_dir=tmp_path,
+    )
+    assert not [fill for fill in result.fills if fill["purpose"] == "EOD_CLOSE"]
+    assert result.cycles[0]["closed_at"] is None
+
+
+def test_eod_close_with_missing_late_bar_does_not_fabricate_fill(tmp_path):
+    # The 09:35 trigger is the final observed event; no later executable bar exists.
+    result = _run_sync(
+        {"AAA": _quiet(5)},
+        ("buy_alpha",),
+        params={"buy_alpha": {"fire_at": 3}},
+        config={"end_of_day_close": {"enabled": True, "at": "09:35"}},
+        result_dir=tmp_path,
+    )
+    assert any(intent["purpose"] == "EOD_CLOSE" for intent in result.intents)
+    assert not [fill for fill in result.fills if fill["purpose"] == "EOD_CLOSE"]
+    assert result.cycles[0]["closed_at"] is None
+
+
+def test_eod_close_does_not_override_a_configured_technical_sell(tmp_path):
+    result = _run_sync(
+        {"AAA": _quiet(9)},
+        ("buy_alpha", "sell_alpha"),
+        params={"buy_alpha": {"fire_at": 2}, "sell_alpha": {"fire_at": 4}},
+        config={"end_of_day_close": {"enabled": True, "at": "09:36"}},
+        result_dir=tmp_path,
+    )
+    assert any(fill["exit_reason"] == "STRATEGY_SELL" for fill in result.fills)
+    assert not [fill for fill in result.fills if fill["purpose"] == "EOD_CLOSE"]
+
+
 def test_multiple_buy_strategies_signalling_together_open_one_position(tmp_path):
     ids = ("buy_charlie", "buy_alpha", "buy_bravo", "sell_alpha")
     params = {b: {"fire_at": 3} for b in ids[:3]} | {"sell_alpha": {"fire_at": 8}}
