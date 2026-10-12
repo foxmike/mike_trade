@@ -340,13 +340,42 @@ def test_runtime_registry_binds_independent_buy_sell_collections(tmp_path) -> No
 
 
 def test_historical_vwap_entry_fills_next_bar_and_uses_protective_exit(tmp_path) -> None:
-    strategy_bars = vwap_cycle(intervening_red=True)
-    strategy_bars.extend(
+    result, strategy_bars = _run_vwap_replay(
+        tmp_path,
         (
             bar(27, "100.20", "100.30", "100.00", "100.15"),
             bar(28, "100.10", "100.15", "99.50", "99.60"),
-        )
+        ),
     )
+    entry = next(item for item in result.fills if item["side"] == "BUY")
+    exit_fill = next(item for item in result.fills if item["side"] == "SELL")
+    assert entry["price"] == D("100.20")
+    assert entry["time"] == strategy_bars[27].start
+    assert exit_fill["exit_reason"] == "PROTECTIVE_STOP"
+    assert result.cycles[0]["protection_mode"] == "FIXED_THEN_TRAILING"
+
+
+def test_entry_bar_initial_stop_is_tested_before_trailing_advances(tmp_path) -> None:
+    # The entry bar both spikes (which would activate the trail) and trades through the
+    # initial stop; the stop is tested first and the trail must not have advanced.
+    result, strategy_bars = _run_vwap_replay(
+        tmp_path,
+        (
+            bar(27, "100.20", "103.00", "99.00", "100.00"),
+            bar(28, "100.00", "100.10", "99.90", "100.00"),
+        ),
+    )
+    exits = [item for item in result.fills if item["side"] == "SELL"]
+    assert len(exits) == 1
+    assert exits[0]["exit_reason"] == "PROTECTIVE_STOP"
+    assert exits[0]["time"] <= strategy_bars[27].end
+    cycle = result.cycles[0]
+    assert cycle["final_stop_price"] == cycle["initial_stop_price"]
+
+
+def _run_vwap_replay(tmp_path, tail):  # noqa: ANN001, ANN202
+    strategy_bars = vwap_cycle(intervening_red=True)
+    strategy_bars.extend(tail)
     provenance = FeedProvenance("replay", "IEX", "synthetic", False)
     events = [
         ReplayEvent.bar(
@@ -411,12 +440,7 @@ def test_historical_vwap_entry_fills_next_bar_and_uses_protective_exit(tmp_path)
     result = asyncio.run(
         BacktestRunner(registry, feed, clock, execution, intent_factory=intent_factory).run(request)
     )
-    entry = next(item for item in result.fills if item["side"] == "BUY")
-    exit_fill = next(item for item in result.fills if item["side"] == "SELL")
-    assert entry["price"] == D("100.20")
-    assert entry["time"] == strategy_bars[27].start
-    assert exit_fill["exit_reason"] == "PROTECTIVE_STOP"
-    assert result.cycles[0]["protection_mode"] == "FIXED_THEN_TRAILING"
+    return result, strategy_bars
 
 
 def test_live_trade_event_builds_developing_context_and_invokes_lifecycle() -> None:

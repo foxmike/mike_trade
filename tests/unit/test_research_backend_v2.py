@@ -37,7 +37,7 @@ from mike_trade.runtime import SystemClock
 
 def test_strategy_role_discovery_and_classification() -> None:
     roles = get_strategy_roles()
-    assert len(roles) == 192, f"Expected 192 strategies, found {len(roles)}"
+    assert len(roles) == 196, f"Expected 196 strategies, found {len(roles)}"
 
     # Check key representative strategies across all 4 roles
     assert get_strategy_role("vwap_bounce") is StrategyRole.BUY

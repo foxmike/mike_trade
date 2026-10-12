@@ -655,6 +655,64 @@ async def test_gap_through_stop_precedes_the_bar_so_it_is_not_ambiguous():
     assert ex.price == D("97") and ex.flags == ()
 
 
+async def test_new_entry_bar_protection_marks_stop_first_trailing_ambiguity():
+    events = [
+        *flat((9, 30), 2),
+        bar((9, 32), 100, 110, 97, 105),
+        *flat((9, 33), 2, price="105"),
+    ]
+    env = Env(events)
+    env.go(9, 32)
+    await env.buy(100)
+    (entry,) = env.go(9, 33)
+    trailing = await env.sim.submit_order(
+        env.intent(
+            SELL,
+            STOP_PURPOSE,
+            OrderType.TRAILING_STOP,
+            100,
+            trail_percent=2,
+        ),
+        protection_reference=entry.price,
+    )
+
+    candle = events[2].candle
+    assert candle is not None
+    (stopped,) = env.sim.process_entry_bar_protection(
+        trailing.broker_order_id, candle, allow_trailing_ratchet=True
+    )
+    assert stopped.price == D("98")
+    assert stopped.flags == (AMBIGUOUS_INTRABAR_ORDER,)
+    assert env.sim.held_quantity("AAA") == D("0")
+
+
+async def test_intrabar_entry_does_not_consume_an_earlier_favorable_extreme():
+    events = [
+        *flat((9, 30), 2),
+        bar((9, 32), 110, 120, 99, 110),
+        *flat((9, 33), 2, price="110"),
+    ]
+    env = Env(events)
+    env.go(9, 32)
+    await env.submit(BUY, ENTRY, OrderType.LIMIT, 100, limit_price=100)
+    (entry,) = env.go(9, 33)
+    trailing = await env.sim.submit_order(
+        env.intent(
+            SELL,
+            STOP_PURPOSE,
+            OrderType.TRAILING_STOP,
+            100,
+            trail_percent=2,
+        ),
+        protection_reference=entry.price,
+    )
+
+    candle = events[2].candle
+    assert candle is not None
+    assert env.sim.process_entry_bar_protection(trailing.broker_order_id, candle) == ()
+    assert env.sim.protection_state(trailing.broker_order_id).stop_price == D("98")
+
+
 # ----------------------------------------------------------------------- overlap
 
 

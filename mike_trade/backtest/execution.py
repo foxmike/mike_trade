@@ -31,8 +31,9 @@ Design choices (10):
    open, and stops the open gapped through (filled at the open, not the stop price);
    (b) intrabar: stops with ``low <= stop`` at the stop price, then limits that the
    bar trades strictly through, at their limit.  Intrabar fills are stamped with the
-   bar end.  A resting order, a stop replacement or an order submitted during a bar
-   only acts on bars starting at or after its activation time.
+   bar end.  Protection created from a bar-only entry fill is the sole exception to
+   normal activation timing: its initial stop covers the remainder of that entry bar.
+   Other orders and stop replacements act only on bars starting at or after activation.
 4. Intrabar ambiguity.  A stop touched intrabar in a bar that also reaches a
    favorable level (a SELL limit, or a high that would ratchet the same native
    trailing stop) is ambiguous.  The candle's high/low never determine which came
@@ -40,9 +41,10 @@ Design choices (10):
    favorable order take only what is left, ``STOP_ONLY`` additionally withholds the
    favorable SELL limits for that bar.  Fills of that bar carry
    ``AMBIGUOUS_INTRABAR_ORDER``.
-5. Trailing stops ratchet only from completed-bar highs (or earlier quote bids)
-   observed after the evaluated bar/quote, so they apply to later bars only, and
-   never move down.  Fixed-stop replacements are applied only after
+5. Trailing stops first test the stop active at the start of a bar, then ratchet from
+   that completed bar's favorable extreme for later bars only, and never move backward.
+   This includes the entry bar after its initial stop has survived.  Fixed-stop
+   replacements are applied only after
    ``stop_replace_latency``; the previous stop stays active meanwhile; a lower
    stop is rejected (never-move-down).  Stepped trailing is computed by the
    coordinator and reaches this simulator as a stop replacement.
@@ -136,7 +138,7 @@ __all__ = [
     "SimulatedExecution",
 ]
 
-EXECUTION_SIMULATOR_VERSION = "backtest-exec/1"
+EXECUTION_SIMULATOR_VERSION = "backtest-exec/2"
 AMBIGUOUS_INTRABAR_ORDER = "AMBIGUOUS_INTRABAR_ORDER"
 
 _DATA_GAP_BEFORE_FILL = "DATA_GAP_BEFORE_FILL"
@@ -565,13 +567,22 @@ class HistoricalExecutionSimulator:
     async def list_fills(self, since: datetime) -> Sequence[Fill]:
         return tuple(e.fill for e in self._executions if e.fill.filled_at >= since)
 
-    async def submit_order(self, intent: OrderIntent) -> BrokerOrder:
+    async def submit_order(
+        self,
+        intent: OrderIntent,
+        *,
+        protection_reference: Decimal | None = None,
+    ) -> BrokerOrder:
         if not isinstance(intent, OrderIntent):
             raise TypeError("intent must be a domain OrderIntent")
         existing = self._by_client.get(intent.client_order_id)
         if existing is not None:
             return self._snapshot(self._orders[existing])
         quantity = self._check_capability(intent)
+        if protection_reference is not None:
+            _decimal(protection_reference, "protection_reference", inclusive=False)
+            if intent.order_type not in _STOP_TYPES:
+                raise ValueError("protection_reference is valid only for protective stops")
         symbol = intent.symbol
         held = self._held.get(symbol)
         if intent.side is OrderSide.SELL:
@@ -619,7 +630,7 @@ class HistoricalExecutionSimulator:
         )
         if intent.order_type in _STOP_TYPES:
             assert held is not None
-            self._arm_protection(order, held)
+            self._arm_protection(order, held, reference=protection_reference)
         self._transition(order, OrderStatus.SUBMITTING)
         self._transition(order, OrderStatus.ACCEPTED)
         self._orders[order.broker_order_id] = order
@@ -715,6 +726,89 @@ class HistoricalExecutionSimulator:
             raise NotImplementedError("splits with open orders or positions are not simulated")
         return ()
 
+    def process_entry_bar_protection(
+        self,
+        broker_order_id: str,
+        candle: Candle,
+        *,
+        favorable_extreme_reached: bool = False,
+        allow_trailing_ratchet: bool = False,
+    ) -> tuple[SimulatedExecution, ...]:
+        """Apply newly armed protection to the remainder of its entry bar.
+
+        Bar-only market entries fill at the next bar's open, but the lifecycle can only
+        submit their protective order when that completed bar becomes available.  This
+        method closes that representation gap: the initial stop is tested against the
+        entry bar before any favorable extreme is allowed to ratchet trailing protection.
+
+        ``favorable_extreme_reached`` is supplied for coordinator-managed stepped
+        trailing stops.  ``allow_trailing_ratchet`` is true only when the entry filled
+        at the open; an intrabar fill cannot safely consume a high/low that may have
+        preceded it.  Native trailing orders derive their favorable move from policy.
+        An entry bar touching both relevant extremes is resolved stop-first.
+        """
+        if not isinstance(favorable_extreme_reached, bool):
+            raise TypeError("favorable_extreme_reached must be bool")
+        if not isinstance(allow_trailing_ratchet, bool):
+            raise TypeError("allow_trailing_ratchet must be bool")
+        order = self._orders.get(broker_order_id)
+        if order is None:
+            raise BrokerRejectedError(
+                f"unknown order {broker_order_id!r}", code="unknown_order"
+            )
+        if candle.symbol != order.intent.symbol:
+            raise ValueError("entry candle symbol must match the protective order")
+        if order.prot is None:
+            raise ValueError("entry-bar protection requires a protective stop order")
+        if (
+            not order.is_open
+            or self._feed.quote_fidelity(candle.symbol) is not QuoteFidelity.UNAVAILABLE
+        ):
+            return ()
+        if self._last_bar_end.get(candle.symbol) != candle.end:
+            raise ValueError("entry candle must be the simulator's most recently processed bar")
+        if self._bar_block_reason(candle, _bar_in_regular_session(candle)) is not None:
+            return ()
+
+        if order.prot.status is ProtectionStatus.PENDING:
+            order.prot = replace(order.prot, status=ProtectionStatus.ACTIVE)
+        native_ratchet = (
+            allow_trailing_ratchet
+            and order.order_type is OrderType.TRAILING_STOP
+            and self._candidate_stop(order, candle.high, candle.low) != order.prot.stop_price
+        )
+        hit = self._stop_crossed(order, candle.low, candle.high)
+        ambiguous = hit and (favorable_extreme_reached or native_ratchet)
+        if ambiguous:
+            self._note(candle.start, broker_order_id, AMBIGUOUS_INTRABAR_ORDER)
+
+        out: list[SimulatedExecution] = []
+        if hit:
+            evidence = self._bar_evidence(candle)
+            stop = order.prot.stop_price
+            execution = self._try_fill(
+                order,
+                stop,
+                self._price(order, stop, capped=False),
+                candle.end,
+                (candle.symbol, "BAR", candle.start),
+                candle.volume * self._a.participation,
+                evidence,
+                (AMBIGUOUS_INTRABAR_ORDER,) if ambiguous else (),
+            )
+            if execution is not None:
+                out.append(execution)
+
+        # The initial stop was tested first.  Only a surviving native trailing order may
+        # consume the completed entry bar's favorable extreme for subsequent bars.
+        if (
+            allow_trailing_ratchet
+            and order.is_open
+            and order.order_type is OrderType.TRAILING_STOP
+        ):
+            self._ratchet_order(order, candle.high, candle.low)
+        return tuple(out)
+
     # ---- admission
 
     def _check_capability(self, intent: OrderIntent) -> Decimal:
@@ -737,7 +831,9 @@ class HistoricalExecutionSimulator:
             raise UnsupportedOrderCapabilityError("a protective stop must be a stop order")
         return quantity
 
-    def _arm_protection(self, order: _Order, held: _Held) -> None:
+    def _arm_protection(
+        self, order: _Order, held: _Held, *, reference: Decimal | None = None
+    ) -> None:
         intent = order.intent
         avg = held.cost / held.quantity
         if intent.order_type is OrderType.STOP:
@@ -772,8 +868,10 @@ class HistoricalExecutionSimulator:
         )
         # ``start_protection`` reads only the structural cycle surface that ``_CycleView`` has.
         state = start_protection(
-            order.policy, view, self._last_price.get(intent.symbol, avg)  # type: ignore[arg-type]
-        )
+            order.policy,
+            view,
+            reference if reference is not None else self._last_price.get(intent.symbol, avg),
+        )  # type: ignore[arg-type]
         rounded = (
             ALPACA_EQUITY_TICK_RULES.floor(state.stop_price)
             if held.direction is PositionDirection.LONG
@@ -824,21 +922,8 @@ class HistoricalExecutionSimulator:
         for o in orders:
             if o.prot is not None and o.prot.status is ProtectionStatus.PENDING:
                 o.prot = replace(o.prot, status=ProtectionStatus.ACTIVE)
-        evidence = _Evidence(
-            "BAR",
-            c.start,
-            {
-                "bar_start": c.start.isoformat(),
-                "bar_end": c.end.isoformat(),
-                "open": str(c.open),
-                "high": str(c.high),
-                "low": str(c.low),
-                "close": str(c.close),
-                "volume": str(c.volume),
-                "bar_fill_policy": a.bar_fill_policy.value,
-            },
-            _BAR_ONLY,
-        )
+        evidence = self._bar_evidence(c)
+
         key = (c.symbol, "BAR", c.start)
         cap = c.volume * a.participation
         out: list[SimulatedExecution] = []
@@ -903,6 +988,23 @@ class HistoricalExecutionSimulator:
             if through and not (withhold and o.side.is_exit):
                 fill(o, o.limit_price, o.limit_price, c.end, ambiguous)
         return out
+
+    def _bar_evidence(self, c: Candle) -> _Evidence:
+        return _Evidence(
+            "BAR",
+            c.start,
+            {
+                "bar_start": c.start.isoformat(),
+                "bar_end": c.end.isoformat(),
+                "open": str(c.open),
+                "high": str(c.high),
+                "low": str(c.low),
+                "close": str(c.close),
+                "volume": str(c.volume),
+                "bar_fill_policy": self._a.bar_fill_policy.value,
+            },
+            _BAR_ONLY,
+        )
 
     def _bar_block_reason(self, c: Candle, regular: bool) -> str | None:
         if self._a.bar_fill_policy is BarFillPolicy.NO_BAR_FILL:
@@ -1276,13 +1378,18 @@ class HistoricalExecutionSimulator:
                 or o.remaining <= _ZERO
             ):
                 continue
-            stop = self._candidate_stop(o, high, low)
-            extreme = (
-                max(o.prot.high_water_mark, high)
-                if o.prot.direction is PositionDirection.LONG
-                else min(o.prot.high_water_mark, low)
-            )
-            o.prot = o.prot.ratchet(stop, extreme)
+            self._ratchet_order(o, high, low)
+
+    def _ratchet_order(self, order: _Order, high: Decimal, low: Decimal) -> None:
+        """Apply one completed bar's favorable extreme to one native trailing order."""
+        assert order.prot is not None
+        stop = self._candidate_stop(order, high, low)
+        extreme = (
+            max(order.prot.high_water_mark, high)
+            if order.prot.direction is PositionDirection.LONG
+            else min(order.prot.high_water_mark, low)
+        )
+        order.prot = order.prot.ratchet(stop, extreme)
 
     def _held_for(self, symbol: str, direction: PositionDirection) -> Decimal:
         """Held quantity of ``symbol`` only when the position has the given direction."""
