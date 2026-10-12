@@ -714,6 +714,80 @@ class OrderIntentRepository(_Repository):
                 occurred_at=now,
             )
 
+    def mark_submitted_by_id(self, intent_id: str, broker_order_id: str) -> bool:
+        """Mark an UNKNOWN / RECORDED intent SUBMITTED once its broker order has been found.
+
+        Used by reconciliation after a lookup by ``client_order_id`` proved the order exists.
+        Returns False when the intent was not in a resolvable state.
+        """
+        now = self._now()
+        with self._w.unit_of_work() as conn:
+            row = conn.execute(
+                "SELECT client_order_id FROM order_intents "
+                "WHERE account_scope_id = ? AND intent_id = ? AND status IN ('RECORDED','UNKNOWN')",
+                (self._scope, intent_id),
+            ).fetchone()
+            if row is None:
+                return False
+            conn.execute(
+                "UPDATE order_intents SET status = 'SUBMITTED', updated_at = ? "
+                "WHERE account_scope_id = ? AND intent_id = ?",
+                (to_db_timestamp(now), self._scope, intent_id),
+            )
+            self._emit(
+                "OrderIntentSubmitted",
+                "order_intent",
+                intent_id,
+                {
+                    "intent_id": intent_id,
+                    "client_order_id": row[0],
+                    "broker_order_id": broker_order_id,
+                    "resolved_by": "reconciliation",
+                },
+                occurred_at=now,
+            )
+        return True
+
+    def mark_not_submitted(self, intent_id: str, detail: str) -> bool:
+        """Resolve an UNKNOWN (or RECORDED) intent whose order is *proven* absent.
+
+        Callers use this only after the broker answered a lookup by ``client_order_id`` with
+        not-found (or refused the request outright), never on a mere timeout.  The intent
+        becomes SUBMIT_FAILED and its entry reservation is released; nothing is deleted.
+        Returns False when the intent was not in a resolvable state.
+        """
+        now = self._now()
+        with self._w.unit_of_work() as conn:
+            row = conn.execute(
+                "SELECT client_order_id FROM order_intents "
+                "WHERE account_scope_id = ? AND intent_id = ? AND status IN ('RECORDED','UNKNOWN')",
+                (self._scope, intent_id),
+            ).fetchone()
+            if row is None:
+                return False
+            conn.execute(
+                "UPDATE order_intents SET status = 'SUBMIT_FAILED', updated_at = ? "
+                "WHERE account_scope_id = ? AND intent_id = ?",
+                (to_db_timestamp(now), self._scope, intent_id),
+            )
+            released = _release_reservations(
+                conn, self._scope, now, reservation_id=_reservation_id(intent_id)
+            )
+            self._emit(
+                "OrderIntentSubmitFailed",
+                "order_intent",
+                intent_id,
+                {
+                    "intent_id": intent_id,
+                    "client_order_id": row[0],
+                    "status": "SUBMIT_FAILED",
+                    "detail": detail,
+                    "reservation_released": bool(released),
+                },
+                occurred_at=now,
+            )
+        return True
+
     def _mark_failure(self, receipt: IntentReceipt, status: str, detail: str) -> None:
         intent = receipt.intent
         now = self._now()
@@ -1044,6 +1118,109 @@ class FillRepository(_Repository):
                 },
                 occurred_at=fill.filled_at,
                 idempotency_key=f"fill:{fill.fill_id}",
+            )
+        return FillApplyResult("applied", fill.fill_id, updated, event.event_seq)
+
+    def apply_external_fill(
+        self, fill: Fill, cycle_id: str, *, classification: str = "external_exit"
+    ) -> FillApplyResult:
+        """Record a human-initiated EXIT execution against a managed cycle, exactly once.
+
+        Orders placed outside Mike_Trade (the Alpaca website or mobile app, DAS Trader, ...)
+        have no intent, so they cannot go through :meth:`apply_fill`.  The fill's broker order
+        must already be stored (``BrokerOrderRepository.upsert_broker_order`` with no intent).
+        Only an exit-side fill of the cycle's own direction is accepted, and never more than the
+        cycle's remaining quantity; the caller attributes any surplus to unmanaged holdings.
+        Cycle state, the position row, reservations and trailing coverage change exactly as for
+        an engine exit, and the journal event is marked ``strategy_exit: false`` so a manual
+        sale is never counted as a strategy win or loss.  The fills table is append-only.
+        """
+        self._w.require_scope(fill.account_scope_id)
+        now = self._now()
+        scope = self._scope
+        with self._w.unit_of_work() as conn:
+            if conn.execute(
+                "SELECT 1 FROM fills WHERE account_scope_id = ? AND external_activity_id = ?",
+                (scope, fill.fill_id),
+            ).fetchone():
+                return FillApplyResult("duplicate", fill.fill_id)
+            order = conn.execute(
+                "SELECT symbol, side FROM broker_orders "
+                "WHERE account_scope_id = ? AND broker_order_id = ?",
+                (scope, fill.broker_order_id),
+            ).fetchone()
+            if order is None:
+                raise PersistenceError(
+                    f"external fill references unknown broker order {fill.broker_order_id!r}"
+                )
+            cycle = _load_cycle(conn, scope, cycle_id)
+            if cycle is None:
+                raise PersistenceError(f"unknown cycle {cycle_id!r}")
+            if fill.symbol != cycle.symbol or fill.side is not cycle.exit_side:
+                raise ValueError("an external fill may only reduce its cycle with an exit fill")
+            if cycle.state is PositionCycleState.OPEN:
+                cycle = cycle.begin_exit()
+            updated = cycle.apply_exit_fill(fill)
+            conn.execute(
+                "INSERT INTO fills(fill_id, account_scope_id, external_activity_id, "
+                "broker_order_id, cycle_id, symbol, side, quantity, price, fee, filled_at, "
+                "recorded_at) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)",
+                (
+                    f"{scope}:{fill.fill_id}",
+                    scope,
+                    fill.fill_id,
+                    fill.broker_order_id,
+                    cycle.cycle_id,
+                    fill.symbol,
+                    fill.side.value,
+                    decimal_to_db(fill.quantity),
+                    decimal_to_db(fill.price),
+                    decimal_to_db(fill.fee),
+                    to_db_timestamp(fill.filled_at),
+                    to_db_timestamp(now),
+                ),
+            )
+            conn.execute(
+                "UPDATE position_cycles SET state = ?, opened_at = ?, closed_at = ?, "
+                "updated_at = ? WHERE account_scope_id = ? AND cycle_id = ?",
+                (
+                    updated.state.value,
+                    None if updated.opened_at is None else to_db_timestamp(updated.opened_at),
+                    None if updated.closed_at is None else to_db_timestamp(updated.closed_at),
+                    to_db_timestamp(now),
+                    scope,
+                    cycle.cycle_id,
+                ),
+            )
+            if updated.state is PositionCycleState.CLOSED:
+                _release_reservations(conn, scope, now, cycle_id=cycle.cycle_id)
+            self._upsert_position(conn, updated, fill)
+            trailing = self._resize_trailing(conn, updated, fill, now)
+            event = self._emit(
+                "ExternalFillApplied",
+                "position_cycle",
+                cycle.cycle_id,
+                {
+                    "external_activity_id": fill.fill_id,
+                    "broker_order_id": fill.broker_order_id,
+                    "cycle_id": cycle.cycle_id,
+                    "symbol": fill.symbol,
+                    "side": fill.side,
+                    "quantity": fill.quantity,
+                    "price": fill.price,
+                    "filled_at": fill.filled_at,
+                    "classification": classification,
+                    "strategy_exit": False,
+                    "strategy_win": False,
+                    "cycle_state": updated.state,
+                    "remaining_quantity": updated.remaining_quantity,
+                    "realized_pnl": (
+                        updated.realized_pnl if updated.state is PositionCycleState.CLOSED else None
+                    ),
+                    "trailing": trailing,
+                },
+                occurred_at=fill.filled_at,
+                idempotency_key=f"external-fill:{fill.fill_id}",
             )
         return FillApplyResult("applied", fill.fill_id, updated, event.event_seq)
 
