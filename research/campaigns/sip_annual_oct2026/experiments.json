@@ -1,0 +1,5503 @@
+{
+  "experiments": [
+    {
+      "symbol": "IBM",
+      "strategy": "michelle_orb",
+      "start": "2025-10-09T00:00:00Z",
+      "end": "2026-09-21T04:00:00Z",
+      "seed": 271828,
+      "dataset_id": "alpaca-sip-IBM-1m-raw-c9392eccb3fc9519da67",
+      "feed": "sip",
+      "parameters": null,
+      "starting_capital": "10000",
+      "execution": {
+        "slippage_bps": "5",
+        "fee_per_order": "0",
+        "fee_per_share": "0",
+        "fee_bps": "0"
+      },
+      "buy_strategies": [
+        "five_minute_orb_michelle_buy"
+      ],
+      "sell_strategies": [
+        "five_minute_orb_michelle_sell"
+      ],
+      "short_strategies": null,
+      "cover_strategies": null,
+      "short_selling_enabled": false,
+      "short_borrow_bps_per_day": "0",
+      "protective_stop": null,
+      "end_of_day_close": {
+        "enabled": true,
+        "at": "15:55"
+      },
+      "max_entry_cycles_per_session": 10
+    },
+    {
+      "symbol": "IBM",
+      "strategy": "michelle_vwap",
+      "start": "2025-10-09T00:00:00Z",
+      "end": "2026-09-21T04:00:00Z",
+      "seed": 271828,
+      "dataset_id": "alpaca-sip-IBM-1m-raw-c9392eccb3fc9519da67",
+      "feed": "sip",
+      "parameters": null,
+      "starting_capital": "10000",
+      "execution": {
+        "slippage_bps": "5",
+        "fee_per_order": "0",
+        "fee_per_share": "0",
+        "fee_bps": "0"
+      },
+      "buy_strategies": [
+        "vwap_bounce_break_michelle_buy"
+      ],
+      "sell_strategies": [
+        "vwap_bounce_break_michelle_sell"
+      ],
+      "short_strategies": null,
+      "cover_strategies": null,
+      "short_selling_enabled": false,
+      "short_borrow_bps_per_day": "0",
+      "protective_stop": null,
+      "end_of_day_close": {
+        "enabled": true,
+        "at": "15:55"
+      },
+      "max_entry_cycles_per_session": 10
+    },
+    {
+      "symbol": "IBM",
+      "strategy": "michelle_combined",
+      "start": "2025-10-09T00:00:00Z",
+      "end": "2026-09-21T04:00:00Z",
+      "seed": 271828,
+      "dataset_id": "alpaca-sip-IBM-1m-raw-c9392eccb3fc9519da67",
+      "feed": "sip",
+      "parameters": null,
+      "starting_capital": "10000",
+      "execution": {
+        "slippage_bps": "5",
+        "fee_per_order": "0",
+        "fee_per_share": "0",
+        "fee_bps": "0"
+      },
+      "buy_strategies": [
+        "five_minute_orb_michelle_buy",
+        "vwap_bounce_break_michelle_buy"
+      ],
+      "sell_strategies": [
+        "five_minute_orb_michelle_sell",
+        "vwap_bounce_break_michelle_sell"
+      ],
+      "short_strategies": null,
+      "cover_strategies": null,
+      "short_selling_enabled": false,
+      "short_borrow_bps_per_day": "0",
+      "protective_stop": null,
+      "end_of_day_close": {
+        "enabled": true,
+        "at": "15:55"
+      },
+      "max_entry_cycles_per_session": 10
+    },
+    {
+      "symbol": "IBM",
+      "strategy": "vwap_reference",
+      "start": "2025-10-09T00:00:00Z",
+      "end": "2026-09-21T04:00:00Z",
+      "seed": 271828,
+      "dataset_id": "alpaca-sip-IBM-1m-raw-c9392eccb3fc9519da67",
+      "feed": "sip",
+      "parameters": null,
+      "starting_capital": "10000",
+      "execution": {
+        "slippage_bps": "5",
+        "fee_per_order": "0",
+        "fee_per_share": "0",
+        "fee_bps": "0"
+      },
+      "buy_strategies": [
+        "vwap_bounce"
+      ],
+      "sell_strategies": [
+        "vwap_breakdown"
+      ],
+      "short_strategies": null,
+      "cover_strategies": null,
+      "short_selling_enabled": false,
+      "short_borrow_bps_per_day": "0",
+      "protective_stop": {
+        "type": "native_trailing",
+        "trail_percent": "1.5"
+      },
+      "end_of_day_close": {
+        "enabled": true,
+        "at": "15:55"
+      },
+      "max_entry_cycles_per_session": 10
+    },
+    {
+      "symbol": "IBM",
+      "strategy": "trend_exit_0",
+      "start": "2025-10-09T00:00:00Z",
+      "end": "2026-09-21T04:00:00Z",
+      "seed": 271828,
+      "dataset_id": "alpaca-sip-IBM-1m-raw-c9392eccb3fc9519da67",
+      "feed": "sip",
+      "parameters": null,
+      "starting_capital": "10000",
+      "execution": {
+        "slippage_bps": "5",
+        "fee_per_order": "0",
+        "fee_per_share": "0",
+        "fee_bps": "0"
+      },
+      "buy_strategies": [
+        "ema_pullback",
+        "supertrend",
+        "higher_high_higher_low"
+      ],
+      "sell_strategies": [],
+      "short_strategies": null,
+      "cover_strategies": null,
+      "short_selling_enabled": false,
+      "short_borrow_bps_per_day": "0",
+      "protective_stop": {
+        "type": "native_trailing",
+        "trail_percent": "1.5"
+      },
+      "end_of_day_close": {
+        "enabled": true,
+        "at": "15:55"
+      },
+      "max_entry_cycles_per_session": 10
+    },
+    {
+      "symbol": "IBM",
+      "strategy": "trend_exit_1",
+      "start": "2025-10-09T00:00:00Z",
+      "end": "2026-09-21T04:00:00Z",
+      "seed": 271828,
+      "dataset_id": "alpaca-sip-IBM-1m-raw-c9392eccb3fc9519da67",
+      "feed": "sip",
+      "parameters": null,
+      "starting_capital": "10000",
+      "execution": {
+        "slippage_bps": "5",
+        "fee_per_order": "0",
+        "fee_per_share": "0",
+        "fee_bps": "0"
+      },
+      "buy_strategies": [
+        "ema_pullback",
+        "supertrend",
+        "higher_high_higher_low"
+      ],
+      "sell_strategies": [
+        "ema_bearish_crossover"
+      ],
+      "short_strategies": null,
+      "cover_strategies": null,
+      "short_selling_enabled": false,
+      "short_borrow_bps_per_day": "0",
+      "protective_stop": {
+        "type": "native_trailing",
+        "trail_percent": "1.5"
+      },
+      "end_of_day_close": {
+        "enabled": true,
+        "at": "15:55"
+      },
+      "max_entry_cycles_per_session": 10
+    },
+    {
+      "symbol": "IBM",
+      "strategy": "trend_exit_2",
+      "start": "2025-10-09T00:00:00Z",
+      "end": "2026-09-21T04:00:00Z",
+      "seed": 271828,
+      "dataset_id": "alpaca-sip-IBM-1m-raw-c9392eccb3fc9519da67",
+      "feed": "sip",
+      "parameters": null,
+      "starting_capital": "10000",
+      "execution": {
+        "slippage_bps": "5",
+        "fee_per_order": "0",
+        "fee_per_share": "0",
+        "fee_bps": "0"
+      },
+      "buy_strategies": [
+        "ema_pullback",
+        "supertrend",
+        "higher_high_higher_low"
+      ],
+      "sell_strategies": [
+        "ema_bearish_crossover",
+        "previous_swing_low_break"
+      ],
+      "short_strategies": null,
+      "cover_strategies": null,
+      "short_selling_enabled": false,
+      "short_borrow_bps_per_day": "0",
+      "protective_stop": {
+        "type": "native_trailing",
+        "trail_percent": "1.5"
+      },
+      "end_of_day_close": {
+        "enabled": true,
+        "at": "15:55"
+      },
+      "max_entry_cycles_per_session": 10
+    },
+    {
+      "symbol": "IBM",
+      "strategy": "trend_exit_3",
+      "start": "2025-10-09T00:00:00Z",
+      "end": "2026-09-21T04:00:00Z",
+      "seed": 271828,
+      "dataset_id": "alpaca-sip-IBM-1m-raw-c9392eccb3fc9519da67",
+      "feed": "sip",
+      "parameters": null,
+      "starting_capital": "10000",
+      "execution": {
+        "slippage_bps": "5",
+        "fee_per_order": "0",
+        "fee_per_share": "0",
+        "fee_bps": "0"
+      },
+      "buy_strategies": [
+        "ema_pullback",
+        "supertrend",
+        "higher_high_higher_low"
+      ],
+      "sell_strategies": [
+        "ema_bearish_crossover",
+        "previous_swing_low_break",
+        "dmi_bearish_crossover"
+      ],
+      "short_strategies": null,
+      "cover_strategies": null,
+      "short_selling_enabled": false,
+      "short_borrow_bps_per_day": "0",
+      "protective_stop": {
+        "type": "native_trailing",
+        "trail_percent": "1.5"
+      },
+      "end_of_day_close": {
+        "enabled": true,
+        "at": "15:55"
+      },
+      "max_entry_cycles_per_session": 10
+    },
+    {
+      "symbol": "IBM",
+      "strategy": "breakout_exit_0",
+      "start": "2025-10-09T00:00:00Z",
+      "end": "2026-09-21T04:00:00Z",
+      "seed": 271828,
+      "dataset_id": "alpaca-sip-IBM-1m-raw-c9392eccb3fc9519da67",
+      "feed": "sip",
+      "parameters": null,
+      "starting_capital": "10000",
+      "execution": {
+        "slippage_bps": "5",
+        "fee_per_order": "0",
+        "fee_per_share": "0",
+        "fee_bps": "0"
+      },
+      "buy_strategies": [
+        "opening_range_breakout",
+        "donchian_channel_breakout",
+        "relative_volume_momentum"
+      ],
+      "sell_strategies": [],
+      "short_strategies": null,
+      "cover_strategies": null,
+      "short_selling_enabled": false,
+      "short_borrow_bps_per_day": "0",
+      "protective_stop": {
+        "type": "native_trailing",
+        "trail_percent": "1.5"
+      },
+      "end_of_day_close": {
+        "enabled": true,
+        "at": "15:55"
+      },
+      "max_entry_cycles_per_session": 10
+    },
+    {
+      "symbol": "IBM",
+      "strategy": "breakout_exit_1",
+      "start": "2025-10-09T00:00:00Z",
+      "end": "2026-09-21T04:00:00Z",
+      "seed": 271828,
+      "dataset_id": "alpaca-sip-IBM-1m-raw-c9392eccb3fc9519da67",
+      "feed": "sip",
+      "parameters": null,
+      "starting_capital": "10000",
+      "execution": {
+        "slippage_bps": "5",
+        "fee_per_order": "0",
+        "fee_per_share": "0",
+        "fee_bps": "0"
+      },
+      "buy_strategies": [
+        "opening_range_breakout",
+        "donchian_channel_breakout",
+        "relative_volume_momentum"
+      ],
+      "sell_strategies": [
+        "failed_breakout_exit"
+      ],
+      "short_strategies": null,
+      "cover_strategies": null,
+      "short_selling_enabled": false,
+      "short_borrow_bps_per_day": "0",
+      "protective_stop": {
+        "type": "native_trailing",
+        "trail_percent": "1.5"
+      },
+      "end_of_day_close": {
+        "enabled": true,
+        "at": "15:55"
+      },
+      "max_entry_cycles_per_session": 10
+    },
+    {
+      "symbol": "IBM",
+      "strategy": "breakout_exit_2",
+      "start": "2025-10-09T00:00:00Z",
+      "end": "2026-09-21T04:00:00Z",
+      "seed": 271828,
+      "dataset_id": "alpaca-sip-IBM-1m-raw-c9392eccb3fc9519da67",
+      "feed": "sip",
+      "parameters": null,
+      "starting_capital": "10000",
+      "execution": {
+        "slippage_bps": "5",
+        "fee_per_order": "0",
+        "fee_per_share": "0",
+        "fee_bps": "0"
+      },
+      "buy_strategies": [
+        "opening_range_breakout",
+        "donchian_channel_breakout",
+        "relative_volume_momentum"
+      ],
+      "sell_strategies": [
+        "failed_breakout_exit",
+        "momentum_reversal"
+      ],
+      "short_strategies": null,
+      "cover_strategies": null,
+      "short_selling_enabled": false,
+      "short_borrow_bps_per_day": "0",
+      "protective_stop": {
+        "type": "native_trailing",
+        "trail_percent": "1.5"
+      },
+      "end_of_day_close": {
+        "enabled": true,
+        "at": "15:55"
+      },
+      "max_entry_cycles_per_session": 10
+    },
+    {
+      "symbol": "IBM",
+      "strategy": "breakout_exit_3",
+      "start": "2025-10-09T00:00:00Z",
+      "end": "2026-09-21T04:00:00Z",
+      "seed": 271828,
+      "dataset_id": "alpaca-sip-IBM-1m-raw-c9392eccb3fc9519da67",
+      "feed": "sip",
+      "parameters": null,
+      "starting_capital": "10000",
+      "execution": {
+        "slippage_bps": "5",
+        "fee_per_order": "0",
+        "fee_per_share": "0",
+        "fee_bps": "0"
+      },
+      "buy_strategies": [
+        "opening_range_breakout",
+        "donchian_channel_breakout",
+        "relative_volume_momentum"
+      ],
+      "sell_strategies": [
+        "failed_breakout_exit",
+        "momentum_reversal",
+        "high_volume_reversal"
+      ],
+      "short_strategies": null,
+      "cover_strategies": null,
+      "short_selling_enabled": false,
+      "short_borrow_bps_per_day": "0",
+      "protective_stop": {
+        "type": "native_trailing",
+        "trail_percent": "1.5"
+      },
+      "end_of_day_close": {
+        "enabled": true,
+        "at": "15:55"
+      },
+      "max_entry_cycles_per_session": 10
+    },
+    {
+      "symbol": "IBM",
+      "strategy": "vwap_mean_exit_0",
+      "start": "2025-10-09T00:00:00Z",
+      "end": "2026-09-21T04:00:00Z",
+      "seed": 271828,
+      "dataset_id": "alpaca-sip-IBM-1m-raw-c9392eccb3fc9519da67",
+      "feed": "sip",
+      "parameters": null,
+      "starting_capital": "10000",
+      "execution": {
+        "slippage_bps": "5",
+        "fee_per_order": "0",
+        "fee_per_share": "0",
+        "fee_bps": "0"
+      },
+      "buy_strategies": [
+        "vwap_bounce",
+        "vwap_pullback",
+        "rsi_oversold_reversal"
+      ],
+      "sell_strategies": [],
+      "short_strategies": null,
+      "cover_strategies": null,
+      "short_selling_enabled": false,
+      "short_borrow_bps_per_day": "0",
+      "protective_stop": {
+        "type": "native_trailing",
+        "trail_percent": "1.5"
+      },
+      "end_of_day_close": {
+        "enabled": true,
+        "at": "15:55"
+      },
+      "max_entry_cycles_per_session": 10
+    },
+    {
+      "symbol": "IBM",
+      "strategy": "vwap_mean_exit_1",
+      "start": "2025-10-09T00:00:00Z",
+      "end": "2026-09-21T04:00:00Z",
+      "seed": 271828,
+      "dataset_id": "alpaca-sip-IBM-1m-raw-c9392eccb3fc9519da67",
+      "feed": "sip",
+      "parameters": null,
+      "starting_capital": "10000",
+      "execution": {
+        "slippage_bps": "5",
+        "fee_per_order": "0",
+        "fee_per_share": "0",
+        "fee_bps": "0"
+      },
+      "buy_strategies": [
+        "vwap_bounce",
+        "vwap_pullback",
+        "rsi_oversold_reversal"
+      ],
+      "sell_strategies": [
+        "vwap_breakdown"
+      ],
+      "short_strategies": null,
+      "cover_strategies": null,
+      "short_selling_enabled": false,
+      "short_borrow_bps_per_day": "0",
+      "protective_stop": {
+        "type": "native_trailing",
+        "trail_percent": "1.5"
+      },
+      "end_of_day_close": {
+        "enabled": true,
+        "at": "15:55"
+      },
+      "max_entry_cycles_per_session": 10
+    },
+    {
+      "symbol": "IBM",
+      "strategy": "vwap_mean_exit_2",
+      "start": "2025-10-09T00:00:00Z",
+      "end": "2026-09-21T04:00:00Z",
+      "seed": 271828,
+      "dataset_id": "alpaca-sip-IBM-1m-raw-c9392eccb3fc9519da67",
+      "feed": "sip",
+      "parameters": null,
+      "starting_capital": "10000",
+      "execution": {
+        "slippage_bps": "5",
+        "fee_per_order": "0",
+        "fee_per_share": "0",
+        "fee_bps": "0"
+      },
+      "buy_strategies": [
+        "vwap_bounce",
+        "vwap_pullback",
+        "rsi_oversold_reversal"
+      ],
+      "sell_strategies": [
+        "vwap_breakdown",
+        "rsi_reversal"
+      ],
+      "short_strategies": null,
+      "cover_strategies": null,
+      "short_selling_enabled": false,
+      "short_borrow_bps_per_day": "0",
+      "protective_stop": {
+        "type": "native_trailing",
+        "trail_percent": "1.5"
+      },
+      "end_of_day_close": {
+        "enabled": true,
+        "at": "15:55"
+      },
+      "max_entry_cycles_per_session": 10
+    },
+    {
+      "symbol": "IBM",
+      "strategy": "vwap_mean_exit_3",
+      "start": "2025-10-09T00:00:00Z",
+      "end": "2026-09-21T04:00:00Z",
+      "seed": 271828,
+      "dataset_id": "alpaca-sip-IBM-1m-raw-c9392eccb3fc9519da67",
+      "feed": "sip",
+      "parameters": null,
+      "starting_capital": "10000",
+      "execution": {
+        "slippage_bps": "5",
+        "fee_per_order": "0",
+        "fee_per_share": "0",
+        "fee_bps": "0"
+      },
+      "buy_strategies": [
+        "vwap_bounce",
+        "vwap_pullback",
+        "rsi_oversold_reversal"
+      ],
+      "sell_strategies": [
+        "vwap_breakdown",
+        "rsi_reversal",
+        "price_below_ema"
+      ],
+      "short_strategies": null,
+      "cover_strategies": null,
+      "short_selling_enabled": false,
+      "short_borrow_bps_per_day": "0",
+      "protective_stop": {
+        "type": "native_trailing",
+        "trail_percent": "1.5"
+      },
+      "end_of_day_close": {
+        "enabled": true,
+        "at": "15:55"
+      },
+      "max_entry_cycles_per_session": 10
+    },
+    {
+      "symbol": "IBM",
+      "strategy": "price_action_exit_0",
+      "start": "2025-10-09T00:00:00Z",
+      "end": "2026-09-21T04:00:00Z",
+      "seed": 271828,
+      "dataset_id": "alpaca-sip-IBM-1m-raw-c9392eccb3fc9519da67",
+      "feed": "sip",
+      "parameters": null,
+      "starting_capital": "10000",
+      "execution": {
+        "slippage_bps": "5",
+        "fee_per_order": "0",
+        "fee_per_share": "0",
+        "fee_bps": "0"
+      },
+      "buy_strategies": [
+        "inside_bar_breakout",
+        "support_bounce",
+        "resistance_breakout"
+      ],
+      "sell_strategies": [],
+      "short_strategies": null,
+      "cover_strategies": null,
+      "short_selling_enabled": false,
+      "short_borrow_bps_per_day": "0",
+      "protective_stop": {
+        "type": "native_trailing",
+        "trail_percent": "1.5"
+      },
+      "end_of_day_close": {
+        "enabled": true,
+        "at": "15:55"
+      },
+      "max_entry_cycles_per_session": 10
+    },
+    {
+      "symbol": "IBM",
+      "strategy": "price_action_exit_1",
+      "start": "2025-10-09T00:00:00Z",
+      "end": "2026-09-21T04:00:00Z",
+      "seed": 271828,
+      "dataset_id": "alpaca-sip-IBM-1m-raw-c9392eccb3fc9519da67",
+      "feed": "sip",
+      "parameters": null,
+      "starting_capital": "10000",
+      "execution": {
+        "slippage_bps": "5",
+        "fee_per_order": "0",
+        "fee_per_share": "0",
+        "fee_bps": "0"
+      },
+      "buy_strategies": [
+        "inside_bar_breakout",
+        "support_bounce",
+        "resistance_breakout"
+      ],
+      "sell_strategies": [
+        "previous_swing_low_break"
+      ],
+      "short_strategies": null,
+      "cover_strategies": null,
+      "short_selling_enabled": false,
+      "short_borrow_bps_per_day": "0",
+      "protective_stop": {
+        "type": "native_trailing",
+        "trail_percent": "1.5"
+      },
+      "end_of_day_close": {
+        "enabled": true,
+        "at": "15:55"
+      },
+      "max_entry_cycles_per_session": 10
+    },
+    {
+      "symbol": "IBM",
+      "strategy": "price_action_exit_2",
+      "start": "2025-10-09T00:00:00Z",
+      "end": "2026-09-21T04:00:00Z",
+      "seed": 271828,
+      "dataset_id": "alpaca-sip-IBM-1m-raw-c9392eccb3fc9519da67",
+      "feed": "sip",
+      "parameters": null,
+      "starting_capital": "10000",
+      "execution": {
+        "slippage_bps": "5",
+        "fee_per_order": "0",
+        "fee_per_share": "0",
+        "fee_bps": "0"
+      },
+      "buy_strategies": [
+        "inside_bar_breakout",
+        "support_bounce",
+        "resistance_breakout"
+      ],
+      "sell_strategies": [
+        "previous_swing_low_break",
+        "bearish_engulfing_exit"
+      ],
+      "short_strategies": null,
+      "cover_strategies": null,
+      "short_selling_enabled": false,
+      "short_borrow_bps_per_day": "0",
+      "protective_stop": {
+        "type": "native_trailing",
+        "trail_percent": "1.5"
+      },
+      "end_of_day_close": {
+        "enabled": true,
+        "at": "15:55"
+      },
+      "max_entry_cycles_per_session": 10
+    },
+    {
+      "symbol": "IBM",
+      "strategy": "price_action_exit_3",
+      "start": "2025-10-09T00:00:00Z",
+      "end": "2026-09-21T04:00:00Z",
+      "seed": 271828,
+      "dataset_id": "alpaca-sip-IBM-1m-raw-c9392eccb3fc9519da67",
+      "feed": "sip",
+      "parameters": null,
+      "starting_capital": "10000",
+      "execution": {
+        "slippage_bps": "5",
+        "fee_per_order": "0",
+        "fee_per_share": "0",
+        "fee_bps": "0"
+      },
+      "buy_strategies": [
+        "inside_bar_breakout",
+        "support_bounce",
+        "resistance_breakout"
+      ],
+      "sell_strategies": [
+        "previous_swing_low_break",
+        "bearish_engulfing_exit",
+        "shooting_star_reversal"
+      ],
+      "short_strategies": null,
+      "cover_strategies": null,
+      "short_selling_enabled": false,
+      "short_borrow_bps_per_day": "0",
+      "protective_stop": {
+        "type": "native_trailing",
+        "trail_percent": "1.5"
+      },
+      "end_of_day_close": {
+        "enabled": true,
+        "at": "15:55"
+      },
+      "max_entry_cycles_per_session": 10
+    },
+    {
+      "symbol": "IBM",
+      "strategy": "trend_ema_adaptive",
+      "start": "2025-10-09T00:00:00Z",
+      "end": "2026-09-21T04:00:00Z",
+      "seed": 271828,
+      "dataset_id": "alpaca-sip-IBM-1m-raw-c9392eccb3fc9519da67",
+      "feed": "sip",
+      "parameters": null,
+      "starting_capital": "10000",
+      "execution": {
+        "slippage_bps": "5",
+        "fee_per_order": "0",
+        "fee_per_share": "0",
+        "fee_bps": "0"
+      },
+      "buy_strategies": [
+        "ema_pullback",
+        "adaptive_moving_average"
+      ],
+      "sell_strategies": [
+        "ema_bearish_crossover"
+      ],
+      "short_strategies": null,
+      "cover_strategies": null,
+      "short_selling_enabled": false,
+      "short_borrow_bps_per_day": "0",
+      "protective_stop": {
+        "type": "native_trailing",
+        "trail_percent": "1.5"
+      },
+      "end_of_day_close": {
+        "enabled": true,
+        "at": "15:55"
+      },
+      "max_entry_cycles_per_session": 10
+    },
+    {
+      "symbol": "IBM",
+      "strategy": "trend_holy_structure",
+      "start": "2025-10-09T00:00:00Z",
+      "end": "2026-09-21T04:00:00Z",
+      "seed": 271828,
+      "dataset_id": "alpaca-sip-IBM-1m-raw-c9392eccb3fc9519da67",
+      "feed": "sip",
+      "parameters": null,
+      "starting_capital": "10000",
+      "execution": {
+        "slippage_bps": "5",
+        "fee_per_order": "0",
+        "fee_per_share": "0",
+        "fee_bps": "0"
+      },
+      "buy_strategies": [
+        "holy_grail_pullback",
+        "higher_high_higher_low"
+      ],
+      "sell_strategies": [
+        "previous_swing_low_break",
+        "dmi_bearish_crossover"
+      ],
+      "short_strategies": null,
+      "cover_strategies": null,
+      "short_selling_enabled": false,
+      "short_borrow_bps_per_day": "0",
+      "protective_stop": {
+        "type": "native_trailing",
+        "trail_percent": "1.5"
+      },
+      "end_of_day_close": {
+        "enabled": true,
+        "at": "15:55"
+      },
+      "max_entry_cycles_per_session": 10
+    },
+    {
+      "symbol": "IBM",
+      "strategy": "trend_super_reclaim",
+      "start": "2025-10-09T00:00:00Z",
+      "end": "2026-09-21T04:00:00Z",
+      "seed": 271828,
+      "dataset_id": "alpaca-sip-IBM-1m-raw-c9392eccb3fc9519da67",
+      "feed": "sip",
+      "parameters": null,
+      "starting_capital": "10000",
+      "execution": {
+        "slippage_bps": "5",
+        "fee_per_order": "0",
+        "fee_per_share": "0",
+        "fee_bps": "0"
+      },
+      "buy_strategies": [
+        "supertrend",
+        "moving_average_reclaim"
+      ],
+      "sell_strategies": [
+        "supertrend_bearish_flip"
+      ],
+      "short_strategies": null,
+      "cover_strategies": null,
+      "short_selling_enabled": false,
+      "short_borrow_bps_per_day": "0",
+      "protective_stop": {
+        "type": "native_trailing",
+        "trail_percent": "1.5"
+      },
+      "end_of_day_close": {
+        "enabled": true,
+        "at": "15:55"
+      },
+      "max_entry_cycles_per_session": 10
+    },
+    {
+      "symbol": "IBM",
+      "strategy": "trend_dmi_pullback",
+      "start": "2025-10-09T00:00:00Z",
+      "end": "2026-09-21T04:00:00Z",
+      "seed": 271828,
+      "dataset_id": "alpaca-sip-IBM-1m-raw-c9392eccb3fc9519da67",
+      "feed": "sip",
+      "parameters": null,
+      "starting_capital": "10000",
+      "execution": {
+        "slippage_bps": "5",
+        "fee_per_order": "0",
+        "fee_per_share": "0",
+        "fee_bps": "0"
+      },
+      "buy_strategies": [
+        "dmi_crossover",
+        "ema_pullback",
+        "holy_grail_pullback"
+      ],
+      "sell_strategies": [
+        "dmi_bearish_crossover",
+        "price_below_ema"
+      ],
+      "short_strategies": null,
+      "cover_strategies": null,
+      "short_selling_enabled": false,
+      "short_borrow_bps_per_day": "0",
+      "protective_stop": {
+        "type": "native_trailing",
+        "trail_percent": "1.5"
+      },
+      "end_of_day_close": {
+        "enabled": true,
+        "at": "15:55"
+      },
+      "max_entry_cycles_per_session": 10
+    },
+    {
+      "symbol": "IBM",
+      "strategy": "trend_structure_breakout",
+      "start": "2025-10-09T00:00:00Z",
+      "end": "2026-09-21T04:00:00Z",
+      "seed": 271828,
+      "dataset_id": "alpaca-sip-IBM-1m-raw-c9392eccb3fc9519da67",
+      "feed": "sip",
+      "parameters": null,
+      "starting_capital": "10000",
+      "execution": {
+        "slippage_bps": "5",
+        "fee_per_order": "0",
+        "fee_per_share": "0",
+        "fee_bps": "0"
+      },
+      "buy_strategies": [
+        "higher_high_higher_low",
+        "resistance_breakout",
+        "ema_pullback"
+      ],
+      "sell_strategies": [
+        "previous_swing_low_break",
+        "ema_bearish_crossover"
+      ],
+      "short_strategies": null,
+      "cover_strategies": null,
+      "short_selling_enabled": false,
+      "short_borrow_bps_per_day": "0",
+      "protective_stop": {
+        "type": "native_trailing",
+        "trail_percent": "1.5"
+      },
+      "end_of_day_close": {
+        "enabled": true,
+        "at": "15:55"
+      },
+      "max_entry_cycles_per_session": 10
+    },
+    {
+      "symbol": "IBM",
+      "strategy": "momentum_rvol",
+      "start": "2025-10-09T00:00:00Z",
+      "end": "2026-09-21T04:00:00Z",
+      "seed": 271828,
+      "dataset_id": "alpaca-sip-IBM-1m-raw-c9392eccb3fc9519da67",
+      "feed": "sip",
+      "parameters": null,
+      "starting_capital": "10000",
+      "execution": {
+        "slippage_bps": "5",
+        "fee_per_order": "0",
+        "fee_per_share": "0",
+        "fee_bps": "0"
+      },
+      "buy_strategies": [
+        "momentum_breakout",
+        "relative_volume_momentum"
+      ],
+      "sell_strategies": [
+        "momentum_reversal",
+        "high_volume_reversal"
+      ],
+      "short_strategies": null,
+      "cover_strategies": null,
+      "short_selling_enabled": false,
+      "short_borrow_bps_per_day": "0",
+      "protective_stop": {
+        "type": "native_trailing",
+        "trail_percent": "1.5"
+      },
+      "end_of_day_close": {
+        "enabled": true,
+        "at": "15:55"
+      },
+      "max_entry_cycles_per_session": 10
+    },
+    {
+      "symbol": "IBM",
+      "strategy": "momentum_open_flag",
+      "start": "2025-10-09T00:00:00Z",
+      "end": "2026-09-21T04:00:00Z",
+      "seed": 271828,
+      "dataset_id": "alpaca-sip-IBM-1m-raw-c9392eccb3fc9519da67",
+      "feed": "sip",
+      "parameters": null,
+      "starting_capital": "10000",
+      "execution": {
+        "slippage_bps": "5",
+        "fee_per_order": "0",
+        "fee_per_share": "0",
+        "fee_bps": "0"
+      },
+      "buy_strategies": [
+        "opening_range_breakout",
+        "bull_flag_breakout"
+      ],
+      "sell_strategies": [
+        "failed_breakout_exit",
+        "vwap_breakdown"
+      ],
+      "short_strategies": null,
+      "cover_strategies": null,
+      "short_selling_enabled": false,
+      "short_borrow_bps_per_day": "0",
+      "protective_stop": {
+        "type": "native_trailing",
+        "trail_percent": "1.5"
+      },
+      "end_of_day_close": {
+        "enabled": true,
+        "at": "15:55"
+      },
+      "max_entry_cycles_per_session": 10
+    },
+    {
+      "symbol": "IBM",
+      "strategy": "momentum_squeeze_donchian",
+      "start": "2025-10-09T00:00:00Z",
+      "end": "2026-09-21T04:00:00Z",
+      "seed": 271828,
+      "dataset_id": "alpaca-sip-IBM-1m-raw-c9392eccb3fc9519da67",
+      "feed": "sip",
+      "parameters": null,
+      "starting_capital": "10000",
+      "execution": {
+        "slippage_bps": "5",
+        "fee_per_order": "0",
+        "fee_per_share": "0",
+        "fee_bps": "0"
+      },
+      "buy_strategies": [
+        "volatility_squeeze_breakout",
+        "donchian_channel_breakout"
+      ],
+      "sell_strategies": [
+        "failed_breakout_exit",
+        "macd_bearish_crossover"
+      ],
+      "short_strategies": null,
+      "cover_strategies": null,
+      "short_selling_enabled": false,
+      "short_borrow_bps_per_day": "0",
+      "protective_stop": {
+        "type": "native_trailing",
+        "trail_percent": "1.5"
+      },
+      "end_of_day_close": {
+        "enabled": true,
+        "at": "15:55"
+      },
+      "max_entry_cycles_per_session": 10
+    },
+    {
+      "symbol": "IBM",
+      "strategy": "momentum_nr7_volume",
+      "start": "2025-10-09T00:00:00Z",
+      "end": "2026-09-21T04:00:00Z",
+      "seed": 271828,
+      "dataset_id": "alpaca-sip-IBM-1m-raw-c9392eccb3fc9519da67",
+      "feed": "sip",
+      "parameters": null,
+      "starting_capital": "10000",
+      "execution": {
+        "slippage_bps": "5",
+        "fee_per_order": "0",
+        "fee_per_share": "0",
+        "fee_bps": "0"
+      },
+      "buy_strategies": [
+        "nr7_breakout",
+        "relative_volume_momentum"
+      ],
+      "sell_strategies": [
+        "high_volume_reversal",
+        "momentum_reversal"
+      ],
+      "short_strategies": null,
+      "cover_strategies": null,
+      "short_selling_enabled": false,
+      "short_borrow_bps_per_day": "0",
+      "protective_stop": {
+        "type": "native_trailing",
+        "trail_percent": "1.5"
+      },
+      "end_of_day_close": {
+        "enabled": true,
+        "at": "15:55"
+      },
+      "max_entry_cycles_per_session": 10
+    },
+    {
+      "symbol": "IBM",
+      "strategy": "momentum_flag_drive",
+      "start": "2025-10-09T00:00:00Z",
+      "end": "2026-09-21T04:00:00Z",
+      "seed": 271828,
+      "dataset_id": "alpaca-sip-IBM-1m-raw-c9392eccb3fc9519da67",
+      "feed": "sip",
+      "parameters": null,
+      "starting_capital": "10000",
+      "execution": {
+        "slippage_bps": "5",
+        "fee_per_order": "0",
+        "fee_per_share": "0",
+        "fee_bps": "0"
+      },
+      "buy_strategies": [
+        "bull_flag_breakout",
+        "opening_drive",
+        "high_of_day_momentum"
+      ],
+      "sell_strategies": [
+        "failed_breakout_exit",
+        "macd_bearish_crossover"
+      ],
+      "short_strategies": null,
+      "cover_strategies": null,
+      "short_selling_enabled": false,
+      "short_borrow_bps_per_day": "0",
+      "protective_stop": {
+        "type": "native_trailing",
+        "trail_percent": "1.5"
+      },
+      "end_of_day_close": {
+        "enabled": true,
+        "at": "15:55"
+      },
+      "max_entry_cycles_per_session": 10
+    },
+    {
+      "symbol": "IBM",
+      "strategy": "vwap_pullback_band",
+      "start": "2025-10-09T00:00:00Z",
+      "end": "2026-09-21T04:00:00Z",
+      "seed": 271828,
+      "dataset_id": "alpaca-sip-IBM-1m-raw-c9392eccb3fc9519da67",
+      "feed": "sip",
+      "parameters": null,
+      "starting_capital": "10000",
+      "execution": {
+        "slippage_bps": "5",
+        "fee_per_order": "0",
+        "fee_per_share": "0",
+        "fee_bps": "0"
+      },
+      "buy_strategies": [
+        "vwap_pullback",
+        "vwap_band_reversion"
+      ],
+      "sell_strategies": [
+        "vwap_breakdown",
+        "bollinger_upper_band_reversal"
+      ],
+      "short_strategies": null,
+      "cover_strategies": null,
+      "short_selling_enabled": false,
+      "short_borrow_bps_per_day": "0",
+      "protective_stop": {
+        "type": "native_trailing",
+        "trail_percent": "1.5"
+      },
+      "end_of_day_close": {
+        "enabled": true,
+        "at": "15:55"
+      },
+      "max_entry_cycles_per_session": 10
+    },
+    {
+      "symbol": "IBM",
+      "strategy": "vwap_support_oversold",
+      "start": "2025-10-09T00:00:00Z",
+      "end": "2026-09-21T04:00:00Z",
+      "seed": 271828,
+      "dataset_id": "alpaca-sip-IBM-1m-raw-c9392eccb3fc9519da67",
+      "feed": "sip",
+      "parameters": null,
+      "starting_capital": "10000",
+      "execution": {
+        "slippage_bps": "5",
+        "fee_per_order": "0",
+        "fee_per_share": "0",
+        "fee_bps": "0"
+      },
+      "buy_strategies": [
+        "vwap_bounce",
+        "support_bounce",
+        "rsi_oversold_reversal"
+      ],
+      "sell_strategies": [
+        "vwap_breakdown",
+        "rsi_reversal"
+      ],
+      "short_strategies": null,
+      "cover_strategies": null,
+      "short_selling_enabled": false,
+      "short_borrow_bps_per_day": "0",
+      "protective_stop": {
+        "type": "native_trailing",
+        "trail_percent": "1.5"
+      },
+      "end_of_day_close": {
+        "enabled": true,
+        "at": "15:55"
+      },
+      "max_entry_cycles_per_session": 10
+    },
+    {
+      "symbol": "IBM",
+      "strategy": "mean_bollinger_rsi",
+      "start": "2025-10-09T00:00:00Z",
+      "end": "2026-09-21T04:00:00Z",
+      "seed": 271828,
+      "dataset_id": "alpaca-sip-IBM-1m-raw-c9392eccb3fc9519da67",
+      "feed": "sip",
+      "parameters": null,
+      "starting_capital": "10000",
+      "execution": {
+        "slippage_bps": "5",
+        "fee_per_order": "0",
+        "fee_per_share": "0",
+        "fee_bps": "0"
+      },
+      "buy_strategies": [
+        "bollinger_band_mean_reversion",
+        "rsi_oversold_reversal"
+      ],
+      "sell_strategies": [
+        "bollinger_upper_band_reversal",
+        "stochastic_bearish_crossover"
+      ],
+      "short_strategies": null,
+      "cover_strategies": null,
+      "short_selling_enabled": false,
+      "short_borrow_bps_per_day": "0",
+      "protective_stop": {
+        "type": "native_trailing",
+        "trail_percent": "1.5"
+      },
+      "end_of_day_close": {
+        "enabled": true,
+        "at": "15:55"
+      },
+      "max_entry_cycles_per_session": 10
+    },
+    {
+      "symbol": "IBM",
+      "strategy": "mean_support_reclaim",
+      "start": "2025-10-09T00:00:00Z",
+      "end": "2026-09-21T04:00:00Z",
+      "seed": 271828,
+      "dataset_id": "alpaca-sip-IBM-1m-raw-c9392eccb3fc9519da67",
+      "feed": "sip",
+      "parameters": null,
+      "starting_capital": "10000",
+      "execution": {
+        "slippage_bps": "5",
+        "fee_per_order": "0",
+        "fee_per_share": "0",
+        "fee_bps": "0"
+      },
+      "buy_strategies": [
+        "support_bounce",
+        "moving_average_reclaim"
+      ],
+      "sell_strategies": [
+        "price_below_ema",
+        "rsi_reversal"
+      ],
+      "short_strategies": null,
+      "cover_strategies": null,
+      "short_selling_enabled": false,
+      "short_borrow_bps_per_day": "0",
+      "protective_stop": {
+        "type": "native_trailing",
+        "trail_percent": "1.5"
+      },
+      "end_of_day_close": {
+        "enabled": true,
+        "at": "15:55"
+      },
+      "max_entry_cycles_per_session": 10
+    },
+    {
+      "symbol": "IBM",
+      "strategy": "vwap_retest",
+      "start": "2025-10-09T00:00:00Z",
+      "end": "2026-09-21T04:00:00Z",
+      "seed": 271828,
+      "dataset_id": "alpaca-sip-IBM-1m-raw-c9392eccb3fc9519da67",
+      "feed": "sip",
+      "parameters": null,
+      "starting_capital": "10000",
+      "execution": {
+        "slippage_bps": "5",
+        "fee_per_order": "0",
+        "fee_per_share": "0",
+        "fee_bps": "0"
+      },
+      "buy_strategies": [
+        "vwap_bounce",
+        "opening_range_retest"
+      ],
+      "sell_strategies": [
+        "vwap_breakdown",
+        "previous_swing_low_break"
+      ],
+      "short_strategies": null,
+      "cover_strategies": null,
+      "short_selling_enabled": false,
+      "short_borrow_bps_per_day": "0",
+      "protective_stop": {
+        "type": "native_trailing",
+        "trail_percent": "1.5"
+      },
+      "end_of_day_close": {
+        "enabled": true,
+        "at": "15:55"
+      },
+      "max_entry_cycles_per_session": 10
+    },
+    {
+      "symbol": "IBM",
+      "strategy": "price_inside_hammer",
+      "start": "2025-10-09T00:00:00Z",
+      "end": "2026-09-21T04:00:00Z",
+      "seed": 271828,
+      "dataset_id": "alpaca-sip-IBM-1m-raw-c9392eccb3fc9519da67",
+      "feed": "sip",
+      "parameters": null,
+      "starting_capital": "10000",
+      "execution": {
+        "slippage_bps": "5",
+        "fee_per_order": "0",
+        "fee_per_share": "0",
+        "fee_bps": "0"
+      },
+      "buy_strategies": [
+        "inside_bar_breakout",
+        "hammer_reversal"
+      ],
+      "sell_strategies": [
+        "bearish_engulfing_exit",
+        "shooting_star_reversal"
+      ],
+      "short_strategies": null,
+      "cover_strategies": null,
+      "short_selling_enabled": false,
+      "short_borrow_bps_per_day": "0",
+      "protective_stop": {
+        "type": "native_trailing",
+        "trail_percent": "1.5"
+      },
+      "end_of_day_close": {
+        "enabled": true,
+        "at": "15:55"
+      },
+      "max_entry_cycles_per_session": 10
+    },
+    {
+      "symbol": "IBM",
+      "strategy": "price_double_support",
+      "start": "2025-10-09T00:00:00Z",
+      "end": "2026-09-21T04:00:00Z",
+      "seed": 271828,
+      "dataset_id": "alpaca-sip-IBM-1m-raw-c9392eccb3fc9519da67",
+      "feed": "sip",
+      "parameters": null,
+      "starting_capital": "10000",
+      "execution": {
+        "slippage_bps": "5",
+        "fee_per_order": "0",
+        "fee_per_share": "0",
+        "fee_bps": "0"
+      },
+      "buy_strategies": [
+        "double_bottom_reversal",
+        "support_bounce"
+      ],
+      "sell_strategies": [
+        "previous_swing_low_break",
+        "lower_low_confirmation"
+      ],
+      "short_strategies": null,
+      "cover_strategies": null,
+      "short_selling_enabled": false,
+      "short_borrow_bps_per_day": "0",
+      "protective_stop": {
+        "type": "native_trailing",
+        "trail_percent": "1.5"
+      },
+      "end_of_day_close": {
+        "enabled": true,
+        "at": "15:55"
+      },
+      "max_entry_cycles_per_session": 10
+    },
+    {
+      "symbol": "IBM",
+      "strategy": "price_resistance_retest",
+      "start": "2025-10-09T00:00:00Z",
+      "end": "2026-09-21T04:00:00Z",
+      "seed": 271828,
+      "dataset_id": "alpaca-sip-IBM-1m-raw-c9392eccb3fc9519da67",
+      "feed": "sip",
+      "parameters": null,
+      "starting_capital": "10000",
+      "execution": {
+        "slippage_bps": "5",
+        "fee_per_order": "0",
+        "fee_per_share": "0",
+        "fee_bps": "0"
+      },
+      "buy_strategies": [
+        "resistance_breakout",
+        "opening_range_retest"
+      ],
+      "sell_strategies": [
+        "failed_breakout_exit",
+        "trendline_breakdown"
+      ],
+      "short_strategies": null,
+      "cover_strategies": null,
+      "short_selling_enabled": false,
+      "short_borrow_bps_per_day": "0",
+      "protective_stop": {
+        "type": "native_trailing",
+        "trail_percent": "1.5"
+      },
+      "end_of_day_close": {
+        "enabled": true,
+        "at": "15:55"
+      },
+      "max_entry_cycles_per_session": 10
+    },
+    {
+      "symbol": "IBM",
+      "strategy": "mixed_trend_breakout",
+      "start": "2025-10-09T00:00:00Z",
+      "end": "2026-09-21T04:00:00Z",
+      "seed": 271828,
+      "dataset_id": "alpaca-sip-IBM-1m-raw-c9392eccb3fc9519da67",
+      "feed": "sip",
+      "parameters": null,
+      "starting_capital": "10000",
+      "execution": {
+        "slippage_bps": "5",
+        "fee_per_order": "0",
+        "fee_per_share": "0",
+        "fee_bps": "0"
+      },
+      "buy_strategies": [
+        "ema_pullback",
+        "momentum_breakout",
+        "inside_bar_breakout"
+      ],
+      "sell_strategies": [
+        "ema_bearish_crossover",
+        "failed_breakout_exit"
+      ],
+      "short_strategies": null,
+      "cover_strategies": null,
+      "short_selling_enabled": false,
+      "short_borrow_bps_per_day": "0",
+      "protective_stop": {
+        "type": "native_trailing",
+        "trail_percent": "1.5"
+      },
+      "end_of_day_close": {
+        "enabled": true,
+        "at": "15:55"
+      },
+      "max_entry_cycles_per_session": 10
+    },
+    {
+      "symbol": "IBM",
+      "strategy": "mixed_reclaim_volume",
+      "start": "2025-10-09T00:00:00Z",
+      "end": "2026-09-21T04:00:00Z",
+      "seed": 271828,
+      "dataset_id": "alpaca-sip-IBM-1m-raw-c9392eccb3fc9519da67",
+      "feed": "sip",
+      "parameters": null,
+      "starting_capital": "10000",
+      "execution": {
+        "slippage_bps": "5",
+        "fee_per_order": "0",
+        "fee_per_share": "0",
+        "fee_bps": "0"
+      },
+      "buy_strategies": [
+        "vwap_pullback",
+        "relative_volume_momentum",
+        "moving_average_reclaim"
+      ],
+      "sell_strategies": [
+        "vwap_breakdown",
+        "high_volume_reversal"
+      ],
+      "short_strategies": null,
+      "cover_strategies": null,
+      "short_selling_enabled": false,
+      "short_borrow_bps_per_day": "0",
+      "protective_stop": {
+        "type": "native_trailing",
+        "trail_percent": "1.5"
+      },
+      "end_of_day_close": {
+        "enabled": true,
+        "at": "15:55"
+      },
+      "max_entry_cycles_per_session": 10
+    },
+    {
+      "symbol": "IBM",
+      "strategy": "trend_stepped",
+      "start": "2025-10-09T00:00:00Z",
+      "end": "2026-09-21T04:00:00Z",
+      "seed": 271828,
+      "dataset_id": "alpaca-sip-IBM-1m-raw-c9392eccb3fc9519da67",
+      "feed": "sip",
+      "parameters": null,
+      "starting_capital": "10000",
+      "execution": {
+        "slippage_bps": "5",
+        "fee_per_order": "0",
+        "fee_per_share": "0",
+        "fee_bps": "0"
+      },
+      "buy_strategies": [
+        "ema_pullback",
+        "supertrend",
+        "higher_high_higher_low"
+      ],
+      "sell_strategies": [
+        "ema_bearish_crossover",
+        "previous_swing_low_break"
+      ],
+      "short_strategies": null,
+      "cover_strategies": null,
+      "short_selling_enabled": false,
+      "short_borrow_bps_per_day": "0",
+      "protective_stop": {
+        "type": "stepped_trailing",
+        "initial_stop_percent": "1.5",
+        "step_trigger_percent": "1.0",
+        "step_percent": "0.5"
+      },
+      "end_of_day_close": {
+        "enabled": true,
+        "at": "15:55"
+      },
+      "max_entry_cycles_per_session": 10
+    },
+    {
+      "symbol": "IBM",
+      "strategy": "trend_fixed",
+      "start": "2025-10-09T00:00:00Z",
+      "end": "2026-09-21T04:00:00Z",
+      "seed": 271828,
+      "dataset_id": "alpaca-sip-IBM-1m-raw-c9392eccb3fc9519da67",
+      "feed": "sip",
+      "parameters": null,
+      "starting_capital": "10000",
+      "execution": {
+        "slippage_bps": "5",
+        "fee_per_order": "0",
+        "fee_per_share": "0",
+        "fee_bps": "0"
+      },
+      "buy_strategies": [
+        "ema_pullback",
+        "supertrend",
+        "higher_high_higher_low"
+      ],
+      "sell_strategies": [
+        "ema_bearish_crossover",
+        "previous_swing_low_break"
+      ],
+      "short_strategies": null,
+      "cover_strategies": null,
+      "short_selling_enabled": false,
+      "short_borrow_bps_per_day": "0",
+      "protective_stop": {
+        "type": "fixed",
+        "stop_percent": "1.0"
+      },
+      "end_of_day_close": {
+        "enabled": true,
+        "at": "15:55"
+      },
+      "max_entry_cycles_per_session": 10
+    },
+    {
+      "symbol": "IBM",
+      "strategy": "breakout_stepped",
+      "start": "2025-10-09T00:00:00Z",
+      "end": "2026-09-21T04:00:00Z",
+      "seed": 271828,
+      "dataset_id": "alpaca-sip-IBM-1m-raw-c9392eccb3fc9519da67",
+      "feed": "sip",
+      "parameters": null,
+      "starting_capital": "10000",
+      "execution": {
+        "slippage_bps": "5",
+        "fee_per_order": "0",
+        "fee_per_share": "0",
+        "fee_bps": "0"
+      },
+      "buy_strategies": [
+        "opening_range_breakout",
+        "donchian_channel_breakout",
+        "relative_volume_momentum"
+      ],
+      "sell_strategies": [
+        "failed_breakout_exit",
+        "momentum_reversal"
+      ],
+      "short_strategies": null,
+      "cover_strategies": null,
+      "short_selling_enabled": false,
+      "short_borrow_bps_per_day": "0",
+      "protective_stop": {
+        "type": "stepped_trailing",
+        "initial_stop_percent": "1.5",
+        "step_trigger_percent": "1.0",
+        "step_percent": "0.5"
+      },
+      "end_of_day_close": {
+        "enabled": true,
+        "at": "15:55"
+      },
+      "max_entry_cycles_per_session": 10
+    },
+    {
+      "symbol": "IBM",
+      "strategy": "breakout_fixed",
+      "start": "2025-10-09T00:00:00Z",
+      "end": "2026-09-21T04:00:00Z",
+      "seed": 271828,
+      "dataset_id": "alpaca-sip-IBM-1m-raw-c9392eccb3fc9519da67",
+      "feed": "sip",
+      "parameters": null,
+      "starting_capital": "10000",
+      "execution": {
+        "slippage_bps": "5",
+        "fee_per_order": "0",
+        "fee_per_share": "0",
+        "fee_bps": "0"
+      },
+      "buy_strategies": [
+        "opening_range_breakout",
+        "donchian_channel_breakout",
+        "relative_volume_momentum"
+      ],
+      "sell_strategies": [
+        "failed_breakout_exit",
+        "momentum_reversal"
+      ],
+      "short_strategies": null,
+      "cover_strategies": null,
+      "short_selling_enabled": false,
+      "short_borrow_bps_per_day": "0",
+      "protective_stop": {
+        "type": "fixed",
+        "stop_percent": "1.0"
+      },
+      "end_of_day_close": {
+        "enabled": true,
+        "at": "15:55"
+      },
+      "max_entry_cycles_per_session": 10
+    },
+    {
+      "symbol": "IBM",
+      "strategy": "vwap_mean_stepped",
+      "start": "2025-10-09T00:00:00Z",
+      "end": "2026-09-21T04:00:00Z",
+      "seed": 271828,
+      "dataset_id": "alpaca-sip-IBM-1m-raw-c9392eccb3fc9519da67",
+      "feed": "sip",
+      "parameters": null,
+      "starting_capital": "10000",
+      "execution": {
+        "slippage_bps": "5",
+        "fee_per_order": "0",
+        "fee_per_share": "0",
+        "fee_bps": "0"
+      },
+      "buy_strategies": [
+        "vwap_bounce",
+        "vwap_pullback",
+        "rsi_oversold_reversal"
+      ],
+      "sell_strategies": [
+        "vwap_breakdown",
+        "rsi_reversal"
+      ],
+      "short_strategies": null,
+      "cover_strategies": null,
+      "short_selling_enabled": false,
+      "short_borrow_bps_per_day": "0",
+      "protective_stop": {
+        "type": "stepped_trailing",
+        "initial_stop_percent": "1.5",
+        "step_trigger_percent": "1.0",
+        "step_percent": "0.5"
+      },
+      "end_of_day_close": {
+        "enabled": true,
+        "at": "15:55"
+      },
+      "max_entry_cycles_per_session": 10
+    },
+    {
+      "symbol": "IBM",
+      "strategy": "vwap_mean_fixed",
+      "start": "2025-10-09T00:00:00Z",
+      "end": "2026-09-21T04:00:00Z",
+      "seed": 271828,
+      "dataset_id": "alpaca-sip-IBM-1m-raw-c9392eccb3fc9519da67",
+      "feed": "sip",
+      "parameters": null,
+      "starting_capital": "10000",
+      "execution": {
+        "slippage_bps": "5",
+        "fee_per_order": "0",
+        "fee_per_share": "0",
+        "fee_bps": "0"
+      },
+      "buy_strategies": [
+        "vwap_bounce",
+        "vwap_pullback",
+        "rsi_oversold_reversal"
+      ],
+      "sell_strategies": [
+        "vwap_breakdown",
+        "rsi_reversal"
+      ],
+      "short_strategies": null,
+      "cover_strategies": null,
+      "short_selling_enabled": false,
+      "short_borrow_bps_per_day": "0",
+      "protective_stop": {
+        "type": "fixed",
+        "stop_percent": "1.0"
+      },
+      "end_of_day_close": {
+        "enabled": true,
+        "at": "15:55"
+      },
+      "max_entry_cycles_per_session": 10
+    },
+    {
+      "symbol": "IBM",
+      "strategy": "price_action_stepped",
+      "start": "2025-10-09T00:00:00Z",
+      "end": "2026-09-21T04:00:00Z",
+      "seed": 271828,
+      "dataset_id": "alpaca-sip-IBM-1m-raw-c9392eccb3fc9519da67",
+      "feed": "sip",
+      "parameters": null,
+      "starting_capital": "10000",
+      "execution": {
+        "slippage_bps": "5",
+        "fee_per_order": "0",
+        "fee_per_share": "0",
+        "fee_bps": "0"
+      },
+      "buy_strategies": [
+        "inside_bar_breakout",
+        "support_bounce",
+        "resistance_breakout"
+      ],
+      "sell_strategies": [
+        "previous_swing_low_break",
+        "bearish_engulfing_exit"
+      ],
+      "short_strategies": null,
+      "cover_strategies": null,
+      "short_selling_enabled": false,
+      "short_borrow_bps_per_day": "0",
+      "protective_stop": {
+        "type": "stepped_trailing",
+        "initial_stop_percent": "1.5",
+        "step_trigger_percent": "1.0",
+        "step_percent": "0.5"
+      },
+      "end_of_day_close": {
+        "enabled": true,
+        "at": "15:55"
+      },
+      "max_entry_cycles_per_session": 10
+    },
+    {
+      "symbol": "IBM",
+      "strategy": "price_action_fixed",
+      "start": "2025-10-09T00:00:00Z",
+      "end": "2026-09-21T04:00:00Z",
+      "seed": 271828,
+      "dataset_id": "alpaca-sip-IBM-1m-raw-c9392eccb3fc9519da67",
+      "feed": "sip",
+      "parameters": null,
+      "starting_capital": "10000",
+      "execution": {
+        "slippage_bps": "5",
+        "fee_per_order": "0",
+        "fee_per_share": "0",
+        "fee_bps": "0"
+      },
+      "buy_strategies": [
+        "inside_bar_breakout",
+        "support_bounce",
+        "resistance_breakout"
+      ],
+      "sell_strategies": [
+        "previous_swing_low_break",
+        "bearish_engulfing_exit"
+      ],
+      "short_strategies": null,
+      "cover_strategies": null,
+      "short_selling_enabled": false,
+      "short_borrow_bps_per_day": "0",
+      "protective_stop": {
+        "type": "fixed",
+        "stop_percent": "1.0"
+      },
+      "end_of_day_close": {
+        "enabled": true,
+        "at": "15:55"
+      },
+      "max_entry_cycles_per_session": 10
+    },
+    {
+      "symbol": "NVDA",
+      "strategy": "michelle_orb",
+      "start": "2025-10-09T00:00:00Z",
+      "end": "2026-09-21T04:00:00Z",
+      "seed": 271828,
+      "dataset_id": "alpaca-sip-NVDA-1m-raw-ecfe1ae8f17df5cd67d7",
+      "feed": "sip",
+      "parameters": null,
+      "starting_capital": "10000",
+      "execution": {
+        "slippage_bps": "5",
+        "fee_per_order": "0",
+        "fee_per_share": "0",
+        "fee_bps": "0"
+      },
+      "buy_strategies": [
+        "five_minute_orb_michelle_buy"
+      ],
+      "sell_strategies": [
+        "five_minute_orb_michelle_sell"
+      ],
+      "short_strategies": null,
+      "cover_strategies": null,
+      "short_selling_enabled": false,
+      "short_borrow_bps_per_day": "0",
+      "protective_stop": null,
+      "end_of_day_close": {
+        "enabled": true,
+        "at": "15:55"
+      },
+      "max_entry_cycles_per_session": 10
+    },
+    {
+      "symbol": "NVDA",
+      "strategy": "michelle_vwap",
+      "start": "2025-10-09T00:00:00Z",
+      "end": "2026-09-21T04:00:00Z",
+      "seed": 271828,
+      "dataset_id": "alpaca-sip-NVDA-1m-raw-ecfe1ae8f17df5cd67d7",
+      "feed": "sip",
+      "parameters": null,
+      "starting_capital": "10000",
+      "execution": {
+        "slippage_bps": "5",
+        "fee_per_order": "0",
+        "fee_per_share": "0",
+        "fee_bps": "0"
+      },
+      "buy_strategies": [
+        "vwap_bounce_break_michelle_buy"
+      ],
+      "sell_strategies": [
+        "vwap_bounce_break_michelle_sell"
+      ],
+      "short_strategies": null,
+      "cover_strategies": null,
+      "short_selling_enabled": false,
+      "short_borrow_bps_per_day": "0",
+      "protective_stop": null,
+      "end_of_day_close": {
+        "enabled": true,
+        "at": "15:55"
+      },
+      "max_entry_cycles_per_session": 10
+    },
+    {
+      "symbol": "NVDA",
+      "strategy": "michelle_combined",
+      "start": "2025-10-09T00:00:00Z",
+      "end": "2026-09-21T04:00:00Z",
+      "seed": 271828,
+      "dataset_id": "alpaca-sip-NVDA-1m-raw-ecfe1ae8f17df5cd67d7",
+      "feed": "sip",
+      "parameters": null,
+      "starting_capital": "10000",
+      "execution": {
+        "slippage_bps": "5",
+        "fee_per_order": "0",
+        "fee_per_share": "0",
+        "fee_bps": "0"
+      },
+      "buy_strategies": [
+        "five_minute_orb_michelle_buy",
+        "vwap_bounce_break_michelle_buy"
+      ],
+      "sell_strategies": [
+        "five_minute_orb_michelle_sell",
+        "vwap_bounce_break_michelle_sell"
+      ],
+      "short_strategies": null,
+      "cover_strategies": null,
+      "short_selling_enabled": false,
+      "short_borrow_bps_per_day": "0",
+      "protective_stop": null,
+      "end_of_day_close": {
+        "enabled": true,
+        "at": "15:55"
+      },
+      "max_entry_cycles_per_session": 10
+    },
+    {
+      "symbol": "NVDA",
+      "strategy": "vwap_reference",
+      "start": "2025-10-09T00:00:00Z",
+      "end": "2026-09-21T04:00:00Z",
+      "seed": 271828,
+      "dataset_id": "alpaca-sip-NVDA-1m-raw-ecfe1ae8f17df5cd67d7",
+      "feed": "sip",
+      "parameters": null,
+      "starting_capital": "10000",
+      "execution": {
+        "slippage_bps": "5",
+        "fee_per_order": "0",
+        "fee_per_share": "0",
+        "fee_bps": "0"
+      },
+      "buy_strategies": [
+        "vwap_bounce"
+      ],
+      "sell_strategies": [
+        "vwap_breakdown"
+      ],
+      "short_strategies": null,
+      "cover_strategies": null,
+      "short_selling_enabled": false,
+      "short_borrow_bps_per_day": "0",
+      "protective_stop": {
+        "type": "native_trailing",
+        "trail_percent": "1.5"
+      },
+      "end_of_day_close": {
+        "enabled": true,
+        "at": "15:55"
+      },
+      "max_entry_cycles_per_session": 10
+    },
+    {
+      "symbol": "NVDA",
+      "strategy": "trend_exit_0",
+      "start": "2025-10-09T00:00:00Z",
+      "end": "2026-09-21T04:00:00Z",
+      "seed": 271828,
+      "dataset_id": "alpaca-sip-NVDA-1m-raw-ecfe1ae8f17df5cd67d7",
+      "feed": "sip",
+      "parameters": null,
+      "starting_capital": "10000",
+      "execution": {
+        "slippage_bps": "5",
+        "fee_per_order": "0",
+        "fee_per_share": "0",
+        "fee_bps": "0"
+      },
+      "buy_strategies": [
+        "ema_pullback",
+        "supertrend",
+        "higher_high_higher_low"
+      ],
+      "sell_strategies": [],
+      "short_strategies": null,
+      "cover_strategies": null,
+      "short_selling_enabled": false,
+      "short_borrow_bps_per_day": "0",
+      "protective_stop": {
+        "type": "native_trailing",
+        "trail_percent": "1.5"
+      },
+      "end_of_day_close": {
+        "enabled": true,
+        "at": "15:55"
+      },
+      "max_entry_cycles_per_session": 10
+    },
+    {
+      "symbol": "NVDA",
+      "strategy": "trend_exit_1",
+      "start": "2025-10-09T00:00:00Z",
+      "end": "2026-09-21T04:00:00Z",
+      "seed": 271828,
+      "dataset_id": "alpaca-sip-NVDA-1m-raw-ecfe1ae8f17df5cd67d7",
+      "feed": "sip",
+      "parameters": null,
+      "starting_capital": "10000",
+      "execution": {
+        "slippage_bps": "5",
+        "fee_per_order": "0",
+        "fee_per_share": "0",
+        "fee_bps": "0"
+      },
+      "buy_strategies": [
+        "ema_pullback",
+        "supertrend",
+        "higher_high_higher_low"
+      ],
+      "sell_strategies": [
+        "ema_bearish_crossover"
+      ],
+      "short_strategies": null,
+      "cover_strategies": null,
+      "short_selling_enabled": false,
+      "short_borrow_bps_per_day": "0",
+      "protective_stop": {
+        "type": "native_trailing",
+        "trail_percent": "1.5"
+      },
+      "end_of_day_close": {
+        "enabled": true,
+        "at": "15:55"
+      },
+      "max_entry_cycles_per_session": 10
+    },
+    {
+      "symbol": "NVDA",
+      "strategy": "trend_exit_2",
+      "start": "2025-10-09T00:00:00Z",
+      "end": "2026-09-21T04:00:00Z",
+      "seed": 271828,
+      "dataset_id": "alpaca-sip-NVDA-1m-raw-ecfe1ae8f17df5cd67d7",
+      "feed": "sip",
+      "parameters": null,
+      "starting_capital": "10000",
+      "execution": {
+        "slippage_bps": "5",
+        "fee_per_order": "0",
+        "fee_per_share": "0",
+        "fee_bps": "0"
+      },
+      "buy_strategies": [
+        "ema_pullback",
+        "supertrend",
+        "higher_high_higher_low"
+      ],
+      "sell_strategies": [
+        "ema_bearish_crossover",
+        "previous_swing_low_break"
+      ],
+      "short_strategies": null,
+      "cover_strategies": null,
+      "short_selling_enabled": false,
+      "short_borrow_bps_per_day": "0",
+      "protective_stop": {
+        "type": "native_trailing",
+        "trail_percent": "1.5"
+      },
+      "end_of_day_close": {
+        "enabled": true,
+        "at": "15:55"
+      },
+      "max_entry_cycles_per_session": 10
+    },
+    {
+      "symbol": "NVDA",
+      "strategy": "trend_exit_3",
+      "start": "2025-10-09T00:00:00Z",
+      "end": "2026-09-21T04:00:00Z",
+      "seed": 271828,
+      "dataset_id": "alpaca-sip-NVDA-1m-raw-ecfe1ae8f17df5cd67d7",
+      "feed": "sip",
+      "parameters": null,
+      "starting_capital": "10000",
+      "execution": {
+        "slippage_bps": "5",
+        "fee_per_order": "0",
+        "fee_per_share": "0",
+        "fee_bps": "0"
+      },
+      "buy_strategies": [
+        "ema_pullback",
+        "supertrend",
+        "higher_high_higher_low"
+      ],
+      "sell_strategies": [
+        "ema_bearish_crossover",
+        "previous_swing_low_break",
+        "dmi_bearish_crossover"
+      ],
+      "short_strategies": null,
+      "cover_strategies": null,
+      "short_selling_enabled": false,
+      "short_borrow_bps_per_day": "0",
+      "protective_stop": {
+        "type": "native_trailing",
+        "trail_percent": "1.5"
+      },
+      "end_of_day_close": {
+        "enabled": true,
+        "at": "15:55"
+      },
+      "max_entry_cycles_per_session": 10
+    },
+    {
+      "symbol": "NVDA",
+      "strategy": "breakout_exit_0",
+      "start": "2025-10-09T00:00:00Z",
+      "end": "2026-09-21T04:00:00Z",
+      "seed": 271828,
+      "dataset_id": "alpaca-sip-NVDA-1m-raw-ecfe1ae8f17df5cd67d7",
+      "feed": "sip",
+      "parameters": null,
+      "starting_capital": "10000",
+      "execution": {
+        "slippage_bps": "5",
+        "fee_per_order": "0",
+        "fee_per_share": "0",
+        "fee_bps": "0"
+      },
+      "buy_strategies": [
+        "opening_range_breakout",
+        "donchian_channel_breakout",
+        "relative_volume_momentum"
+      ],
+      "sell_strategies": [],
+      "short_strategies": null,
+      "cover_strategies": null,
+      "short_selling_enabled": false,
+      "short_borrow_bps_per_day": "0",
+      "protective_stop": {
+        "type": "native_trailing",
+        "trail_percent": "1.5"
+      },
+      "end_of_day_close": {
+        "enabled": true,
+        "at": "15:55"
+      },
+      "max_entry_cycles_per_session": 10
+    },
+    {
+      "symbol": "NVDA",
+      "strategy": "breakout_exit_1",
+      "start": "2025-10-09T00:00:00Z",
+      "end": "2026-09-21T04:00:00Z",
+      "seed": 271828,
+      "dataset_id": "alpaca-sip-NVDA-1m-raw-ecfe1ae8f17df5cd67d7",
+      "feed": "sip",
+      "parameters": null,
+      "starting_capital": "10000",
+      "execution": {
+        "slippage_bps": "5",
+        "fee_per_order": "0",
+        "fee_per_share": "0",
+        "fee_bps": "0"
+      },
+      "buy_strategies": [
+        "opening_range_breakout",
+        "donchian_channel_breakout",
+        "relative_volume_momentum"
+      ],
+      "sell_strategies": [
+        "failed_breakout_exit"
+      ],
+      "short_strategies": null,
+      "cover_strategies": null,
+      "short_selling_enabled": false,
+      "short_borrow_bps_per_day": "0",
+      "protective_stop": {
+        "type": "native_trailing",
+        "trail_percent": "1.5"
+      },
+      "end_of_day_close": {
+        "enabled": true,
+        "at": "15:55"
+      },
+      "max_entry_cycles_per_session": 10
+    },
+    {
+      "symbol": "NVDA",
+      "strategy": "breakout_exit_2",
+      "start": "2025-10-09T00:00:00Z",
+      "end": "2026-09-21T04:00:00Z",
+      "seed": 271828,
+      "dataset_id": "alpaca-sip-NVDA-1m-raw-ecfe1ae8f17df5cd67d7",
+      "feed": "sip",
+      "parameters": null,
+      "starting_capital": "10000",
+      "execution": {
+        "slippage_bps": "5",
+        "fee_per_order": "0",
+        "fee_per_share": "0",
+        "fee_bps": "0"
+      },
+      "buy_strategies": [
+        "opening_range_breakout",
+        "donchian_channel_breakout",
+        "relative_volume_momentum"
+      ],
+      "sell_strategies": [
+        "failed_breakout_exit",
+        "momentum_reversal"
+      ],
+      "short_strategies": null,
+      "cover_strategies": null,
+      "short_selling_enabled": false,
+      "short_borrow_bps_per_day": "0",
+      "protective_stop": {
+        "type": "native_trailing",
+        "trail_percent": "1.5"
+      },
+      "end_of_day_close": {
+        "enabled": true,
+        "at": "15:55"
+      },
+      "max_entry_cycles_per_session": 10
+    },
+    {
+      "symbol": "NVDA",
+      "strategy": "breakout_exit_3",
+      "start": "2025-10-09T00:00:00Z",
+      "end": "2026-09-21T04:00:00Z",
+      "seed": 271828,
+      "dataset_id": "alpaca-sip-NVDA-1m-raw-ecfe1ae8f17df5cd67d7",
+      "feed": "sip",
+      "parameters": null,
+      "starting_capital": "10000",
+      "execution": {
+        "slippage_bps": "5",
+        "fee_per_order": "0",
+        "fee_per_share": "0",
+        "fee_bps": "0"
+      },
+      "buy_strategies": [
+        "opening_range_breakout",
+        "donchian_channel_breakout",
+        "relative_volume_momentum"
+      ],
+      "sell_strategies": [
+        "failed_breakout_exit",
+        "momentum_reversal",
+        "high_volume_reversal"
+      ],
+      "short_strategies": null,
+      "cover_strategies": null,
+      "short_selling_enabled": false,
+      "short_borrow_bps_per_day": "0",
+      "protective_stop": {
+        "type": "native_trailing",
+        "trail_percent": "1.5"
+      },
+      "end_of_day_close": {
+        "enabled": true,
+        "at": "15:55"
+      },
+      "max_entry_cycles_per_session": 10
+    },
+    {
+      "symbol": "NVDA",
+      "strategy": "vwap_mean_exit_0",
+      "start": "2025-10-09T00:00:00Z",
+      "end": "2026-09-21T04:00:00Z",
+      "seed": 271828,
+      "dataset_id": "alpaca-sip-NVDA-1m-raw-ecfe1ae8f17df5cd67d7",
+      "feed": "sip",
+      "parameters": null,
+      "starting_capital": "10000",
+      "execution": {
+        "slippage_bps": "5",
+        "fee_per_order": "0",
+        "fee_per_share": "0",
+        "fee_bps": "0"
+      },
+      "buy_strategies": [
+        "vwap_bounce",
+        "vwap_pullback",
+        "rsi_oversold_reversal"
+      ],
+      "sell_strategies": [],
+      "short_strategies": null,
+      "cover_strategies": null,
+      "short_selling_enabled": false,
+      "short_borrow_bps_per_day": "0",
+      "protective_stop": {
+        "type": "native_trailing",
+        "trail_percent": "1.5"
+      },
+      "end_of_day_close": {
+        "enabled": true,
+        "at": "15:55"
+      },
+      "max_entry_cycles_per_session": 10
+    },
+    {
+      "symbol": "NVDA",
+      "strategy": "vwap_mean_exit_1",
+      "start": "2025-10-09T00:00:00Z",
+      "end": "2026-09-21T04:00:00Z",
+      "seed": 271828,
+      "dataset_id": "alpaca-sip-NVDA-1m-raw-ecfe1ae8f17df5cd67d7",
+      "feed": "sip",
+      "parameters": null,
+      "starting_capital": "10000",
+      "execution": {
+        "slippage_bps": "5",
+        "fee_per_order": "0",
+        "fee_per_share": "0",
+        "fee_bps": "0"
+      },
+      "buy_strategies": [
+        "vwap_bounce",
+        "vwap_pullback",
+        "rsi_oversold_reversal"
+      ],
+      "sell_strategies": [
+        "vwap_breakdown"
+      ],
+      "short_strategies": null,
+      "cover_strategies": null,
+      "short_selling_enabled": false,
+      "short_borrow_bps_per_day": "0",
+      "protective_stop": {
+        "type": "native_trailing",
+        "trail_percent": "1.5"
+      },
+      "end_of_day_close": {
+        "enabled": true,
+        "at": "15:55"
+      },
+      "max_entry_cycles_per_session": 10
+    },
+    {
+      "symbol": "NVDA",
+      "strategy": "vwap_mean_exit_2",
+      "start": "2025-10-09T00:00:00Z",
+      "end": "2026-09-21T04:00:00Z",
+      "seed": 271828,
+      "dataset_id": "alpaca-sip-NVDA-1m-raw-ecfe1ae8f17df5cd67d7",
+      "feed": "sip",
+      "parameters": null,
+      "starting_capital": "10000",
+      "execution": {
+        "slippage_bps": "5",
+        "fee_per_order": "0",
+        "fee_per_share": "0",
+        "fee_bps": "0"
+      },
+      "buy_strategies": [
+        "vwap_bounce",
+        "vwap_pullback",
+        "rsi_oversold_reversal"
+      ],
+      "sell_strategies": [
+        "vwap_breakdown",
+        "rsi_reversal"
+      ],
+      "short_strategies": null,
+      "cover_strategies": null,
+      "short_selling_enabled": false,
+      "short_borrow_bps_per_day": "0",
+      "protective_stop": {
+        "type": "native_trailing",
+        "trail_percent": "1.5"
+      },
+      "end_of_day_close": {
+        "enabled": true,
+        "at": "15:55"
+      },
+      "max_entry_cycles_per_session": 10
+    },
+    {
+      "symbol": "NVDA",
+      "strategy": "vwap_mean_exit_3",
+      "start": "2025-10-09T00:00:00Z",
+      "end": "2026-09-21T04:00:00Z",
+      "seed": 271828,
+      "dataset_id": "alpaca-sip-NVDA-1m-raw-ecfe1ae8f17df5cd67d7",
+      "feed": "sip",
+      "parameters": null,
+      "starting_capital": "10000",
+      "execution": {
+        "slippage_bps": "5",
+        "fee_per_order": "0",
+        "fee_per_share": "0",
+        "fee_bps": "0"
+      },
+      "buy_strategies": [
+        "vwap_bounce",
+        "vwap_pullback",
+        "rsi_oversold_reversal"
+      ],
+      "sell_strategies": [
+        "vwap_breakdown",
+        "rsi_reversal",
+        "price_below_ema"
+      ],
+      "short_strategies": null,
+      "cover_strategies": null,
+      "short_selling_enabled": false,
+      "short_borrow_bps_per_day": "0",
+      "protective_stop": {
+        "type": "native_trailing",
+        "trail_percent": "1.5"
+      },
+      "end_of_day_close": {
+        "enabled": true,
+        "at": "15:55"
+      },
+      "max_entry_cycles_per_session": 10
+    },
+    {
+      "symbol": "NVDA",
+      "strategy": "price_action_exit_0",
+      "start": "2025-10-09T00:00:00Z",
+      "end": "2026-09-21T04:00:00Z",
+      "seed": 271828,
+      "dataset_id": "alpaca-sip-NVDA-1m-raw-ecfe1ae8f17df5cd67d7",
+      "feed": "sip",
+      "parameters": null,
+      "starting_capital": "10000",
+      "execution": {
+        "slippage_bps": "5",
+        "fee_per_order": "0",
+        "fee_per_share": "0",
+        "fee_bps": "0"
+      },
+      "buy_strategies": [
+        "inside_bar_breakout",
+        "support_bounce",
+        "resistance_breakout"
+      ],
+      "sell_strategies": [],
+      "short_strategies": null,
+      "cover_strategies": null,
+      "short_selling_enabled": false,
+      "short_borrow_bps_per_day": "0",
+      "protective_stop": {
+        "type": "native_trailing",
+        "trail_percent": "1.5"
+      },
+      "end_of_day_close": {
+        "enabled": true,
+        "at": "15:55"
+      },
+      "max_entry_cycles_per_session": 10
+    },
+    {
+      "symbol": "NVDA",
+      "strategy": "price_action_exit_1",
+      "start": "2025-10-09T00:00:00Z",
+      "end": "2026-09-21T04:00:00Z",
+      "seed": 271828,
+      "dataset_id": "alpaca-sip-NVDA-1m-raw-ecfe1ae8f17df5cd67d7",
+      "feed": "sip",
+      "parameters": null,
+      "starting_capital": "10000",
+      "execution": {
+        "slippage_bps": "5",
+        "fee_per_order": "0",
+        "fee_per_share": "0",
+        "fee_bps": "0"
+      },
+      "buy_strategies": [
+        "inside_bar_breakout",
+        "support_bounce",
+        "resistance_breakout"
+      ],
+      "sell_strategies": [
+        "previous_swing_low_break"
+      ],
+      "short_strategies": null,
+      "cover_strategies": null,
+      "short_selling_enabled": false,
+      "short_borrow_bps_per_day": "0",
+      "protective_stop": {
+        "type": "native_trailing",
+        "trail_percent": "1.5"
+      },
+      "end_of_day_close": {
+        "enabled": true,
+        "at": "15:55"
+      },
+      "max_entry_cycles_per_session": 10
+    },
+    {
+      "symbol": "NVDA",
+      "strategy": "price_action_exit_2",
+      "start": "2025-10-09T00:00:00Z",
+      "end": "2026-09-21T04:00:00Z",
+      "seed": 271828,
+      "dataset_id": "alpaca-sip-NVDA-1m-raw-ecfe1ae8f17df5cd67d7",
+      "feed": "sip",
+      "parameters": null,
+      "starting_capital": "10000",
+      "execution": {
+        "slippage_bps": "5",
+        "fee_per_order": "0",
+        "fee_per_share": "0",
+        "fee_bps": "0"
+      },
+      "buy_strategies": [
+        "inside_bar_breakout",
+        "support_bounce",
+        "resistance_breakout"
+      ],
+      "sell_strategies": [
+        "previous_swing_low_break",
+        "bearish_engulfing_exit"
+      ],
+      "short_strategies": null,
+      "cover_strategies": null,
+      "short_selling_enabled": false,
+      "short_borrow_bps_per_day": "0",
+      "protective_stop": {
+        "type": "native_trailing",
+        "trail_percent": "1.5"
+      },
+      "end_of_day_close": {
+        "enabled": true,
+        "at": "15:55"
+      },
+      "max_entry_cycles_per_session": 10
+    },
+    {
+      "symbol": "NVDA",
+      "strategy": "price_action_exit_3",
+      "start": "2025-10-09T00:00:00Z",
+      "end": "2026-09-21T04:00:00Z",
+      "seed": 271828,
+      "dataset_id": "alpaca-sip-NVDA-1m-raw-ecfe1ae8f17df5cd67d7",
+      "feed": "sip",
+      "parameters": null,
+      "starting_capital": "10000",
+      "execution": {
+        "slippage_bps": "5",
+        "fee_per_order": "0",
+        "fee_per_share": "0",
+        "fee_bps": "0"
+      },
+      "buy_strategies": [
+        "inside_bar_breakout",
+        "support_bounce",
+        "resistance_breakout"
+      ],
+      "sell_strategies": [
+        "previous_swing_low_break",
+        "bearish_engulfing_exit",
+        "shooting_star_reversal"
+      ],
+      "short_strategies": null,
+      "cover_strategies": null,
+      "short_selling_enabled": false,
+      "short_borrow_bps_per_day": "0",
+      "protective_stop": {
+        "type": "native_trailing",
+        "trail_percent": "1.5"
+      },
+      "end_of_day_close": {
+        "enabled": true,
+        "at": "15:55"
+      },
+      "max_entry_cycles_per_session": 10
+    },
+    {
+      "symbol": "NVDA",
+      "strategy": "trend_ema_adaptive",
+      "start": "2025-10-09T00:00:00Z",
+      "end": "2026-09-21T04:00:00Z",
+      "seed": 271828,
+      "dataset_id": "alpaca-sip-NVDA-1m-raw-ecfe1ae8f17df5cd67d7",
+      "feed": "sip",
+      "parameters": null,
+      "starting_capital": "10000",
+      "execution": {
+        "slippage_bps": "5",
+        "fee_per_order": "0",
+        "fee_per_share": "0",
+        "fee_bps": "0"
+      },
+      "buy_strategies": [
+        "ema_pullback",
+        "adaptive_moving_average"
+      ],
+      "sell_strategies": [
+        "ema_bearish_crossover"
+      ],
+      "short_strategies": null,
+      "cover_strategies": null,
+      "short_selling_enabled": false,
+      "short_borrow_bps_per_day": "0",
+      "protective_stop": {
+        "type": "native_trailing",
+        "trail_percent": "1.5"
+      },
+      "end_of_day_close": {
+        "enabled": true,
+        "at": "15:55"
+      },
+      "max_entry_cycles_per_session": 10
+    },
+    {
+      "symbol": "NVDA",
+      "strategy": "trend_holy_structure",
+      "start": "2025-10-09T00:00:00Z",
+      "end": "2026-09-21T04:00:00Z",
+      "seed": 271828,
+      "dataset_id": "alpaca-sip-NVDA-1m-raw-ecfe1ae8f17df5cd67d7",
+      "feed": "sip",
+      "parameters": null,
+      "starting_capital": "10000",
+      "execution": {
+        "slippage_bps": "5",
+        "fee_per_order": "0",
+        "fee_per_share": "0",
+        "fee_bps": "0"
+      },
+      "buy_strategies": [
+        "holy_grail_pullback",
+        "higher_high_higher_low"
+      ],
+      "sell_strategies": [
+        "previous_swing_low_break",
+        "dmi_bearish_crossover"
+      ],
+      "short_strategies": null,
+      "cover_strategies": null,
+      "short_selling_enabled": false,
+      "short_borrow_bps_per_day": "0",
+      "protective_stop": {
+        "type": "native_trailing",
+        "trail_percent": "1.5"
+      },
+      "end_of_day_close": {
+        "enabled": true,
+        "at": "15:55"
+      },
+      "max_entry_cycles_per_session": 10
+    },
+    {
+      "symbol": "NVDA",
+      "strategy": "trend_super_reclaim",
+      "start": "2025-10-09T00:00:00Z",
+      "end": "2026-09-21T04:00:00Z",
+      "seed": 271828,
+      "dataset_id": "alpaca-sip-NVDA-1m-raw-ecfe1ae8f17df5cd67d7",
+      "feed": "sip",
+      "parameters": null,
+      "starting_capital": "10000",
+      "execution": {
+        "slippage_bps": "5",
+        "fee_per_order": "0",
+        "fee_per_share": "0",
+        "fee_bps": "0"
+      },
+      "buy_strategies": [
+        "supertrend",
+        "moving_average_reclaim"
+      ],
+      "sell_strategies": [
+        "supertrend_bearish_flip"
+      ],
+      "short_strategies": null,
+      "cover_strategies": null,
+      "short_selling_enabled": false,
+      "short_borrow_bps_per_day": "0",
+      "protective_stop": {
+        "type": "native_trailing",
+        "trail_percent": "1.5"
+      },
+      "end_of_day_close": {
+        "enabled": true,
+        "at": "15:55"
+      },
+      "max_entry_cycles_per_session": 10
+    },
+    {
+      "symbol": "NVDA",
+      "strategy": "trend_dmi_pullback",
+      "start": "2025-10-09T00:00:00Z",
+      "end": "2026-09-21T04:00:00Z",
+      "seed": 271828,
+      "dataset_id": "alpaca-sip-NVDA-1m-raw-ecfe1ae8f17df5cd67d7",
+      "feed": "sip",
+      "parameters": null,
+      "starting_capital": "10000",
+      "execution": {
+        "slippage_bps": "5",
+        "fee_per_order": "0",
+        "fee_per_share": "0",
+        "fee_bps": "0"
+      },
+      "buy_strategies": [
+        "dmi_crossover",
+        "ema_pullback",
+        "holy_grail_pullback"
+      ],
+      "sell_strategies": [
+        "dmi_bearish_crossover",
+        "price_below_ema"
+      ],
+      "short_strategies": null,
+      "cover_strategies": null,
+      "short_selling_enabled": false,
+      "short_borrow_bps_per_day": "0",
+      "protective_stop": {
+        "type": "native_trailing",
+        "trail_percent": "1.5"
+      },
+      "end_of_day_close": {
+        "enabled": true,
+        "at": "15:55"
+      },
+      "max_entry_cycles_per_session": 10
+    },
+    {
+      "symbol": "NVDA",
+      "strategy": "trend_structure_breakout",
+      "start": "2025-10-09T00:00:00Z",
+      "end": "2026-09-21T04:00:00Z",
+      "seed": 271828,
+      "dataset_id": "alpaca-sip-NVDA-1m-raw-ecfe1ae8f17df5cd67d7",
+      "feed": "sip",
+      "parameters": null,
+      "starting_capital": "10000",
+      "execution": {
+        "slippage_bps": "5",
+        "fee_per_order": "0",
+        "fee_per_share": "0",
+        "fee_bps": "0"
+      },
+      "buy_strategies": [
+        "higher_high_higher_low",
+        "resistance_breakout",
+        "ema_pullback"
+      ],
+      "sell_strategies": [
+        "previous_swing_low_break",
+        "ema_bearish_crossover"
+      ],
+      "short_strategies": null,
+      "cover_strategies": null,
+      "short_selling_enabled": false,
+      "short_borrow_bps_per_day": "0",
+      "protective_stop": {
+        "type": "native_trailing",
+        "trail_percent": "1.5"
+      },
+      "end_of_day_close": {
+        "enabled": true,
+        "at": "15:55"
+      },
+      "max_entry_cycles_per_session": 10
+    },
+    {
+      "symbol": "NVDA",
+      "strategy": "momentum_rvol",
+      "start": "2025-10-09T00:00:00Z",
+      "end": "2026-09-21T04:00:00Z",
+      "seed": 271828,
+      "dataset_id": "alpaca-sip-NVDA-1m-raw-ecfe1ae8f17df5cd67d7",
+      "feed": "sip",
+      "parameters": null,
+      "starting_capital": "10000",
+      "execution": {
+        "slippage_bps": "5",
+        "fee_per_order": "0",
+        "fee_per_share": "0",
+        "fee_bps": "0"
+      },
+      "buy_strategies": [
+        "momentum_breakout",
+        "relative_volume_momentum"
+      ],
+      "sell_strategies": [
+        "momentum_reversal",
+        "high_volume_reversal"
+      ],
+      "short_strategies": null,
+      "cover_strategies": null,
+      "short_selling_enabled": false,
+      "short_borrow_bps_per_day": "0",
+      "protective_stop": {
+        "type": "native_trailing",
+        "trail_percent": "1.5"
+      },
+      "end_of_day_close": {
+        "enabled": true,
+        "at": "15:55"
+      },
+      "max_entry_cycles_per_session": 10
+    },
+    {
+      "symbol": "NVDA",
+      "strategy": "momentum_open_flag",
+      "start": "2025-10-09T00:00:00Z",
+      "end": "2026-09-21T04:00:00Z",
+      "seed": 271828,
+      "dataset_id": "alpaca-sip-NVDA-1m-raw-ecfe1ae8f17df5cd67d7",
+      "feed": "sip",
+      "parameters": null,
+      "starting_capital": "10000",
+      "execution": {
+        "slippage_bps": "5",
+        "fee_per_order": "0",
+        "fee_per_share": "0",
+        "fee_bps": "0"
+      },
+      "buy_strategies": [
+        "opening_range_breakout",
+        "bull_flag_breakout"
+      ],
+      "sell_strategies": [
+        "failed_breakout_exit",
+        "vwap_breakdown"
+      ],
+      "short_strategies": null,
+      "cover_strategies": null,
+      "short_selling_enabled": false,
+      "short_borrow_bps_per_day": "0",
+      "protective_stop": {
+        "type": "native_trailing",
+        "trail_percent": "1.5"
+      },
+      "end_of_day_close": {
+        "enabled": true,
+        "at": "15:55"
+      },
+      "max_entry_cycles_per_session": 10
+    },
+    {
+      "symbol": "NVDA",
+      "strategy": "momentum_squeeze_donchian",
+      "start": "2025-10-09T00:00:00Z",
+      "end": "2026-09-21T04:00:00Z",
+      "seed": 271828,
+      "dataset_id": "alpaca-sip-NVDA-1m-raw-ecfe1ae8f17df5cd67d7",
+      "feed": "sip",
+      "parameters": null,
+      "starting_capital": "10000",
+      "execution": {
+        "slippage_bps": "5",
+        "fee_per_order": "0",
+        "fee_per_share": "0",
+        "fee_bps": "0"
+      },
+      "buy_strategies": [
+        "volatility_squeeze_breakout",
+        "donchian_channel_breakout"
+      ],
+      "sell_strategies": [
+        "failed_breakout_exit",
+        "macd_bearish_crossover"
+      ],
+      "short_strategies": null,
+      "cover_strategies": null,
+      "short_selling_enabled": false,
+      "short_borrow_bps_per_day": "0",
+      "protective_stop": {
+        "type": "native_trailing",
+        "trail_percent": "1.5"
+      },
+      "end_of_day_close": {
+        "enabled": true,
+        "at": "15:55"
+      },
+      "max_entry_cycles_per_session": 10
+    },
+    {
+      "symbol": "NVDA",
+      "strategy": "momentum_nr7_volume",
+      "start": "2025-10-09T00:00:00Z",
+      "end": "2026-09-21T04:00:00Z",
+      "seed": 271828,
+      "dataset_id": "alpaca-sip-NVDA-1m-raw-ecfe1ae8f17df5cd67d7",
+      "feed": "sip",
+      "parameters": null,
+      "starting_capital": "10000",
+      "execution": {
+        "slippage_bps": "5",
+        "fee_per_order": "0",
+        "fee_per_share": "0",
+        "fee_bps": "0"
+      },
+      "buy_strategies": [
+        "nr7_breakout",
+        "relative_volume_momentum"
+      ],
+      "sell_strategies": [
+        "high_volume_reversal",
+        "momentum_reversal"
+      ],
+      "short_strategies": null,
+      "cover_strategies": null,
+      "short_selling_enabled": false,
+      "short_borrow_bps_per_day": "0",
+      "protective_stop": {
+        "type": "native_trailing",
+        "trail_percent": "1.5"
+      },
+      "end_of_day_close": {
+        "enabled": true,
+        "at": "15:55"
+      },
+      "max_entry_cycles_per_session": 10
+    },
+    {
+      "symbol": "NVDA",
+      "strategy": "momentum_flag_drive",
+      "start": "2025-10-09T00:00:00Z",
+      "end": "2026-09-21T04:00:00Z",
+      "seed": 271828,
+      "dataset_id": "alpaca-sip-NVDA-1m-raw-ecfe1ae8f17df5cd67d7",
+      "feed": "sip",
+      "parameters": null,
+      "starting_capital": "10000",
+      "execution": {
+        "slippage_bps": "5",
+        "fee_per_order": "0",
+        "fee_per_share": "0",
+        "fee_bps": "0"
+      },
+      "buy_strategies": [
+        "bull_flag_breakout",
+        "opening_drive",
+        "high_of_day_momentum"
+      ],
+      "sell_strategies": [
+        "failed_breakout_exit",
+        "macd_bearish_crossover"
+      ],
+      "short_strategies": null,
+      "cover_strategies": null,
+      "short_selling_enabled": false,
+      "short_borrow_bps_per_day": "0",
+      "protective_stop": {
+        "type": "native_trailing",
+        "trail_percent": "1.5"
+      },
+      "end_of_day_close": {
+        "enabled": true,
+        "at": "15:55"
+      },
+      "max_entry_cycles_per_session": 10
+    },
+    {
+      "symbol": "NVDA",
+      "strategy": "vwap_pullback_band",
+      "start": "2025-10-09T00:00:00Z",
+      "end": "2026-09-21T04:00:00Z",
+      "seed": 271828,
+      "dataset_id": "alpaca-sip-NVDA-1m-raw-ecfe1ae8f17df5cd67d7",
+      "feed": "sip",
+      "parameters": null,
+      "starting_capital": "10000",
+      "execution": {
+        "slippage_bps": "5",
+        "fee_per_order": "0",
+        "fee_per_share": "0",
+        "fee_bps": "0"
+      },
+      "buy_strategies": [
+        "vwap_pullback",
+        "vwap_band_reversion"
+      ],
+      "sell_strategies": [
+        "vwap_breakdown",
+        "bollinger_upper_band_reversal"
+      ],
+      "short_strategies": null,
+      "cover_strategies": null,
+      "short_selling_enabled": false,
+      "short_borrow_bps_per_day": "0",
+      "protective_stop": {
+        "type": "native_trailing",
+        "trail_percent": "1.5"
+      },
+      "end_of_day_close": {
+        "enabled": true,
+        "at": "15:55"
+      },
+      "max_entry_cycles_per_session": 10
+    },
+    {
+      "symbol": "NVDA",
+      "strategy": "vwap_support_oversold",
+      "start": "2025-10-09T00:00:00Z",
+      "end": "2026-09-21T04:00:00Z",
+      "seed": 271828,
+      "dataset_id": "alpaca-sip-NVDA-1m-raw-ecfe1ae8f17df5cd67d7",
+      "feed": "sip",
+      "parameters": null,
+      "starting_capital": "10000",
+      "execution": {
+        "slippage_bps": "5",
+        "fee_per_order": "0",
+        "fee_per_share": "0",
+        "fee_bps": "0"
+      },
+      "buy_strategies": [
+        "vwap_bounce",
+        "support_bounce",
+        "rsi_oversold_reversal"
+      ],
+      "sell_strategies": [
+        "vwap_breakdown",
+        "rsi_reversal"
+      ],
+      "short_strategies": null,
+      "cover_strategies": null,
+      "short_selling_enabled": false,
+      "short_borrow_bps_per_day": "0",
+      "protective_stop": {
+        "type": "native_trailing",
+        "trail_percent": "1.5"
+      },
+      "end_of_day_close": {
+        "enabled": true,
+        "at": "15:55"
+      },
+      "max_entry_cycles_per_session": 10
+    },
+    {
+      "symbol": "NVDA",
+      "strategy": "mean_bollinger_rsi",
+      "start": "2025-10-09T00:00:00Z",
+      "end": "2026-09-21T04:00:00Z",
+      "seed": 271828,
+      "dataset_id": "alpaca-sip-NVDA-1m-raw-ecfe1ae8f17df5cd67d7",
+      "feed": "sip",
+      "parameters": null,
+      "starting_capital": "10000",
+      "execution": {
+        "slippage_bps": "5",
+        "fee_per_order": "0",
+        "fee_per_share": "0",
+        "fee_bps": "0"
+      },
+      "buy_strategies": [
+        "bollinger_band_mean_reversion",
+        "rsi_oversold_reversal"
+      ],
+      "sell_strategies": [
+        "bollinger_upper_band_reversal",
+        "stochastic_bearish_crossover"
+      ],
+      "short_strategies": null,
+      "cover_strategies": null,
+      "short_selling_enabled": false,
+      "short_borrow_bps_per_day": "0",
+      "protective_stop": {
+        "type": "native_trailing",
+        "trail_percent": "1.5"
+      },
+      "end_of_day_close": {
+        "enabled": true,
+        "at": "15:55"
+      },
+      "max_entry_cycles_per_session": 10
+    },
+    {
+      "symbol": "NVDA",
+      "strategy": "mean_support_reclaim",
+      "start": "2025-10-09T00:00:00Z",
+      "end": "2026-09-21T04:00:00Z",
+      "seed": 271828,
+      "dataset_id": "alpaca-sip-NVDA-1m-raw-ecfe1ae8f17df5cd67d7",
+      "feed": "sip",
+      "parameters": null,
+      "starting_capital": "10000",
+      "execution": {
+        "slippage_bps": "5",
+        "fee_per_order": "0",
+        "fee_per_share": "0",
+        "fee_bps": "0"
+      },
+      "buy_strategies": [
+        "support_bounce",
+        "moving_average_reclaim"
+      ],
+      "sell_strategies": [
+        "price_below_ema",
+        "rsi_reversal"
+      ],
+      "short_strategies": null,
+      "cover_strategies": null,
+      "short_selling_enabled": false,
+      "short_borrow_bps_per_day": "0",
+      "protective_stop": {
+        "type": "native_trailing",
+        "trail_percent": "1.5"
+      },
+      "end_of_day_close": {
+        "enabled": true,
+        "at": "15:55"
+      },
+      "max_entry_cycles_per_session": 10
+    },
+    {
+      "symbol": "NVDA",
+      "strategy": "vwap_retest",
+      "start": "2025-10-09T00:00:00Z",
+      "end": "2026-09-21T04:00:00Z",
+      "seed": 271828,
+      "dataset_id": "alpaca-sip-NVDA-1m-raw-ecfe1ae8f17df5cd67d7",
+      "feed": "sip",
+      "parameters": null,
+      "starting_capital": "10000",
+      "execution": {
+        "slippage_bps": "5",
+        "fee_per_order": "0",
+        "fee_per_share": "0",
+        "fee_bps": "0"
+      },
+      "buy_strategies": [
+        "vwap_bounce",
+        "opening_range_retest"
+      ],
+      "sell_strategies": [
+        "vwap_breakdown",
+        "previous_swing_low_break"
+      ],
+      "short_strategies": null,
+      "cover_strategies": null,
+      "short_selling_enabled": false,
+      "short_borrow_bps_per_day": "0",
+      "protective_stop": {
+        "type": "native_trailing",
+        "trail_percent": "1.5"
+      },
+      "end_of_day_close": {
+        "enabled": true,
+        "at": "15:55"
+      },
+      "max_entry_cycles_per_session": 10
+    },
+    {
+      "symbol": "NVDA",
+      "strategy": "price_inside_hammer",
+      "start": "2025-10-09T00:00:00Z",
+      "end": "2026-09-21T04:00:00Z",
+      "seed": 271828,
+      "dataset_id": "alpaca-sip-NVDA-1m-raw-ecfe1ae8f17df5cd67d7",
+      "feed": "sip",
+      "parameters": null,
+      "starting_capital": "10000",
+      "execution": {
+        "slippage_bps": "5",
+        "fee_per_order": "0",
+        "fee_per_share": "0",
+        "fee_bps": "0"
+      },
+      "buy_strategies": [
+        "inside_bar_breakout",
+        "hammer_reversal"
+      ],
+      "sell_strategies": [
+        "bearish_engulfing_exit",
+        "shooting_star_reversal"
+      ],
+      "short_strategies": null,
+      "cover_strategies": null,
+      "short_selling_enabled": false,
+      "short_borrow_bps_per_day": "0",
+      "protective_stop": {
+        "type": "native_trailing",
+        "trail_percent": "1.5"
+      },
+      "end_of_day_close": {
+        "enabled": true,
+        "at": "15:55"
+      },
+      "max_entry_cycles_per_session": 10
+    },
+    {
+      "symbol": "NVDA",
+      "strategy": "price_double_support",
+      "start": "2025-10-09T00:00:00Z",
+      "end": "2026-09-21T04:00:00Z",
+      "seed": 271828,
+      "dataset_id": "alpaca-sip-NVDA-1m-raw-ecfe1ae8f17df5cd67d7",
+      "feed": "sip",
+      "parameters": null,
+      "starting_capital": "10000",
+      "execution": {
+        "slippage_bps": "5",
+        "fee_per_order": "0",
+        "fee_per_share": "0",
+        "fee_bps": "0"
+      },
+      "buy_strategies": [
+        "double_bottom_reversal",
+        "support_bounce"
+      ],
+      "sell_strategies": [
+        "previous_swing_low_break",
+        "lower_low_confirmation"
+      ],
+      "short_strategies": null,
+      "cover_strategies": null,
+      "short_selling_enabled": false,
+      "short_borrow_bps_per_day": "0",
+      "protective_stop": {
+        "type": "native_trailing",
+        "trail_percent": "1.5"
+      },
+      "end_of_day_close": {
+        "enabled": true,
+        "at": "15:55"
+      },
+      "max_entry_cycles_per_session": 10
+    },
+    {
+      "symbol": "NVDA",
+      "strategy": "price_resistance_retest",
+      "start": "2025-10-09T00:00:00Z",
+      "end": "2026-09-21T04:00:00Z",
+      "seed": 271828,
+      "dataset_id": "alpaca-sip-NVDA-1m-raw-ecfe1ae8f17df5cd67d7",
+      "feed": "sip",
+      "parameters": null,
+      "starting_capital": "10000",
+      "execution": {
+        "slippage_bps": "5",
+        "fee_per_order": "0",
+        "fee_per_share": "0",
+        "fee_bps": "0"
+      },
+      "buy_strategies": [
+        "resistance_breakout",
+        "opening_range_retest"
+      ],
+      "sell_strategies": [
+        "failed_breakout_exit",
+        "trendline_breakdown"
+      ],
+      "short_strategies": null,
+      "cover_strategies": null,
+      "short_selling_enabled": false,
+      "short_borrow_bps_per_day": "0",
+      "protective_stop": {
+        "type": "native_trailing",
+        "trail_percent": "1.5"
+      },
+      "end_of_day_close": {
+        "enabled": true,
+        "at": "15:55"
+      },
+      "max_entry_cycles_per_session": 10
+    },
+    {
+      "symbol": "NVDA",
+      "strategy": "mixed_trend_breakout",
+      "start": "2025-10-09T00:00:00Z",
+      "end": "2026-09-21T04:00:00Z",
+      "seed": 271828,
+      "dataset_id": "alpaca-sip-NVDA-1m-raw-ecfe1ae8f17df5cd67d7",
+      "feed": "sip",
+      "parameters": null,
+      "starting_capital": "10000",
+      "execution": {
+        "slippage_bps": "5",
+        "fee_per_order": "0",
+        "fee_per_share": "0",
+        "fee_bps": "0"
+      },
+      "buy_strategies": [
+        "ema_pullback",
+        "momentum_breakout",
+        "inside_bar_breakout"
+      ],
+      "sell_strategies": [
+        "ema_bearish_crossover",
+        "failed_breakout_exit"
+      ],
+      "short_strategies": null,
+      "cover_strategies": null,
+      "short_selling_enabled": false,
+      "short_borrow_bps_per_day": "0",
+      "protective_stop": {
+        "type": "native_trailing",
+        "trail_percent": "1.5"
+      },
+      "end_of_day_close": {
+        "enabled": true,
+        "at": "15:55"
+      },
+      "max_entry_cycles_per_session": 10
+    },
+    {
+      "symbol": "NVDA",
+      "strategy": "mixed_reclaim_volume",
+      "start": "2025-10-09T00:00:00Z",
+      "end": "2026-09-21T04:00:00Z",
+      "seed": 271828,
+      "dataset_id": "alpaca-sip-NVDA-1m-raw-ecfe1ae8f17df5cd67d7",
+      "feed": "sip",
+      "parameters": null,
+      "starting_capital": "10000",
+      "execution": {
+        "slippage_bps": "5",
+        "fee_per_order": "0",
+        "fee_per_share": "0",
+        "fee_bps": "0"
+      },
+      "buy_strategies": [
+        "vwap_pullback",
+        "relative_volume_momentum",
+        "moving_average_reclaim"
+      ],
+      "sell_strategies": [
+        "vwap_breakdown",
+        "high_volume_reversal"
+      ],
+      "short_strategies": null,
+      "cover_strategies": null,
+      "short_selling_enabled": false,
+      "short_borrow_bps_per_day": "0",
+      "protective_stop": {
+        "type": "native_trailing",
+        "trail_percent": "1.5"
+      },
+      "end_of_day_close": {
+        "enabled": true,
+        "at": "15:55"
+      },
+      "max_entry_cycles_per_session": 10
+    },
+    {
+      "symbol": "NVDA",
+      "strategy": "trend_stepped",
+      "start": "2025-10-09T00:00:00Z",
+      "end": "2026-09-21T04:00:00Z",
+      "seed": 271828,
+      "dataset_id": "alpaca-sip-NVDA-1m-raw-ecfe1ae8f17df5cd67d7",
+      "feed": "sip",
+      "parameters": null,
+      "starting_capital": "10000",
+      "execution": {
+        "slippage_bps": "5",
+        "fee_per_order": "0",
+        "fee_per_share": "0",
+        "fee_bps": "0"
+      },
+      "buy_strategies": [
+        "ema_pullback",
+        "supertrend",
+        "higher_high_higher_low"
+      ],
+      "sell_strategies": [
+        "ema_bearish_crossover",
+        "previous_swing_low_break"
+      ],
+      "short_strategies": null,
+      "cover_strategies": null,
+      "short_selling_enabled": false,
+      "short_borrow_bps_per_day": "0",
+      "protective_stop": {
+        "type": "stepped_trailing",
+        "initial_stop_percent": "1.5",
+        "step_trigger_percent": "1.0",
+        "step_percent": "0.5"
+      },
+      "end_of_day_close": {
+        "enabled": true,
+        "at": "15:55"
+      },
+      "max_entry_cycles_per_session": 10
+    },
+    {
+      "symbol": "NVDA",
+      "strategy": "trend_fixed",
+      "start": "2025-10-09T00:00:00Z",
+      "end": "2026-09-21T04:00:00Z",
+      "seed": 271828,
+      "dataset_id": "alpaca-sip-NVDA-1m-raw-ecfe1ae8f17df5cd67d7",
+      "feed": "sip",
+      "parameters": null,
+      "starting_capital": "10000",
+      "execution": {
+        "slippage_bps": "5",
+        "fee_per_order": "0",
+        "fee_per_share": "0",
+        "fee_bps": "0"
+      },
+      "buy_strategies": [
+        "ema_pullback",
+        "supertrend",
+        "higher_high_higher_low"
+      ],
+      "sell_strategies": [
+        "ema_bearish_crossover",
+        "previous_swing_low_break"
+      ],
+      "short_strategies": null,
+      "cover_strategies": null,
+      "short_selling_enabled": false,
+      "short_borrow_bps_per_day": "0",
+      "protective_stop": {
+        "type": "fixed",
+        "stop_percent": "1.0"
+      },
+      "end_of_day_close": {
+        "enabled": true,
+        "at": "15:55"
+      },
+      "max_entry_cycles_per_session": 10
+    },
+    {
+      "symbol": "NVDA",
+      "strategy": "breakout_stepped",
+      "start": "2025-10-09T00:00:00Z",
+      "end": "2026-09-21T04:00:00Z",
+      "seed": 271828,
+      "dataset_id": "alpaca-sip-NVDA-1m-raw-ecfe1ae8f17df5cd67d7",
+      "feed": "sip",
+      "parameters": null,
+      "starting_capital": "10000",
+      "execution": {
+        "slippage_bps": "5",
+        "fee_per_order": "0",
+        "fee_per_share": "0",
+        "fee_bps": "0"
+      },
+      "buy_strategies": [
+        "opening_range_breakout",
+        "donchian_channel_breakout",
+        "relative_volume_momentum"
+      ],
+      "sell_strategies": [
+        "failed_breakout_exit",
+        "momentum_reversal"
+      ],
+      "short_strategies": null,
+      "cover_strategies": null,
+      "short_selling_enabled": false,
+      "short_borrow_bps_per_day": "0",
+      "protective_stop": {
+        "type": "stepped_trailing",
+        "initial_stop_percent": "1.5",
+        "step_trigger_percent": "1.0",
+        "step_percent": "0.5"
+      },
+      "end_of_day_close": {
+        "enabled": true,
+        "at": "15:55"
+      },
+      "max_entry_cycles_per_session": 10
+    },
+    {
+      "symbol": "NVDA",
+      "strategy": "breakout_fixed",
+      "start": "2025-10-09T00:00:00Z",
+      "end": "2026-09-21T04:00:00Z",
+      "seed": 271828,
+      "dataset_id": "alpaca-sip-NVDA-1m-raw-ecfe1ae8f17df5cd67d7",
+      "feed": "sip",
+      "parameters": null,
+      "starting_capital": "10000",
+      "execution": {
+        "slippage_bps": "5",
+        "fee_per_order": "0",
+        "fee_per_share": "0",
+        "fee_bps": "0"
+      },
+      "buy_strategies": [
+        "opening_range_breakout",
+        "donchian_channel_breakout",
+        "relative_volume_momentum"
+      ],
+      "sell_strategies": [
+        "failed_breakout_exit",
+        "momentum_reversal"
+      ],
+      "short_strategies": null,
+      "cover_strategies": null,
+      "short_selling_enabled": false,
+      "short_borrow_bps_per_day": "0",
+      "protective_stop": {
+        "type": "fixed",
+        "stop_percent": "1.0"
+      },
+      "end_of_day_close": {
+        "enabled": true,
+        "at": "15:55"
+      },
+      "max_entry_cycles_per_session": 10
+    },
+    {
+      "symbol": "NVDA",
+      "strategy": "vwap_mean_stepped",
+      "start": "2025-10-09T00:00:00Z",
+      "end": "2026-09-21T04:00:00Z",
+      "seed": 271828,
+      "dataset_id": "alpaca-sip-NVDA-1m-raw-ecfe1ae8f17df5cd67d7",
+      "feed": "sip",
+      "parameters": null,
+      "starting_capital": "10000",
+      "execution": {
+        "slippage_bps": "5",
+        "fee_per_order": "0",
+        "fee_per_share": "0",
+        "fee_bps": "0"
+      },
+      "buy_strategies": [
+        "vwap_bounce",
+        "vwap_pullback",
+        "rsi_oversold_reversal"
+      ],
+      "sell_strategies": [
+        "vwap_breakdown",
+        "rsi_reversal"
+      ],
+      "short_strategies": null,
+      "cover_strategies": null,
+      "short_selling_enabled": false,
+      "short_borrow_bps_per_day": "0",
+      "protective_stop": {
+        "type": "stepped_trailing",
+        "initial_stop_percent": "1.5",
+        "step_trigger_percent": "1.0",
+        "step_percent": "0.5"
+      },
+      "end_of_day_close": {
+        "enabled": true,
+        "at": "15:55"
+      },
+      "max_entry_cycles_per_session": 10
+    },
+    {
+      "symbol": "NVDA",
+      "strategy": "vwap_mean_fixed",
+      "start": "2025-10-09T00:00:00Z",
+      "end": "2026-09-21T04:00:00Z",
+      "seed": 271828,
+      "dataset_id": "alpaca-sip-NVDA-1m-raw-ecfe1ae8f17df5cd67d7",
+      "feed": "sip",
+      "parameters": null,
+      "starting_capital": "10000",
+      "execution": {
+        "slippage_bps": "5",
+        "fee_per_order": "0",
+        "fee_per_share": "0",
+        "fee_bps": "0"
+      },
+      "buy_strategies": [
+        "vwap_bounce",
+        "vwap_pullback",
+        "rsi_oversold_reversal"
+      ],
+      "sell_strategies": [
+        "vwap_breakdown",
+        "rsi_reversal"
+      ],
+      "short_strategies": null,
+      "cover_strategies": null,
+      "short_selling_enabled": false,
+      "short_borrow_bps_per_day": "0",
+      "protective_stop": {
+        "type": "fixed",
+        "stop_percent": "1.0"
+      },
+      "end_of_day_close": {
+        "enabled": true,
+        "at": "15:55"
+      },
+      "max_entry_cycles_per_session": 10
+    },
+    {
+      "symbol": "NVDA",
+      "strategy": "price_action_stepped",
+      "start": "2025-10-09T00:00:00Z",
+      "end": "2026-09-21T04:00:00Z",
+      "seed": 271828,
+      "dataset_id": "alpaca-sip-NVDA-1m-raw-ecfe1ae8f17df5cd67d7",
+      "feed": "sip",
+      "parameters": null,
+      "starting_capital": "10000",
+      "execution": {
+        "slippage_bps": "5",
+        "fee_per_order": "0",
+        "fee_per_share": "0",
+        "fee_bps": "0"
+      },
+      "buy_strategies": [
+        "inside_bar_breakout",
+        "support_bounce",
+        "resistance_breakout"
+      ],
+      "sell_strategies": [
+        "previous_swing_low_break",
+        "bearish_engulfing_exit"
+      ],
+      "short_strategies": null,
+      "cover_strategies": null,
+      "short_selling_enabled": false,
+      "short_borrow_bps_per_day": "0",
+      "protective_stop": {
+        "type": "stepped_trailing",
+        "initial_stop_percent": "1.5",
+        "step_trigger_percent": "1.0",
+        "step_percent": "0.5"
+      },
+      "end_of_day_close": {
+        "enabled": true,
+        "at": "15:55"
+      },
+      "max_entry_cycles_per_session": 10
+    },
+    {
+      "symbol": "NVDA",
+      "strategy": "price_action_fixed",
+      "start": "2025-10-09T00:00:00Z",
+      "end": "2026-09-21T04:00:00Z",
+      "seed": 271828,
+      "dataset_id": "alpaca-sip-NVDA-1m-raw-ecfe1ae8f17df5cd67d7",
+      "feed": "sip",
+      "parameters": null,
+      "starting_capital": "10000",
+      "execution": {
+        "slippage_bps": "5",
+        "fee_per_order": "0",
+        "fee_per_share": "0",
+        "fee_bps": "0"
+      },
+      "buy_strategies": [
+        "inside_bar_breakout",
+        "support_bounce",
+        "resistance_breakout"
+      ],
+      "sell_strategies": [
+        "previous_swing_low_break",
+        "bearish_engulfing_exit"
+      ],
+      "short_strategies": null,
+      "cover_strategies": null,
+      "short_selling_enabled": false,
+      "short_borrow_bps_per_day": "0",
+      "protective_stop": {
+        "type": "fixed",
+        "stop_percent": "1.0"
+      },
+      "end_of_day_close": {
+        "enabled": true,
+        "at": "15:55"
+      },
+      "max_entry_cycles_per_session": 10
+    },
+    {
+      "symbol": "TSLA",
+      "strategy": "michelle_orb",
+      "start": "2025-10-09T00:00:00Z",
+      "end": "2026-09-21T04:00:00Z",
+      "seed": 271828,
+      "dataset_id": "alpaca-sip-TSLA-1m-raw-3e71642eabd5b82ffb24",
+      "feed": "sip",
+      "parameters": null,
+      "starting_capital": "10000",
+      "execution": {
+        "slippage_bps": "5",
+        "fee_per_order": "0",
+        "fee_per_share": "0",
+        "fee_bps": "0"
+      },
+      "buy_strategies": [
+        "five_minute_orb_michelle_buy"
+      ],
+      "sell_strategies": [
+        "five_minute_orb_michelle_sell"
+      ],
+      "short_strategies": null,
+      "cover_strategies": null,
+      "short_selling_enabled": false,
+      "short_borrow_bps_per_day": "0",
+      "protective_stop": null,
+      "end_of_day_close": {
+        "enabled": true,
+        "at": "15:55"
+      },
+      "max_entry_cycles_per_session": 10
+    },
+    {
+      "symbol": "TSLA",
+      "strategy": "michelle_vwap",
+      "start": "2025-10-09T00:00:00Z",
+      "end": "2026-09-21T04:00:00Z",
+      "seed": 271828,
+      "dataset_id": "alpaca-sip-TSLA-1m-raw-3e71642eabd5b82ffb24",
+      "feed": "sip",
+      "parameters": null,
+      "starting_capital": "10000",
+      "execution": {
+        "slippage_bps": "5",
+        "fee_per_order": "0",
+        "fee_per_share": "0",
+        "fee_bps": "0"
+      },
+      "buy_strategies": [
+        "vwap_bounce_break_michelle_buy"
+      ],
+      "sell_strategies": [
+        "vwap_bounce_break_michelle_sell"
+      ],
+      "short_strategies": null,
+      "cover_strategies": null,
+      "short_selling_enabled": false,
+      "short_borrow_bps_per_day": "0",
+      "protective_stop": null,
+      "end_of_day_close": {
+        "enabled": true,
+        "at": "15:55"
+      },
+      "max_entry_cycles_per_session": 10
+    },
+    {
+      "symbol": "TSLA",
+      "strategy": "michelle_combined",
+      "start": "2025-10-09T00:00:00Z",
+      "end": "2026-09-21T04:00:00Z",
+      "seed": 271828,
+      "dataset_id": "alpaca-sip-TSLA-1m-raw-3e71642eabd5b82ffb24",
+      "feed": "sip",
+      "parameters": null,
+      "starting_capital": "10000",
+      "execution": {
+        "slippage_bps": "5",
+        "fee_per_order": "0",
+        "fee_per_share": "0",
+        "fee_bps": "0"
+      },
+      "buy_strategies": [
+        "five_minute_orb_michelle_buy",
+        "vwap_bounce_break_michelle_buy"
+      ],
+      "sell_strategies": [
+        "five_minute_orb_michelle_sell",
+        "vwap_bounce_break_michelle_sell"
+      ],
+      "short_strategies": null,
+      "cover_strategies": null,
+      "short_selling_enabled": false,
+      "short_borrow_bps_per_day": "0",
+      "protective_stop": null,
+      "end_of_day_close": {
+        "enabled": true,
+        "at": "15:55"
+      },
+      "max_entry_cycles_per_session": 10
+    },
+    {
+      "symbol": "TSLA",
+      "strategy": "vwap_reference",
+      "start": "2025-10-09T00:00:00Z",
+      "end": "2026-09-21T04:00:00Z",
+      "seed": 271828,
+      "dataset_id": "alpaca-sip-TSLA-1m-raw-3e71642eabd5b82ffb24",
+      "feed": "sip",
+      "parameters": null,
+      "starting_capital": "10000",
+      "execution": {
+        "slippage_bps": "5",
+        "fee_per_order": "0",
+        "fee_per_share": "0",
+        "fee_bps": "0"
+      },
+      "buy_strategies": [
+        "vwap_bounce"
+      ],
+      "sell_strategies": [
+        "vwap_breakdown"
+      ],
+      "short_strategies": null,
+      "cover_strategies": null,
+      "short_selling_enabled": false,
+      "short_borrow_bps_per_day": "0",
+      "protective_stop": {
+        "type": "native_trailing",
+        "trail_percent": "1.5"
+      },
+      "end_of_day_close": {
+        "enabled": true,
+        "at": "15:55"
+      },
+      "max_entry_cycles_per_session": 10
+    },
+    {
+      "symbol": "TSLA",
+      "strategy": "trend_exit_0",
+      "start": "2025-10-09T00:00:00Z",
+      "end": "2026-09-21T04:00:00Z",
+      "seed": 271828,
+      "dataset_id": "alpaca-sip-TSLA-1m-raw-3e71642eabd5b82ffb24",
+      "feed": "sip",
+      "parameters": null,
+      "starting_capital": "10000",
+      "execution": {
+        "slippage_bps": "5",
+        "fee_per_order": "0",
+        "fee_per_share": "0",
+        "fee_bps": "0"
+      },
+      "buy_strategies": [
+        "ema_pullback",
+        "supertrend",
+        "higher_high_higher_low"
+      ],
+      "sell_strategies": [],
+      "short_strategies": null,
+      "cover_strategies": null,
+      "short_selling_enabled": false,
+      "short_borrow_bps_per_day": "0",
+      "protective_stop": {
+        "type": "native_trailing",
+        "trail_percent": "1.5"
+      },
+      "end_of_day_close": {
+        "enabled": true,
+        "at": "15:55"
+      },
+      "max_entry_cycles_per_session": 10
+    },
+    {
+      "symbol": "TSLA",
+      "strategy": "trend_exit_1",
+      "start": "2025-10-09T00:00:00Z",
+      "end": "2026-09-21T04:00:00Z",
+      "seed": 271828,
+      "dataset_id": "alpaca-sip-TSLA-1m-raw-3e71642eabd5b82ffb24",
+      "feed": "sip",
+      "parameters": null,
+      "starting_capital": "10000",
+      "execution": {
+        "slippage_bps": "5",
+        "fee_per_order": "0",
+        "fee_per_share": "0",
+        "fee_bps": "0"
+      },
+      "buy_strategies": [
+        "ema_pullback",
+        "supertrend",
+        "higher_high_higher_low"
+      ],
+      "sell_strategies": [
+        "ema_bearish_crossover"
+      ],
+      "short_strategies": null,
+      "cover_strategies": null,
+      "short_selling_enabled": false,
+      "short_borrow_bps_per_day": "0",
+      "protective_stop": {
+        "type": "native_trailing",
+        "trail_percent": "1.5"
+      },
+      "end_of_day_close": {
+        "enabled": true,
+        "at": "15:55"
+      },
+      "max_entry_cycles_per_session": 10
+    },
+    {
+      "symbol": "TSLA",
+      "strategy": "trend_exit_2",
+      "start": "2025-10-09T00:00:00Z",
+      "end": "2026-09-21T04:00:00Z",
+      "seed": 271828,
+      "dataset_id": "alpaca-sip-TSLA-1m-raw-3e71642eabd5b82ffb24",
+      "feed": "sip",
+      "parameters": null,
+      "starting_capital": "10000",
+      "execution": {
+        "slippage_bps": "5",
+        "fee_per_order": "0",
+        "fee_per_share": "0",
+        "fee_bps": "0"
+      },
+      "buy_strategies": [
+        "ema_pullback",
+        "supertrend",
+        "higher_high_higher_low"
+      ],
+      "sell_strategies": [
+        "ema_bearish_crossover",
+        "previous_swing_low_break"
+      ],
+      "short_strategies": null,
+      "cover_strategies": null,
+      "short_selling_enabled": false,
+      "short_borrow_bps_per_day": "0",
+      "protective_stop": {
+        "type": "native_trailing",
+        "trail_percent": "1.5"
+      },
+      "end_of_day_close": {
+        "enabled": true,
+        "at": "15:55"
+      },
+      "max_entry_cycles_per_session": 10
+    },
+    {
+      "symbol": "TSLA",
+      "strategy": "trend_exit_3",
+      "start": "2025-10-09T00:00:00Z",
+      "end": "2026-09-21T04:00:00Z",
+      "seed": 271828,
+      "dataset_id": "alpaca-sip-TSLA-1m-raw-3e71642eabd5b82ffb24",
+      "feed": "sip",
+      "parameters": null,
+      "starting_capital": "10000",
+      "execution": {
+        "slippage_bps": "5",
+        "fee_per_order": "0",
+        "fee_per_share": "0",
+        "fee_bps": "0"
+      },
+      "buy_strategies": [
+        "ema_pullback",
+        "supertrend",
+        "higher_high_higher_low"
+      ],
+      "sell_strategies": [
+        "ema_bearish_crossover",
+        "previous_swing_low_break",
+        "dmi_bearish_crossover"
+      ],
+      "short_strategies": null,
+      "cover_strategies": null,
+      "short_selling_enabled": false,
+      "short_borrow_bps_per_day": "0",
+      "protective_stop": {
+        "type": "native_trailing",
+        "trail_percent": "1.5"
+      },
+      "end_of_day_close": {
+        "enabled": true,
+        "at": "15:55"
+      },
+      "max_entry_cycles_per_session": 10
+    },
+    {
+      "symbol": "TSLA",
+      "strategy": "breakout_exit_0",
+      "start": "2025-10-09T00:00:00Z",
+      "end": "2026-09-21T04:00:00Z",
+      "seed": 271828,
+      "dataset_id": "alpaca-sip-TSLA-1m-raw-3e71642eabd5b82ffb24",
+      "feed": "sip",
+      "parameters": null,
+      "starting_capital": "10000",
+      "execution": {
+        "slippage_bps": "5",
+        "fee_per_order": "0",
+        "fee_per_share": "0",
+        "fee_bps": "0"
+      },
+      "buy_strategies": [
+        "opening_range_breakout",
+        "donchian_channel_breakout",
+        "relative_volume_momentum"
+      ],
+      "sell_strategies": [],
+      "short_strategies": null,
+      "cover_strategies": null,
+      "short_selling_enabled": false,
+      "short_borrow_bps_per_day": "0",
+      "protective_stop": {
+        "type": "native_trailing",
+        "trail_percent": "1.5"
+      },
+      "end_of_day_close": {
+        "enabled": true,
+        "at": "15:55"
+      },
+      "max_entry_cycles_per_session": 10
+    },
+    {
+      "symbol": "TSLA",
+      "strategy": "breakout_exit_1",
+      "start": "2025-10-09T00:00:00Z",
+      "end": "2026-09-21T04:00:00Z",
+      "seed": 271828,
+      "dataset_id": "alpaca-sip-TSLA-1m-raw-3e71642eabd5b82ffb24",
+      "feed": "sip",
+      "parameters": null,
+      "starting_capital": "10000",
+      "execution": {
+        "slippage_bps": "5",
+        "fee_per_order": "0",
+        "fee_per_share": "0",
+        "fee_bps": "0"
+      },
+      "buy_strategies": [
+        "opening_range_breakout",
+        "donchian_channel_breakout",
+        "relative_volume_momentum"
+      ],
+      "sell_strategies": [
+        "failed_breakout_exit"
+      ],
+      "short_strategies": null,
+      "cover_strategies": null,
+      "short_selling_enabled": false,
+      "short_borrow_bps_per_day": "0",
+      "protective_stop": {
+        "type": "native_trailing",
+        "trail_percent": "1.5"
+      },
+      "end_of_day_close": {
+        "enabled": true,
+        "at": "15:55"
+      },
+      "max_entry_cycles_per_session": 10
+    },
+    {
+      "symbol": "TSLA",
+      "strategy": "breakout_exit_2",
+      "start": "2025-10-09T00:00:00Z",
+      "end": "2026-09-21T04:00:00Z",
+      "seed": 271828,
+      "dataset_id": "alpaca-sip-TSLA-1m-raw-3e71642eabd5b82ffb24",
+      "feed": "sip",
+      "parameters": null,
+      "starting_capital": "10000",
+      "execution": {
+        "slippage_bps": "5",
+        "fee_per_order": "0",
+        "fee_per_share": "0",
+        "fee_bps": "0"
+      },
+      "buy_strategies": [
+        "opening_range_breakout",
+        "donchian_channel_breakout",
+        "relative_volume_momentum"
+      ],
+      "sell_strategies": [
+        "failed_breakout_exit",
+        "momentum_reversal"
+      ],
+      "short_strategies": null,
+      "cover_strategies": null,
+      "short_selling_enabled": false,
+      "short_borrow_bps_per_day": "0",
+      "protective_stop": {
+        "type": "native_trailing",
+        "trail_percent": "1.5"
+      },
+      "end_of_day_close": {
+        "enabled": true,
+        "at": "15:55"
+      },
+      "max_entry_cycles_per_session": 10
+    },
+    {
+      "symbol": "TSLA",
+      "strategy": "breakout_exit_3",
+      "start": "2025-10-09T00:00:00Z",
+      "end": "2026-09-21T04:00:00Z",
+      "seed": 271828,
+      "dataset_id": "alpaca-sip-TSLA-1m-raw-3e71642eabd5b82ffb24",
+      "feed": "sip",
+      "parameters": null,
+      "starting_capital": "10000",
+      "execution": {
+        "slippage_bps": "5",
+        "fee_per_order": "0",
+        "fee_per_share": "0",
+        "fee_bps": "0"
+      },
+      "buy_strategies": [
+        "opening_range_breakout",
+        "donchian_channel_breakout",
+        "relative_volume_momentum"
+      ],
+      "sell_strategies": [
+        "failed_breakout_exit",
+        "momentum_reversal",
+        "high_volume_reversal"
+      ],
+      "short_strategies": null,
+      "cover_strategies": null,
+      "short_selling_enabled": false,
+      "short_borrow_bps_per_day": "0",
+      "protective_stop": {
+        "type": "native_trailing",
+        "trail_percent": "1.5"
+      },
+      "end_of_day_close": {
+        "enabled": true,
+        "at": "15:55"
+      },
+      "max_entry_cycles_per_session": 10
+    },
+    {
+      "symbol": "TSLA",
+      "strategy": "vwap_mean_exit_0",
+      "start": "2025-10-09T00:00:00Z",
+      "end": "2026-09-21T04:00:00Z",
+      "seed": 271828,
+      "dataset_id": "alpaca-sip-TSLA-1m-raw-3e71642eabd5b82ffb24",
+      "feed": "sip",
+      "parameters": null,
+      "starting_capital": "10000",
+      "execution": {
+        "slippage_bps": "5",
+        "fee_per_order": "0",
+        "fee_per_share": "0",
+        "fee_bps": "0"
+      },
+      "buy_strategies": [
+        "vwap_bounce",
+        "vwap_pullback",
+        "rsi_oversold_reversal"
+      ],
+      "sell_strategies": [],
+      "short_strategies": null,
+      "cover_strategies": null,
+      "short_selling_enabled": false,
+      "short_borrow_bps_per_day": "0",
+      "protective_stop": {
+        "type": "native_trailing",
+        "trail_percent": "1.5"
+      },
+      "end_of_day_close": {
+        "enabled": true,
+        "at": "15:55"
+      },
+      "max_entry_cycles_per_session": 10
+    },
+    {
+      "symbol": "TSLA",
+      "strategy": "vwap_mean_exit_1",
+      "start": "2025-10-09T00:00:00Z",
+      "end": "2026-09-21T04:00:00Z",
+      "seed": 271828,
+      "dataset_id": "alpaca-sip-TSLA-1m-raw-3e71642eabd5b82ffb24",
+      "feed": "sip",
+      "parameters": null,
+      "starting_capital": "10000",
+      "execution": {
+        "slippage_bps": "5",
+        "fee_per_order": "0",
+        "fee_per_share": "0",
+        "fee_bps": "0"
+      },
+      "buy_strategies": [
+        "vwap_bounce",
+        "vwap_pullback",
+        "rsi_oversold_reversal"
+      ],
+      "sell_strategies": [
+        "vwap_breakdown"
+      ],
+      "short_strategies": null,
+      "cover_strategies": null,
+      "short_selling_enabled": false,
+      "short_borrow_bps_per_day": "0",
+      "protective_stop": {
+        "type": "native_trailing",
+        "trail_percent": "1.5"
+      },
+      "end_of_day_close": {
+        "enabled": true,
+        "at": "15:55"
+      },
+      "max_entry_cycles_per_session": 10
+    },
+    {
+      "symbol": "TSLA",
+      "strategy": "vwap_mean_exit_2",
+      "start": "2025-10-09T00:00:00Z",
+      "end": "2026-09-21T04:00:00Z",
+      "seed": 271828,
+      "dataset_id": "alpaca-sip-TSLA-1m-raw-3e71642eabd5b82ffb24",
+      "feed": "sip",
+      "parameters": null,
+      "starting_capital": "10000",
+      "execution": {
+        "slippage_bps": "5",
+        "fee_per_order": "0",
+        "fee_per_share": "0",
+        "fee_bps": "0"
+      },
+      "buy_strategies": [
+        "vwap_bounce",
+        "vwap_pullback",
+        "rsi_oversold_reversal"
+      ],
+      "sell_strategies": [
+        "vwap_breakdown",
+        "rsi_reversal"
+      ],
+      "short_strategies": null,
+      "cover_strategies": null,
+      "short_selling_enabled": false,
+      "short_borrow_bps_per_day": "0",
+      "protective_stop": {
+        "type": "native_trailing",
+        "trail_percent": "1.5"
+      },
+      "end_of_day_close": {
+        "enabled": true,
+        "at": "15:55"
+      },
+      "max_entry_cycles_per_session": 10
+    },
+    {
+      "symbol": "TSLA",
+      "strategy": "vwap_mean_exit_3",
+      "start": "2025-10-09T00:00:00Z",
+      "end": "2026-09-21T04:00:00Z",
+      "seed": 271828,
+      "dataset_id": "alpaca-sip-TSLA-1m-raw-3e71642eabd5b82ffb24",
+      "feed": "sip",
+      "parameters": null,
+      "starting_capital": "10000",
+      "execution": {
+        "slippage_bps": "5",
+        "fee_per_order": "0",
+        "fee_per_share": "0",
+        "fee_bps": "0"
+      },
+      "buy_strategies": [
+        "vwap_bounce",
+        "vwap_pullback",
+        "rsi_oversold_reversal"
+      ],
+      "sell_strategies": [
+        "vwap_breakdown",
+        "rsi_reversal",
+        "price_below_ema"
+      ],
+      "short_strategies": null,
+      "cover_strategies": null,
+      "short_selling_enabled": false,
+      "short_borrow_bps_per_day": "0",
+      "protective_stop": {
+        "type": "native_trailing",
+        "trail_percent": "1.5"
+      },
+      "end_of_day_close": {
+        "enabled": true,
+        "at": "15:55"
+      },
+      "max_entry_cycles_per_session": 10
+    },
+    {
+      "symbol": "TSLA",
+      "strategy": "price_action_exit_0",
+      "start": "2025-10-09T00:00:00Z",
+      "end": "2026-09-21T04:00:00Z",
+      "seed": 271828,
+      "dataset_id": "alpaca-sip-TSLA-1m-raw-3e71642eabd5b82ffb24",
+      "feed": "sip",
+      "parameters": null,
+      "starting_capital": "10000",
+      "execution": {
+        "slippage_bps": "5",
+        "fee_per_order": "0",
+        "fee_per_share": "0",
+        "fee_bps": "0"
+      },
+      "buy_strategies": [
+        "inside_bar_breakout",
+        "support_bounce",
+        "resistance_breakout"
+      ],
+      "sell_strategies": [],
+      "short_strategies": null,
+      "cover_strategies": null,
+      "short_selling_enabled": false,
+      "short_borrow_bps_per_day": "0",
+      "protective_stop": {
+        "type": "native_trailing",
+        "trail_percent": "1.5"
+      },
+      "end_of_day_close": {
+        "enabled": true,
+        "at": "15:55"
+      },
+      "max_entry_cycles_per_session": 10
+    },
+    {
+      "symbol": "TSLA",
+      "strategy": "price_action_exit_1",
+      "start": "2025-10-09T00:00:00Z",
+      "end": "2026-09-21T04:00:00Z",
+      "seed": 271828,
+      "dataset_id": "alpaca-sip-TSLA-1m-raw-3e71642eabd5b82ffb24",
+      "feed": "sip",
+      "parameters": null,
+      "starting_capital": "10000",
+      "execution": {
+        "slippage_bps": "5",
+        "fee_per_order": "0",
+        "fee_per_share": "0",
+        "fee_bps": "0"
+      },
+      "buy_strategies": [
+        "inside_bar_breakout",
+        "support_bounce",
+        "resistance_breakout"
+      ],
+      "sell_strategies": [
+        "previous_swing_low_break"
+      ],
+      "short_strategies": null,
+      "cover_strategies": null,
+      "short_selling_enabled": false,
+      "short_borrow_bps_per_day": "0",
+      "protective_stop": {
+        "type": "native_trailing",
+        "trail_percent": "1.5"
+      },
+      "end_of_day_close": {
+        "enabled": true,
+        "at": "15:55"
+      },
+      "max_entry_cycles_per_session": 10
+    },
+    {
+      "symbol": "TSLA",
+      "strategy": "price_action_exit_2",
+      "start": "2025-10-09T00:00:00Z",
+      "end": "2026-09-21T04:00:00Z",
+      "seed": 271828,
+      "dataset_id": "alpaca-sip-TSLA-1m-raw-3e71642eabd5b82ffb24",
+      "feed": "sip",
+      "parameters": null,
+      "starting_capital": "10000",
+      "execution": {
+        "slippage_bps": "5",
+        "fee_per_order": "0",
+        "fee_per_share": "0",
+        "fee_bps": "0"
+      },
+      "buy_strategies": [
+        "inside_bar_breakout",
+        "support_bounce",
+        "resistance_breakout"
+      ],
+      "sell_strategies": [
+        "previous_swing_low_break",
+        "bearish_engulfing_exit"
+      ],
+      "short_strategies": null,
+      "cover_strategies": null,
+      "short_selling_enabled": false,
+      "short_borrow_bps_per_day": "0",
+      "protective_stop": {
+        "type": "native_trailing",
+        "trail_percent": "1.5"
+      },
+      "end_of_day_close": {
+        "enabled": true,
+        "at": "15:55"
+      },
+      "max_entry_cycles_per_session": 10
+    },
+    {
+      "symbol": "TSLA",
+      "strategy": "price_action_exit_3",
+      "start": "2025-10-09T00:00:00Z",
+      "end": "2026-09-21T04:00:00Z",
+      "seed": 271828,
+      "dataset_id": "alpaca-sip-TSLA-1m-raw-3e71642eabd5b82ffb24",
+      "feed": "sip",
+      "parameters": null,
+      "starting_capital": "10000",
+      "execution": {
+        "slippage_bps": "5",
+        "fee_per_order": "0",
+        "fee_per_share": "0",
+        "fee_bps": "0"
+      },
+      "buy_strategies": [
+        "inside_bar_breakout",
+        "support_bounce",
+        "resistance_breakout"
+      ],
+      "sell_strategies": [
+        "previous_swing_low_break",
+        "bearish_engulfing_exit",
+        "shooting_star_reversal"
+      ],
+      "short_strategies": null,
+      "cover_strategies": null,
+      "short_selling_enabled": false,
+      "short_borrow_bps_per_day": "0",
+      "protective_stop": {
+        "type": "native_trailing",
+        "trail_percent": "1.5"
+      },
+      "end_of_day_close": {
+        "enabled": true,
+        "at": "15:55"
+      },
+      "max_entry_cycles_per_session": 10
+    },
+    {
+      "symbol": "TSLA",
+      "strategy": "trend_ema_adaptive",
+      "start": "2025-10-09T00:00:00Z",
+      "end": "2026-09-21T04:00:00Z",
+      "seed": 271828,
+      "dataset_id": "alpaca-sip-TSLA-1m-raw-3e71642eabd5b82ffb24",
+      "feed": "sip",
+      "parameters": null,
+      "starting_capital": "10000",
+      "execution": {
+        "slippage_bps": "5",
+        "fee_per_order": "0",
+        "fee_per_share": "0",
+        "fee_bps": "0"
+      },
+      "buy_strategies": [
+        "ema_pullback",
+        "adaptive_moving_average"
+      ],
+      "sell_strategies": [
+        "ema_bearish_crossover"
+      ],
+      "short_strategies": null,
+      "cover_strategies": null,
+      "short_selling_enabled": false,
+      "short_borrow_bps_per_day": "0",
+      "protective_stop": {
+        "type": "native_trailing",
+        "trail_percent": "1.5"
+      },
+      "end_of_day_close": {
+        "enabled": true,
+        "at": "15:55"
+      },
+      "max_entry_cycles_per_session": 10
+    },
+    {
+      "symbol": "TSLA",
+      "strategy": "trend_holy_structure",
+      "start": "2025-10-09T00:00:00Z",
+      "end": "2026-09-21T04:00:00Z",
+      "seed": 271828,
+      "dataset_id": "alpaca-sip-TSLA-1m-raw-3e71642eabd5b82ffb24",
+      "feed": "sip",
+      "parameters": null,
+      "starting_capital": "10000",
+      "execution": {
+        "slippage_bps": "5",
+        "fee_per_order": "0",
+        "fee_per_share": "0",
+        "fee_bps": "0"
+      },
+      "buy_strategies": [
+        "holy_grail_pullback",
+        "higher_high_higher_low"
+      ],
+      "sell_strategies": [
+        "previous_swing_low_break",
+        "dmi_bearish_crossover"
+      ],
+      "short_strategies": null,
+      "cover_strategies": null,
+      "short_selling_enabled": false,
+      "short_borrow_bps_per_day": "0",
+      "protective_stop": {
+        "type": "native_trailing",
+        "trail_percent": "1.5"
+      },
+      "end_of_day_close": {
+        "enabled": true,
+        "at": "15:55"
+      },
+      "max_entry_cycles_per_session": 10
+    },
+    {
+      "symbol": "TSLA",
+      "strategy": "trend_super_reclaim",
+      "start": "2025-10-09T00:00:00Z",
+      "end": "2026-09-21T04:00:00Z",
+      "seed": 271828,
+      "dataset_id": "alpaca-sip-TSLA-1m-raw-3e71642eabd5b82ffb24",
+      "feed": "sip",
+      "parameters": null,
+      "starting_capital": "10000",
+      "execution": {
+        "slippage_bps": "5",
+        "fee_per_order": "0",
+        "fee_per_share": "0",
+        "fee_bps": "0"
+      },
+      "buy_strategies": [
+        "supertrend",
+        "moving_average_reclaim"
+      ],
+      "sell_strategies": [
+        "supertrend_bearish_flip"
+      ],
+      "short_strategies": null,
+      "cover_strategies": null,
+      "short_selling_enabled": false,
+      "short_borrow_bps_per_day": "0",
+      "protective_stop": {
+        "type": "native_trailing",
+        "trail_percent": "1.5"
+      },
+      "end_of_day_close": {
+        "enabled": true,
+        "at": "15:55"
+      },
+      "max_entry_cycles_per_session": 10
+    },
+    {
+      "symbol": "TSLA",
+      "strategy": "trend_dmi_pullback",
+      "start": "2025-10-09T00:00:00Z",
+      "end": "2026-09-21T04:00:00Z",
+      "seed": 271828,
+      "dataset_id": "alpaca-sip-TSLA-1m-raw-3e71642eabd5b82ffb24",
+      "feed": "sip",
+      "parameters": null,
+      "starting_capital": "10000",
+      "execution": {
+        "slippage_bps": "5",
+        "fee_per_order": "0",
+        "fee_per_share": "0",
+        "fee_bps": "0"
+      },
+      "buy_strategies": [
+        "dmi_crossover",
+        "ema_pullback",
+        "holy_grail_pullback"
+      ],
+      "sell_strategies": [
+        "dmi_bearish_crossover",
+        "price_below_ema"
+      ],
+      "short_strategies": null,
+      "cover_strategies": null,
+      "short_selling_enabled": false,
+      "short_borrow_bps_per_day": "0",
+      "protective_stop": {
+        "type": "native_trailing",
+        "trail_percent": "1.5"
+      },
+      "end_of_day_close": {
+        "enabled": true,
+        "at": "15:55"
+      },
+      "max_entry_cycles_per_session": 10
+    },
+    {
+      "symbol": "TSLA",
+      "strategy": "trend_structure_breakout",
+      "start": "2025-10-09T00:00:00Z",
+      "end": "2026-09-21T04:00:00Z",
+      "seed": 271828,
+      "dataset_id": "alpaca-sip-TSLA-1m-raw-3e71642eabd5b82ffb24",
+      "feed": "sip",
+      "parameters": null,
+      "starting_capital": "10000",
+      "execution": {
+        "slippage_bps": "5",
+        "fee_per_order": "0",
+        "fee_per_share": "0",
+        "fee_bps": "0"
+      },
+      "buy_strategies": [
+        "higher_high_higher_low",
+        "resistance_breakout",
+        "ema_pullback"
+      ],
+      "sell_strategies": [
+        "previous_swing_low_break",
+        "ema_bearish_crossover"
+      ],
+      "short_strategies": null,
+      "cover_strategies": null,
+      "short_selling_enabled": false,
+      "short_borrow_bps_per_day": "0",
+      "protective_stop": {
+        "type": "native_trailing",
+        "trail_percent": "1.5"
+      },
+      "end_of_day_close": {
+        "enabled": true,
+        "at": "15:55"
+      },
+      "max_entry_cycles_per_session": 10
+    },
+    {
+      "symbol": "TSLA",
+      "strategy": "momentum_rvol",
+      "start": "2025-10-09T00:00:00Z",
+      "end": "2026-09-21T04:00:00Z",
+      "seed": 271828,
+      "dataset_id": "alpaca-sip-TSLA-1m-raw-3e71642eabd5b82ffb24",
+      "feed": "sip",
+      "parameters": null,
+      "starting_capital": "10000",
+      "execution": {
+        "slippage_bps": "5",
+        "fee_per_order": "0",
+        "fee_per_share": "0",
+        "fee_bps": "0"
+      },
+      "buy_strategies": [
+        "momentum_breakout",
+        "relative_volume_momentum"
+      ],
+      "sell_strategies": [
+        "momentum_reversal",
+        "high_volume_reversal"
+      ],
+      "short_strategies": null,
+      "cover_strategies": null,
+      "short_selling_enabled": false,
+      "short_borrow_bps_per_day": "0",
+      "protective_stop": {
+        "type": "native_trailing",
+        "trail_percent": "1.5"
+      },
+      "end_of_day_close": {
+        "enabled": true,
+        "at": "15:55"
+      },
+      "max_entry_cycles_per_session": 10
+    },
+    {
+      "symbol": "TSLA",
+      "strategy": "momentum_open_flag",
+      "start": "2025-10-09T00:00:00Z",
+      "end": "2026-09-21T04:00:00Z",
+      "seed": 271828,
+      "dataset_id": "alpaca-sip-TSLA-1m-raw-3e71642eabd5b82ffb24",
+      "feed": "sip",
+      "parameters": null,
+      "starting_capital": "10000",
+      "execution": {
+        "slippage_bps": "5",
+        "fee_per_order": "0",
+        "fee_per_share": "0",
+        "fee_bps": "0"
+      },
+      "buy_strategies": [
+        "opening_range_breakout",
+        "bull_flag_breakout"
+      ],
+      "sell_strategies": [
+        "failed_breakout_exit",
+        "vwap_breakdown"
+      ],
+      "short_strategies": null,
+      "cover_strategies": null,
+      "short_selling_enabled": false,
+      "short_borrow_bps_per_day": "0",
+      "protective_stop": {
+        "type": "native_trailing",
+        "trail_percent": "1.5"
+      },
+      "end_of_day_close": {
+        "enabled": true,
+        "at": "15:55"
+      },
+      "max_entry_cycles_per_session": 10
+    },
+    {
+      "symbol": "TSLA",
+      "strategy": "momentum_squeeze_donchian",
+      "start": "2025-10-09T00:00:00Z",
+      "end": "2026-09-21T04:00:00Z",
+      "seed": 271828,
+      "dataset_id": "alpaca-sip-TSLA-1m-raw-3e71642eabd5b82ffb24",
+      "feed": "sip",
+      "parameters": null,
+      "starting_capital": "10000",
+      "execution": {
+        "slippage_bps": "5",
+        "fee_per_order": "0",
+        "fee_per_share": "0",
+        "fee_bps": "0"
+      },
+      "buy_strategies": [
+        "volatility_squeeze_breakout",
+        "donchian_channel_breakout"
+      ],
+      "sell_strategies": [
+        "failed_breakout_exit",
+        "macd_bearish_crossover"
+      ],
+      "short_strategies": null,
+      "cover_strategies": null,
+      "short_selling_enabled": false,
+      "short_borrow_bps_per_day": "0",
+      "protective_stop": {
+        "type": "native_trailing",
+        "trail_percent": "1.5"
+      },
+      "end_of_day_close": {
+        "enabled": true,
+        "at": "15:55"
+      },
+      "max_entry_cycles_per_session": 10
+    },
+    {
+      "symbol": "TSLA",
+      "strategy": "momentum_nr7_volume",
+      "start": "2025-10-09T00:00:00Z",
+      "end": "2026-09-21T04:00:00Z",
+      "seed": 271828,
+      "dataset_id": "alpaca-sip-TSLA-1m-raw-3e71642eabd5b82ffb24",
+      "feed": "sip",
+      "parameters": null,
+      "starting_capital": "10000",
+      "execution": {
+        "slippage_bps": "5",
+        "fee_per_order": "0",
+        "fee_per_share": "0",
+        "fee_bps": "0"
+      },
+      "buy_strategies": [
+        "nr7_breakout",
+        "relative_volume_momentum"
+      ],
+      "sell_strategies": [
+        "high_volume_reversal",
+        "momentum_reversal"
+      ],
+      "short_strategies": null,
+      "cover_strategies": null,
+      "short_selling_enabled": false,
+      "short_borrow_bps_per_day": "0",
+      "protective_stop": {
+        "type": "native_trailing",
+        "trail_percent": "1.5"
+      },
+      "end_of_day_close": {
+        "enabled": true,
+        "at": "15:55"
+      },
+      "max_entry_cycles_per_session": 10
+    },
+    {
+      "symbol": "TSLA",
+      "strategy": "momentum_flag_drive",
+      "start": "2025-10-09T00:00:00Z",
+      "end": "2026-09-21T04:00:00Z",
+      "seed": 271828,
+      "dataset_id": "alpaca-sip-TSLA-1m-raw-3e71642eabd5b82ffb24",
+      "feed": "sip",
+      "parameters": null,
+      "starting_capital": "10000",
+      "execution": {
+        "slippage_bps": "5",
+        "fee_per_order": "0",
+        "fee_per_share": "0",
+        "fee_bps": "0"
+      },
+      "buy_strategies": [
+        "bull_flag_breakout",
+        "opening_drive",
+        "high_of_day_momentum"
+      ],
+      "sell_strategies": [
+        "failed_breakout_exit",
+        "macd_bearish_crossover"
+      ],
+      "short_strategies": null,
+      "cover_strategies": null,
+      "short_selling_enabled": false,
+      "short_borrow_bps_per_day": "0",
+      "protective_stop": {
+        "type": "native_trailing",
+        "trail_percent": "1.5"
+      },
+      "end_of_day_close": {
+        "enabled": true,
+        "at": "15:55"
+      },
+      "max_entry_cycles_per_session": 10
+    },
+    {
+      "symbol": "TSLA",
+      "strategy": "vwap_pullback_band",
+      "start": "2025-10-09T00:00:00Z",
+      "end": "2026-09-21T04:00:00Z",
+      "seed": 271828,
+      "dataset_id": "alpaca-sip-TSLA-1m-raw-3e71642eabd5b82ffb24",
+      "feed": "sip",
+      "parameters": null,
+      "starting_capital": "10000",
+      "execution": {
+        "slippage_bps": "5",
+        "fee_per_order": "0",
+        "fee_per_share": "0",
+        "fee_bps": "0"
+      },
+      "buy_strategies": [
+        "vwap_pullback",
+        "vwap_band_reversion"
+      ],
+      "sell_strategies": [
+        "vwap_breakdown",
+        "bollinger_upper_band_reversal"
+      ],
+      "short_strategies": null,
+      "cover_strategies": null,
+      "short_selling_enabled": false,
+      "short_borrow_bps_per_day": "0",
+      "protective_stop": {
+        "type": "native_trailing",
+        "trail_percent": "1.5"
+      },
+      "end_of_day_close": {
+        "enabled": true,
+        "at": "15:55"
+      },
+      "max_entry_cycles_per_session": 10
+    },
+    {
+      "symbol": "TSLA",
+      "strategy": "vwap_support_oversold",
+      "start": "2025-10-09T00:00:00Z",
+      "end": "2026-09-21T04:00:00Z",
+      "seed": 271828,
+      "dataset_id": "alpaca-sip-TSLA-1m-raw-3e71642eabd5b82ffb24",
+      "feed": "sip",
+      "parameters": null,
+      "starting_capital": "10000",
+      "execution": {
+        "slippage_bps": "5",
+        "fee_per_order": "0",
+        "fee_per_share": "0",
+        "fee_bps": "0"
+      },
+      "buy_strategies": [
+        "vwap_bounce",
+        "support_bounce",
+        "rsi_oversold_reversal"
+      ],
+      "sell_strategies": [
+        "vwap_breakdown",
+        "rsi_reversal"
+      ],
+      "short_strategies": null,
+      "cover_strategies": null,
+      "short_selling_enabled": false,
+      "short_borrow_bps_per_day": "0",
+      "protective_stop": {
+        "type": "native_trailing",
+        "trail_percent": "1.5"
+      },
+      "end_of_day_close": {
+        "enabled": true,
+        "at": "15:55"
+      },
+      "max_entry_cycles_per_session": 10
+    },
+    {
+      "symbol": "TSLA",
+      "strategy": "mean_bollinger_rsi",
+      "start": "2025-10-09T00:00:00Z",
+      "end": "2026-09-21T04:00:00Z",
+      "seed": 271828,
+      "dataset_id": "alpaca-sip-TSLA-1m-raw-3e71642eabd5b82ffb24",
+      "feed": "sip",
+      "parameters": null,
+      "starting_capital": "10000",
+      "execution": {
+        "slippage_bps": "5",
+        "fee_per_order": "0",
+        "fee_per_share": "0",
+        "fee_bps": "0"
+      },
+      "buy_strategies": [
+        "bollinger_band_mean_reversion",
+        "rsi_oversold_reversal"
+      ],
+      "sell_strategies": [
+        "bollinger_upper_band_reversal",
+        "stochastic_bearish_crossover"
+      ],
+      "short_strategies": null,
+      "cover_strategies": null,
+      "short_selling_enabled": false,
+      "short_borrow_bps_per_day": "0",
+      "protective_stop": {
+        "type": "native_trailing",
+        "trail_percent": "1.5"
+      },
+      "end_of_day_close": {
+        "enabled": true,
+        "at": "15:55"
+      },
+      "max_entry_cycles_per_session": 10
+    },
+    {
+      "symbol": "TSLA",
+      "strategy": "mean_support_reclaim",
+      "start": "2025-10-09T00:00:00Z",
+      "end": "2026-09-21T04:00:00Z",
+      "seed": 271828,
+      "dataset_id": "alpaca-sip-TSLA-1m-raw-3e71642eabd5b82ffb24",
+      "feed": "sip",
+      "parameters": null,
+      "starting_capital": "10000",
+      "execution": {
+        "slippage_bps": "5",
+        "fee_per_order": "0",
+        "fee_per_share": "0",
+        "fee_bps": "0"
+      },
+      "buy_strategies": [
+        "support_bounce",
+        "moving_average_reclaim"
+      ],
+      "sell_strategies": [
+        "price_below_ema",
+        "rsi_reversal"
+      ],
+      "short_strategies": null,
+      "cover_strategies": null,
+      "short_selling_enabled": false,
+      "short_borrow_bps_per_day": "0",
+      "protective_stop": {
+        "type": "native_trailing",
+        "trail_percent": "1.5"
+      },
+      "end_of_day_close": {
+        "enabled": true,
+        "at": "15:55"
+      },
+      "max_entry_cycles_per_session": 10
+    },
+    {
+      "symbol": "TSLA",
+      "strategy": "vwap_retest",
+      "start": "2025-10-09T00:00:00Z",
+      "end": "2026-09-21T04:00:00Z",
+      "seed": 271828,
+      "dataset_id": "alpaca-sip-TSLA-1m-raw-3e71642eabd5b82ffb24",
+      "feed": "sip",
+      "parameters": null,
+      "starting_capital": "10000",
+      "execution": {
+        "slippage_bps": "5",
+        "fee_per_order": "0",
+        "fee_per_share": "0",
+        "fee_bps": "0"
+      },
+      "buy_strategies": [
+        "vwap_bounce",
+        "opening_range_retest"
+      ],
+      "sell_strategies": [
+        "vwap_breakdown",
+        "previous_swing_low_break"
+      ],
+      "short_strategies": null,
+      "cover_strategies": null,
+      "short_selling_enabled": false,
+      "short_borrow_bps_per_day": "0",
+      "protective_stop": {
+        "type": "native_trailing",
+        "trail_percent": "1.5"
+      },
+      "end_of_day_close": {
+        "enabled": true,
+        "at": "15:55"
+      },
+      "max_entry_cycles_per_session": 10
+    },
+    {
+      "symbol": "TSLA",
+      "strategy": "price_inside_hammer",
+      "start": "2025-10-09T00:00:00Z",
+      "end": "2026-09-21T04:00:00Z",
+      "seed": 271828,
+      "dataset_id": "alpaca-sip-TSLA-1m-raw-3e71642eabd5b82ffb24",
+      "feed": "sip",
+      "parameters": null,
+      "starting_capital": "10000",
+      "execution": {
+        "slippage_bps": "5",
+        "fee_per_order": "0",
+        "fee_per_share": "0",
+        "fee_bps": "0"
+      },
+      "buy_strategies": [
+        "inside_bar_breakout",
+        "hammer_reversal"
+      ],
+      "sell_strategies": [
+        "bearish_engulfing_exit",
+        "shooting_star_reversal"
+      ],
+      "short_strategies": null,
+      "cover_strategies": null,
+      "short_selling_enabled": false,
+      "short_borrow_bps_per_day": "0",
+      "protective_stop": {
+        "type": "native_trailing",
+        "trail_percent": "1.5"
+      },
+      "end_of_day_close": {
+        "enabled": true,
+        "at": "15:55"
+      },
+      "max_entry_cycles_per_session": 10
+    },
+    {
+      "symbol": "TSLA",
+      "strategy": "price_double_support",
+      "start": "2025-10-09T00:00:00Z",
+      "end": "2026-09-21T04:00:00Z",
+      "seed": 271828,
+      "dataset_id": "alpaca-sip-TSLA-1m-raw-3e71642eabd5b82ffb24",
+      "feed": "sip",
+      "parameters": null,
+      "starting_capital": "10000",
+      "execution": {
+        "slippage_bps": "5",
+        "fee_per_order": "0",
+        "fee_per_share": "0",
+        "fee_bps": "0"
+      },
+      "buy_strategies": [
+        "double_bottom_reversal",
+        "support_bounce"
+      ],
+      "sell_strategies": [
+        "previous_swing_low_break",
+        "lower_low_confirmation"
+      ],
+      "short_strategies": null,
+      "cover_strategies": null,
+      "short_selling_enabled": false,
+      "short_borrow_bps_per_day": "0",
+      "protective_stop": {
+        "type": "native_trailing",
+        "trail_percent": "1.5"
+      },
+      "end_of_day_close": {
+        "enabled": true,
+        "at": "15:55"
+      },
+      "max_entry_cycles_per_session": 10
+    },
+    {
+      "symbol": "TSLA",
+      "strategy": "price_resistance_retest",
+      "start": "2025-10-09T00:00:00Z",
+      "end": "2026-09-21T04:00:00Z",
+      "seed": 271828,
+      "dataset_id": "alpaca-sip-TSLA-1m-raw-3e71642eabd5b82ffb24",
+      "feed": "sip",
+      "parameters": null,
+      "starting_capital": "10000",
+      "execution": {
+        "slippage_bps": "5",
+        "fee_per_order": "0",
+        "fee_per_share": "0",
+        "fee_bps": "0"
+      },
+      "buy_strategies": [
+        "resistance_breakout",
+        "opening_range_retest"
+      ],
+      "sell_strategies": [
+        "failed_breakout_exit",
+        "trendline_breakdown"
+      ],
+      "short_strategies": null,
+      "cover_strategies": null,
+      "short_selling_enabled": false,
+      "short_borrow_bps_per_day": "0",
+      "protective_stop": {
+        "type": "native_trailing",
+        "trail_percent": "1.5"
+      },
+      "end_of_day_close": {
+        "enabled": true,
+        "at": "15:55"
+      },
+      "max_entry_cycles_per_session": 10
+    },
+    {
+      "symbol": "TSLA",
+      "strategy": "mixed_trend_breakout",
+      "start": "2025-10-09T00:00:00Z",
+      "end": "2026-09-21T04:00:00Z",
+      "seed": 271828,
+      "dataset_id": "alpaca-sip-TSLA-1m-raw-3e71642eabd5b82ffb24",
+      "feed": "sip",
+      "parameters": null,
+      "starting_capital": "10000",
+      "execution": {
+        "slippage_bps": "5",
+        "fee_per_order": "0",
+        "fee_per_share": "0",
+        "fee_bps": "0"
+      },
+      "buy_strategies": [
+        "ema_pullback",
+        "momentum_breakout",
+        "inside_bar_breakout"
+      ],
+      "sell_strategies": [
+        "ema_bearish_crossover",
+        "failed_breakout_exit"
+      ],
+      "short_strategies": null,
+      "cover_strategies": null,
+      "short_selling_enabled": false,
+      "short_borrow_bps_per_day": "0",
+      "protective_stop": {
+        "type": "native_trailing",
+        "trail_percent": "1.5"
+      },
+      "end_of_day_close": {
+        "enabled": true,
+        "at": "15:55"
+      },
+      "max_entry_cycles_per_session": 10
+    },
+    {
+      "symbol": "TSLA",
+      "strategy": "mixed_reclaim_volume",
+      "start": "2025-10-09T00:00:00Z",
+      "end": "2026-09-21T04:00:00Z",
+      "seed": 271828,
+      "dataset_id": "alpaca-sip-TSLA-1m-raw-3e71642eabd5b82ffb24",
+      "feed": "sip",
+      "parameters": null,
+      "starting_capital": "10000",
+      "execution": {
+        "slippage_bps": "5",
+        "fee_per_order": "0",
+        "fee_per_share": "0",
+        "fee_bps": "0"
+      },
+      "buy_strategies": [
+        "vwap_pullback",
+        "relative_volume_momentum",
+        "moving_average_reclaim"
+      ],
+      "sell_strategies": [
+        "vwap_breakdown",
+        "high_volume_reversal"
+      ],
+      "short_strategies": null,
+      "cover_strategies": null,
+      "short_selling_enabled": false,
+      "short_borrow_bps_per_day": "0",
+      "protective_stop": {
+        "type": "native_trailing",
+        "trail_percent": "1.5"
+      },
+      "end_of_day_close": {
+        "enabled": true,
+        "at": "15:55"
+      },
+      "max_entry_cycles_per_session": 10
+    },
+    {
+      "symbol": "TSLA",
+      "strategy": "trend_stepped",
+      "start": "2025-10-09T00:00:00Z",
+      "end": "2026-09-21T04:00:00Z",
+      "seed": 271828,
+      "dataset_id": "alpaca-sip-TSLA-1m-raw-3e71642eabd5b82ffb24",
+      "feed": "sip",
+      "parameters": null,
+      "starting_capital": "10000",
+      "execution": {
+        "slippage_bps": "5",
+        "fee_per_order": "0",
+        "fee_per_share": "0",
+        "fee_bps": "0"
+      },
+      "buy_strategies": [
+        "ema_pullback",
+        "supertrend",
+        "higher_high_higher_low"
+      ],
+      "sell_strategies": [
+        "ema_bearish_crossover",
+        "previous_swing_low_break"
+      ],
+      "short_strategies": null,
+      "cover_strategies": null,
+      "short_selling_enabled": false,
+      "short_borrow_bps_per_day": "0",
+      "protective_stop": {
+        "type": "stepped_trailing",
+        "initial_stop_percent": "1.5",
+        "step_trigger_percent": "1.0",
+        "step_percent": "0.5"
+      },
+      "end_of_day_close": {
+        "enabled": true,
+        "at": "15:55"
+      },
+      "max_entry_cycles_per_session": 10
+    },
+    {
+      "symbol": "TSLA",
+      "strategy": "trend_fixed",
+      "start": "2025-10-09T00:00:00Z",
+      "end": "2026-09-21T04:00:00Z",
+      "seed": 271828,
+      "dataset_id": "alpaca-sip-TSLA-1m-raw-3e71642eabd5b82ffb24",
+      "feed": "sip",
+      "parameters": null,
+      "starting_capital": "10000",
+      "execution": {
+        "slippage_bps": "5",
+        "fee_per_order": "0",
+        "fee_per_share": "0",
+        "fee_bps": "0"
+      },
+      "buy_strategies": [
+        "ema_pullback",
+        "supertrend",
+        "higher_high_higher_low"
+      ],
+      "sell_strategies": [
+        "ema_bearish_crossover",
+        "previous_swing_low_break"
+      ],
+      "short_strategies": null,
+      "cover_strategies": null,
+      "short_selling_enabled": false,
+      "short_borrow_bps_per_day": "0",
+      "protective_stop": {
+        "type": "fixed",
+        "stop_percent": "1.0"
+      },
+      "end_of_day_close": {
+        "enabled": true,
+        "at": "15:55"
+      },
+      "max_entry_cycles_per_session": 10
+    },
+    {
+      "symbol": "TSLA",
+      "strategy": "breakout_stepped",
+      "start": "2025-10-09T00:00:00Z",
+      "end": "2026-09-21T04:00:00Z",
+      "seed": 271828,
+      "dataset_id": "alpaca-sip-TSLA-1m-raw-3e71642eabd5b82ffb24",
+      "feed": "sip",
+      "parameters": null,
+      "starting_capital": "10000",
+      "execution": {
+        "slippage_bps": "5",
+        "fee_per_order": "0",
+        "fee_per_share": "0",
+        "fee_bps": "0"
+      },
+      "buy_strategies": [
+        "opening_range_breakout",
+        "donchian_channel_breakout",
+        "relative_volume_momentum"
+      ],
+      "sell_strategies": [
+        "failed_breakout_exit",
+        "momentum_reversal"
+      ],
+      "short_strategies": null,
+      "cover_strategies": null,
+      "short_selling_enabled": false,
+      "short_borrow_bps_per_day": "0",
+      "protective_stop": {
+        "type": "stepped_trailing",
+        "initial_stop_percent": "1.5",
+        "step_trigger_percent": "1.0",
+        "step_percent": "0.5"
+      },
+      "end_of_day_close": {
+        "enabled": true,
+        "at": "15:55"
+      },
+      "max_entry_cycles_per_session": 10
+    },
+    {
+      "symbol": "TSLA",
+      "strategy": "breakout_fixed",
+      "start": "2025-10-09T00:00:00Z",
+      "end": "2026-09-21T04:00:00Z",
+      "seed": 271828,
+      "dataset_id": "alpaca-sip-TSLA-1m-raw-3e71642eabd5b82ffb24",
+      "feed": "sip",
+      "parameters": null,
+      "starting_capital": "10000",
+      "execution": {
+        "slippage_bps": "5",
+        "fee_per_order": "0",
+        "fee_per_share": "0",
+        "fee_bps": "0"
+      },
+      "buy_strategies": [
+        "opening_range_breakout",
+        "donchian_channel_breakout",
+        "relative_volume_momentum"
+      ],
+      "sell_strategies": [
+        "failed_breakout_exit",
+        "momentum_reversal"
+      ],
+      "short_strategies": null,
+      "cover_strategies": null,
+      "short_selling_enabled": false,
+      "short_borrow_bps_per_day": "0",
+      "protective_stop": {
+        "type": "fixed",
+        "stop_percent": "1.0"
+      },
+      "end_of_day_close": {
+        "enabled": true,
+        "at": "15:55"
+      },
+      "max_entry_cycles_per_session": 10
+    },
+    {
+      "symbol": "TSLA",
+      "strategy": "vwap_mean_stepped",
+      "start": "2025-10-09T00:00:00Z",
+      "end": "2026-09-21T04:00:00Z",
+      "seed": 271828,
+      "dataset_id": "alpaca-sip-TSLA-1m-raw-3e71642eabd5b82ffb24",
+      "feed": "sip",
+      "parameters": null,
+      "starting_capital": "10000",
+      "execution": {
+        "slippage_bps": "5",
+        "fee_per_order": "0",
+        "fee_per_share": "0",
+        "fee_bps": "0"
+      },
+      "buy_strategies": [
+        "vwap_bounce",
+        "vwap_pullback",
+        "rsi_oversold_reversal"
+      ],
+      "sell_strategies": [
+        "vwap_breakdown",
+        "rsi_reversal"
+      ],
+      "short_strategies": null,
+      "cover_strategies": null,
+      "short_selling_enabled": false,
+      "short_borrow_bps_per_day": "0",
+      "protective_stop": {
+        "type": "stepped_trailing",
+        "initial_stop_percent": "1.5",
+        "step_trigger_percent": "1.0",
+        "step_percent": "0.5"
+      },
+      "end_of_day_close": {
+        "enabled": true,
+        "at": "15:55"
+      },
+      "max_entry_cycles_per_session": 10
+    },
+    {
+      "symbol": "TSLA",
+      "strategy": "vwap_mean_fixed",
+      "start": "2025-10-09T00:00:00Z",
+      "end": "2026-09-21T04:00:00Z",
+      "seed": 271828,
+      "dataset_id": "alpaca-sip-TSLA-1m-raw-3e71642eabd5b82ffb24",
+      "feed": "sip",
+      "parameters": null,
+      "starting_capital": "10000",
+      "execution": {
+        "slippage_bps": "5",
+        "fee_per_order": "0",
+        "fee_per_share": "0",
+        "fee_bps": "0"
+      },
+      "buy_strategies": [
+        "vwap_bounce",
+        "vwap_pullback",
+        "rsi_oversold_reversal"
+      ],
+      "sell_strategies": [
+        "vwap_breakdown",
+        "rsi_reversal"
+      ],
+      "short_strategies": null,
+      "cover_strategies": null,
+      "short_selling_enabled": false,
+      "short_borrow_bps_per_day": "0",
+      "protective_stop": {
+        "type": "fixed",
+        "stop_percent": "1.0"
+      },
+      "end_of_day_close": {
+        "enabled": true,
+        "at": "15:55"
+      },
+      "max_entry_cycles_per_session": 10
+    },
+    {
+      "symbol": "TSLA",
+      "strategy": "price_action_stepped",
+      "start": "2025-10-09T00:00:00Z",
+      "end": "2026-09-21T04:00:00Z",
+      "seed": 271828,
+      "dataset_id": "alpaca-sip-TSLA-1m-raw-3e71642eabd5b82ffb24",
+      "feed": "sip",
+      "parameters": null,
+      "starting_capital": "10000",
+      "execution": {
+        "slippage_bps": "5",
+        "fee_per_order": "0",
+        "fee_per_share": "0",
+        "fee_bps": "0"
+      },
+      "buy_strategies": [
+        "inside_bar_breakout",
+        "support_bounce",
+        "resistance_breakout"
+      ],
+      "sell_strategies": [
+        "previous_swing_low_break",
+        "bearish_engulfing_exit"
+      ],
+      "short_strategies": null,
+      "cover_strategies": null,
+      "short_selling_enabled": false,
+      "short_borrow_bps_per_day": "0",
+      "protective_stop": {
+        "type": "stepped_trailing",
+        "initial_stop_percent": "1.5",
+        "step_trigger_percent": "1.0",
+        "step_percent": "0.5"
+      },
+      "end_of_day_close": {
+        "enabled": true,
+        "at": "15:55"
+      },
+      "max_entry_cycles_per_session": 10
+    },
+    {
+      "symbol": "TSLA",
+      "strategy": "price_action_fixed",
+      "start": "2025-10-09T00:00:00Z",
+      "end": "2026-09-21T04:00:00Z",
+      "seed": 271828,
+      "dataset_id": "alpaca-sip-TSLA-1m-raw-3e71642eabd5b82ffb24",
+      "feed": "sip",
+      "parameters": null,
+      "starting_capital": "10000",
+      "execution": {
+        "slippage_bps": "5",
+        "fee_per_order": "0",
+        "fee_per_share": "0",
+        "fee_bps": "0"
+      },
+      "buy_strategies": [
+        "inside_bar_breakout",
+        "support_bounce",
+        "resistance_breakout"
+      ],
+      "sell_strategies": [
+        "previous_swing_low_break",
+        "bearish_engulfing_exit"
+      ],
+      "short_strategies": null,
+      "cover_strategies": null,
+      "short_selling_enabled": false,
+      "short_borrow_bps_per_day": "0",
+      "protective_stop": {
+        "type": "fixed",
+        "stop_percent": "1.0"
+      },
+      "end_of_day_close": {
+        "enabled": true,
+        "at": "15:55"
+      },
+      "max_entry_cycles_per_session": 10
+    }
+  ]
+}

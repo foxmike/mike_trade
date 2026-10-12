@@ -1,0 +1,1011 @@
+{
+  "campaign": "sip_annual_oct2026",
+  "deployed_release": "622ac8815d05d26738c1b81d5b8b68a296519e19",
+  "observation_start": "2025-10-09T00:00:00Z",
+  "observation_end_exclusive": "2026-10-09T00:00:00Z",
+  "development_end_exclusive": "2026-09-21T04:00:00Z",
+  "holdout_start": "2026-09-21T04:00:00Z",
+  "experiments_per_symbol": 48,
+  "development_experiments": 144,
+  "reserved_holdout_experiments": 144,
+  "strategy_count": 48,
+  "buy_strategy_count": 29,
+  "sell_strategy_count": 19,
+  "strategy_ids": [
+    "adaptive_moving_average",
+    "bearish_engulfing_exit",
+    "bollinger_band_mean_reversion",
+    "bollinger_upper_band_reversal",
+    "bull_flag_breakout",
+    "dmi_bearish_crossover",
+    "dmi_crossover",
+    "donchian_channel_breakout",
+    "double_bottom_reversal",
+    "ema_bearish_crossover",
+    "ema_pullback",
+    "failed_breakout_exit",
+    "five_minute_orb_michelle_buy",
+    "five_minute_orb_michelle_sell",
+    "hammer_reversal",
+    "high_of_day_momentum",
+    "high_volume_reversal",
+    "higher_high_higher_low",
+    "holy_grail_pullback",
+    "inside_bar_breakout",
+    "lower_low_confirmation",
+    "macd_bearish_crossover",
+    "momentum_breakout",
+    "momentum_reversal",
+    "moving_average_reclaim",
+    "nr7_breakout",
+    "opening_drive",
+    "opening_range_breakout",
+    "opening_range_retest",
+    "previous_swing_low_break",
+    "price_below_ema",
+    "relative_volume_momentum",
+    "resistance_breakout",
+    "rsi_oversold_reversal",
+    "rsi_reversal",
+    "shooting_star_reversal",
+    "stochastic_bearish_crossover",
+    "supertrend",
+    "supertrend_bearish_flip",
+    "support_bounce",
+    "trendline_breakdown",
+    "volatility_squeeze_breakout",
+    "vwap_band_reversion",
+    "vwap_bounce",
+    "vwap_bounce_break_michelle_buy",
+    "vwap_bounce_break_michelle_sell",
+    "vwap_breakdown",
+    "vwap_pullback"
+  ],
+  "configurations": [
+    {
+      "name": "michelle_orb",
+      "category": "michelle",
+      "buy": [
+        "five_minute_orb_michelle_buy"
+      ],
+      "sell": [
+        "five_minute_orb_michelle_sell"
+      ],
+      "stop": null,
+      "rationale": "Five-minute opening-range break; fill-specific ORB fixed-to-trailing protection.",
+      "comparison": null
+    },
+    {
+      "name": "michelle_vwap",
+      "category": "michelle",
+      "buy": [
+        "vwap_bounce_break_michelle_buy"
+      ],
+      "sell": [
+        "vwap_bounce_break_michelle_sell"
+      ],
+      "stop": null,
+      "rationale": "Michelle VWAP bounce/break; fill-frozen VWAP fixed-to-trailing protection.",
+      "comparison": null
+    },
+    {
+      "name": "michelle_combined",
+      "category": "michelle",
+      "buy": [
+        "five_minute_orb_michelle_buy",
+        "vwap_bounce_break_michelle_buy"
+      ],
+      "sell": [
+        "five_minute_orb_michelle_sell",
+        "vwap_bounce_break_michelle_sell"
+      ],
+      "stop": null,
+      "rationale": "Independent ORB and VWAP entries; deterministic winner selects its matching stop.",
+      "comparison": null
+    },
+    {
+      "name": "vwap_reference",
+      "category": "reference",
+      "buy": [
+        "vwap_bounce"
+      ],
+      "sell": [
+        "vwap_breakdown"
+      ],
+      "stop": {
+        "type": "native_trailing",
+        "trail_percent": "1.5"
+      },
+      "rationale": "Original VWAP bounce and breakdown reference with a 1.5% native trail.",
+      "comparison": null
+    },
+    {
+      "name": "trend_exit_0",
+      "category": "controlled_exit",
+      "buy": [
+        "ema_pullback",
+        "supertrend",
+        "higher_high_higher_low"
+      ],
+      "sell": [],
+      "stop": {
+        "type": "native_trailing",
+        "trail_percent": "1.5"
+      },
+      "rationale": "Trend pullback, trend state, and price structure offer separate continuation entries; exits test EMA, structural, and directional weakening. Controlled exit layer 0: protective stop only.",
+      "comparison": "trend"
+    },
+    {
+      "name": "trend_exit_1",
+      "category": "controlled_exit",
+      "buy": [
+        "ema_pullback",
+        "supertrend",
+        "higher_high_higher_low"
+      ],
+      "sell": [
+        "ema_bearish_crossover"
+      ],
+      "stop": {
+        "type": "native_trailing",
+        "trail_percent": "1.5"
+      },
+      "rationale": "Trend pullback, trend state, and price structure offer separate continuation entries; exits test EMA, structural, and directional weakening. Controlled exit layer 1: technical SELL order ema_bearish_crossover.",
+      "comparison": "trend"
+    },
+    {
+      "name": "trend_exit_2",
+      "category": "controlled_exit",
+      "buy": [
+        "ema_pullback",
+        "supertrend",
+        "higher_high_higher_low"
+      ],
+      "sell": [
+        "ema_bearish_crossover",
+        "previous_swing_low_break"
+      ],
+      "stop": {
+        "type": "native_trailing",
+        "trail_percent": "1.5"
+      },
+      "rationale": "Trend pullback, trend state, and price structure offer separate continuation entries; exits test EMA, structural, and directional weakening. Controlled exit layer 2: technical SELL order ema_bearish_crossover, previous_swing_low_break.",
+      "comparison": "trend"
+    },
+    {
+      "name": "trend_exit_3",
+      "category": "controlled_exit",
+      "buy": [
+        "ema_pullback",
+        "supertrend",
+        "higher_high_higher_low"
+      ],
+      "sell": [
+        "ema_bearish_crossover",
+        "previous_swing_low_break",
+        "dmi_bearish_crossover"
+      ],
+      "stop": {
+        "type": "native_trailing",
+        "trail_percent": "1.5"
+      },
+      "rationale": "Trend pullback, trend state, and price structure offer separate continuation entries; exits test EMA, structural, and directional weakening. Controlled exit layer 3: technical SELL order ema_bearish_crossover, previous_swing_low_break, dmi_bearish_crossover.",
+      "comparison": "trend"
+    },
+    {
+      "name": "breakout_exit_0",
+      "category": "controlled_exit",
+      "buy": [
+        "opening_range_breakout",
+        "donchian_channel_breakout",
+        "relative_volume_momentum"
+      ],
+      "sell": [],
+      "stop": {
+        "type": "native_trailing",
+        "trail_percent": "1.5"
+      },
+      "rationale": "Opening-range, channel, and volume momentum entries capture different expansion events; exits test failed break, momentum fade, and reversal volume. Controlled exit layer 0: protective stop only.",
+      "comparison": "breakout"
+    },
+    {
+      "name": "breakout_exit_1",
+      "category": "controlled_exit",
+      "buy": [
+        "opening_range_breakout",
+        "donchian_channel_breakout",
+        "relative_volume_momentum"
+      ],
+      "sell": [
+        "failed_breakout_exit"
+      ],
+      "stop": {
+        "type": "native_trailing",
+        "trail_percent": "1.5"
+      },
+      "rationale": "Opening-range, channel, and volume momentum entries capture different expansion events; exits test failed break, momentum fade, and reversal volume. Controlled exit layer 1: technical SELL order failed_breakout_exit.",
+      "comparison": "breakout"
+    },
+    {
+      "name": "breakout_exit_2",
+      "category": "controlled_exit",
+      "buy": [
+        "opening_range_breakout",
+        "donchian_channel_breakout",
+        "relative_volume_momentum"
+      ],
+      "sell": [
+        "failed_breakout_exit",
+        "momentum_reversal"
+      ],
+      "stop": {
+        "type": "native_trailing",
+        "trail_percent": "1.5"
+      },
+      "rationale": "Opening-range, channel, and volume momentum entries capture different expansion events; exits test failed break, momentum fade, and reversal volume. Controlled exit layer 2: technical SELL order failed_breakout_exit, momentum_reversal.",
+      "comparison": "breakout"
+    },
+    {
+      "name": "breakout_exit_3",
+      "category": "controlled_exit",
+      "buy": [
+        "opening_range_breakout",
+        "donchian_channel_breakout",
+        "relative_volume_momentum"
+      ],
+      "sell": [
+        "failed_breakout_exit",
+        "momentum_reversal",
+        "high_volume_reversal"
+      ],
+      "stop": {
+        "type": "native_trailing",
+        "trail_percent": "1.5"
+      },
+      "rationale": "Opening-range, channel, and volume momentum entries capture different expansion events; exits test failed break, momentum fade, and reversal volume. Controlled exit layer 3: technical SELL order failed_breakout_exit, momentum_reversal, high_volume_reversal.",
+      "comparison": "breakout"
+    },
+    {
+      "name": "vwap_mean_exit_0",
+      "category": "controlled_exit",
+      "buy": [
+        "vwap_bounce",
+        "vwap_pullback",
+        "rsi_oversold_reversal"
+      ],
+      "sell": [],
+      "stop": {
+        "type": "native_trailing",
+        "trail_percent": "1.5"
+      },
+      "rationale": "VWAP support, pullback, and oversold recovery are independent entry opportunities; exits test VWAP loss, oscillator reversal, and trend loss. Controlled exit layer 0: protective stop only.",
+      "comparison": "vwap_mean"
+    },
+    {
+      "name": "vwap_mean_exit_1",
+      "category": "controlled_exit",
+      "buy": [
+        "vwap_bounce",
+        "vwap_pullback",
+        "rsi_oversold_reversal"
+      ],
+      "sell": [
+        "vwap_breakdown"
+      ],
+      "stop": {
+        "type": "native_trailing",
+        "trail_percent": "1.5"
+      },
+      "rationale": "VWAP support, pullback, and oversold recovery are independent entry opportunities; exits test VWAP loss, oscillator reversal, and trend loss. Controlled exit layer 1: technical SELL order vwap_breakdown.",
+      "comparison": "vwap_mean"
+    },
+    {
+      "name": "vwap_mean_exit_2",
+      "category": "controlled_exit",
+      "buy": [
+        "vwap_bounce",
+        "vwap_pullback",
+        "rsi_oversold_reversal"
+      ],
+      "sell": [
+        "vwap_breakdown",
+        "rsi_reversal"
+      ],
+      "stop": {
+        "type": "native_trailing",
+        "trail_percent": "1.5"
+      },
+      "rationale": "VWAP support, pullback, and oversold recovery are independent entry opportunities; exits test VWAP loss, oscillator reversal, and trend loss. Controlled exit layer 2: technical SELL order vwap_breakdown, rsi_reversal.",
+      "comparison": "vwap_mean"
+    },
+    {
+      "name": "vwap_mean_exit_3",
+      "category": "controlled_exit",
+      "buy": [
+        "vwap_bounce",
+        "vwap_pullback",
+        "rsi_oversold_reversal"
+      ],
+      "sell": [
+        "vwap_breakdown",
+        "rsi_reversal",
+        "price_below_ema"
+      ],
+      "stop": {
+        "type": "native_trailing",
+        "trail_percent": "1.5"
+      },
+      "rationale": "VWAP support, pullback, and oversold recovery are independent entry opportunities; exits test VWAP loss, oscillator reversal, and trend loss. Controlled exit layer 3: technical SELL order vwap_breakdown, rsi_reversal, price_below_ema.",
+      "comparison": "vwap_mean"
+    },
+    {
+      "name": "price_action_exit_0",
+      "category": "controlled_exit",
+      "buy": [
+        "inside_bar_breakout",
+        "support_bounce",
+        "resistance_breakout"
+      ],
+      "sell": [],
+      "stop": {
+        "type": "native_trailing",
+        "trail_percent": "1.5"
+      },
+      "rationale": "Compression break, support defense, and resistance break are separate price-action entries; exits test structural failure and reversal candles. Controlled exit layer 0: protective stop only.",
+      "comparison": "price_action"
+    },
+    {
+      "name": "price_action_exit_1",
+      "category": "controlled_exit",
+      "buy": [
+        "inside_bar_breakout",
+        "support_bounce",
+        "resistance_breakout"
+      ],
+      "sell": [
+        "previous_swing_low_break"
+      ],
+      "stop": {
+        "type": "native_trailing",
+        "trail_percent": "1.5"
+      },
+      "rationale": "Compression break, support defense, and resistance break are separate price-action entries; exits test structural failure and reversal candles. Controlled exit layer 1: technical SELL order previous_swing_low_break.",
+      "comparison": "price_action"
+    },
+    {
+      "name": "price_action_exit_2",
+      "category": "controlled_exit",
+      "buy": [
+        "inside_bar_breakout",
+        "support_bounce",
+        "resistance_breakout"
+      ],
+      "sell": [
+        "previous_swing_low_break",
+        "bearish_engulfing_exit"
+      ],
+      "stop": {
+        "type": "native_trailing",
+        "trail_percent": "1.5"
+      },
+      "rationale": "Compression break, support defense, and resistance break are separate price-action entries; exits test structural failure and reversal candles. Controlled exit layer 2: technical SELL order previous_swing_low_break, bearish_engulfing_exit.",
+      "comparison": "price_action"
+    },
+    {
+      "name": "price_action_exit_3",
+      "category": "controlled_exit",
+      "buy": [
+        "inside_bar_breakout",
+        "support_bounce",
+        "resistance_breakout"
+      ],
+      "sell": [
+        "previous_swing_low_break",
+        "bearish_engulfing_exit",
+        "shooting_star_reversal"
+      ],
+      "stop": {
+        "type": "native_trailing",
+        "trail_percent": "1.5"
+      },
+      "rationale": "Compression break, support defense, and resistance break are separate price-action entries; exits test structural failure and reversal candles. Controlled exit layer 3: technical SELL order previous_swing_low_break, bearish_engulfing_exit, shooting_star_reversal.",
+      "comparison": "price_action"
+    },
+    {
+      "name": "trend_ema_adaptive",
+      "category": "trend",
+      "buy": [
+        "ema_pullback",
+        "adaptive_moving_average"
+      ],
+      "sell": [
+        "ema_bearish_crossover"
+      ],
+      "stop": {
+        "type": "native_trailing",
+        "trail_percent": "1.5"
+      },
+      "rationale": "EMA pullback and adaptive trend turns provide distinct trend entries.",
+      "comparison": null
+    },
+    {
+      "name": "trend_holy_structure",
+      "category": "trend",
+      "buy": [
+        "holy_grail_pullback",
+        "higher_high_higher_low"
+      ],
+      "sell": [
+        "previous_swing_low_break",
+        "dmi_bearish_crossover"
+      ],
+      "stop": {
+        "type": "native_trailing",
+        "trail_percent": "1.5"
+      },
+      "rationale": "ADX-style pullback and rising swing structure offer separate continuation entries.",
+      "comparison": null
+    },
+    {
+      "name": "trend_super_reclaim",
+      "category": "trend",
+      "buy": [
+        "supertrend",
+        "moving_average_reclaim"
+      ],
+      "sell": [
+        "supertrend_bearish_flip"
+      ],
+      "stop": {
+        "type": "native_trailing",
+        "trail_percent": "1.5"
+      },
+      "rationale": "Trend-state turn and average reclaim target separate trend resumption moments.",
+      "comparison": null
+    },
+    {
+      "name": "trend_dmi_pullback",
+      "category": "trend",
+      "buy": [
+        "dmi_crossover",
+        "ema_pullback",
+        "holy_grail_pullback"
+      ],
+      "sell": [
+        "dmi_bearish_crossover",
+        "price_below_ema"
+      ],
+      "stop": {
+        "type": "native_trailing",
+        "trail_percent": "1.5"
+      },
+      "rationale": "Directional turn, EMA pullback, and strong-trend pullback cover different continuation points.",
+      "comparison": null
+    },
+    {
+      "name": "trend_structure_breakout",
+      "category": "trend",
+      "buy": [
+        "higher_high_higher_low",
+        "resistance_breakout",
+        "ema_pullback"
+      ],
+      "sell": [
+        "previous_swing_low_break",
+        "ema_bearish_crossover"
+      ],
+      "stop": {
+        "type": "native_trailing",
+        "trail_percent": "1.5"
+      },
+      "rationale": "Rising structure, resistance break, and EMA pullback are distinct routes into an uptrend.",
+      "comparison": null
+    },
+    {
+      "name": "momentum_rvol",
+      "category": "momentum",
+      "buy": [
+        "momentum_breakout",
+        "relative_volume_momentum"
+      ],
+      "sell": [
+        "momentum_reversal",
+        "high_volume_reversal"
+      ],
+      "stop": {
+        "type": "native_trailing",
+        "trail_percent": "1.5"
+      },
+      "rationale": "Price acceleration and relative-volume expansion provide independent momentum entries.",
+      "comparison": null
+    },
+    {
+      "name": "momentum_open_flag",
+      "category": "momentum",
+      "buy": [
+        "opening_range_breakout",
+        "bull_flag_breakout"
+      ],
+      "sell": [
+        "failed_breakout_exit",
+        "vwap_breakdown"
+      ],
+      "stop": {
+        "type": "native_trailing",
+        "trail_percent": "1.5"
+      },
+      "rationale": "Opening impulse and later flag continuation are different breakout opportunities.",
+      "comparison": null
+    },
+    {
+      "name": "momentum_squeeze_donchian",
+      "category": "momentum",
+      "buy": [
+        "volatility_squeeze_breakout",
+        "donchian_channel_breakout"
+      ],
+      "sell": [
+        "failed_breakout_exit",
+        "macd_bearish_crossover"
+      ],
+      "stop": {
+        "type": "native_trailing",
+        "trail_percent": "1.5"
+      },
+      "rationale": "Volatility release and channel break detect distinct expansion patterns.",
+      "comparison": null
+    },
+    {
+      "name": "momentum_nr7_volume",
+      "category": "momentum",
+      "buy": [
+        "nr7_breakout",
+        "relative_volume_momentum"
+      ],
+      "sell": [
+        "high_volume_reversal",
+        "momentum_reversal"
+      ],
+      "stop": {
+        "type": "native_trailing",
+        "trail_percent": "1.5"
+      },
+      "rationale": "Narrow-range expansion and relative-volume momentum sample compression and participation.",
+      "comparison": null
+    },
+    {
+      "name": "momentum_flag_drive",
+      "category": "momentum",
+      "buy": [
+        "bull_flag_breakout",
+        "opening_drive",
+        "high_of_day_momentum"
+      ],
+      "sell": [
+        "failed_breakout_exit",
+        "macd_bearish_crossover"
+      ],
+      "stop": {
+        "type": "native_trailing",
+        "trail_percent": "1.5"
+      },
+      "rationale": "Early drive, flag continuation, and high-of-day acceleration offer different momentum entries.",
+      "comparison": null
+    },
+    {
+      "name": "vwap_pullback_band",
+      "category": "vwap_mean",
+      "buy": [
+        "vwap_pullback",
+        "vwap_band_reversion"
+      ],
+      "sell": [
+        "vwap_breakdown",
+        "bollinger_upper_band_reversal"
+      ],
+      "stop": {
+        "type": "native_trailing",
+        "trail_percent": "1.5"
+      },
+      "rationale": "VWAP pullback and band reversion sample trend support and statistical stretch.",
+      "comparison": null
+    },
+    {
+      "name": "vwap_support_oversold",
+      "category": "vwap_mean",
+      "buy": [
+        "vwap_bounce",
+        "support_bounce",
+        "rsi_oversold_reversal"
+      ],
+      "sell": [
+        "vwap_breakdown",
+        "rsi_reversal"
+      ],
+      "stop": {
+        "type": "native_trailing",
+        "trail_percent": "1.5"
+      },
+      "rationale": "VWAP defense, chart support, and oscillator recovery are distinct rebound triggers.",
+      "comparison": null
+    },
+    {
+      "name": "mean_bollinger_rsi",
+      "category": "vwap_mean",
+      "buy": [
+        "bollinger_band_mean_reversion",
+        "rsi_oversold_reversal"
+      ],
+      "sell": [
+        "bollinger_upper_band_reversal",
+        "stochastic_bearish_crossover"
+      ],
+      "stop": {
+        "type": "native_trailing",
+        "trail_percent": "1.5"
+      },
+      "rationale": "Band stretch and RSI recovery provide separate mean-reversion entries.",
+      "comparison": null
+    },
+    {
+      "name": "mean_support_reclaim",
+      "category": "vwap_mean",
+      "buy": [
+        "support_bounce",
+        "moving_average_reclaim"
+      ],
+      "sell": [
+        "price_below_ema",
+        "rsi_reversal"
+      ],
+      "stop": {
+        "type": "native_trailing",
+        "trail_percent": "1.5"
+      },
+      "rationale": "Chart support and moving-average reclaim detect different recovery points.",
+      "comparison": null
+    },
+    {
+      "name": "vwap_retest",
+      "category": "vwap_mean",
+      "buy": [
+        "vwap_bounce",
+        "opening_range_retest"
+      ],
+      "sell": [
+        "vwap_breakdown",
+        "previous_swing_low_break"
+      ],
+      "stop": {
+        "type": "native_trailing",
+        "trail_percent": "1.5"
+      },
+      "rationale": "Session VWAP defense and opening-range retest offer separate intraday retest entries.",
+      "comparison": null
+    },
+    {
+      "name": "price_inside_hammer",
+      "category": "price_action",
+      "buy": [
+        "inside_bar_breakout",
+        "hammer_reversal"
+      ],
+      "sell": [
+        "bearish_engulfing_exit",
+        "shooting_star_reversal"
+      ],
+      "stop": {
+        "type": "native_trailing",
+        "trail_percent": "1.5"
+      },
+      "rationale": "Compression release and rejection wick are distinct candle-pattern entries.",
+      "comparison": null
+    },
+    {
+      "name": "price_double_support",
+      "category": "price_action",
+      "buy": [
+        "double_bottom_reversal",
+        "support_bounce"
+      ],
+      "sell": [
+        "previous_swing_low_break",
+        "lower_low_confirmation"
+      ],
+      "stop": {
+        "type": "native_trailing",
+        "trail_percent": "1.5"
+      },
+      "rationale": "Double-bottom recovery and immediate support bounce sample different support behavior.",
+      "comparison": null
+    },
+    {
+      "name": "price_resistance_retest",
+      "category": "price_action",
+      "buy": [
+        "resistance_breakout",
+        "opening_range_retest"
+      ],
+      "sell": [
+        "failed_breakout_exit",
+        "trendline_breakdown"
+      ],
+      "stop": {
+        "type": "native_trailing",
+        "trail_percent": "1.5"
+      },
+      "rationale": "Structural break and opening-range retest provide different price-action entries.",
+      "comparison": null
+    },
+    {
+      "name": "mixed_trend_breakout",
+      "category": "mixed",
+      "buy": [
+        "ema_pullback",
+        "momentum_breakout",
+        "inside_bar_breakout"
+      ],
+      "sell": [
+        "ema_bearish_crossover",
+        "failed_breakout_exit"
+      ],
+      "stop": {
+        "type": "native_trailing",
+        "trail_percent": "1.5"
+      },
+      "rationale": "Trend pullback, momentum expansion, and compression release are independent continuation routes.",
+      "comparison": null
+    },
+    {
+      "name": "mixed_reclaim_volume",
+      "category": "mixed",
+      "buy": [
+        "vwap_pullback",
+        "relative_volume_momentum",
+        "moving_average_reclaim"
+      ],
+      "sell": [
+        "vwap_breakdown",
+        "high_volume_reversal"
+      ],
+      "stop": {
+        "type": "native_trailing",
+        "trail_percent": "1.5"
+      },
+      "rationale": "VWAP pullback, participation surge, and average reclaim sample different renewed-demand signs.",
+      "comparison": null
+    },
+    {
+      "name": "trend_stepped",
+      "category": "stop_comparison",
+      "buy": [
+        "ema_pullback",
+        "supertrend",
+        "higher_high_higher_low"
+      ],
+      "sell": [
+        "ema_bearish_crossover",
+        "previous_swing_low_break"
+      ],
+      "stop": {
+        "type": "stepped_trailing",
+        "initial_stop_percent": "1.5",
+        "step_trigger_percent": "1.0",
+        "step_percent": "0.5"
+      },
+      "rationale": "Trend pullback, trend state, and price structure offer separate continuation entries; exits test EMA, structural, and directional weakening. Same first two technical SELL exits as trend_exit_2; isolates stepped protection.",
+      "comparison": "trend"
+    },
+    {
+      "name": "trend_fixed",
+      "category": "stop_comparison",
+      "buy": [
+        "ema_pullback",
+        "supertrend",
+        "higher_high_higher_low"
+      ],
+      "sell": [
+        "ema_bearish_crossover",
+        "previous_swing_low_break"
+      ],
+      "stop": {
+        "type": "fixed",
+        "stop_percent": "1.0"
+      },
+      "rationale": "Trend pullback, trend state, and price structure offer separate continuation entries; exits test EMA, structural, and directional weakening. Same first two technical SELL exits as trend_exit_2; isolates fixed protection.",
+      "comparison": "trend"
+    },
+    {
+      "name": "breakout_stepped",
+      "category": "stop_comparison",
+      "buy": [
+        "opening_range_breakout",
+        "donchian_channel_breakout",
+        "relative_volume_momentum"
+      ],
+      "sell": [
+        "failed_breakout_exit",
+        "momentum_reversal"
+      ],
+      "stop": {
+        "type": "stepped_trailing",
+        "initial_stop_percent": "1.5",
+        "step_trigger_percent": "1.0",
+        "step_percent": "0.5"
+      },
+      "rationale": "Opening-range, channel, and volume momentum entries capture different expansion events; exits test failed break, momentum fade, and reversal volume. Same first two technical SELL exits as breakout_exit_2; isolates stepped protection.",
+      "comparison": "breakout"
+    },
+    {
+      "name": "breakout_fixed",
+      "category": "stop_comparison",
+      "buy": [
+        "opening_range_breakout",
+        "donchian_channel_breakout",
+        "relative_volume_momentum"
+      ],
+      "sell": [
+        "failed_breakout_exit",
+        "momentum_reversal"
+      ],
+      "stop": {
+        "type": "fixed",
+        "stop_percent": "1.0"
+      },
+      "rationale": "Opening-range, channel, and volume momentum entries capture different expansion events; exits test failed break, momentum fade, and reversal volume. Same first two technical SELL exits as breakout_exit_2; isolates fixed protection.",
+      "comparison": "breakout"
+    },
+    {
+      "name": "vwap_mean_stepped",
+      "category": "stop_comparison",
+      "buy": [
+        "vwap_bounce",
+        "vwap_pullback",
+        "rsi_oversold_reversal"
+      ],
+      "sell": [
+        "vwap_breakdown",
+        "rsi_reversal"
+      ],
+      "stop": {
+        "type": "stepped_trailing",
+        "initial_stop_percent": "1.5",
+        "step_trigger_percent": "1.0",
+        "step_percent": "0.5"
+      },
+      "rationale": "VWAP support, pullback, and oversold recovery are independent entry opportunities; exits test VWAP loss, oscillator reversal, and trend loss. Same first two technical SELL exits as vwap_mean_exit_2; isolates stepped protection.",
+      "comparison": "vwap_mean"
+    },
+    {
+      "name": "vwap_mean_fixed",
+      "category": "stop_comparison",
+      "buy": [
+        "vwap_bounce",
+        "vwap_pullback",
+        "rsi_oversold_reversal"
+      ],
+      "sell": [
+        "vwap_breakdown",
+        "rsi_reversal"
+      ],
+      "stop": {
+        "type": "fixed",
+        "stop_percent": "1.0"
+      },
+      "rationale": "VWAP support, pullback, and oversold recovery are independent entry opportunities; exits test VWAP loss, oscillator reversal, and trend loss. Same first two technical SELL exits as vwap_mean_exit_2; isolates fixed protection.",
+      "comparison": "vwap_mean"
+    },
+    {
+      "name": "price_action_stepped",
+      "category": "stop_comparison",
+      "buy": [
+        "inside_bar_breakout",
+        "support_bounce",
+        "resistance_breakout"
+      ],
+      "sell": [
+        "previous_swing_low_break",
+        "bearish_engulfing_exit"
+      ],
+      "stop": {
+        "type": "stepped_trailing",
+        "initial_stop_percent": "1.5",
+        "step_trigger_percent": "1.0",
+        "step_percent": "0.5"
+      },
+      "rationale": "Compression break, support defense, and resistance break are separate price-action entries; exits test structural failure and reversal candles. Same first two technical SELL exits as price_action_exit_2; isolates stepped protection.",
+      "comparison": "price_action"
+    },
+    {
+      "name": "price_action_fixed",
+      "category": "stop_comparison",
+      "buy": [
+        "inside_bar_breakout",
+        "support_bounce",
+        "resistance_breakout"
+      ],
+      "sell": [
+        "previous_swing_low_break",
+        "bearish_engulfing_exit"
+      ],
+      "stop": {
+        "type": "fixed",
+        "stop_percent": "1.0"
+      },
+      "rationale": "Compression break, support defense, and resistance break are separate price-action entries; exits test structural failure and reversal candles. Same first two technical SELL exits as price_action_exit_2; isolates fixed protection.",
+      "comparison": "price_action"
+    }
+  ],
+  "datasets": {
+    "IBM": {
+      "daily_bars": 278,
+      "daily_dataset_id": "alpaca-sip-IBM-1d-raw-785dca76256688cc8fb6",
+      "daily_first_bar": "2025-09-02T04:00:00+00:00",
+      "daily_last_bar": "2026-10-08T04:00:00+00:00",
+      "daily_sessions_complete": 278,
+      "expected_sessions": 251,
+      "extended_hours_bars": 30512,
+      "first_bar": "2025-10-09T08:00:00+00:00",
+      "full_regular_sessions": 229,
+      "last_bar": "2026-10-08T23:45:00+00:00",
+      "minute_bars": 128012,
+      "minute_dataset_id": "alpaca-sip-IBM-1m-raw-c9392eccb3fc9519da67",
+      "missing_regular_minutes": 30,
+      "missing_sessions": [],
+      "regular_session_bars": 97500,
+      "sessions_with_bars": 251
+    },
+    "NVDA": {
+      "daily_bars": 278,
+      "daily_dataset_id": "alpaca-sip-NVDA-1d-raw-7b7de035a800492e4d05",
+      "daily_first_bar": "2025-09-02T04:00:00+00:00",
+      "daily_last_bar": "2026-10-08T04:00:00+00:00",
+      "daily_sessions_complete": 278,
+      "expected_sessions": 251,
+      "extended_hours_bars": 139931,
+      "first_bar": "2025-10-09T08:00:00+00:00",
+      "full_regular_sessions": 251,
+      "last_bar": "2026-10-08T23:59:00+00:00",
+      "minute_bars": 237461,
+      "minute_dataset_id": "alpaca-sip-NVDA-1m-raw-ecfe1ae8f17df5cd67d7",
+      "missing_regular_minutes": 0,
+      "missing_sessions": [],
+      "regular_session_bars": 97530,
+      "sessions_with_bars": 251
+    },
+    "TSLA": {
+      "daily_bars": 278,
+      "daily_dataset_id": "alpaca-sip-TSLA-1d-raw-d21380d0a40368d0333f",
+      "daily_first_bar": "2025-09-02T04:00:00+00:00",
+      "daily_last_bar": "2026-10-08T04:00:00+00:00",
+      "daily_sessions_complete": 278,
+      "expected_sessions": 251,
+      "extended_hours_bars": 136991,
+      "first_bar": "2025-10-09T08:00:00+00:00",
+      "full_regular_sessions": 251,
+      "last_bar": "2026-10-08T23:59:00+00:00",
+      "minute_bars": 234521,
+      "minute_dataset_id": "alpaca-sip-TSLA-1m-raw-3e71642eabd5b82ffb24",
+      "missing_regular_minutes": 0,
+      "missing_sessions": [],
+      "regular_session_bars": 97530,
+      "sessions_with_bars": 251
+    }
+  },
+  "assumptions": {
+    "capital_usd": "10000",
+    "slippage_bps": "5",
+    "fees_usd": "0",
+    "feed": "sip",
+    "adjustment": "raw",
+    "timeframe": "1m",
+    "bar_fill_policy": "NEXT_BAR_OPEN",
+    "ambiguity_policy": "STOP_FIRST",
+    "max_entry_cycles_per_session": 10,
+    "end_of_day_close": {
+      "enabled": true,
+      "at": "15:55",
+      "timezone": "America/New_York"
+    }
+  }
+}

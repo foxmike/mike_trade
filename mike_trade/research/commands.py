@@ -8,6 +8,7 @@ import concurrent.futures
 import hashlib
 import json
 import os
+import tempfile
 import time
 import traceback
 from collections.abc import Iterable, Mapping
@@ -53,6 +54,8 @@ class ExperimentSpec:
     protective_stop: Mapping[str, Any] | None = None
     #: Optional replay EOD close policy: {"enabled": bool, "at": "HH:MM"}.
     end_of_day_close: Mapping[str, Any] | None = None
+    #: Maximum completed entry cycles per symbol/session; research runner gate.
+    max_entry_cycles_per_session: int = 1
 
     def validate(self) -> None:
         if not self.symbol or not self.symbol.replace(".", "").isalnum():
@@ -89,6 +92,10 @@ class ExperimentSpec:
             normalize_stop_spec(self.protective_stop)
         if self.seed < 0:
             raise ValueError("experiment seed must be nonnegative")
+        if isinstance(self.max_entry_cycles_per_session, bool) or not isinstance(
+            self.max_entry_cycles_per_session, int
+        ) or self.max_entry_cycles_per_session < 1:
+            raise ValueError("max_entry_cycles_per_session must be a positive integer")
         if _moment(self.start) >= _moment(self.end):
             raise ValueError("experiment start must precede end")
         if self.parameters is not None and not isinstance(self.parameters, Mapping):
@@ -323,8 +330,31 @@ def _execute_experiment(job_data: dict[str, Any], root: str, results: str) -> di
         short_borrow_bps_per_day=Decimal(spec.short_borrow_bps_per_day),
         protective_stop=spec.protective_stop,
         end_of_day_close=spec.end_of_day_close,
+        max_entry_cycles_per_session=spec.max_entry_cycles_per_session,
     )
-    result.pop("trade_ledger", None)  # Ledger remains in the immutable per-run artifact.
+    ledger = result.pop("trade_ledger")
+    ledger_dir = Path(results) / "trade_ledgers"
+    ledger_dir.mkdir(parents=True, exist_ok=True)
+    ledger_path = ledger_dir / f"{result['run_id']}.json"
+    ledger_payload = json.dumps(
+        {"run_id": result["run_id"], "dataset_id": result["dataset_id"],
+         "trades": ledger}, sort_keys=True, indent=2
+    ) + "\n"
+    with tempfile.NamedTemporaryFile(mode="w", encoding="utf-8", dir=ledger_dir,
+                                     suffix=".tmp", delete=False) as stream:
+        temporary = Path(stream.name)
+        stream.write(ledger_payload)
+        stream.flush()
+        os.fsync(stream.fileno())
+    try:
+        try:
+            os.link(temporary, ledger_path)
+        except FileExistsError:
+            if ledger_path.read_text(encoding="utf-8") != ledger_payload:
+                raise ValueError(f"conflicting existing trade ledger: {ledger_path}") from None
+    finally:
+        temporary.unlink(missing_ok=True)
+    result["trade_ledger_file"] = str(ledger_path)
     result.update(status="completed", worker_pid=os.getpid())
     return result
 
@@ -1092,6 +1122,7 @@ def _run_one(
     short_borrow_bps_per_day: Decimal = Decimal("0"),
     protective_stop: Mapping[str, Any] | None = None,
     end_of_day_close: Mapping[str, Any] | None = None,
+    max_entry_cycles_per_session: int = 1,
 ) -> dict[str, Any]:
     from mike_trade.backtest.clock import ReplayClock
     from mike_trade.backtest.execution import (
@@ -1359,7 +1390,7 @@ def _run_one(
             **stop_config,
             "entry_cutoff_minutes": 30,
             "minimum_hold_seconds": 60,
-            "max_entry_cycles_per_session": 1,
+            "max_entry_cycles_per_session": max_entry_cycles_per_session,
             **({"end_of_day_close": dict(end_of_day_close)} if end_of_day_close is not None else {}),
             **(
                 {
@@ -1424,6 +1455,7 @@ def _run_one(
         "legs": {"buy": list(buy_ids), "sell": list(sell_ids)},
         "protective_stop": stop_config.get("protective_stop", "native_trailing 1.5%"),
         "end_of_day_close": effective_eod,
+        "max_entry_cycles_per_session": max_entry_cycles_per_session,
         "exit_reasons": {
             reason: sum(t.get("exit_reason") == reason for t in metrics.trades)
             for reason in sorted({str(t.get("exit_reason")) for t in metrics.trades})
@@ -1453,7 +1485,10 @@ def _run_one(
         "total_fill_notional": str(total_fill_notional),
         "ending_equity": str(ending_equity),
         "execution_assumptions": dict(assumptions.as_mapping()),
-        "trade_ledger": [{k: str(v) for k, v in t.items()} for t in metrics.trades],
+        "trade_ledger": [
+            {k: None if v is None else str(v) for k, v in t.items()}
+            for t in metrics.trades
+        ],
     }
 
 
