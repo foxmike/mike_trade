@@ -535,6 +535,7 @@ class Runtime:
                 self.entry_gate.block("ENTRIES_DISABLED_BY_DURABLE_CONTROL")
             self._accepting_evaluations = True
             await _call_optional(self.scheduler, ("start",))
+            await _call_optional(self.lifecycle, ("start_background",))
             await self._heartbeat()
             self._heartbeat_task = asyncio.create_task(
                 self._heartbeat_loop(), name="mike-trade-heartbeat"
@@ -555,6 +556,7 @@ class Runtime:
             except Exception:
                 pass
             await self._stop_heartbeat_loop()
+            await _call_optional(self.lifecycle, ("stop_background",))
             await _call_optional(self.scheduler, ("stop", "close"))
             await _call_optional(self.persistence, ("flush",))
             await _call_optional(self.market_data, ("close", "unsubscribe_all", "stop"))
@@ -604,6 +606,7 @@ class Runtime:
         self.entry_gate.block("SHUTTING_DOWN")
         self._accepting_evaluations = False
         await self._stop_heartbeat_loop()
+        await _call_optional(self.lifecycle, ("stop_background",))
         await self._heartbeat()
         try:
             await asyncio.wait_for(

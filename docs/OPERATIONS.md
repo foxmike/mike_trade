@@ -129,9 +129,9 @@ Artifacts add, for shorts only: fill `direction` and `borrow_cost`, cycle
 direction-aware and fail closed: a short entry needs the explicit switch, a
 broker account that may short with buying power, a shortable and easy-to-borrow
 asset, a recorded capability verification of the short order shapes, and
-broker-held short-side protection; otherwise nothing is sent. This release's
-PAPER/LIVE runtime composition does not evaluate strategies (only SHADOW and
-BACKTEST do), and no paper or live short order flow has been verified.
+broker-held short-side protection; otherwise nothing is sent. PAPER/LIVE now evaluate
+BUY/SELL strategies (see ALPACA.md §8) but are long-only: strategy shorts are advance-only,
+and no paper or live short order flow has been verified.
 Reconciliation reports `POSITION_DIRECTION_MISMATCH` when the broker holds the
 opposite direction of a managed cycle and never nets or adopts it.
 

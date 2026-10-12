@@ -530,8 +530,18 @@ class AppSettings:
     heartbeat_interval_seconds: float = 5.0
     backtest_start: datetime = datetime(2024, 1, 2, 14, 30, tzinfo=UTC)
     auto_eod_liquidation: bool = False
-    #: New-York wall-clock time (HH:MM) at which enabled EOD liquidation begins.
+    #: New-York wall-clock time (HH:MM) at which enabled EOD liquidation begins, for
+    #: SHADOW and PAPER/LIVE alike.  Early closes shift it: liquidation always begins
+    #: this long before the actual session close.
     eod_close_at: str = "15:55"
+    #: PAPER/LIVE entry rules, identical in meaning to the SHADOW scenario values.
+    live_minimum_hold: timedelta = timedelta(minutes=1)
+    live_eligibility: EntryEligibilityPolicy | None = field(default=None, compare=False)
+    live_reconcile_interval_seconds: float = 10.0
+    #: Wake the reconciler from Alpaca's ``trade_updates`` stream (advisory; REST is the truth).
+    live_trade_updates: bool = True
+    #: ``<data_dir>/alpaca_capabilities.json`` when unset; see ``live.capability_records``.
+    alpaca_capability_records: str | Path | None = None
     #: Per-symbol strategy collections; symbols without an entry run the
     #: production ``vwap_reference`` pair.
     symbol_strategies: tuple[SymbolStrategySettings, ...] = ()
@@ -572,12 +582,6 @@ class AppSettings:
         if len(names) != len(set(names)):
             raise ValueError("shadow scenario names must be unique")
         _parse_eod_time(self.eod_close_at)
-        if self.auto_eod_liquidation and self.mode is not ExecutionMode.SHADOW:
-            raise ConfigurationError(
-                "automatic EOD liquidation is implemented for SHADOW only; PAPER/LIVE have "
-                "no strategy execution lifecycle to hook it into",
-                code="EOD_LIQUIDATION_NOT_CONFIGURED",
-            )
         if self.market_data_provider not in {"memory", "alpaca"}:
             raise ValueError("market_data_provider must be memory or alpaca")
         if self.market_data_feed not in {"iex", "sip"}:
@@ -1322,6 +1326,9 @@ class AlpacaProductionMarketData(ProductionMarketData):
         symbol = item.symbol.upper()
         if self._trading_symbols and symbol not in self._trading_symbols:
             return
+        observe = getattr(self._lifecycle, "observe_trade", None)
+        if callable(observe):
+            observe(symbol, item.price, item.provider_source_ts)
         local = item.provider_source_ts.astimezone(exchange_calendar.NEW_YORK)
         minute_local = local.replace(second=0, microsecond=0)
         start = minute_local.astimezone(UTC)
@@ -1572,16 +1579,6 @@ def load_app_settings(
         for policy in stop_policies.values()
         if policy["type"] == "native_trailing"
     }
-    if mode is not ExecutionMode.SHADOW and (
-        {policy["type"] for policy in stop_policies.values()} != {"native_trailing"}
-        or len(trail_values) != 1
-        or None in trail_values
-    ):
-        raise ConfigurationError(
-            "PAPER/LIVE runtime requires one shared native_trailing trail_percent; fixed, "
-            "amount-based and stepped stop policies are only wired for SHADOW",
-            code="UNSUPPORTED_STOP_POLICY",
-        )
     strategy_map = cast(Mapping[str, Mapping[str, Any]], effective["strategies"])
 
     def assignments(names: Sequence[str]) -> tuple[StrategyAssignment, ...]:
@@ -1631,6 +1628,20 @@ def load_app_settings(
         heartbeat_interval_seconds=float(service["engine_heartbeat_interval_seconds"]),
         auto_eod_liquidation=bool(execution["end_of_day_close"]["enabled"]),
         eod_close_at=str(execution["end_of_day_close"].get("at", "15:55")),
+        **(
+            {
+                "live_minimum_hold": timedelta(seconds=int(one_value("min_hold_seconds"))),
+                "live_eligibility": EntryEligibilityPolicy(
+                    int(one_value("max_entry_cycles_per_session")),
+                    cast(int | None, one_value("consecutive_loss_limit")),
+                    one_value("consecutive_loss_scope") == "strategy",
+                    timedelta(seconds=int(one_value("post_sale_cooldown_seconds"))),
+                    timedelta(seconds=int(one_value("min_hold_seconds"))),
+                ),
+            }
+            if mode in (ExecutionMode.PAPER, ExecutionMode.LIVE)
+            else {}
+        ),
         credential_environment=source,
     )
 
@@ -3044,6 +3055,8 @@ class AlpacaBrokerAdapter:
         short_authorized: bool = False,
         capabilities_matrix: object | None = None,
         environ: Mapping[str, str] | None,
+        http_transport: object | None = None,
+        persist_before_send: Callable[..., object] | None = None,
     ) -> None:
         self.mode = mode
         self.environment = AccountEnvironment(mode.value)
@@ -3055,6 +3068,12 @@ class AlpacaBrokerAdapter:
         #: so a short never reaches the broker until an operator records a verification.
         self.capabilities_matrix = capabilities_matrix
         self.environ = environ
+        #: Test seam: an ``httpx`` transport replacing the network (never set in production).
+        self.http_transport = http_transport
+        #: Durability hook invoked immediately before every order POST.  The PAPER/LIVE
+        #: lifecycle binds it to the intent ledger, so a request without a durably recorded
+        #: intent is refused; with no hook every submission fails closed.
+        self.persist_before_send = persist_before_send
         self._client: object | None = None
         self._account: object | None = None
         self._orders: object | None = None
@@ -3082,19 +3101,31 @@ class AlpacaBrokerAdapter:
         client = AlpacaHttpClient(
             credentials, live_authorized=self.authorized,
             persisted_fingerprint=credential_fingerprint(credentials),
+            **({} if self.http_transport is None else {"transport": self.http_transport}),
         )
         fingerprint = credential_fingerprint(credentials)
         self._client = client
         self._account = AlpacaAccountService(
             client, environment=environment, fingerprint=fingerprint
         )
-        self._orders = AlpacaOrderService(client)
+        self._orders = AlpacaOrderService(
+            client, persist_before_send=self._persist_before_send_proxy
+        )
         self._activities = AlpacaActivityService(client)
         self._assets = AlpacaAssetService(
             client, environment=environment, fingerprint=fingerprint
         )
         self._provider_clock = cast(Any, self._account).get_clock()
         return True
+
+    def _persist_before_send_proxy(self, client_order_id: str, request: object) -> None:
+        hook = self.persist_before_send
+        if hook is None:
+            raise ConfigurationError(
+                "Alpaca order submission requires a durable persist-before-send hook",
+                code="PERSIST_BEFORE_SEND_MISSING",
+            )
+        hook(client_order_id, request)
 
     def capabilities(self) -> BrokerCapabilities:
         return BrokerCapabilities(
@@ -3274,6 +3305,10 @@ class AlpacaBrokerAdapter:
             )
             for item in activities
         )
+
+    async def list_recent_activities(self) -> Sequence[object]:
+        """Fills of the last two days (the runtime's broker-facts snapshot, kept bounded)."""
+        return await self.list_fills(self.clock.now() - timedelta(days=2))
 
     def _fill_side(self, item: object) -> OrderSide:
         """Position-effect-aware side of a broker fill activity.
@@ -3821,6 +3856,26 @@ def build_runtime(
             environ=settings.credential_environment,
         )
 
+    live_stack: object | None = None
+    if isinstance(broker, AlpacaBrokerAdapter) and "execution" not in supplied:
+        from mike_trade.live.capability_records import load_capability_matrix
+        from mike_trade.live.wiring import build_live_stack, default_capability_path
+
+        if broker.capabilities_matrix is None:
+            broker.capabilities_matrix = load_capability_matrix(
+                default_capability_path(settings)
+            )
+        live_stack = build_live_stack(
+            settings=settings, adapter=broker, persistence=persistence, clock=clock,
+            entry_gate=cast(EntryGate, entry_gate),
+            registry=cast(StrategyRegistry, strategies),
+            protection_policy=ProtectionPolicy(
+                ProtectionKind.BROKER_TRAILING_STOP,
+                trail_percent=settings.stop_trail_percent, require_broker_held=True,
+            ),
+            scope=scopes[0],
+        )
+
     budget_policy = BudgetPolicy(
         settings.total_budget, settings.per_symbol_budget, Decimal("0"), False
     )
@@ -3837,7 +3892,9 @@ def build_runtime(
         trail_percent=settings.stop_trail_percent,
     )
     lifecycle: object | None = None
-    if isinstance(broker, ShadowBrokerGroup):
+    if live_stack is not None:
+        lifecycle = cast(Any, live_stack).lifecycle
+    elif isinstance(broker, ShadowBrokerGroup):
         lifecycle = VwapReferenceLifecycle(
             broker, clock, cast(EntryGate, entry_gate), settings.entry_cutoff_minutes,
             protection_policy,
@@ -3868,6 +3925,8 @@ def build_runtime(
     )
     if "reconciliation" in supplied:
         reconciliation = supplied["reconciliation"]
+    elif live_stack is not None:
+        reconciliation = cast(Any, live_stack).reconciliation
     elif isinstance(broker, ShadowBrokerGroup):
         reconciliation = _CleanShadowReconciler(broker)
     elif settings.mode is ExecutionMode.BACKTEST:
@@ -3905,7 +3964,9 @@ def build_runtime(
         instance_lock=supplied.get(
             "instance_lock", RuntimeInstanceLock(f"{settings.database_path}.instance.lock")
         ),
-        startup_validator=supplied.get("startup_validator"),
+        startup_validator=supplied.get(
+            "startup_validator", lifecycle if live_stack is not None else None
+        ),
         config_fingerprint=_fingerprint(settings),
         account_scope_id=scopes[0].scope_id,
         symbols=settings.symbols,

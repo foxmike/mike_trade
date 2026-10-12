@@ -140,13 +140,18 @@ def test_runtime_settings_carry_per_symbol_collections_and_stop_policies(tmp_pat
     assert settings.mode is ExecutionMode.SHADOW
 
 
-def test_non_shadow_runtime_refuses_stop_policies_it_cannot_wire(tmp_path):
+def test_paper_runtime_accepts_every_stop_policy_the_broker_lifecycle_wires(tmp_path):
     path = _multi_doc(tmp_path)
     doc = yaml.safe_load(path.read_text())
     doc["execution"]["account_mode"] = "paper"
-    with pytest.raises(ConfigurationError) as raised:
-        load_app_settings(_write(tmp_path, doc), environ={})
-    assert raised.value.code == "UNSUPPORTED_STOP_POLICY"
+    settings = load_app_settings(_write(tmp_path, doc), environ={})
+    assert settings.mode is ExecutionMode.PAPER
+    assert {s: p["type"] for s, p in settings.symbol_stop_policies.items()} == {
+        "NVDA": "native_trailing", "IBM": "fixed", "TSLA": "stepped_trailing"}
+    # the PAPER/LIVE entry rules come from the same per-symbol settings SHADOW uses
+    assert settings.live_eligibility is not None
+    assert settings.live_minimum_hold.total_seconds() >= 0
+    assert settings.eod_close_at == "15:55"
 
 
 def test_legacy_reference_configuration_keeps_its_runtime_fingerprint(tmp_path):
