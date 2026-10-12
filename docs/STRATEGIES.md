@@ -2484,6 +2484,26 @@ The EMA and Supertrend strategies require the latest two bars to be adjacent (a 
 hole leaves the extreme unknown. All are edge or level signals on completed M1 bars in the regular
 session, and none uses a stop, target or reversal.
 
+## 19. Michelle strategy specifications (4 proposed; implementation blocked)
+
+Two Word documents supplied by Michelle define two long entries and their exits. They map to four
+independent proposed identifiers; no BUY/SELL pairing is implied:
+
+| Proposed strategy ID | Role | Original document | Status/specification |
+|---|---|---|---|
+| `five_minute_orb_michelle_buy` | BUY | `Five_Minute_ORB_Formatted.docx` | [Blocked specification](strategies/michelle/five_minute_orb_michelle_buy.md) |
+| `five_minute_orb_michelle_sell` | SELL | `Five_Minute_ORB_Formatted.docx` | [Blocked specification](strategies/michelle/five_minute_orb_michelle_sell.md) |
+| `vwap_bounce_break_michelle_buy` | BUY | `VWAP_Bounce_Break_Formatted.docx` | [Blocked specification](strategies/michelle/vwap_bounce_break_michelle_buy.md) |
+| `vwap_bounce_break_michelle_sell` | SELL | `VWAP_Bounce_Break_Formatted.docx` | [Blocked specification](strategies/michelle/vwap_bounce_break_michelle_sell.md) |
+
+The [source map and completeness review](strategies/michelle/README.md) records the document audit
+and shared blockers. No class is registered and the library count remains 192. The source BUY rules
+require first-cross intrabar trade-tick evaluation, while the strategy SDK and scheduler are
+closed-bar-only. The exit rules require actual-fill, fill-time-VWAP, high-water, and protective-stop
+state that is not supplied to independent SELL strategies. Source contradictions and missing numeric
+definitions also prevent deterministic test oracles. Implementing completed-bar approximations or
+moving order management into strategy classes is explicitly out of scope pending operator approval.
+
 ### Engine integration (implemented)
 
 The engine consults the four roles as follows (`docs/ARCHITECTURE.md`, bidirectional lifecycle):

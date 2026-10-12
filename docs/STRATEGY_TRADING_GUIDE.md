@@ -1,6 +1,6 @@
 # Mike_Trade — Trading Strategy and Risk Management Guide
 
-*Prepared for Michelle* · Reference manual for the automated stock-trading research platform **Mike_Trade** (strategy library 192, branch `feature/strategy-library-192-final`).
+Reference manual for the automated stock-trading research platform **Mike_Trade** (strategy library 192, branch `feature/strategy-library-192-final`).
 
 This guide describes what the software actually implements, as of the 192-strategy integration. It documents 192 registered strategies — 93 buying, 43 selling, 28 shorting and 28 covering — plus the protective-stop system, the market-wide crash/recovery monitor, the position lifecycle, the four trading modes, and the dashboard.
 
@@ -2150,13 +2150,13 @@ Four execution modes exist with strictly separated credentials, ledgers and conf
 
 The **four-role lifecycle (BUY/SELL/SHORT/COVER) is implemented in SHADOW and BACKTEST**. As of this release, the PAPER/LIVE runtime composition is built **without automatic strategy evaluation** (`lifecycle=None`): strategies are not run, so no autonomous signals become paper or live orders. The order, position, reconciliation and protection layers are direction-aware and complete, but operator-driven order flow is the only path today. PAPER short order shapes have never been verified end-to-end, and LIVE short selling is refused by configuration (`short_selling_enabled` cannot be set for `account_mode: live`).
 
-**Bottom line:** the environment for testing Michelle's strategies is SHADOW (live feed, forward) and BACKTEST (history, replay). PAPER and LIVE are not yet autonomous strategy environments.
+**Bottom line:** the environment for testing strategies is SHADOW (live feed, forward) and BACKTEST (history, replay). PAPER and LIVE are not yet autonomous strategy environments.
 
 ---
 
 ## 12. How to Combine Strategies
 
-Michelle can configure per symbol any combination of sides, and the engine arbitrates for her. The practical combinations:
+The practical combinations:
 
 | Combination | What the system does |
 | :--- | :--- |
@@ -2180,7 +2180,7 @@ Michelle can configure per symbol any combination of sides, and the engine arbit
 
 ---
 
-## 13. Testing Michelle's Custom Trading Methods
+## 13. Testing Custom Trading Methods
 
 Mike_Trade can add custom strategies as Python classes that follow the same strategy contract as the 192 registered ones: a pure function of (completed bars + parameters + persisted state) that returns a signal or no-signal, with no order submission, no broker access, and no wall-clock dependence. Before that step, the design work happens in trading terms.
 
@@ -2248,7 +2248,7 @@ Values that need a live authority (engine, broker link, feed) are explicitly mar
 
 Checked against the current source on `feature/strategy-library-192-final`:
 
-1. **PAPER/LIVE autonomous strategy execution is not implemented.** Only SHADOW and BACKTEST evaluate strategies: the PAPER/LIVE runtime composition builds no strategy lifecycle (`lifecycle=None`). Until that changes, PAPER/LIVE do not run Michelle's (or any) strategies automatically. LIVE short selling is additionally refused by configuration.
+1. **PAPER/LIVE autonomous strategy execution is not implemented.** Only SHADOW and BACKTEST evaluate strategies: the PAPER/LIVE runtime composition builds no strategy lifecycle (`lifecycle=None`). Until that changes, PAPER/LIVE do not run strategies automatically. LIVE short selling is additionally refused by configuration.
 2. **PAPER/LIVE short flows are unverified.** No paper or live short order flow has been tested end-to-end; the order service requires a recorded capability verification before a paper short could even be attempted.
 3. **Historical backtests using the market monitor need monitor warm-up.** The backtest monitor starts empty at the window start (reference candles before the window are not replayed), so entries are blocked until two of the three reference symbols have data; the `research-batch` interface does not yet expose the market-status switch at all.
 4. **SHADOW and BACKTEST are not guaranteed identical.** SHADOW consumes the live stream with a bounded start-up warm-up (default 60 bars) and live-session references; BACKTEST replays stored bars deterministically. Strategies whose lookback exceeds the SHADOW warm-up return `INSUFFICIENT_DATA` until enough live bars accrue, and recursive-indicator state can therefore differ between the two for the same period. Research sizing also differs (planned-loss-based vs. symbol-budget-based).
