@@ -1,0 +1,7 @@
+# Prepared dashboard-only deployment; never replace the trading engine image.
+services:
+  mike-trade-api:
+    build: !reset null
+    image: mike-trade:console-index-fix-20261012
+    environment:
+      MIKE_TRADE_RESEARCH_RUN_CATALOG: /app/research/console-fix-prepared/research_runs.duckdb

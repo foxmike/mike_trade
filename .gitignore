@@ -7,6 +7,8 @@ __pycache__/
 .env
 .env.*
 state/
+!dashboard/frontend/src/state/
+!dashboard/frontend/src/state/**
 /research/
 node_modules/
 dist/

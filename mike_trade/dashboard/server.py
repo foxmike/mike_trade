@@ -135,6 +135,11 @@ def create_app(
     """Build the read-only dashboard application; performs no I/O."""
     app = FastAPI(title="mike_trade dashboard", docs_url=None, redoc_url=None, openapi_url=None)
     service = DashboardReadService(settings, clock, db_path)
+    from mike_trade.dashboard.v2.market_status import create_market_status_v2_router
+    from mike_trade.dashboard.v2.research import create_research_v2_router
+
+    app.include_router(create_market_status_v2_router(service))
+    app.include_router(create_research_v2_router(service))
     app.include_router(create_api_router(service))
     dist = Path(static_dir) if static_dir is not None else DEFAULT_STATIC_DIR
 
