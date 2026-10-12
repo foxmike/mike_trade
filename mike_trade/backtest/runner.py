@@ -93,15 +93,11 @@ ZERO = Decimal("0")
 
 #: Identifies the lifecycle semantics a run was produced under; part of the
 #: configuration hash so runs from different lifecycle generations never alias.
-#: "2": per-symbol BUY/SELL collections, one-position-per-symbol entry gating,
-#: shared entry/exit arbitration, GTC post-fill protective stops (fixed, native
-#: trailing, stepped trailing), exit-reason recording, 500-bar shared context.
-LIFECYCLE_SEMANTICS_VERSION = "2"
-#: Runs whose strategy collections include SHORT or COVER strategies are produced under
-#: bidirectional lifecycle semantics ("3": adds the SHORT/COVER lifecycle, restricted short
-#: collateral, direction-aware stops and borrow-cost accounting).  Long-only runs keep "2" so
-#: their configuration hashes and artifacts are unchanged.
-BIDIRECTIONAL_LIFECYCLE_SEMANTICS_VERSION = "3"
+#: "4": version 2 semantics plus stop-first protection on the entry-fill candle.
+LIFECYCLE_SEMANTICS_VERSION = "4"
+#: Bidirectional counterpart to lifecycle version 4; adds SHORT/COVER, restricted short
+#: collateral, direction-aware stops and borrow-cost accounting.
+BIDIRECTIONAL_LIFECYCLE_SEMANTICS_VERSION = "5"
 #: Regulation T style initial requirement: proceeds stay locked AND half the notional in
 #: own cash is required (150% of the short's notional).
 DEFAULT_SHORT_MARGIN_MULTIPLIER = Decimal("1.5")
@@ -993,11 +989,11 @@ class BacktestRunner:
             order = await self.execution.get_order(order_id)
             return order is not None and order.status not in TERMINAL_ORDER_STATUSES
 
-        async def arm_protection(symbol: str, reference: Decimal) -> None:
+        async def arm_protection(symbol: str, reference: Decimal) -> _Protection | None:
             """Cover the held quantity with the configured stop (post-fill, GTC)."""
             nonlocal protection_count
             if stop_spec is None or quantities[symbol] <= ZERO:
-                return
+                return None
             cycle_id = str(open_cycles[symbol]["cycle_id"])
             current = protections.get(symbol)
             if current is not None and await order_is_open(current.order_id):
@@ -1007,7 +1003,7 @@ class BacktestRunner:
                     await self.execution.replace_order(
                         current.order_id, quantity=quantities[symbol]
                     )
-                return
+                return current
             entry_reference = current.entry_reference if current is not None else reference
             policy = protection_policy_for_entry(stop_spec, entry_reference)
             direction = directions.get(symbol, PositionDirection.LONG)
@@ -1075,7 +1071,9 @@ class BacktestRunner:
                 intent = OrderIntent(
                     order_type=OrderType.STOP, stop_price=stop_now, **common
                 )
-            order = await self.execution.submit_order(intent)
+            order = await self.execution.submit_order(
+                intent, protection_reference=entry_reference
+            )
             order_meta[order.broker_order_id] = {
                 "purpose": OrderPurpose.PROTECTIVE_STOP.value,
                 "strategy": None,
@@ -1102,6 +1100,49 @@ class BacktestRunner:
                 "stop_price": None if recorded_stop == ZERO else recorded_stop,
                 "quantity": quantities[symbol],
             })
+            return protections[symbol]
+
+        def stepped_would_tighten(protection: _Protection, high: Decimal, low: Decimal) -> bool:
+            """Whether this completed bar contains a favorable stepped-stop move."""
+            if (
+                protection.stepped is None
+                or protection.policy.kind is not ProtectionKind.STEPPED_TRAILING_STOP
+            ):
+                return False
+            policy = protection.policy
+            assert policy.trail_percent is not None and policy.step_size is not None
+            long = protection.direction is PositionDirection.LONG
+            favorable = high if long else low
+            activation = policy.activation_gain or ZERO
+            if (
+                favorable < protection.entry_reference + activation
+                if long
+                else favorable > protection.entry_reference - activation
+            ):
+                return False
+            moved = advance(
+                protection.stepped,
+                favorable,
+                SteppedTrailingPolicy(
+                    DistanceKind.PERCENT,
+                    policy.trail_percent,
+                    DistanceKind.USD,
+                    policy.step_size,
+                    timedelta(0),
+                    TimeInForce.GTC,
+                    "backtest",
+                ),
+            )
+            candidate = (
+                _floor_stop(moved.candidate_stop)
+                if long
+                else _ceil_stop(moved.candidate_stop)
+            )
+            return (
+                candidate > protection.current_stop
+                if long
+                else candidate < protection.current_stop
+            )
 
         async def ratchet_stepped(symbol: str, high: Decimal, low: Decimal) -> None:
             """Engine-managed stepped trailing: tighten (never loosen) the stop.
@@ -1262,9 +1303,11 @@ class BacktestRunner:
             self.clock.advance_to(ev.available_at)
             if backtest_monitor is not None:
                 feed_reference(ev.available_at)
-            outputs = self.execution.process_event(ev)
+            outputs = deque(self.execution.process_event(ev))
+            suppress_stepped_ratchet: set[str] = set()
             await record_native_stop(ev.symbol)
-            for x in outputs:
+            while outputs:
+                x = outputs.popleft()
                 meta = order_meta.get(x.fill.broker_order_id, {})
                 is_buy = x.side.is_entry  # opens a position (BUY or SELL_SHORT)
                 direction = x.side.direction
@@ -1350,7 +1393,27 @@ class BacktestRunner:
                         if intent_row.get("intent_id") == meta.get("intent_id"):
                             intent_row["cycle_id"] = fill_row["cycle_id"]
                     open_cycles[x.symbol]["entry_quantity"] += x.quantity
-                    await arm_protection(x.symbol, x.price)
+                    protection = await arm_protection(x.symbol, x.price)
+                    if (
+                        protection is not None
+                        and ev.kind == ReplayEvent.KIND_BAR
+                        and ev.candle is not None
+                        and x.evidence == "BAR"
+                        and ev.candle.start <= x.fill.filled_at <= ev.candle.end
+                    ):
+                        outputs.extend(
+                            self.execution.process_entry_bar_protection(
+                                protection.order_id,
+                                ev.candle,
+                                favorable_extreme_reached=stepped_would_tighten(
+                                    protection, ev.candle.high, ev.candle.low
+                                )
+                                and x.fill.filled_at == ev.candle.start,
+                                allow_trailing_ratchet=x.fill.filled_at == ev.candle.start,
+                            )
+                        )
+                        if x.fill.filled_at != ev.candle.start:
+                            suppress_stepped_ratchet.add(x.symbol)
                 else:
                     average = costs[x.symbol] / quantities[x.symbol]
                     costs[x.symbol] -= average * x.quantity
@@ -1368,6 +1431,13 @@ class BacktestRunner:
                         cycle["exit_signal_id"] = meta.get("signal_id")
                         cycle["exit_signal_timestamp"] = meta.get("signal_time")
                         if quantities[x.symbol] <= ZERO:
+                            entry_order_id = pending_entry.pop(x.symbol, None)
+                            if (
+                                x.purpose is OrderPurpose.PROTECTIVE_STOP
+                                and entry_order_id is not None
+                                and await order_is_open(entry_order_id)
+                            ):
+                                await self.execution.cancel_order(entry_order_id)
                             costs[x.symbol] = ZERO
                             directions.pop(x.symbol, None)
                             protections.pop(x.symbol, None)
@@ -1376,6 +1446,7 @@ class BacktestRunner:
                             cycle["closed_at"] = x.fill.filled_at
                             cycles.append(cycle)
                 equity_curve.append(equity_row(x.fill.filled_at))
+            await record_native_stop(ev.symbol)
             if ev.kind != ReplayEvent.KIND_BAR or ev.candle is None:
                 continue
             symbol = ev.symbol
@@ -1463,7 +1534,8 @@ class BacktestRunner:
                 del pending_exit[symbol]
                 if quantities[symbol] > ZERO:
                     await arm_protection(symbol, marks[symbol])  # exit lapsed: re-protect
-            await ratchet_stepped(symbol, candle.high, candle.low)
+            if symbol not in suppress_stepped_ratchet:
+                await ratchet_stepped(symbol, candle.high, candle.low)
 
             due = self.scheduler.process(
                 CandleClosedEvent(

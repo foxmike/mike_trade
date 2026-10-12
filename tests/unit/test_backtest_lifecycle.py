@@ -296,6 +296,94 @@ def test_stop_covers_the_whole_position_through_partial_entry_fills(tmp_path):
     assert all(s["exit_reason"] == "PROTECTIVE_STOP" for s in sells)
 
 
+def test_initial_stop_can_exit_on_the_entry_fill_candle(tmp_path):
+    bars = _quiet(3) + [("100", "101", "97", "99")] + [_flat("99")] * 3
+    result = _run_sync(
+        {"AAA": bars},
+        ("buy_alpha",),
+        params={"buy_alpha": {"fire_at": 3}},
+        config={"protective_stop": {"type": "fixed", "stop_percent": "2"}},
+        result_dir=tmp_path,
+    )
+
+    (buy,), (sell,) = _fills(result, "BUY"), _fills(result, "SELL")
+    assert (buy["time"], buy["price"], buy["quantity"]) == (
+        OPEN + 3 * MIN,
+        D("100"),
+        D("10"),
+    )
+    assert (sell["time"], sell["price"], sell["quantity"]) == (
+        OPEN + 4 * MIN,
+        D("98"),
+        D("10"),
+    )
+    assert sell["purpose"] == sell["exit_reason"] == "PROTECTIVE_STOP"
+    assert result.cycles[0]["closed_at"] == OPEN + 4 * MIN
+    assert compute_metrics(result, starting_capital=D("100000")).trades[0]["gross_pnl"] == D("-20")
+
+
+@pytest.mark.parametrize("mode", ["native", "stepped"])
+def test_entry_bar_with_both_extremes_stops_before_trailing_can_advance(tmp_path, mode):
+    stop = (
+        {"type": "native_trailing", "trail_percent": "2"}
+        if mode == "native"
+        else {
+            "type": "stepped_trailing",
+            "initial_stop_percent": "2",
+            "step_trigger_percent": "1",
+            "step_percent": "0.5",
+        }
+    )
+    result = _run_sync(
+        {"AAA": _quiet(3) + [("100", "110", "97", "105")] + [_flat("105")] * 3},
+        ("buy_alpha",),
+        params={"buy_alpha": {"fire_at": 3}},
+        config={"protective_stop": stop},
+        result_dir=tmp_path,
+    )
+
+    (sell,) = _fills(result, "SELL")
+    assert sell["price"] == D("98")
+    assert [event["event_type"] for event in result.protection_events] == [
+        "INITIAL_STOP_ESTABLISHED"
+    ]
+    assert (
+        result.cycles[0]["initial_stop_price"]
+        == result.cycles[0]["final_stop_price"]
+        == D("98")
+    )
+
+
+def test_surviving_entry_bar_activates_stepped_trailing_for_the_next_bar(tmp_path):
+    bars = (
+        _quiet(3)
+        + [("100", "104", "99", "103")]
+        + [("103", "103", "102", "102.2")]
+        + [_flat("102.2")] * 2
+    )
+    result = _run_sync(
+        {"AAA": bars},
+        ("buy_alpha",),
+        params={"buy_alpha": {"fire_at": 3}},
+        config={
+            "protective_stop": {
+                "type": "stepped_trailing",
+                "initial_stop_percent": "1.5",
+                "step_trigger_percent": "1",
+                "step_percent": "0.5",
+            }
+        },
+        result_dir=tmp_path,
+    )
+
+    assert [event["stop_price"] for event in result.protection_events] == [
+        D("98.50"),
+        D("102.50"),
+    ]
+    (sell,) = _fills(result, "SELL")
+    assert (sell["price"], sell["time"]) == (D("102.50"), OPEN + 5 * MIN)
+
+
 # ----------------------------------------------------------------- stop modes
 
 _RISE_AND_FALL: list[Bar] = (
