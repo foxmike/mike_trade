@@ -99,13 +99,19 @@ open, never at midnight or on weekends. View with `make entry-limits` and
   market exit per held position through the normal SHADOW fill/cost model. The
   protective stop is evaluated first; a stop that triggers wins and no EOD order is
   made. The order is submitted only against a fresh quote (the stop stays armed
-  until then); a pending EOD order is only ever filled further, never duplicated,
-  including after a restart. On early-close sessions the configured time that falls
-  at or after the close keeps its lead before 16:00 relative to the actual close.
-  The runtime heartbeat drives a time-based pass (`lifecycle.on_tick`), so EOD
-  does not wait for a new candle. Limitation: while an EOD order is pending and
-  unfilled (partial fill, or the fill model has not yet allowed it), the cancelled
-  protective stop is not re-armed.
+  until then). The coordinator forbids a stop and an exit resting together, so an
+  EOD order that does not complete (partial fill, no liquidity, past its fill
+  latency) is cancelled in the same pass and the residual position is immediately
+  re-covered by a stop sized to exactly what is still held (policy and stop level
+  preserved, never loosened); liquidation is retried at most once a minute with a
+  fresh order for the remaining quantity. A dead `DAY` EOD order from an earlier
+  session is cancelled and, like any held position found without a matching stop
+  (including after a restart, before entries open), the protective stop is
+  restored. On early-close sessions the configured time that falls at or after
+  the close keeps its lead before 16:00 relative to the actual close. The runtime
+  heartbeat drives a time-based pass (`lifecycle.on_tick`), so EOD does not wait for
+  a new candle. Limitation: with a non-zero fill latency the position is unprotected
+  for at most that latency while a freshly submitted EOD order is in flight.
 
 ## 4. Protective stop coverage
 

@@ -23,7 +23,14 @@ from mike_trade.app import (
     build_runtime,
 )
 from mike_trade.domain.errors import ConfigurationError
-from mike_trade.domain.trading import OrderPurpose
+from mike_trade.brokers.shadow.fills import FillAssumptions
+from mike_trade.domain.trading import (
+    OrderIntent,
+    OrderPurpose,
+    OrderSide,
+    OrderType,
+    TimeInForce,
+)
 from mike_trade.runtime import ExecutionMode
 
 DAY = datetime(2026, 10, 8, 18, 0, tzinfo=UTC)  # 14:00 ET
@@ -51,11 +58,12 @@ async def start(
     eod: bool = True,
     cutoff: int = 30,
     name: str = "eod.sqlite3",
+    **scenario_kw,
 ):
     scenario = ShadowScenarioSettings(
         name=SCENARIO, starting_cash=D("50000"), per_symbol_budget=D("3000"),
         total_budget=D("20000"), max_entry_cycles_per_session=5, consecutive_loss_limit=5,
-        post_sale_cooldown=timedelta(0), minimum_hold=timedelta(minutes=1),
+        post_sale_cooldown=timedelta(0), minimum_hold=timedelta(minutes=1), **scenario_kw,
     )
     runtime = build_runtime(
         AppSettings(
@@ -281,31 +289,195 @@ async def test_missing_and_stale_observations_never_fabricate_a_fill(tmp_path):
         await runtime.stop()
 
 
+def sized(context, bid_size: str):
+    """The same context with a thin bid, so a market SELL can only partly fill."""
+    quote = dataclasses.replace(context.latest_quote, bid_size=D(bid_size))
+    return dataclasses.replace(context, latest_quote=quote)
+
+
+def invariants(shadow, symbol: str = "SPY") -> None:
+    """Never more than one resting exit, never an exit larger than the position, and a
+    resting protective stop and an EOD order never coexist."""
+    state = shadow.account.state
+    resting = [o for o in state.orders.values() if o.is_open and o.side.is_exit]
+    assert len(resting) <= 1
+    position = state.positions.get(symbol)
+    held = D("0") if position is None else position.quantity
+    assert sum((o.remaining for o in resting), D("0")) <= held
+    entered = sum((f.quantity for f in state.fills.values() if f.side.is_entry), D("0"))
+    exited = sum((f.quantity for f in state.fills.values() if f.side.is_exit), D("0"))
+    assert exited <= entered and entered - exited == held
+
+
+async def legacy_pending_eod(shadow, when: datetime, symbol: str = "SPY"):
+    """A ledger left by a crash mid-liquidation: stop cancelled, EOD order resting."""
+    position = shadow.account.state.positions[symbol]
+    await shadow.stops.prepare_discretionary_exit(position.cycle_id, at=when)
+    return await shadow.account.submit_order(
+        OrderIntent(
+            intent_id="legacy-eod-intent", client_order_id=f"legacy-eod-{when.isoformat()}",
+            account_scope_id=shadow.account.scope.scope_id, cycle_id=position.cycle_id,
+            symbol=symbol, side=OrderSide.SELL, purpose=OrderPurpose.EOD_CLOSE,
+            order_type=OrderType.MARKET, time_in_force=TimeInForce.DAY, created_at=when,
+            quantity=position.quantity,
+        )
+    )
+
+
 async def test_restart_with_pending_eod_exit_finishes_it_without_duplicating(tmp_path):
     clock = Clock()
     runtime, shadow = await start(tmp_path, clock, symbols_config(entry()))
     await enter(runtime, clock, DAY)
-    # A quote far older than the fill model tolerates: the EOD order is submitted (the
-    # context claims freshness) but cannot be filled, leaving it pending.
-    old = ctx("SPY", EOD - timedelta(minutes=30), 5)
-    pending = dataclasses.replace(old, as_of=EOD, freshness=ctx("SPY", EOD, 5).freshness)
-    clock.value = EOD
-    await runtime.lifecycle.process({"SPY": pending})
-    (eod_order,) = orders(shadow, OrderPurpose.EOD_CLOSE)
-    assert eod_order.is_open and "SPY" in shadow.account.state.positions
+    pending = await legacy_pending_eod(shadow, EOD)
     await runtime.stop()
 
     clock.value = EOD + timedelta(minutes=1)
     restarted, shadow2 = await start(tmp_path, clock, symbols_config(entry()))
     try:
+        # The startup tick found the half-finished liquidation, could not observe a quote,
+        # retired the order and put the stop back before any entry could be accepted.
         (recovered,) = orders(shadow2, OrderPurpose.EOD_CLOSE)
-        assert recovered.broker_order_id == eod_order.broker_order_id and recovered.is_open
+        assert recovered.broker_order_id == pending.broker_order_id and not recovered.is_open
         assert "SPY" in shadow2.account.state.positions
+        (resting,) = open_orders(shadow2)
+        assert resting.purpose is OrderPurpose.PROTECTIVE_STOP
+        invariants(shadow2)
         await at(restarted, clock, EOD + timedelta(minutes=2), 6)
         assert "SPY" not in shadow2.account.state.positions
-        (final,) = orders(shadow2, OrderPurpose.EOD_CLOSE)  # still exactly one EOD order
-        assert final.filled_quantity == final.quantity
+        assert len(orders(shadow2, OrderPurpose.EOD_CLOSE)) == 2  # one dead, one filled
         assert open_orders(shadow2) == []
+        invariants(shadow2)
+    finally:
+        await restarted.stop()
+
+
+async def test_partial_eod_fill_keeps_residual_protected_then_completes(tmp_path):
+    clock = Clock()
+    runtime, shadow = await start(tmp_path, clock, symbols_config(entry()))
+    try:
+        await enter(runtime, clock, DAY)
+        quantity = shadow.account.state.positions["SPY"].quantity
+        clock.value = EOD
+        result = await runtime.lifecycle.process({"SPY": sized(ctx("SPY", EOD, 5), "10")})
+        actions = result[SCENARIO]
+        assert any(a.startswith("EOD_REMAINDER_CANCELED:") for a in actions)
+        assert any(a.startswith("PROTECTION_RESTORED:") for a in actions)
+        residual = shadow.account.state.positions["SPY"]
+        assert residual.quantity == quantity - D("10")
+        (eod_order,) = orders(shadow, OrderPurpose.EOD_CLOSE)
+        assert not eod_order.is_open and eod_order.filled_quantity == D("10")
+        # Exactly one resting order: a protective stop sized to the residual, not the
+        # original position.
+        (resting,) = open_orders(shadow)
+        assert resting.purpose is OrderPurpose.PROTECTIVE_STOP
+        assert resting.remaining == residual.quantity
+        invariants(shadow)
+
+        # Inside the retry interval nothing new is submitted; the residual stays covered.
+        await at(runtime, clock, EOD + timedelta(seconds=30), 6)
+        assert len(orders(shadow, OrderPurpose.EOD_CLOSE)) == 1
+        invariants(shadow)
+
+        # The next attempt closes exactly what is still held.
+        await at(runtime, clock, EOD + timedelta(seconds=61), 7)
+        assert "SPY" not in shadow.account.state.positions
+        assert [o.quantity for o in orders(shadow, OrderPurpose.EOD_CLOSE)][-1] == residual.quantity
+        assert open_orders(shadow) == []
+        invariants(shadow)
+    finally:
+        await runtime.stop()
+
+
+async def test_stop_first_after_partial_eod_fill_exits_only_the_residual(tmp_path):
+    clock = Clock()
+    runtime, shadow = await start(tmp_path, clock, symbols_config(entry()))
+    try:
+        await enter(runtime, clock, DAY)
+        quantity = shadow.account.state.positions["SPY"].quantity
+        clock.value = EOD
+        await runtime.lifecycle.process({"SPY": sized(ctx("SPY", EOD, 5), "10")})
+        actions = await at(runtime, clock, EOD + timedelta(seconds=61), 6, bid="90", ask="90.1")
+        assert "STOP_EXIT" in actions
+        assert "SPY" not in shadow.account.state.positions
+        assert len(orders(shadow, OrderPurpose.EOD_CLOSE)) == 1  # no second EOD order
+        exited = sum(f.quantity for f in shadow.account.state.fills.values() if f.side.is_exit)
+        assert exited == quantity
+        assert open_orders(shadow) == []
+        invariants(shadow)
+    finally:
+        await runtime.stop()
+
+
+async def test_pending_eod_within_latency_then_unfilled_restores_the_stop(tmp_path):
+    clock = Clock()
+    runtime, shadow = await start(
+        tmp_path, clock, symbols_config(entry()),
+        fill_assumptions=FillAssumptions(latency=timedelta(seconds=30)),
+    )
+    try:
+        # Entry also needs a quote after its own latency, so give it one more bar.
+        clock.value = DAY
+        for version in range(1, 6):
+            clock.value += timedelta(minutes=1)
+            await runtime.lifecycle.process({"SPY": ctx("SPY", clock.value, version)})
+        assert "SPY" in shadow.account.state.positions
+        position = shadow.account.state.positions["SPY"]
+        await at(runtime, clock, EOD, 6)
+        (eod_order,) = orders(shadow, OrderPurpose.EOD_CLOSE)
+        assert eod_order.is_open  # inside its latency window the order may legitimately rest
+        invariants(shadow)
+        # Past the window with no quote that post-dates the order: cancel, protect again.
+        late = ctx("SPY", EOD + timedelta(seconds=31), 7)
+        old_quote = dataclasses.replace(late.latest_quote, provider_ts=EOD, receive_ts=EOD)
+        clock.value = EOD + timedelta(seconds=31)
+        result = await runtime.lifecycle.process(
+            {"SPY": dataclasses.replace(late, latest_quote=old_quote)}
+        )
+        actions = result[SCENARIO]
+        assert any(a.startswith("EOD_REMAINDER_CANCELED:") for a in actions)
+        assert "SPY" in shadow.account.state.positions
+        (resting,) = open_orders(shadow)
+        assert resting.purpose is OrderPurpose.PROTECTIVE_STOP
+        assert resting.remaining == position.quantity
+        invariants(shadow)
+    finally:
+        await runtime.stop()
+
+
+async def test_missed_eod_next_session_restores_coverage_before_anything_else(tmp_path):
+    clock = Clock()
+    runtime, shadow = await start(tmp_path, clock, symbols_config(entry(fire_at=3, every=1)))
+    await enter(runtime, clock, DAY)
+    held = shadow.account.state.positions["SPY"]
+    stale = await legacy_pending_eod(shadow, EOD)  # liquidation missed; stop left cancelled
+    await runtime.stop()
+
+    next_open = datetime(2026, 10, 9, 14, 0, tzinfo=UTC)  # 10:00 ET next session
+    clock.value = next_open
+    restarted, shadow2 = await start(tmp_path, clock, symbols_config(entry(fire_at=3, every=1)))
+    try:
+        # Startup is not blocked by the drifted ledger, and the startup tick (no candle)
+        # already retired the dead DAY order and put the cancelled stop back before entries
+        # could open.
+        assert restarted.lifecycle.verify_startup().clean
+        position = shadow2.account.state.positions["SPY"]
+        assert position.quantity == held.quantity
+        assert not shadow2.account.state.orders[stale.broker_order_id].is_open
+        (resting,) = open_orders(shadow2)
+        assert resting.purpose is OrderPurpose.PROTECTIVE_STOP
+        assert resting.remaining == position.quantity
+        # The BUY signal fires on every bar of the new session; the held symbol opens nothing
+        # and the stop is not duplicated.
+        actions = await at(restarted, clock, next_open + timedelta(minutes=1), 8)
+        assert not any(a.startswith("ENTRY:") for a in actions)
+        (resting,) = open_orders(shadow2)
+        assert resting.purpose is OrderPurpose.PROTECTIVE_STOP
+        invariants(shadow2)
+        # The restored stop is live: a drop through it exits exactly the held quantity.
+        crash = await at(restarted, clock, next_open + timedelta(minutes=2), 9, bid="90", ask="90.1")
+        assert "STOP_EXIT" in crash
+        assert "SPY" not in shadow2.account.state.positions
+        invariants(shadow2)
     finally:
         await restarted.stop()
 

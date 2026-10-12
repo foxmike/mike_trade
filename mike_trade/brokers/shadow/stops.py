@@ -169,7 +169,10 @@ class ShadowStopSimulator:
                                 previous.entry_reference if previous is not None else reference, order_id, at,
                                 stepped_state=step_state, provenance="shadow_fill",
                                 direction=direction)
-        if order_id is None:
+        previous_order = None if order_id is None else self.account.state.orders.get(order_id)
+        if order_id is None or previous_order is None or not previous_order.is_open:
+            # No resting stop (first arm, or the previous one was cancelled for an exit
+            # that did not complete): restore coverage with a fresh stop order.
             order_id = await self._submit_stop(state, at)
             state = replace(state, order_id=order_id)
         else:
@@ -281,6 +284,12 @@ class ShadowStopSimulator:
         state = self._states.get(cycle_id)
         if state is not None and state.status not in {"CANCELED", "TRIGGERED"}:
             await self._cancel_for_exit(state, at)
+
+    async def close_cycle(self, cycle_id: str, *, at: datetime) -> None:
+        """Retire protection whose position has been closed by another path."""
+        state = self._states.get(cycle_id)
+        if state is not None and state.status not in {"CANCELED", "TRIGGERED"}:
+            await self._cancel_for_exit(state, at, reason="POSITION_CLOSED")
 
     async def submit_discretionary_exit(self, intent: OrderIntent):
         """Cancel protection and submit the ordinary exit as one coordinated operation."""
