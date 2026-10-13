@@ -235,6 +235,53 @@ async def test_fills_positions_and_status_flow_through_the_port():
     assert await env.sim.list_fills(at(9, 40)) == ()
 
 
+@pytest.mark.parametrize(
+    ("open_price", "slippage_bps", "required_stop", "expected_fill"),
+    [
+        ("307.15", "5", "307.35", "307.3036"),
+        ("404.44", "5", "404.67", "404.6423"),
+        ("99.75", "0", "99.75", "99.75"),
+    ],
+)
+async def test_entry_is_rejected_when_prescribed_stop_is_not_below_fill(
+    open_price, slippage_bps, required_stop, expected_fill
+):
+    env = Env(
+        [bar((9, 31), open_price, open_price, open_price, open_price)],
+        slippage_bps=D(slippage_bps),
+    )
+    order = await env.buy(10)
+    env.sim.require_entry_protection_below(order.broker_order_id, D(required_stop))
+
+    assert env.go(9, 32) == ()
+    rejected = await env.sim.get_order(order.broker_order_id)
+    assert rejected is not None and rejected.status is BrokerOrderStatus.REJECTED
+    assert env.sim.held_quantity("AAA") == D("0")
+    assert env.sim.executions == ()
+    assert env.sim.entry_protection_rejections == (
+        {
+            "time": at(9, 31),
+            "order_id": order.broker_order_id,
+            "symbol": "AAA",
+            "entry_price": D(expected_fill),
+            "initial_stop_price": D(required_stop),
+            "reason": "ENTRY_REJECTED_PROTECTIVE_STOP_NOT_BELOW_FILL",
+        },
+    )
+
+
+async def test_entry_protection_constraint_allows_fill_strictly_above_stop():
+    env = Env(flat((9, 30), 3, "100"))
+    env.go(9, 30)
+    order = await env.buy(10)
+    env.sim.require_entry_protection_below(order.broker_order_id, D("99.75"))
+
+    (fill,) = env.go(9, 31)
+    assert fill.price == D("100")
+    assert env.sim.held_quantity("AAA") == D("10")
+    assert env.sim.entry_protection_rejections == ()
+
+
 # ----------------------------------------------------------------------- capability
 
 

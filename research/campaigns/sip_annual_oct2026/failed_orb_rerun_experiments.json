@@ -1,0 +1,148 @@
+{
+  "campaign": "sip_annual_oct2026_failed_orb_corrective_rerun",
+  "source_batch": "research/results/sip_annual_oct2026/development-20261012T230002Z-981668",
+  "original_job_indices": [
+    0,
+    2,
+    96,
+    98
+  ],
+  "experiments": [
+    {
+      "symbol": "IBM",
+      "strategy": "michelle_orb",
+      "start": "2025-10-09T00:00:00Z",
+      "end": "2026-09-21T04:00:00Z",
+      "seed": 271828,
+      "dataset_id": "alpaca-sip-IBM-1m-raw-c9392eccb3fc9519da67",
+      "feed": "sip",
+      "parameters": null,
+      "starting_capital": "10000",
+      "execution": {
+        "slippage_bps": "5",
+        "fee_per_order": "0",
+        "fee_per_share": "0",
+        "fee_bps": "0"
+      },
+      "buy_strategies": [
+        "five_minute_orb_michelle_buy"
+      ],
+      "sell_strategies": [
+        "five_minute_orb_michelle_sell"
+      ],
+      "short_strategies": null,
+      "cover_strategies": null,
+      "short_selling_enabled": false,
+      "short_borrow_bps_per_day": "0",
+      "protective_stop": null,
+      "end_of_day_close": {
+        "enabled": true,
+        "at": "15:55"
+      },
+      "max_entry_cycles_per_session": 10
+    },
+    {
+      "symbol": "IBM",
+      "strategy": "michelle_combined",
+      "start": "2025-10-09T00:00:00Z",
+      "end": "2026-09-21T04:00:00Z",
+      "seed": 271828,
+      "dataset_id": "alpaca-sip-IBM-1m-raw-c9392eccb3fc9519da67",
+      "feed": "sip",
+      "parameters": null,
+      "starting_capital": "10000",
+      "execution": {
+        "slippage_bps": "5",
+        "fee_per_order": "0",
+        "fee_per_share": "0",
+        "fee_bps": "0"
+      },
+      "buy_strategies": [
+        "five_minute_orb_michelle_buy",
+        "vwap_bounce_break_michelle_buy"
+      ],
+      "sell_strategies": [
+        "five_minute_orb_michelle_sell",
+        "vwap_bounce_break_michelle_sell"
+      ],
+      "short_strategies": null,
+      "cover_strategies": null,
+      "short_selling_enabled": false,
+      "short_borrow_bps_per_day": "0",
+      "protective_stop": null,
+      "end_of_day_close": {
+        "enabled": true,
+        "at": "15:55"
+      },
+      "max_entry_cycles_per_session": 10
+    },
+    {
+      "symbol": "TSLA",
+      "strategy": "michelle_orb",
+      "start": "2025-10-09T00:00:00Z",
+      "end": "2026-09-21T04:00:00Z",
+      "seed": 271828,
+      "dataset_id": "alpaca-sip-TSLA-1m-raw-3e71642eabd5b82ffb24",
+      "feed": "sip",
+      "parameters": null,
+      "starting_capital": "10000",
+      "execution": {
+        "slippage_bps": "5",
+        "fee_per_order": "0",
+        "fee_per_share": "0",
+        "fee_bps": "0"
+      },
+      "buy_strategies": [
+        "five_minute_orb_michelle_buy"
+      ],
+      "sell_strategies": [
+        "five_minute_orb_michelle_sell"
+      ],
+      "short_strategies": null,
+      "cover_strategies": null,
+      "short_selling_enabled": false,
+      "short_borrow_bps_per_day": "0",
+      "protective_stop": null,
+      "end_of_day_close": {
+        "enabled": true,
+        "at": "15:55"
+      },
+      "max_entry_cycles_per_session": 10
+    },
+    {
+      "symbol": "TSLA",
+      "strategy": "michelle_combined",
+      "start": "2025-10-09T00:00:00Z",
+      "end": "2026-09-21T04:00:00Z",
+      "seed": 271828,
+      "dataset_id": "alpaca-sip-TSLA-1m-raw-3e71642eabd5b82ffb24",
+      "feed": "sip",
+      "parameters": null,
+      "starting_capital": "10000",
+      "execution": {
+        "slippage_bps": "5",
+        "fee_per_order": "0",
+        "fee_per_share": "0",
+        "fee_bps": "0"
+      },
+      "buy_strategies": [
+        "five_minute_orb_michelle_buy",
+        "vwap_bounce_break_michelle_buy"
+      ],
+      "sell_strategies": [
+        "five_minute_orb_michelle_sell",
+        "vwap_bounce_break_michelle_sell"
+      ],
+      "short_strategies": null,
+      "cover_strategies": null,
+      "short_selling_enabled": false,
+      "short_borrow_bps_per_day": "0",
+      "protective_stop": null,
+      "end_of_day_close": {
+        "enabled": true,
+        "at": "15:55"
+      },
+      "max_entry_cycles_per_session": 10
+    }
+  ]
+}

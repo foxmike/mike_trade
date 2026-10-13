@@ -924,6 +924,7 @@ class BacktestRunner:
         protections: dict[str, _Protection] = {}
         eod_submitted: set[tuple[str, str]] = set()
         protection_count = 0
+        entry_protection_rejection_cursor = 0
         candles_by_symbol: dict[str, list[Candle]] = defaultdict(list)
         strategy_candles: dict[str, dict[CandleTimeframe, deque[StrategyCandle]]] = defaultdict(
             lambda: {tf: deque(maxlen=request.context_history_bars) for tf in CandleTimeframe}
@@ -1474,6 +1475,31 @@ class BacktestRunner:
                 "intent_id": getattr(intent, "intent_id", None),
                 **facts,
             }
+            if intent.side is OrderSide.BUY and evaluation.strategy_id in MICHELLE_BUY_IDS:
+                sell_ids = {cls.spec.strategy_id for cls in plans[symbol].sells}
+                reference: Decimal | None = None
+                if (
+                    evaluation.strategy_id == "five_minute_orb_michelle_buy"
+                    and "five_minute_orb_michelle_sell" in sell_ids
+                ):
+                    reference = safe_decimal(facts.get("entry_orb_high"))
+                elif (
+                    evaluation.strategy_id == "vwap_bounce_break_michelle_buy"
+                    and "vwap_bounce_break_michelle_sell" in sell_ids
+                ):
+                    reference = safe_decimal(facts.get("entry_vwap"))
+                require_below = getattr(
+                    self.execution, "require_entry_protection_below", None
+                )
+                if (
+                    reference is not None
+                    and reference > Decimal("0.25")
+                    and callable(require_below)
+                ):
+                    require_below(
+                        order.broker_order_id,
+                        _floor_stop(reference - Decimal("0.25")),
+                    )
             if intent.side.is_entry:
                 pending_entry[symbol] = order.broker_order_id
             else:
@@ -1558,6 +1584,34 @@ class BacktestRunner:
             if backtest_monitor is not None:
                 feed_reference(ev.available_at)
             outputs = deque(self.execution.process_event(ev))
+            rejections = getattr(self.execution, "entry_protection_rejections", ())
+            for rejection in rejections[entry_protection_rejection_cursor:]:
+                rejected_meta = order_meta.get(str(rejection["order_id"]), {})
+                record = {
+                    "kind": "ENTRY_REFUSED",
+                    "time": rejection["time"],
+                    "symbol": rejection["symbol"],
+                    "signal_id": rejected_meta.get("signal_id"),
+                    "strategy_id": rejected_meta.get("strategy"),
+                    "side": OrderSide.BUY.value,
+                    "reason": rejection["reason"],
+                    "candidate_entry_price": rejection["entry_price"],
+                    "initial_stop_price": rejection["initial_stop_price"],
+                    "order_id": rejection["order_id"],
+                }
+                decisions.append(record)
+                protection_events.append(
+                    {
+                        "event_type": "ENTRY_REJECTED_PROTECTION_INVALID",
+                        **{key: value for key, value in record.items() if key != "kind"},
+                    }
+                )
+                for intent_row in intents:
+                    if intent_row.get("order_id") == rejection["order_id"]:
+                        intent_row["status"] = "REJECTED"
+                        intent_row["rejection_reason"] = rejection["reason"]
+                        break
+            entry_protection_rejection_cursor = len(rejections)
             suppress_stepped_ratchet: set[str] = set()
             await record_native_stop(ev.symbol)
             while outputs:

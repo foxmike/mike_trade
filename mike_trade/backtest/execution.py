@@ -155,6 +155,7 @@ _BROKER_STATUS = {
     OrderStatus.FILLED: BrokerOrderStatus.FILLED,
     OrderStatus.CANCELED: BrokerOrderStatus.CANCELED,
     OrderStatus.EXPIRED: BrokerOrderStatus.EXPIRED,
+    OrderStatus.REJECTED: BrokerOrderStatus.REJECTED,
 }
 
 
@@ -468,6 +469,8 @@ class HistoricalExecutionSimulator:
         self._last_price: dict[str, Decimal] = {}
         self._used: dict[tuple[object, ...], Decimal] = {}
         self._shadow_fill_ids: set[str] = set()
+        self._entry_protection_stops: dict[str, Decimal] = {}
+        self._entry_protection_rejections: list[Mapping[str, object]] = []
         self._cursor: datetime | None = None
         self._order_seq = 0
         self._exec_seq = 0
@@ -490,6 +493,29 @@ class HistoricalExecutionSimulator:
     def diagnostics(self) -> tuple[tuple[datetime, str, str], ...]:
         """Non-fill decisions as ``(time, broker_order_id or "", reason)``."""
         return tuple(self._diagnostics)
+
+    @property
+    def entry_protection_rejections(self) -> tuple[Mapping[str, object], ...]:
+        """Entries rejected atomically because their required stop was already breached."""
+        return tuple(self._entry_protection_rejections)
+
+    def require_entry_protection_below(
+        self, broker_order_id: str, stop_price: Decimal
+    ) -> None:
+        """Require a long entry fill to remain strictly above its prescribed stop.
+
+        The check occurs against the simulator's adverse-slippage fill price immediately
+        before committing the fill.  This models fail-closed entry admission without looking
+        ahead to a later bar and without ever creating an unprotected simulated position.
+        """
+        order = self._orders.get(broker_order_id)
+        if order is None:
+            raise BrokerRejectedError(f"unknown order {broker_order_id!r}", code="unknown_order")
+        if order.intent.purpose is not OrderPurpose.ENTRY or order.side is not OrderSide.BUY:
+            raise ValueError("entry protection floor requires a long ENTRY order")
+        self._entry_protection_stops[broker_order_id] = _decimal(
+            stop_price, "stop_price", inclusive=False
+        )
 
     def held_quantity(self, symbol: str) -> Decimal:
         held = self._held.get(symbol.upper())
@@ -1200,6 +1226,23 @@ class HistoricalExecutionSimulator:
     ) -> SimulatedExecution | None:
         if price is None:
             self._note(at, o.broker_order_id, "price_non_positive_after_slippage")
+            return None
+        required_stop = self._entry_protection_stops.get(o.broker_order_id)
+        if required_stop is not None and o.side is OrderSide.BUY and price <= required_stop:
+            reason = "ENTRY_REJECTED_PROTECTIVE_STOP_NOT_BELOW_FILL"
+            self._transition(o, OrderStatus.REJECTED)
+            o.updated_at = at
+            self._note(at, o.broker_order_id, reason)
+            self._entry_protection_rejections.append(
+                {
+                    "time": at,
+                    "order_id": o.broker_order_id,
+                    "symbol": o.intent.symbol,
+                    "entry_price": price,
+                    "initial_stop_price": required_stop,
+                    "reason": reason,
+                }
+            )
             return None
         wanted = o.remaining if want is None else want
         if o.side.is_exit:
