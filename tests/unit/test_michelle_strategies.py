@@ -561,3 +561,33 @@ def test_michelle_sell_fixed_to_trailing_is_monotonic_and_full_exit_advisory(
     )
     assert final.is_signal
     assert final.strategy_id.endswith("_michelle_sell")
+
+
+def test_backtest_vwap_stop_follows_specification_at_zero_slippage(tmp_path) -> None:
+    # Default simulator assumptions (zero slippage): initial stop is exactly frozen VWAP - 0.25,
+    # fixed until 0.995 * H > V + 0.25, then max(previous, 0.995 * H), never lower.
+    result, _ = _run_vwap_replay(
+        tmp_path,
+        (
+            bar(27, "100.20", "100.30", "100.10", "100.25"),
+            bar(28, "100.25", "101.20", "100.20", "101.10"),
+            bar(29, "101.10", "101.15", "100.90", "101.00"),
+            bar(30, "101.00", "101.00", "99.00", "99.50"),
+        ),
+    )
+    cycle = result.cycles[0]
+    frozen_vwap = D(str(cycle["position_vwap_at_entry"]))
+    assert cycle["protection_mode"] == "FIXED_THEN_TRAILING"
+    assert D(str(cycle["initial_stop_price"])) == (frozen_vwap - D("0.25")).quantize(
+        D("0.01"), rounding="ROUND_FLOOR"
+    )
+    moves = [
+        D(str(event["new_stop_price"]))
+        for event in result.protection_events
+        if event.get("event_type") == "STOP_MOVED"
+    ]
+    assert moves == sorted(moves) and moves
+    assert moves[-1] == (D("101.20") * D("0.995")).quantize(D("0.01"), rounding="ROUND_FLOOR")
+    exit_fill = next(item for item in result.fills if item["side"] == "SELL")
+    assert exit_fill["exit_reason"] == "PROTECTIVE_STOP"
+    assert exit_fill["price"] == moves[-1]

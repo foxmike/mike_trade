@@ -1100,6 +1100,22 @@ def _stop_distance_fraction(spec: Mapping[str, Any]) -> Any:
     return lambda reference: amount / reference
 
 
+def research_default_execution_assumptions() -> dict[str, Any]:
+    """Implicit research execution costs: none.
+
+    Zero assumed slippage and fees is a research scenario that adds no cost the strategy
+    specifications do not call for; it is not a guarantee of live execution prices. Any
+    slippage or fee must be requested explicitly through an experiment's ``execution`` mapping.
+    """
+    return {
+        "slippage_bps": Decimal("0"),
+        "slippage_ticks": Decimal("0"),
+        "fee_per_order": Decimal("0"),
+        "fee_per_share": Decimal("0"),
+        "fee_bps": Decimal("0"),
+    }
+
+
 def _run_one(
     symbol: str,
     start: datetime,
@@ -1235,12 +1251,7 @@ def _run_one(
         clock=clock,
         seed=seed,
     )
-    assumption_values: dict[str, Any] = {
-        "slippage_bps": Decimal("5"),
-        "fee_per_order": Decimal("0"),
-        "fee_per_share": Decimal("0"),
-        "fee_bps": Decimal("0"),
-    }
+    assumption_values: dict[str, Any] = research_default_execution_assumptions()
     allowed_assumptions = set(ExecutionAssumptions.__dataclass_fields__)
     unexpected = set(execution or {}) - allowed_assumptions
     if unexpected:

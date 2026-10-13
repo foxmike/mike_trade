@@ -1,0 +1,178 @@
+{
+  "campaign": "michelle_zero_slippage_oct2026",
+  "purpose": "Specification-faithful Michelle ORB/VWAP backtests with no assumed slippage or fees. Zero assumed slippage is a research scenario, not a guarantee of live execution prices.",
+  "source_campaign": "sip_annual_oct2026",
+  "source_experiments_sha256": "16319c84f2362829e90f02277496539ca82426edbc0667abacd40aa76a210e4e",
+  "source_holdout_sha256": "15ed81c5e19996debcc01ad926909fd3cb9904898b4d297177f43e569f1de732",
+  "observation_start": "2025-10-09T00:00:00Z",
+  "development_end_exclusive": "2026-09-21T04:00:00Z",
+  "holdout_start": "2026-09-21T04:00:00Z",
+  "holdout_jobs": 0,
+  "experiments": 9,
+  "configurations": [
+    {
+      "name": "michelle_orb",
+      "category": "michelle",
+      "buy": [
+        "five_minute_orb_michelle_buy"
+      ],
+      "sell": [
+        "five_minute_orb_michelle_sell"
+      ],
+      "stop": null,
+      "rationale": "Five-minute opening-range break; fill-specific ORB fixed-to-trailing protection.",
+      "comparison": null
+    },
+    {
+      "name": "michelle_vwap",
+      "category": "michelle",
+      "buy": [
+        "vwap_bounce_break_michelle_buy"
+      ],
+      "sell": [
+        "vwap_bounce_break_michelle_sell"
+      ],
+      "stop": null,
+      "rationale": "Michelle VWAP bounce/break; fill-frozen VWAP fixed-to-trailing protection.",
+      "comparison": null
+    },
+    {
+      "name": "michelle_combined",
+      "category": "michelle",
+      "buy": [
+        "five_minute_orb_michelle_buy",
+        "vwap_bounce_break_michelle_buy"
+      ],
+      "sell": [
+        "five_minute_orb_michelle_sell",
+        "vwap_bounce_break_michelle_sell"
+      ],
+      "stop": null,
+      "rationale": "Independent ORB and VWAP entries; deterministic winner selects its matching stop.",
+      "comparison": null
+    }
+  ],
+  "datasets": {
+    "IBM": {
+      "daily_bars": 278,
+      "daily_dataset_id": "alpaca-sip-IBM-1d-raw-785dca76256688cc8fb6",
+      "daily_first_bar": "2025-09-02T04:00:00+00:00",
+      "daily_last_bar": "2026-10-08T04:00:00+00:00",
+      "daily_sessions_complete": 278,
+      "expected_sessions": 251,
+      "extended_hours_bars": 30512,
+      "first_bar": "2025-10-09T08:00:00+00:00",
+      "full_regular_sessions": 229,
+      "last_bar": "2026-10-08T23:45:00+00:00",
+      "minute_bars": 128012,
+      "minute_dataset_id": "alpaca-sip-IBM-1m-raw-c9392eccb3fc9519da67",
+      "missing_regular_minutes": 30,
+      "missing_sessions": [],
+      "regular_session_bars": 97500,
+      "sessions_with_bars": 251
+    },
+    "NVDA": {
+      "daily_bars": 278,
+      "daily_dataset_id": "alpaca-sip-NVDA-1d-raw-7b7de035a800492e4d05",
+      "daily_first_bar": "2025-09-02T04:00:00+00:00",
+      "daily_last_bar": "2026-10-08T04:00:00+00:00",
+      "daily_sessions_complete": 278,
+      "expected_sessions": 251,
+      "extended_hours_bars": 139931,
+      "first_bar": "2025-10-09T08:00:00+00:00",
+      "full_regular_sessions": 251,
+      "last_bar": "2026-10-08T23:59:00+00:00",
+      "minute_bars": 237461,
+      "minute_dataset_id": "alpaca-sip-NVDA-1m-raw-ecfe1ae8f17df5cd67d7",
+      "missing_regular_minutes": 0,
+      "missing_sessions": [],
+      "regular_session_bars": 97530,
+      "sessions_with_bars": 251
+    },
+    "TSLA": {
+      "daily_bars": 278,
+      "daily_dataset_id": "alpaca-sip-TSLA-1d-raw-d21380d0a40368d0333f",
+      "daily_first_bar": "2025-09-02T04:00:00+00:00",
+      "daily_last_bar": "2026-10-08T04:00:00+00:00",
+      "daily_sessions_complete": 278,
+      "expected_sessions": 251,
+      "extended_hours_bars": 136991,
+      "first_bar": "2025-10-09T08:00:00+00:00",
+      "full_regular_sessions": 251,
+      "last_bar": "2026-10-08T23:59:00+00:00",
+      "minute_bars": 234521,
+      "minute_dataset_id": "alpaca-sip-TSLA-1m-raw-3e71642eabd5b82ffb24",
+      "missing_regular_minutes": 0,
+      "missing_sessions": [],
+      "regular_session_bars": 97530,
+      "sessions_with_bars": 251
+    }
+  },
+  "expected_execution": {
+    "slippage_bps": "0",
+    "slippage_ticks": "0",
+    "fee_per_order": "0",
+    "fee_per_share": "0",
+    "fee_bps": "0"
+  },
+  "intended_changes_from_source": [
+    "execution: slippage_bps 5 -> 0 (all cost assumptions explicit and zero)",
+    "atomic rejection of Michelle entries whose required initial stop is not below the fill (commit ff9634a); the source campaign's four ORB jobs failed on this condition"
+  ],
+  "comparison_contract": {
+    "shared_frame_fields": [
+      "dataset_id",
+      "end",
+      "end_of_day_close",
+      "execution",
+      "feed",
+      "max_entry_cycles_per_session",
+      "seed",
+      "short_borrow_bps_per_day",
+      "short_selling_enabled",
+      "start",
+      "starting_capital",
+      "symbol"
+    ],
+    "strategy_rule_fields": [
+      "strategy",
+      "buy_strategies",
+      "sell_strategies",
+      "short_strategies",
+      "cover_strategies",
+      "parameters",
+      "protective_stop"
+    ],
+    "frame_values": {
+      "end": "2026-09-21T04:00:00Z",
+      "end_of_day_close": {
+        "enabled": true,
+        "at": "15:55"
+      },
+      "execution": {
+        "slippage_bps": "0",
+        "slippage_ticks": "0",
+        "fee_per_order": "0",
+        "fee_per_share": "0",
+        "fee_bps": "0"
+      },
+      "feed": "sip",
+      "max_entry_cycles_per_session": 10,
+      "seed": 271828,
+      "short_borrow_bps_per_day": "0",
+      "short_selling_enabled": false,
+      "start": "2025-10-09T00:00:00Z",
+      "starting_capital": "10000"
+    },
+    "datasets": {
+      "IBM": "alpaca-sip-IBM-1m-raw-c9392eccb3fc9519da67",
+      "NVDA": "alpaca-sip-NVDA-1m-raw-ecfe1ae8f17df5cd67d7",
+      "TSLA": "alpaca-sip-TSLA-1m-raw-3e71642eabd5b82ffb24"
+    },
+    "worker_default": 4,
+    "notes": [
+      "Position sizing, risk limits, next-bar-open fills, STOP_FIRST OHLC ambiguity and the Michelle 11:30 ET entry cutoff are engine/runner behavior at the recorded code revision, not job fields; compare Mike runs at the same revision or declare the delta.",
+      "A mike_* job may differ from a Michelle job only in strategy_rule_fields."
+    ]
+  }
+}
