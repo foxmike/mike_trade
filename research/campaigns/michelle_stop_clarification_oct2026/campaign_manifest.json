@@ -1,0 +1,201 @@
+{
+  "campaign": "michelle_stop_clarification_oct2026",
+  "purpose": "Isolate Michelle's confirmed stop clarification: fill-based $0.25 initial stop, 0.2% trail, activation only above the initial stop. Zero assumed slippage and fees in both scenarios; zero slippage is a research scenario, not a live-price guarantee.",
+  "scenarios": {
+    "OLD": "reference-based $0.25 initial stop (ORB high / fill VWAP), 0.5% trail, activation 0.995*H > reference + $0.25",
+    "NEW": "fill-based $0.25 initial stop (rounded up to tick), 0.2% trail, activation when floor_tick(0.998*H) > initial stop"
+  },
+  "baseline_run": "research/results/michelle_zero_slippage_oct2026/run-20261013T170714Z-3627337",
+  "baseline_experiments_sha256": "87334e6948c331187ae9ddbc53cae1f467fe4a36ea5a66fdc1166ab0b510e95d",
+  "observation_start": "2025-10-09T00:00:00Z",
+  "development_end_exclusive": "2026-09-21T04:00:00Z",
+  "holdout_start": "2026-09-21T04:00:00Z",
+  "holdout_jobs": 0,
+  "experiments": 9,
+  "configurations": [
+    {
+      "name": "michelle_orb",
+      "category": "michelle",
+      "buy": [
+        "five_minute_orb_michelle_buy"
+      ],
+      "sell": [
+        "five_minute_orb_michelle_sell"
+      ],
+      "stop": null,
+      "rationale": "Five-minute opening-range break; fill-specific ORB fixed-to-trailing protection.",
+      "comparison": null
+    },
+    {
+      "name": "michelle_vwap",
+      "category": "michelle",
+      "buy": [
+        "vwap_bounce_break_michelle_buy"
+      ],
+      "sell": [
+        "vwap_bounce_break_michelle_sell"
+      ],
+      "stop": null,
+      "rationale": "Michelle VWAP bounce/break; fill-frozen VWAP fixed-to-trailing protection.",
+      "comparison": null
+    },
+    {
+      "name": "michelle_combined",
+      "category": "michelle",
+      "buy": [
+        "five_minute_orb_michelle_buy",
+        "vwap_bounce_break_michelle_buy"
+      ],
+      "sell": [
+        "five_minute_orb_michelle_sell",
+        "vwap_bounce_break_michelle_sell"
+      ],
+      "stop": null,
+      "rationale": "Independent ORB and VWAP entries; deterministic winner selects its matching stop.",
+      "comparison": null
+    }
+  ],
+  "datasets": {
+    "IBM": {
+      "daily_bars": 278,
+      "daily_dataset_id": "alpaca-sip-IBM-1d-raw-785dca76256688cc8fb6",
+      "daily_first_bar": "2025-09-02T04:00:00+00:00",
+      "daily_last_bar": "2026-10-08T04:00:00+00:00",
+      "daily_sessions_complete": 278,
+      "expected_sessions": 251,
+      "extended_hours_bars": 30512,
+      "first_bar": "2025-10-09T08:00:00+00:00",
+      "full_regular_sessions": 229,
+      "last_bar": "2026-10-08T23:45:00+00:00",
+      "minute_bars": 128012,
+      "minute_dataset_id": "alpaca-sip-IBM-1m-raw-c9392eccb3fc9519da67",
+      "missing_regular_minutes": 30,
+      "missing_sessions": [],
+      "regular_session_bars": 97500,
+      "sessions_with_bars": 251
+    },
+    "NVDA": {
+      "daily_bars": 278,
+      "daily_dataset_id": "alpaca-sip-NVDA-1d-raw-7b7de035a800492e4d05",
+      "daily_first_bar": "2025-09-02T04:00:00+00:00",
+      "daily_last_bar": "2026-10-08T04:00:00+00:00",
+      "daily_sessions_complete": 278,
+      "expected_sessions": 251,
+      "extended_hours_bars": 139931,
+      "first_bar": "2025-10-09T08:00:00+00:00",
+      "full_regular_sessions": 251,
+      "last_bar": "2026-10-08T23:59:00+00:00",
+      "minute_bars": 237461,
+      "minute_dataset_id": "alpaca-sip-NVDA-1m-raw-ecfe1ae8f17df5cd67d7",
+      "missing_regular_minutes": 0,
+      "missing_sessions": [],
+      "regular_session_bars": 97530,
+      "sessions_with_bars": 251
+    },
+    "TSLA": {
+      "daily_bars": 278,
+      "daily_dataset_id": "alpaca-sip-TSLA-1d-raw-d21380d0a40368d0333f",
+      "daily_first_bar": "2025-09-02T04:00:00+00:00",
+      "daily_last_bar": "2026-10-08T04:00:00+00:00",
+      "daily_sessions_complete": 278,
+      "expected_sessions": 251,
+      "extended_hours_bars": 136991,
+      "first_bar": "2025-10-09T08:00:00+00:00",
+      "full_regular_sessions": 251,
+      "last_bar": "2026-10-08T23:59:00+00:00",
+      "minute_bars": 234521,
+      "minute_dataset_id": "alpaca-sip-TSLA-1m-raw-3e71642eabd5b82ffb24",
+      "missing_regular_minutes": 0,
+      "missing_sessions": [],
+      "regular_session_bars": 97530,
+      "sessions_with_bars": 251
+    }
+  },
+  "expected_execution": {
+    "slippage_bps": "0",
+    "slippage_ticks": "0",
+    "fee_per_order": "0",
+    "fee_per_share": "0",
+    "fee_bps": "0"
+  },
+  "intended_differences_from_baseline": [
+    "initial stop = actual BUY fill - $0.25 (was ORB high / fill VWAP - $0.25)",
+    "trailing percent 0.2% (was 0.5%)",
+    "activation when the tick-adjusted candidate strictly exceeds the initial stop (was 0.995*H > reference + $0.25)",
+    "atomic entry rejection now tests the fill-derived stop (no reference-based rejection)"
+  ],
+  "unchanged": [
+    "BUY signals, datasets, window, seed, $10,000 capital, 10 entry cycles per session",
+    "sizing framework: $3,000 per-symbol budget, $30 planned-loss budget, generic 1.5% sizing reference (deliberately untouched)",
+    "EOD liquidation 15:55 ET, NEXT_BAR_OPEN fills, STOP_FIRST ambiguity, gap handling"
+  ],
+  "stop_code_files": [
+    "mike_trade/risk/michelle_stop.py",
+    "mike_trade/backtest/runner.py",
+    "mike_trade/backtest/execution.py",
+    "mike_trade/brokers/shadow/stops.py",
+    "mike_trade/live/executor.py",
+    "mike_trade/live/lifecycle.py",
+    "mike_trade/app.py",
+    "mike_trade/strategies/sell/_michelle_protective.py",
+    "mike_trade/strategies/sell/five_minute_orb_michelle.py",
+    "mike_trade/strategies/sell/vwap_bounce_break_michelle.py",
+    "mike_trade/research/commands.py"
+  ],
+  "comparison_contract": {
+    "shared_frame_fields": [
+      "dataset_id",
+      "end",
+      "end_of_day_close",
+      "execution",
+      "feed",
+      "max_entry_cycles_per_session",
+      "seed",
+      "short_borrow_bps_per_day",
+      "short_selling_enabled",
+      "start",
+      "starting_capital",
+      "symbol"
+    ],
+    "strategy_rule_fields": [
+      "strategy",
+      "buy_strategies",
+      "sell_strategies",
+      "short_strategies",
+      "cover_strategies",
+      "parameters",
+      "protective_stop"
+    ],
+    "frame_values": {
+      "end": "2026-09-21T04:00:00Z",
+      "end_of_day_close": {
+        "enabled": true,
+        "at": "15:55"
+      },
+      "execution": {
+        "slippage_bps": "0",
+        "slippage_ticks": "0",
+        "fee_per_order": "0",
+        "fee_per_share": "0",
+        "fee_bps": "0"
+      },
+      "feed": "sip",
+      "max_entry_cycles_per_session": 10,
+      "seed": 271828,
+      "short_borrow_bps_per_day": "0",
+      "short_selling_enabled": false,
+      "start": "2025-10-09T00:00:00Z",
+      "starting_capital": "10000"
+    },
+    "datasets": {
+      "IBM": "alpaca-sip-IBM-1m-raw-c9392eccb3fc9519da67",
+      "NVDA": "alpaca-sip-NVDA-1m-raw-ecfe1ae8f17df5cd67d7",
+      "TSLA": "alpaca-sip-TSLA-1m-raw-3e71642eabd5b82ffb24"
+    },
+    "worker_default": 4,
+    "notes": [
+      "Position sizing, risk limits, next-bar-open fills, STOP_FIRST OHLC ambiguity and the Michelle 11:30 ET entry cutoff are engine/runner behavior at the recorded code revision, not job fields; compare Mike runs at the same revision or declare the delta.",
+      "A mike_* job may differ from a Michelle job only in strategy_rule_fields."
+    ]
+  }
+}

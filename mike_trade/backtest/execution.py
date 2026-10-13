@@ -70,7 +70,7 @@ Design choices (10):
 
 from __future__ import annotations
 
-from collections.abc import Mapping, Sequence
+from collections.abc import Callable, Mapping, Sequence
 from dataclasses import dataclass, field, replace
 from datetime import datetime, timedelta
 from decimal import ROUND_CEILING, ROUND_DOWN, ROUND_FLOOR, Decimal
@@ -469,7 +469,7 @@ class HistoricalExecutionSimulator:
         self._last_price: dict[str, Decimal] = {}
         self._used: dict[tuple[object, ...], Decimal] = {}
         self._shadow_fill_ids: set[str] = set()
-        self._entry_protection_stops: dict[str, Decimal] = {}
+        self._entry_protection_stops: dict[str, Callable[[Decimal], Decimal | None]] = {}
         self._entry_protection_rejections: list[Mapping[str, object]] = []
         self._cursor: datetime | None = None
         self._order_seq = 0
@@ -502,20 +502,29 @@ class HistoricalExecutionSimulator:
     def require_entry_protection_below(
         self, broker_order_id: str, stop_price: Decimal
     ) -> None:
-        """Require a long entry fill to remain strictly above its prescribed stop.
+        """Require a long entry fill to remain strictly above one fixed, prescribed stop."""
+        stop = _decimal(stop_price, "stop_price", inclusive=False)
+        self.require_entry_protection(broker_order_id, lambda _fill_price: stop)
 
-        The check occurs against the simulator's adverse-slippage fill price immediately
-        before committing the fill.  This models fail-closed entry admission without looking
-        ahead to a later bar and without ever creating an unprotected simulated position.
+    def require_entry_protection(
+        self,
+        broker_order_id: str,
+        stop_for_fill: Callable[[Decimal], Decimal | None],
+    ) -> None:
+        """Require a long entry fill to admit a valid protective stop.
+
+        ``stop_for_fill`` maps the simulator's final (slippage-adjusted) fill price to the
+        protective stop the strategy will install for it, or ``None`` when none exists.  The
+        entry is rejected atomically unless that stop is positive and strictly below the fill.
+        The check happens immediately before the fill is committed, without looking ahead to a
+        later bar, so an unprotectable simulated position is never created.
         """
         order = self._orders.get(broker_order_id)
         if order is None:
             raise BrokerRejectedError(f"unknown order {broker_order_id!r}", code="unknown_order")
         if order.intent.purpose is not OrderPurpose.ENTRY or order.side is not OrderSide.BUY:
             raise ValueError("entry protection floor requires a long ENTRY order")
-        self._entry_protection_stops[broker_order_id] = _decimal(
-            stop_price, "stop_price", inclusive=False
-        )
+        self._entry_protection_stops[broker_order_id] = stop_for_fill
 
     def held_quantity(self, symbol: str) -> Decimal:
         held = self._held.get(symbol.upper())
@@ -1227,8 +1236,13 @@ class HistoricalExecutionSimulator:
         if price is None:
             self._note(at, o.broker_order_id, "price_non_positive_after_slippage")
             return None
-        required_stop = self._entry_protection_stops.get(o.broker_order_id)
-        if required_stop is not None and o.side is OrderSide.BUY and price <= required_stop:
+        stop_for_fill = self._entry_protection_stops.get(o.broker_order_id)
+        required_stop = None if stop_for_fill is None else stop_for_fill(price)
+        if (
+            stop_for_fill is not None
+            and o.side is OrderSide.BUY
+            and (required_stop is None or required_stop <= 0 or price <= required_stop)
+        ):
             reason = "ENTRY_REJECTED_PROTECTIVE_STOP_NOT_BELOW_FILL"
             self._transition(o, OrderStatus.REJECTED)
             o.updated_at = at

@@ -11,12 +11,11 @@ from mike_trade.strategies.base import (
 from mike_trade.strategies.sell._michelle_protective import MichelleProtectiveSell
 
 STRATEGY_ID = "five_minute_orb_michelle_sell"
-STRATEGY_VERSION = "1.0.0"
+STRATEGY_VERSION = "1.1.0"
 STATE_KEYS = (
     "position_cycle_id",
     "position_fill_price",
     "position_fill_time",
-    "position_orb_high",
     "highest_trade_price",
     "active_stop_mode",
     "active_stop_price",
@@ -39,10 +38,16 @@ _SPEC = StrategySpec(
     parameter_schema=ParameterSchema(()),
     persistent_state_keys=STATE_KEYS,
     methodology=(
-        "Protect a managed long initially at ORB_High-$0.25. Track the highest traded "
-        "price H and activate a monotonic 0.5% trail when 0.995*H > ORB_High+$0.25."
+        "Protect a managed long initially at the actual BUY fill price minus $0.25 (rounded up "
+        "to the tick). Track the highest traded price H since the fill and, only once the "
+        "tick-adjusted 0.2% trailing candidate floor(0.998*H) strictly exceeds the initial "
+        "stop, trail it monotonically. The full position closes at the stop or at EOD."
     ),
-    source="Michelle, Five_Minute_ORB_Formatted.docx, approved protective-stop clarification.",
+    source=(
+        "Michelle's confirmed protective-stop clarification (fill-based $0.25 initial stop, "
+        "0.2% trail, activation above the initial stop); supersedes the earlier "
+        "reference-based formulas of the original document."
+    ),
     execution_limitations=(
         "Engine-owned protection precedes the advisory SELL and closes the full position.",
         "PAPER/LIVE require broker-safe stop replacement; unsupported adapters fail closed.",
@@ -59,4 +64,3 @@ _SPEC = StrategySpec(
 
 class FiveMinuteOrbMichelleSell(MichelleProtectiveSell):
     spec = _SPEC
-    reference_state_key = "position_orb_high"

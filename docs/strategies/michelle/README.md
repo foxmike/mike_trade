@@ -26,8 +26,11 @@ continues to apply.
   regular-session D1 bars (14 true ranges with their required prior close).
 - Live entries evaluate ordered trade events and a developing M1 candle. Historical replay uses
   only completed M1 information and submits a market order for the next eligible M1 open.
-- Fixed stops are installed immediately after a positive fill. A Michelle trail uses the highest
-  traded price and never decreases. Engine protection runs before advisory SELL evaluation.
+- Protection is installed immediately after a positive fill and is identical for both strategies:
+  `InitialStop = actual BUY fill - $0.25` (rounded up to the tick), then a **0.2%** trail of the
+  highest traded price since the fill that activates only when the tick-adjusted candidate strictly
+  exceeds the initial stop (Michelle's confirmed clarification; see the two SELL specifications).
+  The stop never decreases. Engine protection runs before advisory SELL evaluation.
 - Existing configurable EOD liquidation remains authoritative.
 
 ## Deterministic engineering decisions
@@ -39,6 +42,9 @@ continues to apply.
   are inclusive. Zero-range hammers do not qualify.
 - Historical same-bar stop/trail ordering is conservative: a stop ratcheted from a completed bar's
   high becomes effective after that bar, so its low cannot retrospectively trigger the tighter stop.
+  A gap through the stop fills at the gapped open; the stop is a level, not a guaranteed price.
+- The ORB BUY entry gate (risk/share `<= 1%` against `ORB_High - $0.25`) is an entry qualification
+  rule and is unchanged; it no longer describes the installed stop, which derives from the fill.
 - PAPER/LIVE are not enabled for this new transition unless the active broker adapter can preserve
   broker-native protection through safe replacement. SHADOW and historical replay are supported.
 

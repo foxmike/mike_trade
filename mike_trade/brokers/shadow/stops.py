@@ -28,6 +28,7 @@ from mike_trade.domain.trading import (
     Fill, OrderIntent, OrderPurpose, OrderSide, OrderType, PositionDirection, TimeInForce,
 )
 from mike_trade.market_data.context import QuoteSnapshot, TradeSnapshot
+from mike_trade.risk.fixed_stop import ALPACA_EQUITY_TICK_RULES
 from mike_trade.risk.trailing import (
     DistanceKind,
     SteppedTrailingPolicy,
@@ -240,7 +241,10 @@ class ShadowStopSimulator:
             assert state.policy.trail_percent is not None
             assert state.policy.activation_reference is not None
             distance = state.policy.trail_percent / Decimal(100)
-            candidate = high * (Decimal(1) - distance) if long else high * (Decimal(1) + distance)
+            raw = high * (Decimal(1) - distance) if long else high * (Decimal(1) + distance)
+            # Exchange-valid candidate: a long's stop rounds down, a short's up. Activation needs
+            # this tick-adjusted value to STRICTLY pass the initial stop.
+            candidate = ALPACA_EQUITY_TICK_RULES.floor(raw) if long else ALPACA_EQUITY_TICK_RULES.ceil(raw)
             activated = (
                 candidate > state.policy.activation_reference
                 if long else candidate < state.policy.activation_reference

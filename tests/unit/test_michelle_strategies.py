@@ -522,38 +522,40 @@ def test_vwap_cycle_invalidates_deep_dip_expiry_extension_and_consumption() -> N
 
 
 @pytest.mark.parametrize(
-    ("strategy", "key"),
+    ("strategy", "irrelevant_state"),
     [
-        (FiveMinuteOrbMichelleSell(), "position_orb_high"),
-        (VwapBounceBreakMichelleSell(), "position_vwap_at_entry"),
+        (FiveMinuteOrbMichelleSell(), {"position_orb_high": "1.00"}),
+        (VwapBounceBreakMichelleSell(), {"position_vwap_at_entry": "1.00"}),
     ],
 )
-def test_michelle_sell_fixed_to_trailing_is_monotonic_and_full_exit_advisory(
-    strategy: object, key: str
+def test_michelle_sell_is_fill_based_monotonic_and_full_exit_advisory(
+    strategy: object, irrelevant_state: dict[str, str]
 ) -> None:
+    # Initial stop is fill - $0.25 whatever the ORB high / VWAP says; trail is 0.2% of the high.
     base_state = {
         "position_cycle_id": "cycle-1",
-        "position_fill_price": "100.10",
-        key: "100.00",
+        "position_fill_price": "400.00",
+        **irrelevant_state,
     }
-    quiet = context([bar(10, "100.1", "100.70", "99.80", "100.2")])
+    quiet = context([bar(10, "400.00", "400.30", "399.80", "400.10")])
     first = strategy.evaluate(quiet, {}, base_state)  # type: ignore[attr-defined]
     assert not first.is_signal
     assert first.state_updates["active_stop_mode"] == "FIXED"
-    assert first.state_updates["active_stop_price"] == "99.75"
+    assert first.state_updates["active_stop_price"] == "399.75"  # candidate 399.49 < initial
 
-    activation = context([bar(11, "100.3", "100.76", "100.30", "100.5")])
+    activation = context([bar(11, "400.30", "401.00", "400.30", "400.80")])
     second_state = {**base_state, **first.state_updates}
     second = strategy.evaluate(activation, {}, second_state)  # type: ignore[attr-defined]
     assert second.state_updates["active_stop_mode"] == "TRAILING"
-    assert D(str(second.state_updates["active_stop_price"])) == D("100.25620")
+    assert D(str(second.state_updates["active_stop_price"])) == D("400.19")  # 401.198 -> 400.19
 
-    pullback = context([bar(12, "100.5", "100.60", "100.30", "100.4")])
+    pullback = context([bar(12, "400.40", "400.50", "400.30", "400.40")])
     third_state = {**second_state, **second.state_updates}
     third = strategy.evaluate(pullback, {}, third_state)  # type: ignore[attr-defined]
     assert third.state_updates["active_stop_price"] == second.state_updates["active_stop_price"]
+    assert third.state_updates["active_stop_mode"] == "TRAILING"  # never returns to fixed
 
-    trigger = context([bar(13, "100.3", "100.40", "100.20", "100.25")])
+    trigger = context([bar(13, "400.30", "400.40", "400.10", "400.25")])
     final = strategy.evaluate(
         trigger,
         {},
@@ -563,9 +565,27 @@ def test_michelle_sell_fixed_to_trailing_is_monotonic_and_full_exit_advisory(
     assert final.strategy_id.endswith("_michelle_sell")
 
 
-def test_backtest_vwap_stop_follows_specification_at_zero_slippage(tmp_path) -> None:
-    # Default simulator assumptions (zero slippage): initial stop is exactly frozen VWAP - 0.25,
-    # fixed until 0.995 * H > V + 0.25, then max(previous, 0.995 * H), never lower.
+def test_michelle_sell_versions_and_methodology_describe_the_fill_based_rule() -> None:
+    for strategy in (FiveMinuteOrbMichelleSell, VwapBounceBreakMichelleSell):
+        spec = strategy.spec
+        assert spec.version == "1.1.0"
+        assert "0.2%" in spec.methodology and "fill" in spec.methodology
+        assert "0.995" not in spec.methodology and "0.5%" not in spec.methodology
+
+
+def _michelle_cycle_and_events(result):  # noqa: ANN001, ANN202
+    cycle = result.cycles[0]
+    moves = [
+        D(str(event["new_stop_price"]))
+        for event in result.protection_events
+        if event.get("event_type") == "STOP_MOVED"
+    ]
+    return cycle, moves
+
+
+def test_backtest_vwap_stop_is_fill_based_with_a_two_tenths_percent_trail(tmp_path) -> None:
+    # Default simulator assumptions (zero slippage): the BUY fills at the next open, 100.20.
+    # Initial stop = fill - 0.25 = 99.95 -- not VWAP - 0.25 (VWAP is ~99.9).
     result, _ = _run_vwap_replay(
         tmp_path,
         (
@@ -575,19 +595,70 @@ def test_backtest_vwap_stop_follows_specification_at_zero_slippage(tmp_path) -> 
             bar(30, "101.00", "101.00", "99.00", "99.50"),
         ),
     )
-    cycle = result.cycles[0]
-    frozen_vwap = D(str(cycle["position_vwap_at_entry"]))
-    assert cycle["protection_mode"] == "FIXED_THEN_TRAILING"
-    assert D(str(cycle["initial_stop_price"])) == (frozen_vwap - D("0.25")).quantize(
-        D("0.01"), rounding="ROUND_FLOOR"
-    )
-    moves = [
-        D(str(event["new_stop_price"]))
-        for event in result.protection_events
-        if event.get("event_type") == "STOP_MOVED"
-    ]
-    assert moves == sorted(moves) and moves
-    assert moves[-1] == (D("101.20") * D("0.995")).quantize(D("0.01"), rounding="ROUND_FLOOR")
+    entry = next(item for item in result.fills if item["side"] == "BUY")
     exit_fill = next(item for item in result.fills if item["side"] == "SELL")
+    cycle, moves = _michelle_cycle_and_events(result)
+    assert entry["price"] == D("100.20")  # zero slippage and fees: fill == bar open
+    assert entry["fee"] == D("0")
+    assert cycle["protection_mode"] == "FIXED_THEN_TRAILING"
+    assert D(str(cycle["initial_stop_price"])) == D("99.95")
+    assert D(str(cycle["initial_stop_price"])) != (
+        D(str(cycle["position_vwap_at_entry"])) - D("0.25")
+    ).quantize(D("0.01"), rounding="ROUND_FLOOR")
+    # entry-bar high 100.30 -> floor(100.0994) = 100.09 > 99.95; bar 28 high 101.20 -> 100.99.
+    # bar 29's 100.9477 -> 100.94 must not lower it.
+    assert moves == [D("100.09"), D("100.99")]
     assert exit_fill["exit_reason"] == "PROTECTIVE_STOP"
-    assert exit_fill["price"] == moves[-1]
+    assert exit_fill["price"] == D("100.99")
+    assert exit_fill["quantity"] == entry["quantity"]  # the entire position
+
+
+def test_backtest_trail_is_not_half_a_percent(tmp_path) -> None:
+    result, _ = _run_vwap_replay(
+        tmp_path,
+        (
+            bar(27, "100.20", "100.30", "100.10", "100.25"),
+            bar(28, "100.25", "104.00", "100.20", "103.90"),
+            bar(29, "103.90", "103.95", "103.50", "103.60"),
+        ),
+    )
+    _, moves = _michelle_cycle_and_events(result)
+    assert moves[-1] == D("103.79")  # floor(0.998 * 104.00); 0.5% would be 103.48
+
+
+def test_backtest_gap_through_initial_stop_fills_at_the_gapped_open(tmp_path) -> None:
+    result, _ = _run_vwap_replay(
+        tmp_path,
+        (
+            bar(27, "100.20", "100.30", "100.10", "100.25"),
+            bar(28, "99.00", "99.50", "98.80", "99.20"),
+        ),
+    )
+    cycle, _ = _michelle_cycle_and_events(result)
+    exit_fill = next(item for item in result.fills if item["side"] == "SELL")
+    assert D(str(cycle["initial_stop_price"])) == D("99.95")
+    assert exit_fill["exit_reason"] == "PROTECTIVE_STOP"
+    assert exit_fill["price"] == D("99.00")  # worse than the stop level: gaps are not guaranteed
+
+
+def test_backtest_entry_formerly_rejected_by_reference_stop_is_now_accepted(tmp_path) -> None:
+    # The old rule required fill > VWAP - 0.25. A next open of 99.55 (below that level) used to
+    # be rejected atomically; the stop now derives from the fill (99.30) so the entry is valid.
+    result, _ = _run_vwap_replay(
+        tmp_path,
+        (
+            bar(27, "99.55", "99.60", "99.40", "99.50"),
+            bar(28, "99.50", "99.55", "99.45", "99.50"),
+        ),
+    )
+    entry = next(item for item in result.fills if item["side"] == "BUY")
+    assert entry["price"] == D("99.55")
+    cycle, _ = _michelle_cycle_and_events(result)
+    assert D(str(cycle["initial_stop_price"])) == D("99.30")
+    assert not any(
+        event.get("event_type") == "ENTRY_REJECTED_PROTECTION_INVALID"
+        for event in result.protection_events
+    )
+    assert D(cycle["entry_fill_price"]) == D("99.55")
+    # premise: this fill is below the old VWAP-based initial stop level, which used to reject it
+    assert entry["price"] <= D(str(cycle["position_vwap_at_entry"])) - D("0.25")

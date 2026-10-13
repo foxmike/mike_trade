@@ -11,12 +11,11 @@ from mike_trade.strategies.base import (
 from mike_trade.strategies.sell._michelle_protective import MichelleProtectiveSell
 
 STRATEGY_ID = "vwap_bounce_break_michelle_sell"
-STRATEGY_VERSION = "1.0.0"
+STRATEGY_VERSION = "1.1.0"
 STATE_KEYS = (
     "position_cycle_id",
     "position_fill_price",
     "position_fill_time",
-    "position_vwap_at_entry",
     "highest_trade_price",
     "active_stop_mode",
     "active_stop_price",
@@ -39,14 +38,18 @@ _SPEC = StrategySpec(
     parameter_schema=ParameterSchema(()),
     persistent_state_keys=STATE_KEYS,
     methodology=(
-        "Freeze fill-time VWAP V and protect a managed long initially at V-$0.25. "
-        "Track highest traded price H and activate a monotonic 0.5% trail when "
-        "0.995*H > V+$0.25."
+        "Protect a managed long initially at the actual BUY fill price minus $0.25 (rounded up "
+        "to the tick). Track the highest traded price H since the fill and, only once the "
+        "tick-adjusted 0.2% trailing candidate floor(0.998*H) strictly exceeds the initial "
+        "stop, trail it monotonically. The full position closes at the stop or at EOD."
     ),
-    source="Michelle, VWAP_Bounce_Break_Formatted.docx, approved protective-stop clarification.",
+    source=(
+        "Michelle's confirmed protective-stop clarification (fill-based $0.25 initial stop, "
+        "0.2% trail, activation above the initial stop); supersedes the earlier "
+        "reference-based formulas of the original document."
+    ),
     execution_limitations=(
         "Engine-owned protection precedes the advisory SELL and closes the full position.",
-        "Fill-time VWAP is the latest causally available session VWAP captured with the fill.",
         "PAPER/LIVE require broker-safe stop replacement; unsupported adapters fail closed.",
     ),
     reason_codes=(
@@ -61,4 +64,3 @@ _SPEC = StrategySpec(
 
 class VwapBounceBreakMichelleSell(MichelleProtectiveSell):
     spec = _SPEC
-    reference_state_key = "position_vwap_at_entry"

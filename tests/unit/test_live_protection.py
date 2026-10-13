@@ -16,6 +16,7 @@ from tests.support.fake_alpaca import FakeAlpacaExchange, FakeClock
 
 from mike_trade.domain.protection import ProtectionKind, ProtectionPolicy
 from mike_trade.live.executor import floor_to_tick, policy_from_dict, policy_to_dict, ratchet_candidate
+from mike_trade.risk import michelle_stop
 
 
 def db(tmp_path: Path, sql: str, *args):
@@ -28,26 +29,21 @@ def db(tmp_path: Path, sql: str, *args):
 
 # ----------------------------------------------------------------------- pure mechanics
 
-ORB = ProtectionPolicy(
-    ProtectionKind.FIXED_THEN_TRAILING_STOP, trail_percent=D("0.5"),
-    initial_stop_price=D("100.35"), activation_reference=D("100.85"),
-)
+ORB = michelle_stop.policy_for_fill(D("100.65"))  # initial stop 100.40, 0.2% trail
 
 
 @pytest.mark.parametrize(
     ("high", "expected"),
     [
-        ("100.65", None),            # entry price: 0.995*H = 100.147 < reference + 0.25
-        ("100.85", None),
-        ("101.35", None),            # 0.995*101.35 = 100.843 -> NOT above 100.85
-        ("101.36", D("100.8532")),   # 0.995*101.36 = 100.8532 > 100.85: activates
-        ("102", D("101.49")),
-        ("105", D("104.475")),
+        ("100.65", D("100.4487")),   # raw 0.998*H is above the 100.40 initial stop here...
+        ("100.50", None),            # 0.998*100.50 = 100.299 <= 100.40
+        ("100.60", None),            # 100.3988 <= 100.40
+        ("100.61", D("100.40878")),  # raw clears 100.40, but its tick-adjusted 100.40 does not
+        ("102", D("101.796")),
     ],
 )
-def test_michelle_trail_activates_only_when_995_percent_of_the_high_clears_reference_plus_25c(high, expected):
+def test_michelle_trail_candidate_is_two_tenths_of_a_percent_below_the_high(high, expected):
     assert ratchet_candidate(ORB, D("100.65"), D(high)) == expected
-
 
 def test_stepped_policy_candidates_are_a_pure_function_of_the_high_watermark():
     policy = ProtectionPolicy(
@@ -100,7 +96,7 @@ async def settle(times: int = 30) -> None:
         await asyncio.sleep(0)
 
 
-async def test_michelle_orb_entry_is_protected_at_orb_high_minus_25c_then_trails_monotonically(tmp_path):
+async def test_michelle_entry_is_protected_at_fill_minus_25c_then_trails_two_tenths_percent(tmp_path):
     exchange = abc_exchange()
     runtime = await michelle(tmp_path, exchange)
     try:
@@ -108,36 +104,57 @@ async def test_michelle_orb_entry_is_protected_at_orb_high_minus_25c_then_trails
         out = await life.process({"ABC": orb_context(SIGNAL_AT)})
         assert any(a.startswith("FILL:BUY") for a in out["live"]) and "PROTECTED" in out["live"]
         (stop,) = exchange.open_stops("ABC")
-        assert (D(stop["stop_price"]), stop["time_in_force"], D(stop["qty"])) == (D("100.35"), "gtc", D("29"))
+        # fill 100.65 (not the ORB high 100.60): initial stop is exactly fill - $0.25
+        assert (D(stop["stop_price"]), stop["time_in_force"], D(stop["qty"])) == (D("100.40"), "gtc", D("29"))
 
-        # below activation the stop stays fixed
+        # a trade at the fill price is not a new high: the stop stays fixed
+        exchange.clock.advance(seconds=5)
+        life.observe_trade("ABC", D("100.65"), exchange.clock.now())
+        await settle()
+        assert [D(o["stop_price"]) for o in exchange.open_stops("ABC")] == [D("100.40")]
+
+        # 0.998 x 101.20 = 100.9976 -> 100.99 > 100.40: trailing activates via replace
         exchange.clock.advance(seconds=5)
         life.observe_trade("ABC", D("101.20"), exchange.clock.now())
         await settle()
-        assert [D(o["stop_price"]) for o in exchange.open_stops("ABC")] == [D("100.35")]
-
-        # 0.995 x 101.40 = 100.893 > 100.85: the trail activates; the stop moves up via replace
-        exchange.clock.advance(seconds=5)
-        life.observe_trade("ABC", D("101.40"), exchange.clock.now())
-        await settle()
         (tightened,) = exchange.open_stops("ABC")
-        assert D(tightened["stop_price"]) == D("100.89") and tightened["id"] != stop["id"]
+        assert D(tightened["stop_price"]) == D("100.99") and tightened["id"] != stop["id"]
         assert exchange.orders[stop["id"]]["status"] == "replaced"
 
         # a pullback never loosens it; a new high tightens again
         exchange.clock.advance(seconds=5)
         life.observe_trade("ABC", D("100.95"), exchange.clock.now())
         await settle()
-        assert [D(o["stop_price"]) for o in exchange.open_stops("ABC")] == [D("100.89")]
+        assert [D(o["stop_price"]) for o in exchange.open_stops("ABC")] == [D("100.99")]
         exchange.clock.advance(seconds=5)
         life.observe_trade("ABC", D("102.00"), exchange.clock.now())
         await settle()
-        assert [D(o["stop_price"]) for o in exchange.open_stops("ABC")] == [D("101.49")]
+        assert [D(o["stop_price"]) for o in exchange.open_stops("ABC")] == [D("101.79")]
         # exactly one protective order is ever working
         assert len(exchange.open_orders("ABC")) == 1
         ((kind, price, high),) = db(
             tmp_path, "SELECT kind, stop_price, high_water_mark FROM trailing_stop_states")
-        assert (kind, D(price), D(high)) == ("FIXED_THEN_TRAILING_STOP", D("101.49"), D("102.00"))
+        assert (kind, D(price), D(high)) == ("FIXED_THEN_TRAILING_STOP", D("101.79"), D("102.00"))
+    finally:
+        await runtime.stop()
+
+
+async def test_michelle_trail_stays_fixed_when_the_tick_adjusted_candidate_equals_the_initial_stop(tmp_path):
+    exchange = abc_exchange()
+    runtime = await michelle(tmp_path, exchange)
+    try:
+        life = runtime.lifecycle
+        await life.process({"ABC": orb_context(SIGNAL_AT)})
+        (stop,) = exchange.open_stops("ABC")
+        assert D(stop["stop_price"]) == D("100.40")
+        # high 100.65 is the fill; no trade can be both a new high and below the fill, so use the
+        # persisted runtime to exercise the equality boundary: floor(0.998 * 100.60) = 100.39 and
+        # floor(0.998 * 100.61) = 100.40 never exceed the 100.40 initial stop.
+        stops = life.executor.stops[life.ledger.active_cycle("ABC").cycle_id]
+        for high in (D("100.60"), D("100.61")):
+            stops.high = high
+            assert await life.executor.ratchet(stops, high) is False
+        assert [D(o["stop_price"]) for o in exchange.open_stops("ABC")] == [D("100.40")]
     finally:
         await runtime.stop()
 
@@ -152,7 +169,7 @@ async def test_michelle_trailing_stop_fills_at_the_broker_and_the_cycle_closes_f
         life.observe_trade("ABC", D("102"), exchange.clock.now())
         await settle()
         exchange.clock.advance(seconds=5)
-        exchange.set_price("ABC", "101.40")  # through the 101.49 trailing stop
+        exchange.set_price("ABC", "101.40")  # through the 101.79 trailing stop
         assert exchange.position_qty("ABC") == 0
         report = await life.reconciler.reconcile("test")
         assert len(report.applied_fills) == 1 and not report.external_sales
@@ -171,24 +188,24 @@ async def test_restart_resumes_the_michelle_trail_from_the_persisted_high_water_
     life.observe_trade("ABC", D("102"), exchange.clock.now())
     await settle()
     (stop,) = exchange.open_stops("ABC")
-    assert D(stop["stop_price"]) == D("101.49")
+    assert D(stop["stop_price"]) == D("101.79")
     await first.stop()
 
     second = await michelle(tmp_path, exchange)
     try:
         life2 = second.lifecycle
         runtime = life2.executor.stops[life2.ledger.active_cycle("ABC").cycle_id]
-        assert (runtime.stop_price, runtime.high, runtime.order_id) == (D("101.49"), D("102.00"), stop["id"])
+        assert (runtime.stop_price, runtime.high, runtime.order_id) == (D("101.79"), D("102.00"), stop["id"])
         assert [o["id"] for o in exchange.open_stops("ABC")] == [stop["id"]]  # nothing re-placed
         exchange.clock.advance(seconds=5)
         life2.observe_trade("ABC", D("103"), exchange.clock.now())
         await settle()
-        assert [D(o["stop_price"]) for o in exchange.open_stops("ABC")] == [D("102.48")]
+        assert [D(o["stop_price"]) for o in exchange.open_stops("ABC")] == [D("102.79")]
         # a restart must never lower the stop when the new session's first high is lower
         exchange.clock.advance(seconds=5)
         life2.observe_trade("ABC", D("101"), exchange.clock.now())
         await settle()
-        assert [D(o["stop_price"]) for o in exchange.open_stops("ABC")] == [D("102.48")]
+        assert [D(o["stop_price"]) for o in exchange.open_stops("ABC")] == [D("102.79")]
     finally:
         await second.stop()
 
@@ -206,12 +223,12 @@ async def test_an_unconfirmed_replace_leaves_the_previous_stop_working_and_is_re
         await settle()
         # no protection gap, no duplicate: the old stop still protects every share
         assert [o["id"] for o in exchange.open_stops("ABC")] == [stop["id"]]
-        assert D(exchange.open_stops("ABC")[0]["stop_price"]) == D("100.35")
+        assert D(exchange.open_stops("ABC")[0]["stop_price"]) == D("100.40")
         exchange.clock.advance(seconds=5)
         life.observe_trade("ABC", D("102.01"), exchange.clock.now())
         await settle()
         (retried,) = exchange.open_stops("ABC")
-        assert D(retried["stop_price"]) == D("101.49") and len(exchange.open_orders("ABC")) == 1
+        assert D(retried["stop_price"]) == D("101.80") and len(exchange.open_orders("ABC")) == 1
     finally:
         await runtime.stop()
 

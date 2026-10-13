@@ -102,6 +102,7 @@ from mike_trade.persistence.schema import initialize_database, to_db_timestamp
 from mike_trade.persistence.transaction import WriterSession
 from mike_trade.portfolio.budgets import BudgetPolicy
 from mike_trade.portfolio.reservations import ReservationLedger
+from mike_trade.risk import michelle_stop
 from mike_trade.risk.protection import ProtectionCoordinator
 from mike_trade.risk.stop_config import protection_policy_for_entry
 from mike_trade.risk.stop_policy import (
@@ -140,12 +141,10 @@ from mike_trade.signals.decisions import (
 from mike_trade.strategies.base import StrategyEvaluation
 from mike_trade.strategies.michelle_common import (
     MICHELLE_BUY_IDS,
-    current_session_vwap,
     decode_attempts,
     encode_attempts,
     entry_attempt_allowed,
     normalized_attempts,
-    regular_session_bars,
     safe_decimal,
     signal_facts,
 )
@@ -2154,43 +2153,19 @@ class VwapReferenceLifecycle:
         context: MarketContext,
         cycle_id: str,
     ) -> ProtectionPolicy | None:
+        """Fill-based Michelle protection (``risk.michelle_stop``), or ``None`` if not Michelle."""
         collections = self.collections(context.symbol)
         facts = self._michelle_entry_facts(
             scenario, collections, cycle_id, context.symbol
         )
         if facts is None:
             return None
-        sell_ids = {binding.strategy_id for binding in collections.sells}
-        strategy_id = facts.get("entry_strategy_id")
-        reference: Decimal | None = None
-        if (
-            strategy_id == "five_minute_orb_michelle_buy"
-            and "five_minute_orb_michelle_sell" in sell_ids
+        if not michelle_stop.protection_applies(
+            facts.get("entry_strategy_id"), (binding.strategy_id for binding in collections.sells)
         ):
-            reference = safe_decimal(facts.get("entry_orb_high"))
-        elif (
-            strategy_id == "vwap_bounce_break_michelle_buy"
-            and "vwap_bounce_break_michelle_sell" in sell_ids
-        ):
-            if "position_vwap_at_entry" not in facts:
-                bars = regular_session_bars(
-                    context.candles.get(CandleTimeframe.M1, ()), context.session_id
-                )
-                fill_vwap = current_session_vwap(context, bars)
-                if fill_vwap is not None:
-                    facts["position_vwap_at_entry"] = str(fill_vwap)
-            reference = safe_decimal(
-                facts.get("position_vwap_at_entry") or facts.get("entry_vwap")
-            )
-        if reference is None or reference <= Decimal("0.25"):
             return None
-        return ProtectionPolicy(
-            ProtectionKind.FIXED_THEN_TRAILING_STOP,
-            trail_percent=Decimal("0.5"),
-            initial_stop_price=reference - Decimal("0.25"),
-            activation_reference=reference + Decimal("0.25"),
-            require_broker_held=True,
-        )
+        fill = safe_decimal(facts.get("position_fill_price"))
+        return None if fill is None else michelle_stop.policy_for_fill(fill)
 
     async def _arm(
         self,
@@ -2277,11 +2252,6 @@ class VwapReferenceLifecycle:
                 "position_fill_time": position.opened_at.isoformat(),
             }
         )
-        if binding.strategy_id == "five_minute_orb_michelle_sell":
-            if "entry_orb_high" in facts:
-                state["position_orb_high"] = facts["entry_orb_high"]
-        elif "position_vwap_at_entry" in facts:
-            state["position_vwap_at_entry"] = facts["position_vwap_at_entry"]
         stop = scenario.stops.state(position.cycle_id)
         if stop is not None:
             state["highest_trade_price"] = str(stop.high_water_mark)

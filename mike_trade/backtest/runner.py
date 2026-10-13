@@ -59,6 +59,7 @@ from mike_trade.market_data.candles import (
 from mike_trade.market_data.context import ContextFreshness, MarketContext
 from mike_trade.market_data.session_candles import SessionCandleSource
 from mike_trade.market_data.session_reference import SessionReferenceTracker
+from mike_trade.risk import michelle_stop
 from mike_trade.risk.fixed_stop import ALPACA_EQUITY_TICK_RULES
 from mike_trade.risk.stop_config import normalize_stop_spec, protection_policy_for_entry
 from mike_trade.risk.trailing import (
@@ -1020,39 +1021,34 @@ class BacktestRunner:
             order = await self.execution.get_order(order_id)
             return order is not None and order.status not in TERMINAL_ORDER_STATUSES
 
-        def michelle_policy(symbol: str) -> tuple[Mapping[str, Any], ProtectionPolicy] | None:
-            cycle = open_cycles.get(symbol)
+        def michelle_applies(symbol: str, entry_strategy: object) -> bool:
             plan = plans.get(symbol)
-            if cycle is None or plan is None:
+            return plan is not None and michelle_stop.protection_applies(
+                entry_strategy, (cls.spec.strategy_id for cls in plan.sells)
+            )
+
+        def michelle_policy(
+            symbol: str, fill_price: Decimal
+        ) -> tuple[Mapping[str, Any], ProtectionPolicy] | None:
+            """Fill-based Michelle protection for the entry fill that opened this cycle."""
+            cycle = open_cycles.get(symbol)
+            if cycle is None or not michelle_applies(symbol, cycle.get("entry_strategy")):
                 return None
-            sell_ids = {cls.spec.strategy_id for cls in plan.sells}
-            entry_strategy = cycle.get("entry_strategy")
-            reference: Decimal | None = None
-            if (
-                entry_strategy == "five_minute_orb_michelle_buy"
-                and "five_minute_orb_michelle_sell" in sell_ids
-            ):
-                reference = safe_decimal(cycle.get("entry_orb_high"))
-            elif (
-                entry_strategy == "vwap_bounce_break_michelle_buy"
-                and "vwap_bounce_break_michelle_sell" in sell_ids
-            ):
-                reference = safe_decimal(cycle.get("position_vwap_at_entry"))
-            if reference is None or reference <= Decimal("0.25"):
+            policy = michelle_stop.policy_for_fill(fill_price)
+            if policy is None:
                 return None
             spec: Mapping[str, Any] = {"type": "fixed_then_trailing"}
-            return spec, ProtectionPolicy(
-                ProtectionKind.FIXED_THEN_TRAILING_STOP,
-                trail_percent=Decimal("0.5"),
-                initial_stop_price=reference - Decimal("0.25"),
-                activation_reference=reference + Decimal("0.25"),
-                require_broker_held=True,
-            )
+            return spec, policy
 
         async def arm_protection(symbol: str, reference: Decimal) -> _Protection | None:
             """Cover the held quantity with the configured stop (post-fill, GTC)."""
             nonlocal protection_count
-            resolved = michelle_policy(symbol)
+            held = protections.get(symbol)
+            if held is not None and held.policy.kind is ProtectionKind.FIXED_THEN_TRAILING_STOP:
+                # Re-protecting (e.g. an exit lapsed) keeps the policy fixed at the original fill.
+                resolved = ({"type": "fixed_then_trailing"}, held.policy)
+            else:
+                resolved = michelle_policy(symbol, reference)
             active_spec = resolved[0] if resolved is not None else stop_spec
             if active_spec is None or quantities[symbol] <= ZERO:
                 return None
@@ -1180,13 +1176,14 @@ class BacktestRunner:
                 long = protection.direction is PositionDirection.LONG
                 distance = policy.trail_percent / Decimal(100)
                 raw = high * (Decimal(1) - distance) if long else low * (Decimal(1) + distance)
+                candidate = _floor_stop(raw) if long else _ceil_stop(raw)
+                # Activation needs the tick-adjusted candidate to STRICTLY pass the initial stop.
                 if not (
-                    raw > policy.activation_reference
+                    candidate > policy.activation_reference
                     if long
-                    else raw < policy.activation_reference
+                    else candidate < policy.activation_reference
                 ):
                     return False
-                candidate = _floor_stop(raw) if long else _ceil_stop(raw)
                 return (
                     candidate > protection.current_stop
                     if long
@@ -1256,13 +1253,14 @@ class BacktestRunner:
                     if long
                     else favorable * (Decimal(1) + distance)
                 )
-                activated = (
-                    raw_candidate > policy.activation_reference
-                    if long
-                    else raw_candidate < policy.activation_reference
-                )
                 candidate = (
                     _floor_stop(raw_candidate) if long else _ceil_stop(raw_candidate)
+                )
+                # Activation needs the tick-adjusted candidate to STRICTLY pass the initial stop.
+                activated = (
+                    candidate > policy.activation_reference
+                    if long
+                    else candidate < policy.activation_reference
                 )
                 if activated and (
                     candidate > protection.current_stop
@@ -1286,6 +1284,8 @@ class BacktestRunner:
                         "previous_stop_price": previous,
                         "new_stop_price": candidate,
                         "stop_price": candidate,
+                        # the traded high the candidate derives from (audit evidence)
+                        "highest_price": favorable,
                     })
                 return
             if (
@@ -1475,31 +1475,17 @@ class BacktestRunner:
                 "intent_id": getattr(intent, "intent_id", None),
                 **facts,
             }
-            if intent.side is OrderSide.BUY and evaluation.strategy_id in MICHELLE_BUY_IDS:
-                sell_ids = {cls.spec.strategy_id for cls in plans[symbol].sells}
-                reference: Decimal | None = None
-                if (
-                    evaluation.strategy_id == "five_minute_orb_michelle_buy"
-                    and "five_minute_orb_michelle_sell" in sell_ids
-                ):
-                    reference = safe_decimal(facts.get("entry_orb_high"))
-                elif (
-                    evaluation.strategy_id == "vwap_bounce_break_michelle_buy"
-                    and "vwap_bounce_break_michelle_sell" in sell_ids
-                ):
-                    reference = safe_decimal(facts.get("entry_vwap"))
-                require_below = getattr(
-                    self.execution, "require_entry_protection_below", None
+            if (
+                intent.side is OrderSide.BUY
+                and evaluation.strategy_id in MICHELLE_BUY_IDS
+                and michelle_applies(symbol, evaluation.strategy_id)
+                and callable(getattr(self.execution, "require_entry_protection", None))
+            ):
+                # Michelle's stop is derived from the actual fill, so the only way an entry can
+                # be unprotectable is a fill price that admits no valid stop below it.
+                self.execution.require_entry_protection(
+                    order.broker_order_id, michelle_stop.initial_stop
                 )
-                if (
-                    reference is not None
-                    and reference > Decimal("0.25")
-                    and callable(require_below)
-                ):
-                    require_below(
-                        order.broker_order_id,
-                        _floor_stop(reference - Decimal("0.25")),
-                    )
             if intent.side.is_entry:
                 pending_entry[symbol] = order.broker_order_id
             else:
@@ -1695,6 +1681,7 @@ class BacktestRunner:
                             "entry_orb_high": meta.get("entry_orb_high"),
                             "position_vwap_at_entry": meta.get("entry_vwap"),
                             "entry_reference_price": meta.get("entry_reference_price"),
+                            "entry_fill_price": str(x.price),
                             "highest_trade_price": str(x.price),
                             "exit_reason": None,
                             "exit_strategy": None,
@@ -1989,7 +1976,6 @@ class BacktestRunner:
                             "position_cycle_id": str(cycle["cycle_id"]),
                             "position_fill_price": str(costs[symbol] / quantities[symbol]),
                             "position_fill_time": cycle["opened_at"].isoformat(),
-                            "position_orb_high": cycle.get("entry_orb_high", ""),
                             "highest_trade_price": cycle.get("highest_trade_price", ""),
                         })
                     elif cls.spec.strategy_id == "vwap_bounce_break_michelle_sell":
@@ -1997,9 +1983,6 @@ class BacktestRunner:
                             "position_cycle_id": str(cycle["cycle_id"]),
                             "position_fill_price": str(costs[symbol] / quantities[symbol]),
                             "position_fill_time": cycle["opened_at"].isoformat(),
-                            "position_vwap_at_entry": cycle.get(
-                                "position_vwap_at_entry", ""
-                            ),
                             "highest_trade_price": cycle.get("highest_trade_price", ""),
                         })
                     if (

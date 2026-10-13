@@ -28,7 +28,7 @@ from collections import deque
 from collections.abc import Awaitable, Callable, Mapping
 from dataclasses import dataclass, field
 from datetime import datetime, timedelta
-from decimal import ROUND_FLOOR, Decimal
+from decimal import ROUND_CEILING, ROUND_FLOOR, Decimal
 from typing import Any
 
 from mike_trade.domain.errors import BrokerError, BrokerRejectedError
@@ -67,6 +67,7 @@ __all__ = [
     "LiveExecutor",
     "ProtectionFailure",
     "StopRuntime",
+    "ceil_to_tick",
     "floor_to_tick",
     "policy_from_dict",
     "policy_to_dict",
@@ -152,6 +153,12 @@ def policy_from_dict(data: Mapping[str, object]) -> ProtectionPolicy:
     )
 
 
+def ceil_to_tick(price: Decimal, tick: Decimal) -> Decimal:
+    """Round a long stop UP onto the broker's price grid (used only for Michelle's initial stop,
+    so rounding can shrink, never enlarge, the $0.25 initial distance)."""
+    return (price / tick).to_integral_value(rounding=ROUND_CEILING) * tick
+
+
 def floor_to_tick(price: Decimal, tick: Decimal) -> Decimal:
     """Round a long stop DOWN onto the broker's price grid (never tighter than designed)."""
     return (price / tick).to_integral_value(rounding=ROUND_FLOOR) * tick
@@ -178,7 +185,8 @@ def ratchet_candidate(
     if policy.kind is ProtectionKind.FIXED_THEN_TRAILING_STOP:
         assert policy.trail_percent is not None and policy.activation_reference is not None
         candidate = high * (Decimal(1) - policy.trail_percent / Decimal(100))
-        # Michelle: activate only when 0.995 x highest > reference + $0.25.
+        # Michelle: the raw candidate must exceed the initial stop; the caller additionally
+        # requires the tick-adjusted candidate to strictly exceed it (see ``ratchet``).
         return candidate if candidate > policy.activation_reference else None
     if policy.kind is ProtectionKind.STEPPED_TRAILING_STOP:
         activation = policy.activation_gain or ZERO
@@ -487,7 +495,10 @@ class LiveExecutor:
             raise ProtectionFailure("nothing to protect")
         tick = self.gateway.tick_size(cycle.symbol)
         proposed = start_protection(policy, _live_cycle(cycle, self.ledger.scope_id, quantity), entry_price)
-        stop = floor_to_tick(proposed.stop_price, tick)
+        if policy.kind is ProtectionKind.FIXED_THEN_TRAILING_STOP:
+            stop = ceil_to_tick(proposed.stop_price, tick)
+        else:
+            stop = floor_to_tick(proposed.stop_price, tick)
         if stop <= ZERO or stop >= entry_price:
             raise ProtectionFailure(
                 f"initial stop {stop} is not below the entry fill {entry_price}"
@@ -606,6 +617,13 @@ class LiveExecutor:
             return False
         tick = self.gateway.tick_size(runtime.symbol)
         target = floor_to_tick(candidate, tick)
+        if (
+            runtime.policy.kind is ProtectionKind.FIXED_THEN_TRAILING_STOP
+            and runtime.policy.activation_reference is not None
+            and target <= runtime.policy.activation_reference
+        ):
+            self._persist_quietly(runtime)  # tick-adjusted candidate has not passed the initial stop
+            return False
         if target <= runtime.stop_price:
             self._persist_quietly(runtime)
             return False

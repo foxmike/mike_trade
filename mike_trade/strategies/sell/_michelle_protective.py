@@ -1,12 +1,17 @@
-"""Shared fixed-then-trailing SELL evaluator for Michelle strategies."""
+"""Shared fixed-then-trailing SELL evaluator for Michelle strategies.
+
+Fill-based rule (Michelle's confirmed clarification): ``InitialStop = fill - $0.25`` (rounded up
+to the tick), then a 0.2% trail of the highest traded price since the fill, activated only when
+the tick-adjusted candidate strictly exceeds the initial stop. See ``risk.michelle_stop``.
+"""
 
 from __future__ import annotations
 
 from collections.abc import Mapping
-from decimal import Decimal
 from typing import TYPE_CHECKING, ClassVar
 
 from mike_trade.market_data.candles import CandleTimeframe
+from mike_trade.risk import michelle_stop
 from mike_trade.scheduling.calendar import SessionStatus
 from mike_trade.strategies.base import ReasonCode, SellStrategy, StrategyEvaluation, StrategySpec
 from mike_trade.strategies.michelle_common import live_trade, safe_decimal
@@ -19,7 +24,6 @@ class MichelleProtectiveSell(SellStrategy):
     """Advisory mirror of the engine-owned fixed-to-trailing protection state."""
 
     spec: ClassVar[StrategySpec]
-    reference_state_key: ClassVar[str]
 
     def evaluate(
         self,
@@ -33,10 +37,9 @@ class MichelleProtectiveSell(SellStrategy):
             return StrategyEvaluation.no_signal(self.spec, symbol, (ReasonCode.STALE_DATA,))
         if context.session_status is not SessionStatus.REGULAR:
             return StrategyEvaluation.no_signal(self.spec, symbol, (ReasonCode.NOT_ELIGIBLE,))
-        reference = safe_decimal(state.get(self.reference_state_key))
         fill = safe_decimal(state.get("position_fill_price"))
         cycle_id = state.get("position_cycle_id")
-        if reference is None or fill is None or not isinstance(cycle_id, str) or not cycle_id:
+        if fill is None or not isinstance(cycle_id, str) or not cycle_id:
             return StrategyEvaluation.no_signal(self.spec, symbol, (ReasonCode.INSUFFICIENT_DATA,))
         live = live_trade(context)
         if live is not None:
@@ -55,23 +58,19 @@ class MichelleProtectiveSell(SellStrategy):
             event_time = latest.end
             bar_time = latest.start
 
+        initial = michelle_stop.initial_stop(fill)
+        if initial is None:
+            return StrategyEvaluation.no_signal(self.spec, symbol, (ReasonCode.INSUFFICIENT_DATA,))
+        # The highest traded price starts at the fill: earlier market highs are never included.
         prior_high = safe_decimal(state.get("highest_trade_price")) or fill
         high = max(prior_high, favorable)
-        initial = reference - Decimal("0.25")
-        if initial <= Decimal(0):
-            return StrategyEvaluation.no_signal(self.spec, symbol, (ReasonCode.INSUFFICIENT_DATA,))
         prior_stop = safe_decimal(state.get("active_stop_price")) or initial
-        candidate = high * Decimal("0.995")
-        active = state.get("active_stop_mode") == "TRAILING"
-        if candidate > reference + Decimal("0.25"):
-            active = True
-        stop = max(prior_stop, candidate) if active else initial
+        stop = michelle_stop.next_stop(initial, prior_stop, high)
         updates: dict[str, object] = {
             "position_cycle_id": cycle_id,
             "position_fill_price": str(fill),
-            self.reference_state_key: str(reference),
             "highest_trade_price": str(high),
-            "active_stop_mode": "TRAILING" if active else "FIXED",
+            "active_stop_mode": "TRAILING" if stop > initial else "FIXED",
             "active_stop_price": str(stop),
         }
         triggered = current <= stop

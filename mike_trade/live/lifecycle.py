@@ -62,6 +62,7 @@ from mike_trade.live.reconciler import LiveReconciler, ReconcileReport, SymbolSt
 from mike_trade.market_data.candles import CandleTimeframe
 from mike_trade.market_data.context import MarketContext
 from mike_trade.persistence.repositories import EntryControlRepository
+from mike_trade.risk import michelle_stop
 from mike_trade.runtime import EntryGate
 from mike_trade.scheduling import calendar as exchange_calendar
 from mike_trade.signals.decisions import (
@@ -433,11 +434,6 @@ class LiveStrategyLifecycle(VwapReferenceLifecycle):
                 "position_fill_time": (cycle.opened_at or self.clock.now()).isoformat(),
             }
         )
-        if binding.strategy_id == "five_minute_orb_michelle_sell":
-            if "entry_orb_high" in facts:
-                persisted["position_orb_high"] = facts["entry_orb_high"]
-        elif "position_vwap_at_entry" in facts:
-            persisted["position_vwap_at_entry"] = facts["position_vwap_at_entry"]
         runtime = self.executor.stops.get(cycle.cycle_id)
         if runtime is not None:
             persisted["highest_trade_price"] = str(runtime.high)
@@ -664,20 +660,13 @@ class LiveStrategyLifecycle(VwapReferenceLifecycle):
     def _michelle_policy_from_facts(
         self, symbol: str, collections: _Collections, facts: Mapping[str, object]
     ) -> ProtectionPolicy | None:
-        sell_ids = {binding.strategy_id for binding in collections.sells}
-        strategy_id = facts.get("entry_strategy_id")
-        reference: Decimal | None = None
-        if strategy_id == "five_minute_orb_michelle_buy" and "five_minute_orb_michelle_sell" in sell_ids:
-            reference = safe_decimal(facts.get("entry_orb_high"))
-        elif strategy_id == "vwap_bounce_break_michelle_buy" and "vwap_bounce_break_michelle_sell" in sell_ids:
-            reference = safe_decimal(facts.get("position_vwap_at_entry") or facts.get("entry_vwap"))
-        if reference is None or reference <= Decimal("0.25"):
+        """Fill-based Michelle protection from the confirmed BUY fill (``risk.michelle_stop``)."""
+        if not michelle_stop.protection_applies(
+            facts.get("entry_strategy_id"), (binding.strategy_id for binding in collections.sells)
+        ):
             return None
-        return ProtectionPolicy(
-            ProtectionKind.FIXED_THEN_TRAILING_STOP, trail_percent=Decimal("0.5"),
-            initial_stop_price=reference - Decimal("0.25"),
-            activation_reference=reference + Decimal("0.25"), require_broker_held=True,
-        )
+        fill = safe_decimal(facts.get("position_fill_price"))
+        return None if fill is None else michelle_stop.policy_for_fill(fill)
 
     def _policy_for_cycle(self, cycle: PositionCycle) -> ProtectionPolicy | None:
         cached = self._policies.get(cycle.cycle_id)
@@ -690,6 +679,9 @@ class LiveStrategyLifecycle(VwapReferenceLifecycle):
             stored = facts.get("stop_policy")
             if isinstance(stored, Mapping):
                 policy = policy_from_dict(stored)
+                if not michelle_stop.is_current_policy(policy):
+                    # A policy persisted before the fill-based rule: rebuild it from the fill.
+                    policy = self._michelle_policy_from_facts(cycle.symbol, collections, facts)
             else:
                 policy = self._michelle_policy_from_facts(cycle.symbol, collections, facts)
         if policy is None:

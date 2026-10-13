@@ -285,8 +285,10 @@ trailing-stop orders. Fixed and fixed-to-trailing (Michelle) protection needs a 
 rather than trade unprotected.
 
 **Protection.** After the broker reports a fill the engine places a GTC stop for the filled
-quantity. Michelle: ORB high - $0.25 / session VWAP at the BUY fill - $0.25, then a 0.5% trail of
-the highest traded price, active only when `0.995 x high > reference + $0.25`, only ever tightened.
+quantity. Michelle (both strategies, per her confirmed clarification): the initial stop is the
+confirmed BUY fill price - $0.25, rounded **up** to the tick; the trail is 0.2% of the highest
+traded price since the fill (rounded down to the tick) and activates only when that tick-adjusted
+candidate strictly exceeds the initial stop; the stop is only ever tightened.
 A ratchet is a PATCH that is believed only once the broker shows the old order `replaced`; until
 then the old stop is the protection (Alpaca's replace is not atomic and is never claimed to be).
 A discretionary/EOD exit cancels and *confirms* the stop before selling and re-protects if the

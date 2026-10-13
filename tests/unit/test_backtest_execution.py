@@ -42,6 +42,7 @@ from mike_trade.domain.trading import (
     OrderType,
     TimeInForce,
 )
+from mike_trade.risk import michelle_stop
 from mike_trade.scheduling.calendar import NEW_YORK
 
 D = Decimal
@@ -280,6 +281,28 @@ async def test_entry_protection_constraint_allows_fill_strictly_above_stop():
     assert fill.price == D("100")
     assert env.sim.held_quantity("AAA") == D("10")
     assert env.sim.entry_protection_rejections == ()
+
+
+async def test_fill_derived_entry_protection_accepts_a_fill_the_reference_rule_rejected():
+    # IBM 2025-11-10: ORB high 307.60 made the reference stop 307.35, above the 307.15 open.
+    # Michelle's stop now derives from the actual fill (306.90), so that entry is valid.
+    env = Env([bar((9, 31), "307.15", "307.15", "307.15", "307.15")])
+    order = await env.buy(10)
+    env.sim.require_entry_protection(order.broker_order_id, michelle_stop.initial_stop)
+    (fill,) = env.go(9, 32)
+    assert fill.price == D("307.15") and env.sim.held_quantity("AAA") == D("10")
+    assert env.sim.entry_protection_rejections == ()
+
+
+async def test_fill_derived_entry_protection_still_rejects_an_unprotectable_fill_atomically():
+    env = Env([bar((9, 31), "0.25", "0.25", "0.25", "0.25")])
+    order = await env.buy(10)
+    env.sim.require_entry_protection(order.broker_order_id, michelle_stop.initial_stop)
+    assert env.go(9, 32) == ()
+    assert env.sim.held_quantity("AAA") == D("0") and env.sim.executions == ()
+    (rejection,) = env.sim.entry_protection_rejections
+    assert rejection["reason"] == "ENTRY_REJECTED_PROTECTIVE_STOP_NOT_BELOW_FILL"
+    assert rejection["entry_price"] == D("0.25") and rejection["initial_stop_price"] is None
 
 
 # ----------------------------------------------------------------------- capability

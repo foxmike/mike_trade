@@ -28,6 +28,7 @@ from mike_trade.domain.trading import (
 from mike_trade.market_data.context import QuoteSnapshot, TradeSnapshot
 from mike_trade.persistence.schema import initialize_database
 from mike_trade.persistence.transaction import WriterSession
+from mike_trade.risk import michelle_stop
 
 NOW = datetime(2026, 10, 8, 14, 30, tzinfo=UTC)
 SCOPE = AccountScope(AccountEnvironment.SHADOW, "STOP-TEST", "scenario")
@@ -56,7 +57,7 @@ class Harness:
         )
         self.account.update_quote("ABC", D("100"))
 
-    def buy(self, quantity=D("10")):
+    def buy(self, quantity=D("10"), price=D("100")):
         intent = OrderIntent(
             intent_id="entry-1", client_order_id="entry-client-1", account_scope_id=SCOPE.scope_id,
             cycle_id="cycle-1", symbol="ABC", side=OrderSide.BUY, purpose=OrderPurpose.ENTRY,
@@ -65,7 +66,7 @@ class Harness:
         )
         order = run(self.account.submit_order(intent))
         self.account.apply_fill(Fill("entry-fill-1", order.broker_order_id, SCOPE.scope_id,
-                                     "ABC", OrderSide.BUY, quantity, D("100"), D("0"), NOW))
+                                     "ABC", OrderSide.BUY, quantity, price, D("0"), NOW))
 
     def quote(self, bid, sec=0):
         timestamp = NOW + timedelta(seconds=sec)
@@ -104,45 +105,53 @@ def test_continuous_trail_tracks_quote_high_and_stop_never_decreases(tmp_path):
     assert [state.stop_price for state in states] == [D("97"), D("101"), D("101")]
 
 
-def test_michelle_fixed_stop_activates_monotonic_trail_from_trade_high(tmp_path):
+def _trade(price: str, sec: int) -> TradeSnapshot:
+    timestamp = NOW + timedelta(seconds=sec)
+    return TradeSnapshot("ABC", D(price), D("1"), timestamp, timestamp, "sip")
+
+
+def test_michelle_fill_based_stop_activates_only_above_initial_and_ratchets_up(tmp_path):
+    # Spec example: fill 400.00 -> initial 399.75; the entry-time 0.2% candidate (399.20) is lower.
     h = Harness(tmp_path / "michelle-transition.db")
-    h.buy()
-    policy = ProtectionPolicy(
-        ProtectionKind.FIXED_THEN_TRAILING_STOP,
-        trail_percent=D("0.5"),
-        initial_stop_price=D("99.75"),
-        activation_reference=D("100.25"),
-    )
+    h.account.update_quote("ABC", D("400"))
+    h.buy(price=D("400"))
     sim = ShadowStopSimulator(h.account)
+    policy = michelle_stop.policy_for_fill(D("400"))
     armed = run(sim.arm("cycle-1", "ABC", policy, at=NOW))
-    assert armed.stop_price == D("99.75")
+    assert armed.stop_price == D("399.75") and armed.high_water_mark == D("400")
 
-    def trade(price: str, sec: int) -> TradeSnapshot:
-        timestamp = NOW + timedelta(seconds=sec)
-        return TradeSnapshot("ABC", D(price), D("1"), timestamp, timestamp, "sip")
+    def step(price: str, sec: int):
+        return run(sim.evaluate("cycle-1", h.quote(price, sec), at=NOW + timedelta(seconds=sec),
+                                trade=_trade(price, sec)))
 
-    below = run(
-        sim.evaluate(
-            "cycle-1", h.quote("100.70", 1), at=NOW + timedelta(seconds=1),
-            trade=trade("100.75", 1),
-        )
-    )
-    activated = run(
-        sim.evaluate(
-            "cycle-1", h.quote("100.70", 2), at=NOW + timedelta(seconds=2),
-            trade=trade("100.76", 2),
-        )
-    )
-    pullback = run(
-        sim.evaluate(
-            "cycle-1", h.quote("100.70", 3), at=NOW + timedelta(seconds=3),
-            trade=trade("100.60", 3),
-        )
-    )
-    assert below.stop_price == D("99.75")
-    assert activated.high_water_mark == D("100.76")
-    assert activated.stop_price == D("100.25620")
-    assert pullback.stop_price == activated.stop_price
+    fixed_state = step("400.10", 1)       # candidate floor(399.2998)=399.29 < 399.75
+    at_boundary = step("400.50", 2)       # candidate floor(399.699)=399.69 < 399.75
+    activated = step("401.00", 3)         # 400.198 -> 400.19 > 399.75
+    pullback = step("400.60", 4)
+    higher = step("402.00", 5)            # 401.196 -> 401.19
+    assert fixed_state.stop_price == at_boundary.stop_price == D("399.75")
+    assert activated.high_water_mark == D("401.00") and activated.stop_price == D("400.19")
+    assert pullback.stop_price == D("400.19")
+    assert higher.stop_price == D("401.19")
+    # 0.2%, not 0.5%: a 0.5% trail from 402.00 would be 399.99
+    assert higher.stop_price > D("402") * D("0.995")
+
+
+def test_michelle_shadow_stop_equal_to_initial_does_not_activate(tmp_path):
+    # Fill 500.00 -> initial 499.75. floor(0.998 * H) == 499.75 needs H == 500.7515..: use
+    # H = 500.75 -> 499.749 -> 499.74 (below); H = 500.76 -> 499.75848 -> 499.75 (equal, no activation).
+    h = Harness(tmp_path / "michelle-equal.db")
+    h.account.update_quote("ABC", D("500"))
+    h.buy(price=D("500"))
+    sim = ShadowStopSimulator(h.account)
+    armed = run(sim.arm("cycle-1", "ABC", michelle_stop.policy_for_fill(D("500")), at=NOW))
+    assert armed.stop_price == D("499.75")
+    equal = run(sim.evaluate("cycle-1", h.quote("500.76", 1), at=NOW + timedelta(seconds=1),
+                             trade=_trade("500.76", 1)))
+    assert equal.stop_price == D("499.75")
+    above = run(sim.evaluate("cycle-1", h.quote("500.78", 2), at=NOW + timedelta(seconds=2),
+                             trade=_trade("500.78", 2)))
+    assert above.stop_price == D("499.77")  # floor(499.77844) > 499.75
 
 
 def test_stepped_trail_ratchets_at_thresholds_only(tmp_path):

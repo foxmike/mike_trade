@@ -2498,7 +2498,8 @@ independent identifiers; each BUY and SELL can be configured separately:
 
 The [source map and implementation notes](strategies/michelle/README.md) record the document audit,
 approved superseding clarifications, live trade-event timing, deterministic completed-M1 replay,
-shared attempt throttle, fill-aware state, and fixed-to-trailing protective-stop transition. The
+shared attempt throttle, fill-aware state, and the fill-based fixed-to-trailing protective stop
+($0.25 below the actual BUY fill, then a 0.2% trail that activates above the initial stop). The
 classes are registered in operational and research registries. SHADOW and historical replay are
 supported; PAPER/LIVE require an adapter with a verified safe broker-held stop replacement path.
 
