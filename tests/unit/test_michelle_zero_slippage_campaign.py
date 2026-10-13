@@ -179,3 +179,48 @@ def test_future_candidate_must_share_the_frame_and_reports_rule_differences() ->
     candidate[0]["starting_capital"] = "25000"
     errors, _ = validator.compare_candidate(candidate, manifest)
     assert any("execution" in e for e in errors) and any("starting_capital" in e for e in errors)
+
+
+def _load_report():
+    spec = importlib.util.spec_from_file_location(
+        "michelle_zero_report", CAMPAIGN / "report_results.py"
+    )
+    module = importlib.util.module_from_spec(spec)
+    spec.loader.exec_module(module)  # type: ignore[union-attr]
+    return module
+
+
+def test_report_counts_cycleless_entry_rejection_without_hiding_stop_discrepancies() -> None:
+    report = _load_report()
+    helpers = report._source_helpers()
+    rejection = {  # rejected before any fill: there is no cycle, hence no cycle_id
+        "event_type": "ENTRY_REJECTED_PROTECTION_INVALID",
+        "reason": "ENTRY_REJECTED_PROTECTIVE_STOP_NOT_BELOW_FILL",
+        "candidate_entry_price": "449.4853",
+        "initial_stop_price": "449.50",
+        "order_id": "bt-order-000019",
+    }
+    artifact = {
+        "cycles": [{
+            "cycle_id": "c1", "entry_strategy": "vwap_bounce_break_michelle_buy",
+            "protection_mode": "FIXED_THEN_TRAILING", "position_vwap_at_entry": "100.00",
+        }],
+        "protection_events": [
+            rejection,
+            {"cycle_id": "c1", "event_type": "INITIAL_STOP_ESTABLISHED", "stop_price": "99.75",
+             "protection_mode": "FIXED_THEN_TRAILING"},
+            {"cycle_id": "c1", "event_type": "STOP_MOVED", "new_stop_price": "100.25",
+             "protection_mode": "FIXED_THEN_TRAILING"},
+        ],
+    }
+    count, audit = report.audit_artifact(artifact, helpers)
+    assert count == 1 and audit["passed"] and audit["cycles_checked"] == 1
+    assert audit["stop_moves_checked"] == 1
+
+    # A genuine discrepancy is still reported: wrong initial stop, and a stray cycle-less event.
+    artifact["protection_events"][1]["stop_price"] = "99.70"
+    artifact["protection_events"].append({"event_type": "STOP_MOVED", "new_stop_price": "1"})
+    count, audit = report.audit_artifact(artifact, helpers)
+    assert not audit["passed"]
+    assert any("initial stop" in e for e in audit["errors"])
+    assert any("without cycle_id" in e for e in audit["errors"])

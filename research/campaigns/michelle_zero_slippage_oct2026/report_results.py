@@ -36,14 +36,51 @@ def fmt(value: Any, places: int = 2, pct: bool = False) -> str:
 
 
 def load_baseline(path: Path | None) -> dict[tuple[str, str], dict[str, Any]]:
+    """Michelle rows of the original 5 bps batch, keyed by (symbol, configuration).
+
+    Failed rows carry only ``job_index``; their identity comes from the original job list.
+    """
     if path is None or not (path / "batch.json").is_file():
         return {}
     batch = json.loads((path / "batch.json").read_text())
-    return {
-        (row["symbol"], row["strategy"]): row
-        for row in batch.get("jobs", [])
-        if str(row.get("strategy", "")).startswith("michelle_")
-    }
+    source = json.loads((HERE.parent / "sip_annual_oct2026" / "experiments.json").read_text())
+    jobs = source["experiments"]
+    out = {}
+    for row in batch.get("jobs", []):
+        job = jobs[int(row["job_index"])]
+        if job["strategy"].startswith("michelle_"):
+            out[(job["symbol"], job["strategy"])] = {**row, "symbol": job["symbol"],
+                                                    "strategy": job["strategy"]}
+    return out
+
+
+REJECTION_EVENT = "ENTRY_REJECTED_PROTECTION_INVALID"
+REJECTION_REASON = "ENTRY_REJECTED_PROTECTIVE_STOP_NOT_BELOW_FILL"
+
+
+def audit_artifact(artifact: dict[str, Any], helpers) -> tuple[int, dict[str, Any]]:
+    """Count atomic entry rejections and strictly audit every actual trading cycle.
+
+    A rejected entry never fills, so no cycle exists and its event has no ``cycle_id``; it is
+    counted (after checking it really describes an unprotectable entry) and kept out of the
+    per-cycle stop audit.  Any other protection event without a ``cycle_id`` is a genuine
+    discrepancy and fails the audit.
+    """
+    cycle_events, rejections, errors = [], 0, []
+    for event in artifact.get("protection_events", []):
+        if event.get("event_type") == REJECTION_EVENT and "cycle_id" not in event:
+            entry, stop = dec(event.get("candidate_entry_price")), dec(event.get("initial_stop_price"))
+            if event.get("reason") != REJECTION_REASON or entry is None or stop is None or stop < entry:
+                errors.append(f"malformed atomic rejection {event.get('order_id')}: {event}")
+            rejections += 1
+        elif "cycle_id" not in event:
+            errors.append(f"protection event without cycle_id: {event.get('event_type')} {event}")
+        else:
+            cycle_events.append(event)
+    audit = helpers.verify_michelle({**artifact, "protection_events": cycle_events})
+    if errors:
+        audit = {**audit, "errors": [*errors, *audit["errors"]], "passed": False}
+    return rejections, audit
 
 
 def summarize(batch, jobs, manifest, result_dir, baseline, helpers):
@@ -91,11 +128,7 @@ def summarize(batch, jobs, manifest, result_dir, baseline, helpers):
         stop_audit = None
         if artifact_path is not None:
             artifact = json.loads(artifact_path.read_text())
-            refused = sum(
-                e.get("event_type") == "ENTRY_REJECTED_PROTECTION_INVALID"
-                for e in artifact.get("protection_events", [])
-            )
-            stop_audit = helpers.verify_michelle(artifact)
+            refused, stop_audit = audit_artifact(artifact, helpers)
             if not stop_audit["passed"]:
                 problems.append(f"{job['symbol']}/{job['strategy']}: stop audit {stop_audit['errors'][:3]}")
         row.update(
@@ -106,7 +139,9 @@ def summarize(batch, jobs, manifest, result_dir, baseline, helpers):
             max_drawdown=result.get("max_drawdown"), exit_reasons=dict(sorted(reasons.items())),
             atomic_entry_rejections=refused, stop_audit=stop_audit,
         )
-        if base is not None and base.get("status") == "completed":
+        if base is not None and base.get("status") != "completed":
+            row["baseline_5bps"] = {"status": base.get("status"), "error": base.get("error")}
+        elif base is not None:
             row["baseline_5bps"] = {
                 "trades": base.get("trades"), "net_return": base.get("net_return"),
                 "profit_factor": base.get("profit_factor"),
@@ -163,8 +198,9 @@ def markdown(rows, problems, batch, manifest) -> str:
                   "|---|---|---:|---:|---:|"]
         for r in done:
             b = r.get("baseline_5bps")
-            if b is None:
-                lines.append(f"| {r['symbol']} | {r['configuration']} | {r['trades']} / failed or absent | "
+            if b is None or "status" in b:
+                lines.append(f"| {r['symbol']} | {r['configuration']} | {r['trades']} / "
+                             f"{'failed' if b else 'absent'} | "
                              f"{fmt(r['net_pnl'])} / N/A | {fmt(r['profit_factor'])} / N/A |")
             else:
                 lines.append(f"| {r['symbol']} | {r['configuration']} | {r['trades']} / {b['trades']} | "
