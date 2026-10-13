@@ -52,6 +52,9 @@ service:
   timezone: America/New_York
   data_dir: /var/lib/mike_trade
   engine_heartbeat_interval_seconds: 5
+  # Optional. Read-only model repository used by the xgboost_/lightgbm_probability_* strategies
+  # (default research/models). See docs/MODEL_STRATEGIES.md.
+  # model_root: research/models
   dashboard:
     bind_host: 127.0.0.1
     port: 8765

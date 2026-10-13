@@ -1,0 +1,130 @@
+# Model-driven strategies in a SHADOW configuration (schema_version 1).
+#
+# Reference only. It pins models that the example training configurations in config/modeling/
+# produce, but it does not enable trading and no model is assumed to be profitable. Training a
+# model never changes a running deployment: every strategy below names an exact model_id and
+# MAJOR.MINOR.PATCH version, and the runtime refuses to start if that artifact is missing, fails
+# its checksum, belongs to another algorithm/role/feed, or its feature schema cannot be
+# reproduced by the shared feature pipeline. There is no "latest" and no fallback.
+#
+# Probability thresholds are integer basis points (5500 = 55.00%) because strategy parameters
+# are scalar and floats are rejected by the configuration schema.
+#
+# Operator checklist before pointing this at PAPER/LIVE is in docs/MODEL_STRATEGIES.md.
+schema_version: 1
+service:
+  timezone: America/New_York
+  data_dir: state/model-shadow
+  engine_heartbeat_interval_seconds: 5
+  # Read-only root of the immutable model repository written by `make model-train`.
+  model_root: research/models
+market_data:
+  provider: alpaca
+  # The pinned models were trained on IEX; a SIP-trained model requires feed: sip. The runtime
+  # refuses a model whose training feed differs from this value.
+  feed: iex
+  mode: stream
+  max_bar_age_seconds: 90
+  # The shared feature window needs 21 contiguous completed 1-minute bars (plus the reference
+  # series) before any model can predict.
+  warmup_bars: 60
+  timeframes:
+    - 1Min
+execution:
+  broker: alpaca
+  account_mode: shadow
+  live_trading_enabled: false
+  entry_cutoff: "15:30"
+  end_of_day_close:
+    enabled: true
+    at: "15:55"
+  # The Market Status Monitor keeps gating NEW entries (model or not) during market stress.
+  market_status_enabled: true
+risk:
+  total_application_budget: "10000.00"
+  max_open_positions: 3
+  daily_loss_limit: "300.00"
+symbols:
+  AAPL:
+    enabled: true
+    budget: "2500.00"
+    planned_loss_cap: "25.00"
+    min_hold_seconds: 60
+    max_entry_cycles_per_session: 2
+    consecutive_loss_limit: 2
+    # XGBoost entry, LightGBM exit, broker-native trailing stop underneath both.
+    buy_strategies: [aapl_xgb_buy]
+    sell_strategies: [aapl_lgbm_sell]
+    stop_policy:
+      type: native_trailing
+      trail_percent: "1.5"
+  MSFT:
+    enabled: true
+    budget: "2500.00"
+    planned_loss_cap: "25.00"
+    min_hold_seconds: 60
+    max_entry_cycles_per_session: 2
+    consecutive_loss_limit: 2
+    # Both entry models compete in the normal entry arbitration; the technical exit coexists
+    # with the XGBoost exit.
+    buy_strategies: [msft_lgbm_buy, msft_xgb_buy]
+    sell_strategies: [msft_xgb_sell, vwap_breakdown_default]
+    stop_policy:
+      type: stepped_trailing
+      initial_stop_percent: "1.5"
+      step_trigger_percent: "1.0"
+      step_percent: "0.5"
+strategies:
+  aapl_xgb_buy:
+    plugin: xgboost_probability_buy
+    side: buy
+    parameters:
+      model_id: xgboost_buy_tb_pooled
+      model_version: 1.0.0
+      minimum_favorable_probability_bps: 5500
+      maximum_adverse_probability_bps: 2500
+      maximum_prediction_age_seconds: 90
+  aapl_lgbm_sell:
+    plugin: lightgbm_probability_sell
+    side: sell
+    parameters:
+      model_id: lightgbm_sell_continuation_pooled
+      model_version: 1.0.0
+      minimum_exit_probability_bps: 6500
+      minimum_risk_exit_probability_bps: 4500
+  msft_lgbm_buy:
+    plugin: lightgbm_probability_buy
+    side: buy
+    parameters:
+      model_id: lightgbm_buy_tb_pooled
+      model_version: 1.0.0
+      minimum_favorable_probability_bps: 5500
+      use_expected_value: true
+      minimum_expected_value_bps: 5
+  msft_xgb_buy:
+    plugin: xgboost_probability_buy
+    side: buy
+    parameters:
+      model_id: xgboost_buy_tb_pooled
+      model_version: 1.0.0
+      minimum_favorable_probability_bps: 6000
+  msft_xgb_sell:
+    plugin: xgboost_probability_sell
+    side: sell
+    parameters:
+      model_id: xgboost_sell_continuation_pooled
+      model_version: 1.0.0
+      minimum_exit_probability_bps: 6500
+  vwap_breakdown_default:
+    plugin: vwap_breakdown
+    side: sell
+    parameters: {}
+shadow_scenarios:
+  - name: models_baseline
+    starting_cash: "25000.00"
+    enabled: true
+    symbols: [AAPL, MSFT]
+reporting:
+  evidence_dir: evidence
+  evidence_retention_days: 90
+  log_retention_days: 30

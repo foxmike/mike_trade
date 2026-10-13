@@ -430,7 +430,7 @@ def _validate_service(raw: Any, errors: _ErrorList) -> dict[str, Any] | None:
     if node is None:
         return None
     _check_unknown(node, {"timezone", "data_dir", "engine_heartbeat_interval_seconds",
-                           "dashboard"}, "service", errors)
+                           "dashboard", "model_root"}, "service", errors)
     timezone = _req_text(node.get("timezone", _DEFAULTS["service"]["timezone"]),
                          "service.timezone", errors, "service.timezone")
     if timezone is not None:
@@ -481,10 +481,18 @@ def _validate_service(raw: Any, errors: _ErrorList) -> dict[str, Any] | None:
         dashboard = {"bind_host": bind_host, "port": port,
                      "heartbeat_stale_seconds": stale,
                      "heartbeat_offline_seconds": offline}
+    model_root = None
+    if "model_root" in node:
+        model_root = _req_text(node["model_root"], "service.model_root", errors,
+                               "service.model_root")
     if timezone is None or data_dir is None or heartbeat is None or dashboard is None:
         return None
-    return {"timezone": timezone, "data_dir": data_dir,
-            "engine_heartbeat_interval_seconds": heartbeat, "dashboard": dashboard}
+    result: dict[str, Any] = {"timezone": timezone, "data_dir": data_dir,
+                              "engine_heartbeat_interval_seconds": heartbeat,
+                              "dashboard": dashboard}
+    if model_root is not None:
+        result["model_root"] = model_root
+    return result
 
 
 def _validate_market_data(raw: Any, errors: _ErrorList) -> dict[str, Any] | None:

@@ -92,6 +92,18 @@ can gate further operator steps.
 `strategy-enable`, `strategy-disable`, and `strategy-set` mutate
 configuration and need live confirmation on LIVE accounts.
 
+### Model-driven strategies
+
+`xgboost_probability_buy|sell` and `lightgbm_probability_buy|sell` consume models trained with
+`make model-train` (see `docs/MODEL_TRAINING_ARCHITECTURE.md`). Each strategy entry pins an exact
+`model_id` and `model_version` (never `latest`) in its `parameters`; `service.model_root` names the
+read-only repository (default `research/models`). Startup refuses a missing, corrupt, wrong-algorithm,
+wrong-role or wrong-feed artifact. Training never changes a running deployment. Configuration, the
+position features SELL models read, audit records and the checklist are in `docs/MODEL_STRATEGIES.md`;
+a validated SHADOW example is `config/model_strategies.example.yaml`. Research experiments take
+`model_root` (same-feed reference series such as SPY are loaded automatically). The market-status
+monitor, protective stops and entry controls apply to these strategies unchanged.
+
 ## Short selling
 
 Short selling is **opt-in and fail-closed** and is never activated for LIVE

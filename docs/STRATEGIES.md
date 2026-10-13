@@ -63,10 +63,11 @@ Each strategy declares one immutable `StrategySpec` (`mike_trade/strategies/base
 ### 1.3 Parameters
 
 - Each `ParameterSpec` has a `name`, `ParameterKind`
-  (`INT`, `DECIMAL`, `BOOL`, `ENUM`, `TIME_OF_DAY`), an optional `default`,
+  (`INT`, `DECIMAL`, `BOOL`, `ENUM`, `TIME_OF_DAY`, `STRING`), an optional `default`,
   inclusive `min_value`/`max_value` bounds (only for `INT`, `DECIMAL`,
-  `TIME_OF_DAY`), `choices` (required for, and only for, `ENUM`), and a
-  description.
+  `TIME_OF_DAY`), `choices` (required for, and only for, `ENUM`), an optional
+  full-match `pattern` (only for `STRING`, used for identifiers such as pinned model ids
+  and versions), and a description.
 - A parameter with `default=None` is required; otherwise the default is
   applied by `ParameterSchema.validate`.
 - `DECIMAL` parameters accept `Decimal` or `int` only; `float` is rejected
@@ -446,7 +447,9 @@ the next valid crossing.
 - No confidence scores exist: evaluations carry reason codes and (for
   signals) a deterministic signal ID only. There is no confidence field,
   threshold, or weighting in the SDK, specs, strategies, presets, or
-  validation.
+  validation. The model-driven strategies of section 20 keep their probabilities
+  in the model-inference and audit layer (`MarketContext.model_inputs` in, a
+  `model_audit` record out); `StrategyEvaluation` is unchanged.
 
 ## 6. `vwap_reference` configuration contract
 
@@ -2524,3 +2527,45 @@ The engine consults the four roles as follows (`docs/ARCHITECTURE.md`, bidirecti
 5. **Configuration.** A symbol may list `short_strategies` / `cover_strategies` (singular spellings supported);
    BACKTEST/research take `short_strategies`, `cover_strategies`, `short_selling_enabled` and
    `short_borrow_bps_per_day` (`docs/OPERATIONS.md`, "Short selling").
+
+## 20. Model-driven probability strategies (4 implemented)
+
+Four registered identities consume explicitly pinned, previously trained XGBoost or LightGBM artifacts
+produced by the modeling framework (`docs/MODEL_TRAINING_ARCHITECTURE.md`). They are ordinary strategies:
+pure `evaluate(context, params, state)`, SIGNAL or NO_SIGNAL through the unchanged SDK, the same
+collections, arbitration, minimum hold, protective stops and market-status entry gate as every technical
+strategy. The XGBoost and LightGBM identities share one decision core and differ only in the algorithm of the
+artifact they accept.
+
+| Strategy ID | Role | Algorithm | Specification |
+|---|---|---|---|
+| `xgboost_probability_buy` | BUY | XGBoost | [specification](strategies/model/xgboost_probability_buy.md) |
+| `xgboost_probability_sell` | SELL | XGBoost | [specification](strategies/model/xgboost_probability_sell.md) |
+| `lightgbm_probability_buy` | BUY | LightGBM | [specification](strategies/model/lightgbm_probability_buy.md) |
+| `lightgbm_probability_sell` | SELL | LightGBM | [specification](strategies/model/lightgbm_probability_sell.md) |
+
+Prediction objectives (what the numbers mean):
+
+- **BUY.** A triple-barrier classifier over a long entered at the next bar's open: class `1` = take-profit
+  barrier first, `-1` = stop barrier first (ties resolve to loss), `0` = neither within the horizon, after
+  modeled costs. The output is a calibrated *class probability*. A probability above 50% is not positive
+  expected value; an optional, explicitly estimated expected-value test uses the model's own label schema.
+  Regression (forward-return) BUY models compare the predicted net return directly with a threshold.
+- **SELL.** A position-continuation classifier: `-1` = holding would reach the risk barrier, `0` = exiting now
+  beats holding, `1` = holding beats exiting now. Its features include four position features computed from the
+  **actual** entry fill price and time of the real position, with the same formulas training used.
+
+Contract highlights:
+
+1. Strategies never load a model: predictions arrive as immutable data on `MarketContext.model_inputs`,
+   built by the composition root from a startup-loaded, checksum-verified `ModelInferenceService`.
+2. Models are pinned by exact `model_id` and `MAJOR.MINOR.PATCH` version (optionally a SHA-256); there is no
+   `latest`, no auto-promotion and no algorithm, role or feed fallback (IEX and SIP are never mixed).
+3. A missing, stale, future-dated, mismatched or invalid prediction produces a NO_SIGNAL with a reason and
+   never an entry; failures stay inside the one strategy.
+4. A SELL needs a real open long and a prediction bound to that position; it is an ordinary discretionary exit.
+5. Configuration, parameters, audit, mode wiring and limitations: `docs/MODEL_STRATEGIES.md`;
+   a validated example: `config/model_strategies.example.yaml`.
+
+These specifications describe decision rules over a model's output. They make no claim that any model or
+threshold is profitable without historical, out-of-sample evidence.

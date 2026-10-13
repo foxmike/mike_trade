@@ -20,7 +20,7 @@ from datetime import UTC, datetime, time, timedelta
 from decimal import ROUND_DOWN, Decimal
 from pathlib import Path
 from types import SimpleNamespace
-from typing import Any, cast
+from typing import TYPE_CHECKING, Any, cast
 
 from mike_trade.brokers.shadow.account import ShadowAccount
 from mike_trade.brokers.shadow.fills import FillAssumptions, ShadowFillSimulator
@@ -40,6 +40,7 @@ from mike_trade.domain.errors import (
     InsufficientBuyingPowerError,
     LiveTradingNotAuthorizedError,
 )
+from mike_trade.domain.model_signals import PositionFacts, PredictionFailure
 from mike_trade.domain.protection import ProtectionKind, ProtectionPolicy
 from mike_trade.domain.strategy_types import StrategyRole
 from mike_trade.domain.trading import (
@@ -342,6 +343,10 @@ from mike_trade.strategies.sell.supertrend_bearish_flip import SupertrendBearish
 from mike_trade.strategies.sell.trendline_breakdown import TrendlineBreakdownSell
 from mike_trade.strategies.sell.ultimate_oscillator_reversal import UltimateOscillatorReversalSell
 from mike_trade.strategies.sell.vwap_breakdown import VwapBreakdownSell
+from mike_trade.strategies.buy.lightgbm_probability_buy import LightgbmProbabilityBuy
+from mike_trade.strategies.buy.xgboost_probability_buy import XgboostProbabilityBuy
+from mike_trade.strategies.sell.lightgbm_probability_sell import LightgbmProbabilitySell
+from mike_trade.strategies.sell.xgboost_probability_sell import XgboostProbabilitySell
 from mike_trade.strategies.sell.five_minute_orb_michelle import FiveMinuteOrbMichelleSell
 from mike_trade.strategies.sell.vwap_bounce_break_michelle import VwapBounceBreakMichelleSell
 from mike_trade.strategies.sell.williams_r_reversal import WilliamsRReversalSell
@@ -400,6 +405,10 @@ from mike_trade.strategies.short.short_sma_bearish_crossover import ShortSmaBear
 from mike_trade.strategies.short.short_supertrend_bearish_flip import ShortSupertrendBearishFlip
 from mike_trade.strategies.short.short_trendline_breakdown import ShortTrendlineBreakdown
 from mike_trade.strategies.short.short_vwap_breakdown import ShortVwapBreakdown
+
+if TYPE_CHECKING:
+    from mike_trade.modeling.serving import BarVwapLedger, ModelInputProvider
+
 
 __all__ = [
     "AppSettings",
@@ -556,6 +565,8 @@ class AppSettings:
     market_status_config: MarketStatusConfig | None = None
     market_status_policy: TradingAuthorizationPolicy | None = None
     market_status_reference_symbols: tuple[str, ...] = ("SPY", "QQQ", "IWM")
+    #: Root of the immutable model repository read by model-driven strategies (read-only).
+    model_root: Path = Path("research/models")
 
     def __post_init__(self) -> None:
         object.__setattr__(self, "mode", ExecutionMode(self.mode))
@@ -812,6 +823,19 @@ class ProductionMarketData:
         self._reference_symbols: tuple[str, ...] = ("SPY", "QQQ", "IWM")
         self._trading_symbols: tuple[str, ...] = ()
         self._bar_persistence: object | None = None
+        #: Per-bar VWAP ledger and reference symbols that pinned models need (composition root).
+        self._bar_vwaps: BarVwapLedger | None = None
+        self._model_reference_symbols: tuple[str, ...] = ()
+
+    def bind_bar_vwaps(self, ledger: BarVwapLedger) -> None:
+        """Record each completed bar's own VWAP (a trained model feature) as bars arrive."""
+        self._bar_vwaps = ledger
+
+    def bind_model_reference_symbols(self, symbols: Sequence[str]) -> None:
+        """Subscribe the reference series pinned models need (e.g. SPY), market status or not."""
+        self._model_reference_symbols = tuple(
+            dict.fromkeys(s.strip().upper() for s in symbols if s.strip())
+        )
 
     def bind_market_status(
         self,
@@ -1147,7 +1171,9 @@ class AlpacaProductionMarketData(ProductionMarketData):
 
         trading = tuple(dict.fromkeys(symbol.upper() for symbol in symbols))
         self._trading_symbols = trading
-        all_symbols = tuple(dict.fromkeys((*trading, *self._reference_symbols)))
+        all_symbols = tuple(
+            dict.fromkeys((*trading, *self._reference_symbols, *self._model_reference_symbols))
+        )
         self._symbols = all_symbols
         self.subscribe(self._symbols)
         client = self._history_client()
@@ -1213,6 +1239,8 @@ class AlpacaProductionMarketData(ProductionMarketData):
             await self._queue_completed_bars(persisted)
             for bar in warmup:
                 item = cast(Any, bar)
+                if self._bar_vwaps is not None:
+                    self._bar_vwaps.record(symbol, item.timestamp, item.vwap)
                 self.candles.on_minute_bar(
                     MinuteBar(
                         symbol=symbol,
@@ -1398,6 +1426,8 @@ class AlpacaProductionMarketData(ProductionMarketData):
         item = cast(Any, event)
         vwap_key = (item.symbol.upper(), item.provider_source_ts, item.feed_id)
         self._pending_vwap[vwap_key] = item.vwap
+        if self._bar_vwaps is not None:
+            self._bar_vwaps.record(item.symbol, item.provider_source_ts, item.vwap)
         self._pending_vwap.move_to_end(vwap_key)
         while len(self._pending_vwap) > 4096:
             self._pending_vwap.popitem(last=False)
@@ -1436,6 +1466,8 @@ class AlpacaProductionMarketData(ProductionMarketData):
                 self._market_status_monitor.add_bar(bar)
         if not closed or self._scheduler is None or self._lifecycle is None:
             return
+        if item.symbol.upper() in self._model_reference_symbols:
+            await self._evaluate_reference_waiters(closed[-1].end)
         if self._trading_symbols and item.symbol.upper() not in self._trading_symbols:
             return
         latest = closed[-1]
@@ -1463,6 +1495,25 @@ class AlpacaProductionMarketData(ProductionMarketData):
                 "actions": actions,
             },
         )
+
+    async def _evaluate_reference_waiters(self, reference_bar_end: datetime) -> None:
+        """Re-run symbols whose model evaluation was waiting for this reference bar."""
+        take = getattr(self._lifecycle, "take_reference_waits", None)
+        if not callable(take):
+            return
+        for symbol in take(reference_bar_end):
+            context = self._with_spy_closes(
+                self.contexts.build(
+                    symbol,
+                    timeframes=self._timeframes_for(symbol),
+                    indicators=("vwap", "vwap_prev"),
+                )
+            )
+            bars = context.candles.get(CandleTimeframe.M1, ())
+            if not bars or bars[-1].end != reference_bar_end:
+                continue  # a newer bar already superseded the one that was waiting
+            await cast(Any, self._lifecycle).process({symbol: context})
+            self._evaluations += 1
 
     def is_fresh(self) -> bool:
         return self.running and self._subscribed.is_set() and not self.closed
@@ -1642,6 +1693,7 @@ def load_app_settings(
             else {}
         ),
         credential_environment=source,
+        model_root=Path(str(service.get("model_root", "research/models"))),
     )
 
 
@@ -1931,6 +1983,8 @@ class _Collections:
     covers: tuple[_Binding, ...] = ()
 
 
+_MODEL_LOGGER = get_logger("mike_trade.model")
+
 #: Minimum spacing between EOD liquidation attempts for one position; between attempts the
 #: residual position rests under its protective stop.
 _EOD_RETRY_INTERVAL = timedelta(seconds=60)
@@ -2011,6 +2065,10 @@ class VwapReferenceLifecycle:
             None if eod_close_at is None else _parse_eod_time(eod_close_at)
         )
         self._context_provider: Callable[[Sequence[str]], Mapping[str, MarketContext]] | None = None
+        self._model_inputs: ModelInputProvider | None = None
+        self._model_reasons: dict[tuple[str, str], str] = {}
+        #: symbol -> end of the completed bar whose model evaluation lacked a reference bar
+        self._reference_waits: dict[str, datetime] = {}
 
     @staticmethod
     def _bind(
@@ -2351,7 +2409,11 @@ class VwapReferenceLifecycle:
                 self._inject_michelle_position_state(
                     scenario, collections, binding, context, position, state
                 )
-                evaluation = binding.strategy.evaluate(context, binding.parameters, state)
+                evaluation = self._evaluate_binding(
+                    binding, context, state,
+                    position=self._model_position(position, context.symbol),
+                    armed=long_held,
+                )
                 self._save_state(scenario, binding, context.symbol, evaluation.state_updates)
                 if evaluation.is_signal and binding.strategy_id not in {
                     "five_minute_orb_michelle_sell",
@@ -2401,7 +2463,7 @@ class VwapReferenceLifecycle:
         for binding in collections.buys:
             state = self._state(scenario, binding, context.symbol)
             state["eligibility"] = "WATCHING_BUY"
-            evaluation = binding.strategy.evaluate(context, binding.parameters, state)
+            evaluation = self._evaluate_binding(binding, context, state)
             self._save_state(scenario, binding, context.symbol, evaluation.state_updates)
             if evaluation.is_signal:
                 entries[evaluation.signal_id or ""] = (binding, evaluation)
@@ -2560,6 +2622,129 @@ class VwapReferenceLifecycle:
     ) -> None:
         """Supply fresh per-symbol snapshots so EOD can act without a new candle."""
         self._context_provider = provider
+
+    # ---- model-driven strategies -------------------------------------------------
+
+    def bind_model_inputs(self, provider: ModelInputProvider | None) -> None:
+        """Supply the composition root's pinned-model input provider (never a model loader)."""
+        self._model_inputs = provider
+
+    @staticmethod
+    def _is_model_driven(binding: _Binding) -> bool:
+        return callable(getattr(type(binding.strategy), "model_reference", None))
+
+    def _evaluate_binding(
+        self,
+        binding: _Binding,
+        context: MarketContext,
+        state: Mapping[str, object],
+        *,
+        position: PositionFacts | None = None,
+        armed: bool = True,
+    ) -> StrategyEvaluation:
+        """Evaluate one strategy; a model-driven one that can act first receives its inputs.
+
+        Only the model-driven strategy is affected by an inference problem: its prediction is
+        reported as unavailable and it does not signal, while every other strategy of the
+        symbol evaluates unchanged.  ``armed`` is False for advance-only evaluations (a BUY
+        while holding, a SELL while flat), which never need a prediction.
+        """
+        evaluation_context = context
+        model_driven = self._is_model_driven(binding)
+        if model_driven and armed:
+            evaluation_context = self._model_context(context, binding, position)
+        evaluation: StrategyEvaluation = binding.strategy.evaluate(
+            evaluation_context, binding.parameters, state
+        )
+        if model_driven and armed:
+            self._log_model_decision(binding, evaluation_context, evaluation)
+        return evaluation
+
+    @staticmethod
+    def _model_position(position: Any, symbol: str) -> PositionFacts | None:
+        """Real SHADOW position facts: actual average fill price and entry fill time."""
+        if position.direction is not PositionDirection.LONG:
+            return None
+        try:
+            return PositionFacts(
+                symbol, str(position.cycle_id), Decimal(position.quantity),
+                Decimal(position.avg_cost), position.opened_at,
+            )
+        except (ValueError, ArithmeticError, TypeError):
+            return None
+
+    def _model_context(
+        self, context: MarketContext, binding: _Binding, position: PositionFacts | None
+    ) -> MarketContext:
+        provider = self._model_inputs
+        if provider is None:
+            return context  # the strategy reports NO_MODEL_INPUTS and does not signal
+        try:
+            reference = type(binding.strategy).model_reference(binding.parameters)
+            enriched = provider.enrich(context, (reference,), position)
+            self._note_reference_wait(context.symbol, reference.key, enriched)
+            return enriched
+        except Exception as exc:  # inference must never break the symbol's other strategies
+            _MODEL_LOGGER.error(
+                "Model input assembly failed",
+                extra={
+                    "strategy": binding.strategy_id,
+                    "symbol": context.symbol,
+                    "error": f"{type(exc).__name__}: {exc}",
+                },
+            )
+            return context
+
+    def _note_reference_wait(
+        self, symbol: str, reference_key: str, enriched: MarketContext
+    ) -> None:
+        """Remember a bar whose prediction only lacked the same-minute reference bar."""
+        inputs = enriched.model_inputs
+        result = None if inputs is None else inputs.result_for(reference_key)
+        bars = enriched.candles.get(CandleTimeframe.M1, ())
+        if (
+            result is not None
+            and result.failure is PredictionFailure.REFERENCE_BAR_MISSING
+            and bars
+        ):
+            self._reference_waits[symbol] = bars[-1].end
+        else:
+            self._reference_waits.pop(symbol, None)
+
+    def take_reference_waits(self, reference_bar_end: datetime) -> tuple[str, ...]:
+        """Symbols whose latest bar ended exactly when a reference bar just closed.
+
+        The stream delivers each symbol's bars independently, so the reference series can
+        close a moment after the traded symbol's bar.  Those symbols are re-evaluated once the
+        reference bar exists; each wait is returned (and cleared) at most once.
+        """
+        ready = tuple(
+            sorted(s for s, end in self._reference_waits.items() if end == reference_bar_end)
+        )
+        for symbol in ready:
+            del self._reference_waits[symbol]
+        return ready
+
+    def _log_model_decision(
+        self, binding: _Binding, context: MarketContext, evaluation: StrategyEvaluation
+    ) -> None:
+        """Concise audit trail: every signal, and any change of non-signal reason."""
+        audit = evaluation.state_updates.get("model_audit")
+        if audit is None:
+            return
+        try:
+            record = json.loads(str(audit))
+        except ValueError:
+            return
+        key = (binding.strategy_id, context.symbol)
+        reason = str(record.get("reason"))
+        changed = self._model_reasons.get(key) != reason
+        self._model_reasons[key] = reason
+        if evaluation.is_signal:
+            _MODEL_LOGGER.info("Model strategy signal", extra={"model_audit": record})
+        elif changed:
+            level = logging.WARNING if reason.startswith("PREDICTION_UNAVAILABLE") else logging.INFO
+            _MODEL_LOGGER.log(level, "Model strategy decision", extra={"model_audit": record})
 
     def _eod_begun(self, at: datetime) -> bool:
         """Whether EOD liquidation is enabled and in effect at ``at`` (regular session)."""
@@ -3401,6 +3586,71 @@ def _scopes(settings: AppSettings) -> tuple[AccountScope, ...]:
     return (AccountScope(environment, settings.account_id),)
 
 
+def _collect_model_references(
+    settings: AppSettings, registry: StrategyRegistry
+) -> dict[str, Any]:
+    """Pinned models of every configured model-driven strategy, keyed by reference key.
+
+    Strategy classes and parameters are validated here exactly as the lifecycle will bind
+    them, so a malformed or unknown pin is a startup configuration error.
+    """
+    references: dict[str, Any] = {}
+    for item in settings.symbol_strategies:
+        for assigned in (*item.buys, *item.sells):
+            try:
+                cls = registry.get(assigned.plugin)
+                parameters = registry.validate_parameters(assigned.plugin, assigned.parameters)
+            except Exception:
+                continue  # the lifecycle binder reports unusable strategies precisely
+            reference_of = getattr(cls, "model_reference", None)
+            if callable(reference_of):
+                reference = reference_of(parameters)
+                references.setdefault(reference.key, reference)
+    return references
+
+
+def _build_model_inputs(
+    settings: AppSettings,
+    references: Mapping[str, Any],
+    clock: ClockPort,
+    history: Any,
+    vwaps: BarVwapLedger,
+) -> ModelInputProvider:
+    """Load every pinned artifact once (checksum-verified) and build the input provider.
+
+    Model libraries are imported only here, and only when a model-driven strategy is
+    configured.  A missing, corrupt, mismatched or wrong-feed artifact is a startup error;
+    nothing is trained, replaced or substituted.
+    """
+    from mike_trade.modeling.inference import ModelLoadError
+    from mike_trade.modeling.serving import ModelInputProvider, build_inference_service
+
+    if history is None:
+        raise ConfigurationError(
+            "model-driven strategies need the shared completed-candle store",
+            code="MODEL_HISTORY_UNAVAILABLE",
+        )
+    try:
+        service = build_inference_service(
+            settings.model_root, tuple(references.values()), clock.now
+        )
+    except ModelLoadError as exc:
+        raise ConfigurationError(
+            str(exc), code=f"MODEL_{exc.code}", context=dict(exc.context)
+        ) from exc
+    for reference in service.references:
+        manifest = service.manifest(reference)
+        if manifest is not None and manifest.feed != settings.market_data_feed.strip().lower():
+            raise ConfigurationError(
+                f"model {reference.key} was trained on the {manifest.feed!r} feed but "
+                f"market_data.feed is {settings.market_data_feed!r}; feeds are never mixed "
+                "or substituted",
+                code="MODEL_FEED_MISMATCH",
+                context={"model": reference.key},
+            )
+    return ModelInputProvider(service, history, vwaps)
+
+
 def _is_legacy_pair(item: SymbolStrategySettings) -> bool:
     return (
         len(item.buys) == 1 and len(item.sells) == 1
@@ -3490,7 +3740,7 @@ def build_runtime(
         "portfolio", "risk", "execution", "reporting", "controls", "logger",
         "calendar", "candle_engine", "strategies", "eligibility", "budget_manager",
         "protection", "reconciliation", "instance_lock", "startup_validator",
-        "market_status_monitor",
+        "market_status_monitor", "model_inputs",
     }
     unknown = sorted(set(supplied) - allowed)
     if unknown:
@@ -3716,10 +3966,35 @@ def build_runtime(
         HighVolumeReversalSell,
         VolatilityExpansionReversalSell,
         VolumeClimaxExitSell,
+        XgboostProbabilityBuy,
+        LightgbmProbabilityBuy,
+        XgboostProbabilitySell,
+        LightgbmProbabilitySell,
     ):
         registry.register(strategy_cls)
     strategies = supplied.get("strategies", registry)
     assigned = {item.symbol: item for item in settings.symbol_strategies}
+    model_references = _collect_model_references(settings, registry)
+    model_inputs: ModelInputProvider | None = None
+    if model_references:
+        from mike_trade.modeling.serving import BarVwapLedger
+
+        bar_vwaps = BarVwapLedger()
+        provider: ModelInputProvider = (
+            cast("ModelInputProvider", supplied["model_inputs"])
+            if "model_inputs" in supplied
+            else _build_model_inputs(
+                settings, model_references, clock, getattr(market_data, "candles", None),
+                bar_vwaps,
+            )
+        )
+        model_inputs = provider
+        bind_vwaps = getattr(market_data, "bind_bar_vwaps", None)
+        if callable(bind_vwaps):
+            bind_vwaps(provider.vwaps)  # bars are recorded where the provider reads them
+        bind_references = getattr(market_data, "bind_model_reference_symbols", None)
+        if callable(bind_references):
+            bind_references(provider.service.required_reference_symbols())
     pair_resolution = (
         resolve_pair_preset("vwap_reference", registry=registry, mode="shadow")
         if settings.mode is ExecutionMode.SHADOW
@@ -3887,6 +4162,12 @@ def build_runtime(
         snapshot = getattr(market_data, "snapshot", None)
         if callable(snapshot):
             lifecycle.bind_context_provider(snapshot)
+    if model_inputs is not None and hasattr(lifecycle, "bind_model_inputs"):
+        cast(Any, lifecycle).bind_model_inputs(model_inputs)
+        logging.getLogger("mike_trade.model").info(
+            "Model inference ready",
+            extra={"models": sorted(model_references), "mode": settings.mode.value},
+        )
     execution = supplied.get("execution", lifecycle or broker)
     protection = supplied.get(
         "protection",

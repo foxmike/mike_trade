@@ -34,6 +34,7 @@ from typing import Any, Protocol
 
 from mike_trade.domain.errors import MikeTradeError
 from mike_trade.domain.instruments import require_utc
+from mike_trade.domain.model_signals import ModelInputs
 from mike_trade.market_data.cache import MarketDataUpdate
 from mike_trade.market_data.candles import (
     Candle,
@@ -426,6 +427,9 @@ class MarketContext:
     completed_bars_only: bool = True
     research: ResearchContext | None = None
     session_reference: SessionReference | None = None
+    #: Immutable, pinned-model predictions (and the real position they describe) attached by
+    #: the composition root for model-driven strategies; ``None`` for every other strategy.
+    model_inputs: ModelInputs | None = None
 
     def __post_init__(self) -> None:
         symbol = _symbol(self.symbol)
@@ -474,6 +478,11 @@ class MarketContext:
             and self.session_id != self.session_reference.current_session_id
         ):
             raise _invalid("session_reference current session must match session_id")
+        if self.model_inputs is not None:
+            if not isinstance(self.model_inputs, ModelInputs):
+                raise _invalid("model_inputs must be ModelInputs or None")
+            if self.model_inputs.symbol != symbol:
+                raise _invalid(f"{self.model_inputs.symbol} model inputs in {symbol} context")
 
         closed = self._freeze_closed(self.candles, symbol, as_of)
         developing = self._freeze_developing(self.developing_candles, symbol)

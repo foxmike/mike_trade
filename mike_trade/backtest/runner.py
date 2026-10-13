@@ -16,7 +16,7 @@ from dataclasses import dataclass, field, replace
 from datetime import UTC, datetime, time, timedelta
 from decimal import Decimal
 from pathlib import Path
-from typing import Any, Callable, Mapping, Sequence
+from typing import TYPE_CHECKING, Any, Callable, Mapping, Sequence
 from zoneinfo import ZoneInfo
 
 from mike_trade.backtest.clock import ReplayClock
@@ -34,6 +34,7 @@ from mike_trade.backtest.manifest import (
     write_manifest,
 )
 from mike_trade.domain.market import Candle, Timeframe
+from mike_trade.domain.model_signals import ModelReference, PositionFacts
 from mike_trade.domain.protection import ProtectionKind, ProtectionPolicy
 from mike_trade.domain.strategy_types import StrategyRole
 from mike_trade.domain.trading import (
@@ -91,6 +92,11 @@ from mike_trade.strategies.michelle_common import (
 )
 from mike_trade.strategies.registry import StrategyRegistry
 from mike_trade.strategies.sell.base import ExitSource
+
+if TYPE_CHECKING:
+    from mike_trade.backtest.model_replay import ReplayReferenceHistory
+    from mike_trade.modeling.inference import ModelInferenceService
+    from mike_trade.modeling.serving import BarVwapLedger, ModelInputProvider
 
 __all__ = [
     "BacktestRequest",
@@ -568,11 +574,16 @@ class BacktestRunner:
         cycle_accounting: Any = None,
         protection_math: Any = None,
         session_candles: SessionCandleSource | None = None,
+        model_service: ModelInferenceService | None = None,
     ) -> None:
         self.registry, self.feed, self.clock, self.execution = registry, feed, clock, execution
         #: Optional completed D1/W1 history (point-in-time via ``available_at``). Without it a
         #: strategy that requires D1/W1 candles is refused and M1 behaviour is unchanged.
         self.session_candles = session_candles
+        #: Optional ``ModelInferenceService`` holding the pinned model artifacts that
+        #: model-driven strategies consume.  It is created and owned by the caller (the
+        #: composition root); the runner never loads, trains, or replaces a model.
+        self.model_service = model_service
         self.scheduler = scheduler or StrategyScheduler(clock)
         self.intent_factory = intent_factory
         self.policies = (
@@ -638,6 +649,77 @@ class BacktestRunner:
             )
         return plans
 
+    def _model_references(
+        self, plans: Mapping[str, _SymbolPlan], replay_feed: str
+    ) -> dict[tuple[str, str], ModelReference]:
+        """Resolve every model-driven strategy's pinned model; fail closed when unserved."""
+        references: dict[tuple[str, str], ModelReference] = {}
+        for symbol, plan in plans.items():
+            for cls in plan.all:
+                reference_of = getattr(cls, "model_reference", None)
+                if reference_of is not None:
+                    strategy_id: str = getattr(cls, "spec").strategy_id  # noqa: B009
+                    references[(symbol, strategy_id)] = reference_of(plan.params[strategy_id])
+        if not references:
+            return references
+        service = self.model_service
+        if service is None:
+            raise ValueError(
+                "model-driven strategies are configured but the runner has no model_service "
+                "holding their pinned artifacts"
+            )
+        for reference in {item.key: item for item in references.values()}.values():
+            manifest = service.manifest(reference)
+            if manifest is None or service.loaded(reference) is None:
+                raise ValueError(f"pinned model {reference.key} is not loaded by the model service")
+            if manifest.feed != replay_feed.strip().lower():
+                raise ValueError(
+                    f"model {reference.key} was trained on the {manifest.feed!r} feed but the "
+                    f"replay dataset is {replay_feed!r}; feeds are never mixed or substituted"
+                )
+        return references
+
+    def _model_lineage(
+        self, references: Mapping[tuple[str, str], ModelReference], request: BacktestRequest
+    ) -> list[dict[str, Any]]:
+        """Pinned-model identity plus whether the window overlaps the model's own data.
+
+        A window that overlaps a model's training or validation ranges is *in-sample* for
+        that model; the flags make that visible in the run manifest (and the config hash).
+        """
+        service = self.model_service
+        assert service is not None
+        start = request.window_start.astimezone(UTC)
+        end = request.window_end.astimezone(UTC)
+
+        def overlaps(ranges: Sequence[Any]) -> bool:
+            return any(item.start < end and item.end > start for item in ranges)
+
+        def spans(ranges: Sequence[Any]) -> list[list[str]]:
+            return [[item.start.isoformat(), item.end.isoformat()] for item in ranges]
+
+        lineage: list[dict[str, Any]] = []
+        for key, reference in sorted({ref.key: ref for ref in references.values()}.items()):
+            manifest = service.manifest(reference)
+            assert manifest is not None
+            lineage.append(
+                {
+                    "model": key,
+                    "role": reference.role,
+                    "algorithm": manifest.algorithm,
+                    "artifact_sha256": manifest.artifact_sha256,
+                    "feed": manifest.feed,
+                    "feature_schema_sha256": manifest.feature_schema_sha256,
+                    "label_schema_sha256": manifest.label_schema_sha256,
+                    "training_config_sha256": manifest.training_config_sha256,
+                    "training_ranges": spans(manifest.training_ranges),
+                    "validation_ranges": spans(manifest.validation_ranges),
+                    "window_overlaps_training": overlaps(manifest.training_ranges),
+                    "window_overlaps_validation": overlaps(manifest.validation_ranges),
+                }
+            )
+        return lineage
+
     async def run(self, request: BacktestRequest) -> BacktestResult:
         self._reject_real_broker(request.broker, self.execution)
         if self.feed.seed != request.seed:
@@ -668,6 +750,11 @@ class BacktestRunner:
         role = PeriodRole(request.period_role)
         provenance = self.feed.provenance
         plans = self._plan(request)
+        model_references = self._model_references(plans, provenance.feed)
+        model_reference_symbols: tuple[str, ...] = ()
+        if model_references:
+            assert self.model_service is not None  # _model_references enforces it
+            model_reference_symbols = tuple(self.model_service.required_reference_symbols())
         supported_replay_timeframes = {CandleTimeframe.M1, CandleTimeframe.M5}
         for plan in plans.values():
             for cls in plan.all:
@@ -726,6 +813,11 @@ class BacktestRunner:
                     else LIFECYCLE_SEMANTICS_VERSION
                 ),
                 "context_history_bars": request.context_history_bars,
+                **(
+                    {"model_lineage": self._model_lineage(model_references, request)}
+                    if model_references
+                    else {}
+                ),
                 **(
                     {"session_candles": self.session_candles.fingerprint()}  # type: ignore[attr-defined]
                     if self.session_candles is not None
@@ -956,12 +1048,28 @@ class BacktestRunner:
         feed_symbols = request.symbols
         if backtest_monitor is not None:
             feed_symbols = tuple(dict.fromkeys((*request.symbols, *ref_symbols)))
+        if model_reference_symbols:
+            feed_symbols = tuple(dict.fromkeys((*feed_symbols, *model_reference_symbols)))
 
         replay_events = [
             e
             for e in self.feed.events(symbols=feed_symbols)
             if e.available_at and request.window_start <= e.available_at <= request.window_end
         ]
+        vwap_ledger: BarVwapLedger | None = None
+        reference_history: ReplayReferenceHistory | None = None
+        model_provider: ModelInputProvider | None = None
+        if model_references:
+            # Model serving is imported only when a model-driven strategy is configured.
+            from mike_trade.backtest.model_replay import ReplayReferenceHistory
+            from mike_trade.modeling.serving import BarVwapLedger, ModelInputProvider
+
+            vwap_ledger = BarVwapLedger(per_symbol=request.context_history_bars + 64)
+            reference_history = ReplayReferenceHistory(
+                replay_events, model_reference_symbols, vwap_ledger
+            )
+            assert self.model_service is not None
+            model_provider = ModelInputProvider(self.model_service, reference_history, vwap_ledger)
         # Reference bars are fed to the monitor strictly by availability time, ahead of any
         # trading event at the same or a later time (point-in-time: nothing later is visible),
         # and the monitor is stepped once per distinct reference minute so the replayed state
@@ -1564,9 +1672,43 @@ class BacktestRunner:
             pending_exit[symbol] = order.broker_order_id
             eod_submitted.add(session_key)
 
+        def model_position(symbol: str) -> PositionFacts | None:
+            """The real open long (actual average fill price and time), else None."""
+            cycle = open_cycles.get(symbol)
+            quantity = quantities[symbol]
+            if (
+                cycle is None
+                or quantity <= ZERO
+                or directions.get(symbol) is not PositionDirection.LONG
+            ):
+                return None
+            try:
+                return PositionFacts(
+                    symbol, str(cycle["cycle_id"]), quantity, costs[symbol] / quantity,
+                    cycle["opened_at"],
+                )
+            except ValueError:
+                return None
+
+        def model_context(cls: Any, context: MarketContext, symbol: str) -> MarketContext:
+            """Attach pinned-model inputs for a model-driven strategy that can act now."""
+            reference = model_references.get((symbol, cls.spec.strategy_id))
+            if reference is None or model_provider is None:
+                return context
+            if cls.spec.side is StrategyRole.SELL:
+                facts = model_position(symbol)
+                if facts is None:
+                    return context
+                return model_provider.enrich(context, (reference,), facts)
+            if state[(symbol, cls.spec.strategy_id)].get("eligibility") != "WATCHING_BUY":
+                return context
+            return model_provider.enrich(context, (reference,))
+
         for ev in replay_events:
             assert ev.available_at
             self.clock.advance_to(ev.available_at)
+            if reference_history is not None:
+                reference_history.advance(ev.available_at)
             if backtest_monitor is not None:
                 feed_reference(ev.available_at)
             outputs = deque(self.execution.process_event(ev))
@@ -1780,6 +1922,8 @@ class BacktestRunner:
                 )
             window[symbol].append(strategy_bar)
             strategy_candles[symbol][CandleTimeframe.M1].append(strategy_bar)
+            if vwap_ledger is not None:
+                vwap_ledger.record(symbol, candle.start, candle.vwap)
             session_references.add_bar(strategy_bar)
             # Derive only fully completed, contiguous five-minute buckets aligned
             # to the regular-session open. The current 1m bar is available only
@@ -1911,8 +2055,11 @@ class BacktestRunner:
                 if key in trigger_rows:
                     return None
                 trigger_rows.add(key)
+                evaluation_context = model_context(cls, context, symbol)
                 evaluation: StrategyEvaluation = cls().evaluate(
-                    context, plan.params[spec.strategy_id], state[(symbol, spec.strategy_id)]
+                    evaluation_context,
+                    plan.params[spec.strategy_id],
+                    state[(symbol, spec.strategy_id)],
                 )
                 state[(symbol, spec.strategy_id)].update(evaluation.state_updates)
                 if not record:
@@ -1945,6 +2092,9 @@ class BacktestRunner:
                     "reference_price": evaluation.reference_price,
                     "reason_codes": [x.value for x in evaluation.reason_codes],
                 }
+                audit = evaluation.state_updates.get("model_audit")
+                if audit is not None:
+                    row["model_audit"] = audit
                 evaluations.append(row)
                 if evaluation.is_signal:
                     signals.append(row)

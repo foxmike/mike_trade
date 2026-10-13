@@ -6,6 +6,9 @@ import math
 from collections.abc import Mapping
 from dataclasses import dataclass, field
 from enum import StrEnum
+from typing import Any
+
+import numpy as np
 
 from mike_trade.modeling.calibration import ProbabilityCalibrator
 from mike_trade.modeling.contracts import LearningTask, ModelPredictor
@@ -19,6 +22,26 @@ class ComputeDevice(StrEnum):
 class ClassBalance(StrEnum):
     NONE = "none"
     BALANCED = "balanced"
+
+
+#: Largest |sum(p) - 1| attributable to float32 rounding in a native softmax; anything further
+#: from a distribution is invalid and is left untouched so ``ModelPrediction`` rejects it.
+PROBABILITY_ROUNDING_TOLERANCE = 1e-4
+
+
+def normalize_probability_row(row: np.ndarray[Any, Any]) -> np.ndarray[Any, Any]:
+    """Remove float32 rounding error so one predicted row sums to 1 (never repairs invalid rows).
+
+    Non-finite, negative or genuinely non-normalized rows are returned unchanged and are
+    then rejected by the prediction contract.
+    """
+    values = np.asarray(row, dtype=np.float64)
+    if not np.isfinite(values).all() or (values < 0).any():
+        return values
+    total = float(values.sum())
+    if total <= 0 or abs(total - 1.0) > PROBABILITY_ROUNDING_TOLERANCE:
+        return values
+    return values / total
 
 
 def _positive_int(value: int, name: str) -> None:

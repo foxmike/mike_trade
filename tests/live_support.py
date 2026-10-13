@@ -81,6 +81,7 @@ async def start_paper(
     stop: dict | None = None, symbol: str = "AAA", capabilities: bool = True, eod: bool = False,
     eligibility: EntryEligibilityPolicy | None = None, name: str = "paper.sqlite3",
     mode: ExecutionMode = ExecutionMode.PAPER,
+    extra_overrides: dict[str, Any] | None = None,
 ):
     cap_path = tmp_path / "alpaca_capabilities.json"
     if capabilities:
@@ -103,7 +104,7 @@ async def start_paper(
         live_minimum_hold=timedelta(0), auto_eod_liquidation=eod, live_trade_updates=False,
         alpaca_capability_records=cap_path, credential_environment=ENV, **cfg,
     )
-    overrides: dict[str, Any] = {"clock": exchange.clock, "broker": adapter}
+    overrides: dict[str, Any] = {"clock": exchange.clock, "broker": adapter, **(extra_overrides or {})}
     if registry is not None:
         overrides["strategies"] = registry
     runtime = build_runtime(settings, overrides=overrides)

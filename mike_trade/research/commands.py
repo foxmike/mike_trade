@@ -56,6 +56,9 @@ class ExperimentSpec:
     end_of_day_close: Mapping[str, Any] | None = None
     #: Maximum completed entry cycles per symbol/session; research runner gate.
     max_entry_cycles_per_session: int = 1
+    #: Root of the immutable model repository; required when any selected strategy is
+    #: model-driven (``xgboost_probability_*`` / ``lightgbm_probability_*``).
+    model_root: str | None = None
 
     def validate(self) -> None:
         if not self.symbol or not self.symbol.replace(".", "").isalnum():
@@ -90,6 +93,10 @@ class ExperimentSpec:
             from mike_trade.risk.stop_config import normalize_stop_spec
 
             normalize_stop_spec(self.protective_stop)
+        if self.model_root is not None and (
+            not isinstance(self.model_root, str) or not self.model_root.strip()
+        ):
+            raise ValueError("model_root must be a non-empty path string")
         if self.seed < 0:
             raise ValueError("experiment seed must be nonnegative")
         if isinstance(self.max_entry_cycles_per_session, bool) or not isinstance(
@@ -331,6 +338,7 @@ def _execute_experiment(job_data: dict[str, Any], root: str, results: str) -> di
         protective_stop=spec.protective_stop,
         end_of_day_close=spec.end_of_day_close,
         max_entry_cycles_per_session=spec.max_entry_cycles_per_session,
+        model_root=spec.model_root,
     )
     ledger = result.pop("trade_ledger")
     ledger_dir = Path(results) / "trade_ledgers"
@@ -832,6 +840,10 @@ def _research_registry() -> Any:
     from mike_trade.strategies.sell.stochastic_bearish_crossover import StochasticBearishCrossoverSell
     from mike_trade.strategies.sell.williams_r_reversal import WilliamsRReversalSell
     from mike_trade.strategies.registry import StrategyRegistry
+    from mike_trade.strategies.buy.lightgbm_probability_buy import LightgbmProbabilityBuy
+    from mike_trade.strategies.buy.xgboost_probability_buy import XgboostProbabilityBuy
+    from mike_trade.strategies.sell.lightgbm_probability_sell import LightgbmProbabilitySell
+    from mike_trade.strategies.sell.xgboost_probability_sell import XgboostProbabilitySell
     from mike_trade.strategies.sell.momentum_reversal import MomentumReversalSell
     from mike_trade.strategies.sell.rsi_reversal import RsiReversalSell
     from mike_trade.strategies.sell.vwap_breakdown import VwapBreakdownSell
@@ -1082,6 +1094,10 @@ def _research_registry() -> Any:
         VolumeClimaxExitSell,
         VolatilityContractionPatternBuy,
         CupAndHandleBuy,
+        XgboostProbabilityBuy,
+        LightgbmProbabilityBuy,
+        XgboostProbabilitySell,
+        LightgbmProbabilitySell,
     ):
         registry.register(cls)
     return registry
@@ -1116,6 +1132,102 @@ def research_default_execution_assumptions() -> dict[str, Any]:
     }
 
 
+def _model_replay_inputs(
+    repo: Any,
+    registry: Any,
+    clock: Any,
+    snapshot: Any,
+    symbol: str,
+    start: datetime,
+    end: datetime,
+    root: str,
+    model_root: str | None,
+    buy_strategies: tuple[str, ...] | None,
+    sell_strategies: tuple[str, ...] | None,
+    parameters: Mapping[str, Mapping[str, Any]] | None,
+) -> tuple[Any, dict[str, str], list[Any]]:
+    """Pinned-model service plus same-feed reference-symbol replay events, when needed.
+
+    Returns ``(None, {}, [])`` unless a selected strategy is model-driven.  Reference series
+    (for example SPY) come from the *same feed* as the primary snapshot; an absent snapshot is
+    an error, never a substitution.
+    """
+    from mike_trade.backtest.feed import ReplayEvent
+    from mike_trade.domain.market import Candle, FeedProvenance, Timeframe
+    from mike_trade.modeling.serving import build_inference_service
+    from mike_trade.scheduling.calendar import NEW_YORK, session_for
+
+    references: dict[str, Any] = {}
+    for strategy_id in (*(buy_strategies or ()), *(sell_strategies or ())):
+        try:
+            cls = registry.get(strategy_id)
+        except Exception:
+            continue  # unknown ids are reported by the normal strategy validation
+        reference_of = getattr(cls, "model_reference", None)
+        if callable(reference_of):
+            params = registry.validate_parameters(
+                strategy_id, (parameters or {}).get(strategy_id, {})
+            )
+            reference = reference_of(params)
+            references.setdefault(reference.key, reference)
+    if not references:
+        return None, {}, []
+    if not model_root:
+        raise ValueError(
+            "model-driven strategies require model_root (the immutable model repository); "
+            "no model is ever located implicitly or substituted"
+        )
+    service = build_inference_service(model_root, tuple(references.values()), clock.now)
+    for reference in service.references:
+        manifest = service.manifest(reference)
+        if manifest is not None and manifest.feed != snapshot.feed:
+            raise ValueError(
+                f"model {reference.key} was trained on the {manifest.feed!r} feed but the "
+                f"dataset is {snapshot.feed!r}; feeds are never mixed or substituted"
+            )
+    is_consolidated = snapshot.feed == "sip"
+    provenance = FeedProvenance("replay", snapshot.feed.upper(), "alpaca", is_consolidated)
+    dataset_ids: dict[str, str] = {}
+    events: list[Any] = []
+    for reference_symbol in service.required_reference_symbols():
+        if reference_symbol == symbol:
+            continue
+        candidates = [
+            item
+            for item in repo.snapshots()
+            if item.symbol == reference_symbol
+            and item.adjustment == "raw"
+            and item.feed == snapshot.feed
+            and datetime.fromisoformat(item.start) <= start
+            and datetime.fromisoformat(item.end) >= end
+        ]
+        if not candidates:
+            raise ValueError(
+                f"no immutable {snapshot.feed.upper()} snapshot covers reference symbol "
+                f"{reference_symbol} {start.isoformat()}..{end.isoformat()}"
+            )
+        chosen = max(candidates, key=lambda item: (item.acquired_at, item.dataset_id))
+        dataset_ids[reference_symbol] = chosen.dataset_id
+        for bar in _cached_snapshot_bars(
+            str(Path(root).resolve()), reference_symbol, start.isoformat(), end.isoformat(),
+            chosen.dataset_id, feed=chosen.feed,
+        ):
+            day = session_for(bar.timestamp.astimezone(NEW_YORK).date())
+            if not day.open_utc <= bar.timestamp < day.close_utc:
+                continue
+            events.append(
+                ReplayEvent.bar(
+                    Candle(
+                        reference_symbol, Timeframe.M1, bar.timestamp,
+                        bar.timestamp + timedelta(minutes=1), bar.open, bar.high, bar.low,
+                        bar.close, Decimal(bar.volume), provenance, bar.vwap,
+                        int(bar.trade_count) if bar.trade_count is not None else None,
+                    )
+                )
+            )
+    return service, dataset_ids, events
+
+
 def _run_one(
     symbol: str,
     start: datetime,
@@ -1139,6 +1251,7 @@ def _run_one(
     protective_stop: Mapping[str, Any] | None = None,
     end_of_day_close: Mapping[str, Any] | None = None,
     max_entry_cycles_per_session: int = 1,
+    model_root: str | None = None,
 ) -> dict[str, Any]:
     from mike_trade.backtest.clock import ReplayClock
     from mike_trade.backtest.execution import (
@@ -1237,6 +1350,12 @@ def _run_one(
         for bar in bars
     ]
     clock = ReplayClock(start)
+    registry = _research_registry()
+    model_service, reference_dataset_ids, reference_events = _model_replay_inputs(
+        repo, registry, clock, snapshot, symbol, start, end, root, model_root,
+        buy_strategies, sell_strategies, parameters,
+    )
+    events = [*events, *reference_events]
     replay_feed = HistoricalReplayFeed(
         events,
         DataProvenance(
@@ -1294,7 +1413,6 @@ def _run_one(
         )
     assumptions = ExecutionAssumptions(**assumption_values)
     sim = HistoricalExecutionSimulator(replay_feed, clock, assumptions)
-    registry = _research_registry()
     explicit_roles = any(
         item is not None
         for item in (buy_strategies, sell_strategies, short_strategies, cover_strategies)
@@ -1399,6 +1517,7 @@ def _run_one(
             "focus_strategy": strategy_name,
             "position_sizing": "min($3000 symbol budget, $30 planned loss / stop distance)",
             **stop_config,
+            **({"reference_dataset_ids": reference_dataset_ids} if reference_dataset_ids else {}),
             "entry_cutoff_minutes": 30,
             "minimum_hold_seconds": 60,
             "max_entry_cycles_per_session": max_entry_cycles_per_session,
@@ -1429,6 +1548,7 @@ def _run_one(
             sim,
             intent_factory=intent_factory,
             session_candles=session_candles,
+            model_service=model_service,
         ).run(request)
     )
     metrics = compute_metrics(

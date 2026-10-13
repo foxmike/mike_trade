@@ -14,6 +14,7 @@ from mike_trade.modeling.adapters.common import (
     ComputeDevice,
     FitResult,
     LightGBMTrainingConfig,
+    normalize_probability_row,
 )
 from mike_trade.modeling.artifacts import ModelArtifactManifest
 from mike_trade.modeling.calibration import NO_CALIBRATION, ProbabilityCalibrator
@@ -153,8 +154,11 @@ class LightGBMPredictor:
         )
 
     def predict(self, features: FeatureVector) -> ModelPrediction:
+        # One row never benefits from an OpenMP pool; keep serving single-threaded.
         raw = np.asarray(
-            self.booster.predict(self._array(features), num_iteration=self.best_iteration)
+            self.booster.predict(
+                self._array(features), num_iteration=self.best_iteration, num_threads=1
+            )
         )
         if self.task is LearningTask.REGRESSION:
             return ModelPrediction(
@@ -172,7 +176,7 @@ class LightGBMPredictor:
             if self.task is LearningTask.BINARY_CLASSIFICATION
             else raw.reshape((1, len(self.class_labels)))
         )
-        probabilities = self.calibrator.transform(probabilities)[0]
+        probabilities = normalize_probability_row(self.calibrator.transform(probabilities)[0])
         index = int(np.argmax(probabilities))
         return ModelPrediction(
             self.model_id,

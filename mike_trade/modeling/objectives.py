@@ -87,6 +87,39 @@ class SellContinuationConfig:
             raise ValueError("minimum_hold_advantage must be a finite non-negative Decimal")
 
 
+POSITION_FEATURE_NAMES = (
+    "position_unrealized_return",
+    "position_holding_bars",
+    "position_max_favorable_return",
+    "position_max_adverse_return",
+)
+
+
+def position_feature_values(
+    *,
+    entry_price: Decimal,
+    close: Decimal,
+    maximum_high: Decimal,
+    minimum_low: Decimal,
+    holding_bars: int,
+) -> dict[str, float]:
+    """The four SELL position features; the single definition for training and inference.
+
+    ``entry_price`` is the (actual or modeled) average entry fill price.  ``close`` is the
+    close of the latest completed bar.  ``maximum_high``/``minimum_low`` are the extremes of
+    every completed bar from the entry bar (inclusive) through the latest completed bar.
+    ``holding_bars`` is the number of completed bars from the entry bar (inclusive) through
+    the latest completed bar, so the entry bar's own completion has ``holding_bars == 1``.
+    Returns are decimal fractions (``0.01`` is one percent).
+    """
+    return {
+        "position_unrealized_return": float(close / entry_price - 1),
+        "position_holding_bars": float(holding_bars),
+        "position_max_favorable_return": float(maximum_high / entry_price - 1),
+        "position_max_adverse_return": float(minimum_low / entry_price - 1),
+    }
+
+
 class SellPositionDatasetBuilder:
     """Create realistic held-position samples independently of future winners/losers.
 
@@ -96,12 +129,7 @@ class SellPositionDatasetBuilder:
     """
 
     CLASS_LABELS = ("-1", "0", "1")
-    POSITION_FEATURES = (
-        "position_unrealized_return",
-        "position_holding_bars",
-        "position_max_favorable_return",
-        "position_max_adverse_return",
-    )
+    POSITION_FEATURES = POSITION_FEATURE_NAMES
 
     def __init__(
         self,
@@ -201,12 +229,13 @@ class SellPositionDatasetBuilder:
                     continue
                 values = dict(base.values)
                 values.update(
-                    {
-                        "position_unrealized_return": float(current.close / entry_price - 1),
-                        "position_holding_bars": float(held_index - signal_index),
-                        "position_max_favorable_return": float(maximum_high / entry_price - 1),
-                        "position_max_adverse_return": float(minimum_low / entry_price - 1),
-                    }
+                    position_feature_values(
+                        entry_price=entry_price,
+                        close=current.close,
+                        maximum_high=maximum_high,
+                        minimum_low=minimum_low,
+                        holding_bars=held_index - signal_index,
+                    )
                 )
                 features = FeatureVector(
                     current.symbol,

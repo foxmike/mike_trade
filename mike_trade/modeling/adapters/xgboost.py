@@ -14,6 +14,7 @@ from mike_trade.modeling.adapters.common import (
     ComputeDevice,
     FitResult,
     XGBoostTrainingConfig,
+    normalize_probability_row,
 )
 from mike_trade.modeling.artifacts import ModelArtifactManifest
 from mike_trade.modeling.calibration import NO_CALIBRATION, ProbabilityCalibrator
@@ -178,7 +179,7 @@ class XGBoostPredictor:
             if self.task is LearningTask.BINARY_CLASSIFICATION
             else raw.reshape((1, len(self.class_labels)))
         )
-        probabilities = self.calibrator.transform(probabilities)[0]
+        probabilities = normalize_probability_row(self.calibrator.transform(probabilities)[0])
         index = int(np.argmax(probabilities))
         return ModelPrediction(
             self.model_id,

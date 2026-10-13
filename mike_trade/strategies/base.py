@@ -159,6 +159,9 @@ class ParameterKind(Enum):
     BOOL = "BOOL"
     ENUM = "ENUM"
     TIME_OF_DAY = "TIME_OF_DAY"
+    #: A string, optionally constrained to a ``pattern`` (full match); used for identifiers
+    #: such as pinned model IDs and versions, which no fixed ENUM can enumerate.
+    STRING = "STRING"
 
 
 _RANGED_KINDS = frozenset({ParameterKind.INT, ParameterKind.DECIMAL, ParameterKind.TIME_OF_DAY})
@@ -191,6 +194,8 @@ class ParameterSpec:
     max_value: object | None = None
     choices: tuple[str, ...] = ()
     description: str = ""
+    #: Regular expression a STRING value must fully match (STRING parameters only).
+    pattern: str | None = None
 
     def __post_init__(self) -> None:
         try:
@@ -215,6 +220,13 @@ class ParameterSpec:
                 raise self._spec_error("choices must be unique")
         elif self.choices:
             raise self._spec_error("choices are only allowed for ENUM parameters")
+        if self.pattern is not None:
+            if self.kind is not ParameterKind.STRING or not isinstance(self.pattern, str):
+                raise self._spec_error("pattern is only allowed for STRING parameters")
+            try:
+                re.compile(self.pattern)
+            except re.error:
+                raise self._spec_error("pattern is not a valid regular expression") from None
 
         if self.kind not in _RANGED_KINDS and (
             self.min_value is not None or self.max_value is not None
@@ -279,6 +291,16 @@ class ParameterSpec:
     def validate_value(self, value: object) -> object:
         """Return the normalized value, or raise ``ParameterValidationError``."""
         result = self._check_type(value)
+        if (
+            self.kind is ParameterKind.STRING
+            and self.pattern is not None
+            and re.fullmatch(self.pattern, str(result)) is None
+        ):
+            raise ParameterValidationError(
+                f"parameter {self.name} must match {self.pattern!r}; got {result!r}",
+                code="invalid_choice",
+                parameter=self.name,
+            )
         if self.kind is ParameterKind.ENUM and result not in self.choices:
             raise ParameterValidationError(
                 f"parameter {self.name} must be one of {list(self.choices)!r}; got {result!r}",

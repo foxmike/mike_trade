@@ -39,6 +39,7 @@ from mike_trade.app import (
     _Collections,
 )
 from mike_trade.domain.errors import BrokerError, EntryBlockedError
+from mike_trade.domain.model_signals import PositionFacts
 from mike_trade.domain.protection import ProtectionKind, ProtectionPolicy
 from mike_trade.domain.trading import (
     EntryEligibilityPolicy,
@@ -380,7 +381,9 @@ class LiveStrategyLifecycle(VwapReferenceLifecycle):
         for binding in collections.sells:
             persisted = self._state(self.scenario, binding, symbol)
             self._inject_live_michelle_state(collections, binding, cycle, persisted)
-            evaluation = binding.strategy.evaluate(context, binding.parameters, persisted)
+            evaluation = self._evaluate_binding(
+                binding, context, persisted, position=self._live_model_position(cycle)
+            )
             self._save_state(self.scenario, binding, symbol, evaluation.state_updates)
             if evaluation.is_signal and binding.strategy_id not in _MICHELLE_SELL_IDS:
                 exits[evaluation.signal_id or ""] = binding
@@ -409,6 +412,28 @@ class LiveStrategyLifecycle(VwapReferenceLifecycle):
         if decision.selected is None:
             return []
         return await self._exit(context, cycle, decision.selected.signal_id)
+
+    @staticmethod
+    def _live_model_position(cycle: PositionCycle) -> PositionFacts | None:
+        """Real position facts for model SELLs: actual fill-derived entry price and entry time.
+
+        Never falls back to a reference or placeholder price: without confirmed entry fills
+        (or an entry time) there are no position facts and a model SELL cannot act.
+        """
+        price = cycle.avg_entry_price
+        if (
+            price is None
+            or cycle.opened_at is None
+            or cycle.direction is not PositionDirection.LONG
+            or cycle.remaining_quantity <= ZERO
+        ):
+            return None
+        try:
+            return PositionFacts(
+                cycle.symbol, cycle.cycle_id, cycle.remaining_quantity, price, cycle.opened_at
+            )
+        except ValueError:
+            return None
 
     def _reference_price(self, cycle: PositionCycle) -> Decimal:
         price = cycle.avg_entry_price
@@ -480,7 +505,7 @@ class LiveStrategyLifecycle(VwapReferenceLifecycle):
         for binding in collections.buys:
             persisted = self._state(self.scenario, binding, symbol)
             persisted["eligibility"] = "WATCHING_BUY"
-            evaluation = binding.strategy.evaluate(context, binding.parameters, persisted)
+            evaluation = self._evaluate_binding(binding, context, persisted)
             self._save_state(self.scenario, binding, symbol, evaluation.state_updates)
             if evaluation.is_signal:
                 entries[evaluation.signal_id or ""] = (binding, evaluation)

@@ -36,13 +36,19 @@ acquisition.
 | `adapters/lightgbm.py` | Native text LightGBM classification/regression training and inference. |
 | `config.py`, `training.py` | Versioned experiment parsing and the shared bounded training workflow. |
 | `commands.py` | Train, evaluate, inspect, list, and compare CLI commands. |
+| `inference.py` | `ModelInferenceService`: loads pinned artifacts once, verifies them, and serves cached, validated, point-in-time predictions (broker-neutral). |
+| `serving.py` | `ModelInputProvider`, `BarVwapLedger`, `build_inference_service`: completed candles and the real position → inference request → immutable `ModelInputs`. |
 
 Policy and contracts point inward. Adapters depend on the contracts, the existing research
 repository, and pure market/session types. Model trainers must not import a broker or an
-operational account. Strategies may eventually depend on a narrow prediction provider that
-returns `ModelPrediction`; they must not load artifacts or instantiate XGBoost/LightGBM.
-Concrete model-library adapters are explicit trusted factories; no entry-point discovery or
-arbitrary deserialization is used.
+operational account. Strategies do not depend on this package at all: the composition root
+supplies already-computed, immutable `ServedPrediction` values (`mike_trade.domain.model_signals`,
+standard library only) on `MarketContext.model_inputs`, so a strategy neither loads artifacts nor
+imports XGBoost/LightGBM (`docs/MODEL_STRATEGIES.md`). Concrete model-library adapters are explicit
+trusted factories; no entry-point discovery or arbitrary deserialization is used. The
+`mike_trade.modeling.adapters` package imports the vendor libraries lazily, so configuring or serving
+models never imports a library no configured model uses, and a deployment without model-driven strategies
+imports neither.
 
 ## Public contracts
 
@@ -57,7 +63,10 @@ The package exports these structural interfaces:
 - `ModelEvaluator.evaluate(predictions, labels) -> EvaluationReport`;
 - `ModelRepository.put/get`, always using an explicit model ID and pinned semantic version.
 
-`ModelPrediction` is deliberately small and broker-neutral. It identifies the model and
+`ModelPrediction` is deliberately small and broker-neutral; the service wraps each validated output in
+`ServedPrediction`, which adds the artifact checksum, algorithm, role, feed/timeframe/adjustment,
+feature-schema hash, observation start/end, prediction time, horizon, per-class modeled returns and (SELL)
+the position fingerprint. It identifies the model and
 feature schema, symbol and completed-bar `as_of`, and carries either a regression value or a
 class with optional probabilities. It contains no quantity, order, account, or confidence
 shortcut. A strategy remains responsible only for interpreting a prediction as one input to
@@ -211,7 +220,8 @@ must never rewrite the active model version.
 
 `ModelAdapterRegistry` accepts only explicit trusted factory objects keyed by adapter ID and
 version. There is no dynamic path import, entry-point discovery, or vendor coupling in the
-repository. This assignment supplies no XGBoost or LightGBM factory.
+repository. The native XGBoost and LightGBM factories are registered by the composition code that
+trains (`ModelTrainingService`) or serves (`build_inference_service`) models.
 
 ## Training and inference lifecycles
 
@@ -227,14 +237,31 @@ Training:
 8. Save the adapter's safe native bytes and immutable manifest.
 9. In a separately authorized operation only, evaluate the frozen model on final holdout.
 
-Inference:
+Inference (implemented; strategies in `docs/MODEL_STRATEGIES.md`):
 
-1. Load an explicitly pinned, checksum-verified model version through its trusted adapter.
-2. Convert only a completed operational candle to `ModelBar` and supply declared reference bars.
-3. Run the same stateful `IntradayFeaturePipeline.update()` implementation used in training.
-4. Confirm feature ID/version/order against the manifest before prediction.
-5. Return `ModelPrediction` to a broker-neutral strategy integration adapter.
-6. Let existing signal arbitration, risk, stops, and execution handle any resulting signal.
+1. At startup the composition root loads each explicitly pinned model id/version once through
+   `FileModelRepository`, re-verifies size and SHA-256 (and an optional operator checksum pin), and checks the
+   algorithm, BUY/SELL role, 1m/raw provenance, that the shared pipeline reproduces the manifest's exact feature
+   names and order, and (through the trusted adapter) the native model's own feature order. Any failure is a
+   startup error; nothing is replaced, retrained or substituted, and there is no `latest`.
+2. For each prediction the service receives completed bars only (`model_bar_from_candle` rejects developing,
+   non-RAW and non-regular-session candles) plus the declared reference bars, checks that every bar has the
+   model's feed, timeframe and adjustment, and replays the last feature window through a fresh
+   `IntradayFeaturePipeline`. That is value-for-value the streaming/batch computation, so inference does not
+   depend on call history.
+3. SELL models add the four position features through `position_feature_values` — the same function the
+   training builder calls — from the real position's average entry fill price and entry fill time (entry bar =
+   the 1m bar containing the fill; `position_holding_bars` counts completed bars from that bar inclusive).
+   Positions from an earlier session, without their entry bar, or older than the training support
+   (`maximum_holding_bars − horizon_bars`) are refused.
+4. The vector's schema identity and exact field order are confirmed against the manifest before the vendor call;
+   the returned `ModelPrediction` must match the model, version, symbol, schema and observed bar, and its
+   probabilities (float32 rounding aside) must be a finite distribution over exactly the manifest's classes.
+5. The result is a `ServedPrediction` or a typed `PredictionFailure`; it is cached (bounded LRU) by model,
+   symbol, observation end, position fingerprint and a digest of the exact bars, and base features are shared by
+   models with the same feature schema. Observations later than `now` or older than the maximum age are refused.
+6. The strategy sees only immutable data and applies its own deterministic thresholds; existing signal
+   arbitration, risk, stops, market-status entry gating and execution handle any resulting signal.
 
 ## XGBoost and LightGBM behavior
 
@@ -260,6 +287,9 @@ presented as evidence of trading profitability.
 At inference, both loaders compare the native model's feature names with the pinned manifest.
 Each prediction then requires the complete feature schema identity and exact field ordering; a
 missing, additional, reordered, or incompatible field fails closed before vendor prediction.
+`predict()` renormalizes only float32 rounding error (|Σp − 1| ≤ 1e-4); genuinely invalid
+distributions still fail the `ModelPrediction` contract, and single-row serving is pinned to one thread
+in both libraries.
 Re-evaluation resolves the exact dataset IDs recorded by the manifest; it does not drift to a
 newer matching snapshot, change feeds, or substitute missing coverage.
 
