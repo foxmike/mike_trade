@@ -1,6 +1,7 @@
 /** TanStack Query bindings for the read-only dashboard API. */
 
 import { useQuery, type UseQueryResult } from "@tanstack/react-query";
+import { getModelStatus, type ModelStatusResponse } from "../api/models";
 import {
   getAccountDetail,
   getActivity,
@@ -89,6 +90,16 @@ export function useHealth(accountId: string | null): UseQueryResult<HealthRespon
   return useQuery({
     queryKey: ["health", accountId],
     queryFn: ({ signal }) => getHealth(accountId as string, signal),
+    enabled: accountId !== null,
+    refetchInterval: POLL_INTERVAL_MS,
+    retry: 1,
+  });
+}
+
+export function useModelStatus(accountId: string | null): UseQueryResult<ModelStatusResponse> {
+  return useQuery({
+    queryKey: ["model-status", accountId],
+    queryFn: ({ signal }) => getModelStatus(accountId as string, signal),
     enabled: accountId !== null,
     refetchInterval: POLL_INTERVAL_MS,
     retry: 1,

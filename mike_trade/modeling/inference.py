@@ -222,6 +222,7 @@ class ModelInferenceService:
         )
         self._features: OrderedDict[tuple[str, str, datetime, int], FeatureVector] = OrderedDict()
         self._diagnostics = InferenceDiagnostics()
+        self._status: dict[str, dict[str, object]] = {}
         self._models: dict[str, LoadedModel] = {}
         seen: set[str] = set()
         for reference in references:
@@ -428,6 +429,29 @@ class ModelInferenceService:
         model = self._models.get(reference.key)
         return 0 if model is None else model.feature_window
 
+    def health(self) -> list[dict[str, object]]:
+        """Per pinned model: identity, loaded state, last prediction and last failure."""
+        with self._lock:
+            status = {key: dict(value) for key, value in self._status.items()}
+        rows: list[dict[str, object]] = []
+        for key, model in sorted(self._models.items()):
+            seen = status.get(
+                key,
+                {"predictions": 0, "failures": 0, "last_prediction": None, "last_failure": None},
+            )
+            rows.append(
+                {
+                    "model": key,
+                    "algorithm": model.reference.algorithm,
+                    "role": model.reference.role,
+                    "feed": model.manifest.feed,
+                    "artifact_sha256": model.manifest.artifact_sha256,
+                    "state": "LOADED",
+                    **seen,
+                }
+            )
+        return rows
+
     def diagnostics(self) -> dict[str, object]:
         with self._lock:
             snapshot = self._diagnostics.snapshot()
@@ -443,10 +467,28 @@ class ModelInferenceService:
         with self._lock:
             self._diagnostics.requests += 1
         result = self._predict(request, started)
-        if result.failure is not None:
-            with self._lock:
+        with self._lock:
+            status = self._status.setdefault(
+                request.reference.key,
+                {"predictions": 0, "failures": 0, "last_prediction": None, "last_failure": None},
+            )
+            if result.failure is not None:
                 failures = self._diagnostics.failures
                 failures[result.failure.value] = failures.get(result.failure.value, 0) + 1
+                status["failures"] = int(str(status["failures"])) + 1
+                status["last_failure"] = {
+                    "code": result.failure.value,
+                    "detail": result.detail[:200],
+                    "symbol": request.symbol.strip().upper(),
+                    "at": self._clock().isoformat(),
+                }
+            elif result.prediction is not None:
+                status["predictions"] = int(str(status["predictions"])) + 1
+                status["last_prediction"] = {
+                    "symbol": result.prediction.symbol,
+                    "observation_end": result.prediction.observation_end.isoformat(),
+                    "predicted_at": result.prediction.predicted_at.isoformat(),
+                }
         return result
 
     def _predict(self, request: InferenceRequest, started: float) -> ModelPredictionResult:

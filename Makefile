@@ -42,6 +42,7 @@ UNTIL_FLAG := $(if $(UNTIL),--until $(UNTIL))
 LIMIT_FLAG := $(if $(LIMIT),--limit $(LIMIT))
 RUN_FLAG := $(if $(RUN_ID),--run-id $(RUN_ID))
 OUT_FLAG := $(if $(OUT),--output $(OUT))
+OUT_DIR_FLAG := $(if $(OUT),--output-dir $(OUT))
 BASE_FLAGS := $(ACCOUNT_FLAG) $(SCENARIO_FLAG) $(FORMAT_FLAG)
 FILTER_FLAGS := $(BASE_FLAGS) $(SYMBOL_FLAG) $(STRATEGY_FLAG) $(SINCE_FLAG) $(UNTIL_FLAG) $(LIMIT_FLAG) $(RUN_FLAG)
 
@@ -409,7 +410,8 @@ report-export: ## Export the trade report (VALUE=dataset, OUT=file path)
 
 .PHONY: backtest backtest-status backtest-report backtest-list research-build research-data research-six research-backtest research-batch research-results research-sync-r730
 .PHONY: research-data-plan research-data-preflight research-data-acquire research-data-status research-data-verify
-.PHONY: model-train model-evaluate model-inspect model-list model-compare
+.PHONY: model-prepare model-train model-walk-forward model-evaluate model-inspect model-list model-compare
+.PHONY: model-report model-backtest model-backtest-compare model-approve model-pin model-check model-health
 
 WORKERS ?= auto
 JOBS ?=
@@ -428,6 +430,21 @@ MODEL_ROOT ?= research/models
 MODEL_ID ?=
 MODEL_VERSION ?=
 MODELS ?=
+MODEL_LOCK ?=
+CAMPAIGN ?= config/modeling/campaigns/model_strategy_comparison_v1.yaml
+REPORTS ?=
+MODEL_WORKERS ?=
+DRY_RUN ?=
+APPROVE_LARGE_RUN ?=
+SKIP_MISSING ?=
+STAGE ?=
+APPROVED_BY ?=
+REASON ?=
+EVIDENCE ?=
+PIN_NAME ?=
+MODEL_RUNTIME_CONFIG ?=
+MODEL_MODE ?=
+MODEL_DB ?=
 
 research-build: ## Build only the manually invoked research image
 	docker compose build mike-trade-research
@@ -477,8 +494,14 @@ research-batch: ## Run a JSON experiment batch (JOBS=...json WORKERS=auto|N)
 research-results: ## List persisted research results
 	docker compose run --rm --no-deps mike-trade-research research-results --results /app/research/final-six
 
-model-train: ## Train one explicitly configured native model (MODEL_CONFIG=...yaml)
-	$(CLI) model-train --config "$(MODEL_CONFIG)"
+model-prepare: ## Pin/verify training data and write an immutable lock (MODEL_CONFIG=...yaml)
+	$(CLI) model-prepare --config "$(MODEL_CONFIG)"
+
+model-train: ## Train one explicitly configured native model (MODEL_CONFIG=...yaml [MODEL_LOCK=lock.json])
+	$(CLI) model-train --config "$(MODEL_CONFIG)" $(if $(MODEL_LOCK),--lock "$(MODEL_LOCK)")
+
+model-walk-forward: ## Purged walk-forward validation, no model stored (MODEL_CONFIG=...yaml)
+	$(CLI) model-walk-forward --config "$(MODEL_CONFIG)" $(if $(MODEL_LOCK),--lock "$(MODEL_LOCK)")
 
 model-evaluate: ## Re-evaluate a pinned model using its experiment config
 	$(CLI) model-evaluate --config "$(MODEL_CONFIG)"
@@ -486,11 +509,32 @@ model-evaluate: ## Re-evaluate a pinned model using its experiment config
 model-inspect: ## Inspect one immutable model (MODEL_ID=... MODEL_VERSION=...)
 	$(CLI) model-inspect --root "$(MODEL_ROOT)" --model-id "$(MODEL_ID)" --version "$(MODEL_VERSION)"
 
-model-list: ## List immutable native models
+model-list: ## List immutable native models with their approval stage
 	$(CLI) model-list --root "$(MODEL_ROOT)"
 
-model-compare: ## Compare evaluations (MODELS=id@version,id@version)
+model-compare: ## Compare predictive evaluations (MODELS=id@version,id@version)
 	$(CLI) model-compare --root "$(MODEL_ROOT)" --models "$(MODELS)"
+
+model-report: ## Write the JSON/Markdown/CSV report of one model (MODEL_ID=... MODEL_VERSION=...)
+	$(CLI) model-report --root "$(MODEL_ROOT)" --model-id "$(MODEL_ID)" --version "$(MODEL_VERSION)" $(OUT_DIR_FLAG)
+
+model-backtest: ## Run a model backtest campaign (CAMPAIGN=...yaml [DRY_RUN=1] [MODEL_WORKERS=N])
+	$(CLI) model-backtest --campaign "$(CAMPAIGN)" $(if $(MODEL_WORKERS),--workers "$(MODEL_WORKERS)") $(if $(DRY_RUN),--dry-run) $(if $(SKIP_MISSING),--skip-missing) $(if $(APPROVE_LARGE_RUN),--approve-large-run)
+
+model-backtest-compare: ## Compare campaign reports (REPORTS=a/report.json,b/report.json [OUT=file])
+	$(CLI) model-backtest-compare --reports "$(REPORTS)" $(OUT_FLAG)
+
+model-approve: ## Record an operator approval (MODEL_ID MODEL_VERSION STAGE=shadow|paper|live REASON=... [EVIDENCE=report.json])
+	$(CLI) model-approve --root "$(MODEL_ROOT)" --model-id "$(MODEL_ID)" --version "$(MODEL_VERSION)" --stage "$(STAGE)" --reason "$(REASON)" $(if $(APPROVED_BY),--approved-by "$(APPROVED_BY)") $(if $(EVIDENCE),--evidence "$(EVIDENCE)") $(if $(CONFIRM_LIVE),--confirm-live "$(CONFIRM_LIVE)")
+
+model-pin: ## Print the strategy configuration pinning an approved model (MODEL_ID MODEL_VERSION [STAGE] [PIN_NAME])
+	$(CLI) model-pin --root "$(MODEL_ROOT)" --model-id "$(MODEL_ID)" --version "$(MODEL_VERSION)" $(if $(STAGE),--stage "$(STAGE)") $(if $(PIN_NAME),--name "$(PIN_NAME)") $(OUT_FLAG)
+
+model-check: ## Offline pre-flight of the model pins in a trading config ([MODEL_RUNTIME_CONFIG=...] [MODEL_MODE=shadow|paper|live])
+	$(CLI) model-check $(if $(MODEL_RUNTIME_CONFIG),--config "$(MODEL_RUNTIME_CONFIG)") $(if $(MODEL_MODE),--mode "$(MODEL_MODE)")
+
+model-health: ## Show model status published by the running engine ([MODEL_DB=path/to/state-db])
+	$(CLI) model-health $(if $(MODEL_DB),--db "$(MODEL_DB)")
 
 # --- cache and database ---
 

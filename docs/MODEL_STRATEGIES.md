@@ -294,6 +294,12 @@ duplicate suppression makes this safe); otherwise that minute is skipped.
   automatic liquidation system. A model BUY during CRASH produces a signal that the existing gate refuses
   before arbitration (`ENTRY_REFUSED … MARKET_CRASH_ACUTE_RISK` in BACKTEST). Exits stay authorized.
 * Missing, corrupt or unapproved artifacts are startup errors, not silent downgrades.
+* **Approval.** Every mode requires an immutable approval for the artifact at the mode's stage (SHADOW:
+  `shadow`; PAPER: `paper`; LIVE: `live`), created with `make model-approve`. Without one the engine
+  refuses to start (`MODEL_NOT_APPROVED`). Approvals do not by themselves authorize PAPER or LIVE.
+* **Health.** The engine publishes a `models` component each heartbeat (pins, loaded/unavailable, last
+  prediction, last decision per strategy and symbol, inference errors) read by `make model-health` and the
+  read-only dashboard endpoint `/api/v2/models/status` (Health page, *Models* panel).
 
 ## 10. Audit and diagnostics
 

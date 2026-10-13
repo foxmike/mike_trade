@@ -14,6 +14,7 @@ from mike_trade.modeling.adapters.common import (
     ComputeDevice,
     FitResult,
     LightGBMTrainingConfig,
+    normalize_probability_matrix,
     normalize_probability_row,
 )
 from mike_trade.modeling.artifacts import ModelArtifactManifest
@@ -138,7 +139,9 @@ class LightGBMPredictor:
     def probability_matrix(self, dataset: MatrixDataset) -> np.ndarray[Any, Any]:
         if self.task is LearningTask.REGRESSION:
             raise ValueError("regression models do not produce probabilities")
-        return self.calibrator.transform(self.raw_matrix_predictions(dataset))
+        return normalize_probability_matrix(
+            self.calibrator.transform(self.raw_matrix_predictions(dataset))
+        )
 
     def with_calibrator(self, calibrator: ProbabilityCalibrator) -> LightGBMPredictor:
         return LightGBMPredictor(

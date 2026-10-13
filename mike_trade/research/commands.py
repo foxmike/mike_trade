@@ -11,7 +11,7 @@ import os
 import tempfile
 import time
 import traceback
-from collections.abc import Iterable, Mapping
+from collections.abc import Iterable, Mapping, Sequence
 from concurrent.futures import FIRST_COMPLETED, ProcessPoolExecutor, wait
 from dataclasses import asdict, dataclass, replace
 from datetime import UTC, datetime, time as dt_time, timedelta
@@ -59,6 +59,12 @@ class ExperimentSpec:
     #: Root of the immutable model repository; required when any selected strategy is
     #: model-driven (``xgboost_probability_*`` / ``lightgbm_probability_*``).
     model_root: str | None = None
+    #: Optional exact snapshot ids for the model's reference series (for example SPY); when
+    #: omitted the newest same-feed snapshot covering the window is used.
+    reference_dataset_ids: Mapping[str, str] | None = None
+    #: Replay the Market Status Monitor (SPY/QQQ/IWM, same feed) so CRASH/WARNING states gate
+    #: new entries exactly as in SHADOW.
+    market_status_enabled: bool = False
 
     def validate(self) -> None:
         if not self.symbol or not self.symbol.replace(".", "").isalnum():
@@ -206,8 +212,14 @@ def run_experiment_batch(
     root: str,
     results: str,
     batch_file: str | None = None,
+    mp_context: Any | None = None,
 ) -> dict[str, Any]:
-    """Bounded process coordinator; each child invokes the existing runner."""
+    """Bounded process coordinator; each child invokes the existing runner.
+
+    ``mp_context`` selects the multiprocessing start method.  Model campaigns pass ``spawn``:
+    a forked child of a process that has initialized an OpenMP runtime (XGBoost/LightGBM) is
+    unsafe.
+    """
     repository = HistoricalDatasetRepository(root)
     resolved_jobs = []
     for job in jobs:
@@ -235,7 +247,7 @@ def run_experiment_batch(
     completed: list[dict[str, Any]] = []
     pending_specs = iter(enumerate(jobs))
     in_flight: dict[concurrent.futures.Future[dict[str, Any]], int] = {}
-    pool = ProcessPoolExecutor(max_workers=selected_workers)
+    pool = ProcessPoolExecutor(max_workers=selected_workers, mp_context=mp_context)
     try:
 
         def submit_next() -> bool:
@@ -339,6 +351,8 @@ def _execute_experiment(job_data: dict[str, Any], root: str, results: str) -> di
         end_of_day_close=spec.end_of_day_close,
         max_entry_cycles_per_session=spec.max_entry_cycles_per_session,
         model_root=spec.model_root,
+        reference_dataset_ids=spec.reference_dataset_ids,
+        market_status_enabled=spec.market_status_enabled,
     )
     ledger = result.pop("trade_ledger")
     ledger_dir = Path(results) / "trade_ledgers"
@@ -1132,70 +1146,38 @@ def research_default_execution_assumptions() -> dict[str, Any]:
     }
 
 
-def _model_replay_inputs(
+def _reference_events(
     repo: Any,
-    registry: Any,
-    clock: Any,
+    symbols: Sequence[str],
     snapshot: Any,
-    symbol: str,
+    primary: str,
     start: datetime,
     end: datetime,
     root: str,
-    model_root: str | None,
-    buy_strategies: tuple[str, ...] | None,
-    sell_strategies: tuple[str, ...] | None,
-    parameters: Mapping[str, Mapping[str, Any]] | None,
-) -> tuple[Any, dict[str, str], list[Any]]:
-    """Pinned-model service plus same-feed reference-symbol replay events, when needed.
+    pinned_ids: Mapping[str, str] | None = None,
+) -> tuple[dict[str, str], list[Any]]:
+    """Regular-session replay bars for reference symbols, from the *same feed* as ``snapshot``.
 
-    Returns ``(None, {}, [])`` unless a selected strategy is model-driven.  Reference series
-    (for example SPY) come from the *same feed* as the primary snapshot; an absent snapshot is
-    an error, never a substitution.
+    A missing (or other-feed) snapshot is an error, never a substitution.  ``pinned_ids`` fixes
+    the exact snapshot per symbol; otherwise the newest covering one is used and reported.
     """
     from mike_trade.backtest.feed import ReplayEvent
     from mike_trade.domain.market import Candle, FeedProvenance, Timeframe
-    from mike_trade.modeling.serving import build_inference_service
     from mike_trade.scheduling.calendar import NEW_YORK, session_for
 
-    references: dict[str, Any] = {}
-    for strategy_id in (*(buy_strategies or ()), *(sell_strategies or ())):
-        try:
-            cls = registry.get(strategy_id)
-        except Exception:
-            continue  # unknown ids are reported by the normal strategy validation
-        reference_of = getattr(cls, "model_reference", None)
-        if callable(reference_of):
-            params = registry.validate_parameters(
-                strategy_id, (parameters or {}).get(strategy_id, {})
-            )
-            reference = reference_of(params)
-            references.setdefault(reference.key, reference)
-    if not references:
-        return None, {}, []
-    if not model_root:
-        raise ValueError(
-            "model-driven strategies require model_root (the immutable model repository); "
-            "no model is ever located implicitly or substituted"
-        )
-    service = build_inference_service(model_root, tuple(references.values()), clock.now)
-    for reference in service.references:
-        manifest = service.manifest(reference)
-        if manifest is not None and manifest.feed != snapshot.feed:
-            raise ValueError(
-                f"model {reference.key} was trained on the {manifest.feed!r} feed but the "
-                f"dataset is {snapshot.feed!r}; feeds are never mixed or substituted"
-            )
     is_consolidated = snapshot.feed == "sip"
     provenance = FeedProvenance("replay", snapshot.feed.upper(), "alpaca", is_consolidated)
     dataset_ids: dict[str, str] = {}
     events: list[Any] = []
-    for reference_symbol in service.required_reference_symbols():
-        if reference_symbol == symbol:
+    for reference_symbol in symbols:
+        if reference_symbol == primary:
             continue
+        pinned = (pinned_ids or {}).get(reference_symbol)
         candidates = [
             item
             for item in repo.snapshots()
             if item.symbol == reference_symbol
+            and (pinned is None or item.dataset_id == pinned)
             and item.adjustment == "raw"
             and item.feed == snapshot.feed
             and datetime.fromisoformat(item.start) <= start
@@ -1225,6 +1207,68 @@ def _model_replay_inputs(
                     )
                 )
             )
+    return dataset_ids, events
+
+
+def reference_dataset_ids_loaded(events: Sequence[Any]) -> set[str]:
+    return {event.symbol for event in events}
+
+
+def _model_replay_inputs(
+    repo: Any,
+    registry: Any,
+    clock: Any,
+    snapshot: Any,
+    symbol: str,
+    start: datetime,
+    end: datetime,
+    root: str,
+    model_root: str | None,
+    buy_strategies: tuple[str, ...] | None,
+    sell_strategies: tuple[str, ...] | None,
+    parameters: Mapping[str, Mapping[str, Any]] | None,
+    reference_dataset_ids: Mapping[str, str] | None = None,
+) -> tuple[Any, dict[str, str], list[Any]]:
+    """Pinned-model service plus same-feed reference-symbol replay events, when needed.
+
+    Returns ``(None, {}, [])`` unless a selected strategy is model-driven.  Reference series
+    (for example SPY) come from the *same feed* as the primary snapshot; an absent snapshot is
+    an error, never a substitution.
+    """
+    from mike_trade.modeling.serving import build_inference_service
+
+    references: dict[str, Any] = {}
+    for strategy_id in (*(buy_strategies or ()), *(sell_strategies or ())):
+        try:
+            cls = registry.get(strategy_id)
+        except Exception:
+            continue  # unknown ids are reported by the normal strategy validation
+        reference_of = getattr(cls, "model_reference", None)
+        if callable(reference_of):
+            params = registry.validate_parameters(
+                strategy_id, (parameters or {}).get(strategy_id, {})
+            )
+            reference = reference_of(params)
+            references.setdefault(reference.key, reference)
+    if not references:
+        return None, {}, []
+    if not model_root:
+        raise ValueError(
+            "model-driven strategies require model_root (the immutable model repository); "
+            "no model is ever located implicitly or substituted"
+        )
+    service = build_inference_service(model_root, tuple(references.values()), clock.now)
+    for reference in service.references:
+        manifest = service.manifest(reference)
+        if manifest is not None and manifest.feed != snapshot.feed:
+            raise ValueError(
+                f"model {reference.key} was trained on the {manifest.feed!r} feed but the "
+                f"dataset is {snapshot.feed!r}; feeds are never mixed or substituted"
+            )
+    dataset_ids, events = _reference_events(
+        repo, service.required_reference_symbols(), snapshot, symbol, start, end, root,
+        reference_dataset_ids,
+    )
     return service, dataset_ids, events
 
 
@@ -1252,6 +1296,8 @@ def _run_one(
     end_of_day_close: Mapping[str, Any] | None = None,
     max_entry_cycles_per_session: int = 1,
     model_root: str | None = None,
+    reference_dataset_ids: Mapping[str, str] | None = None,
+    market_status_enabled: bool = False,
 ) -> dict[str, Any]:
     from mike_trade.backtest.clock import ReplayClock
     from mike_trade.backtest.execution import (
@@ -1353,8 +1399,19 @@ def _run_one(
     registry = _research_registry()
     model_service, reference_dataset_ids, reference_events = _model_replay_inputs(
         repo, registry, clock, snapshot, symbol, start, end, root, model_root,
-        buy_strategies, sell_strategies, parameters,
+        buy_strategies, sell_strategies, parameters, reference_dataset_ids,
     )
+    status_dataset_ids: dict[str, str] = {}
+    if market_status_enabled:
+        wanted = [
+            name for name in ("SPY", "QQQ", "IWM")
+            if name not in reference_dataset_ids_loaded(reference_events)
+        ]
+        status_dataset_ids, status_events = _reference_events(
+            repo, wanted, snapshot, symbol, start, end, root, reference_dataset_ids
+        )
+        reference_events = [*reference_events, *status_events]
+        reference_dataset_ids = {**dict(reference_dataset_ids or {}), **status_dataset_ids}
     events = [*events, *reference_events]
     replay_feed = HistoricalReplayFeed(
         events,
@@ -1517,7 +1574,12 @@ def _run_one(
             "focus_strategy": strategy_name,
             "position_sizing": "min($3000 symbol budget, $30 planned loss / stop distance)",
             **stop_config,
-            **({"reference_dataset_ids": reference_dataset_ids} if reference_dataset_ids else {}),
+            **(
+                {"reference_dataset_ids": {**reference_dataset_ids, **status_dataset_ids}}
+                if reference_dataset_ids or status_dataset_ids
+                else {}
+            ),
+            **({"market_status_enabled": True} if market_status_enabled else {}),
             "entry_cutoff_minutes": 30,
             "minimum_hold_seconds": 60,
             "max_entry_cycles_per_session": max_entry_cycles_per_session,

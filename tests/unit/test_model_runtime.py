@@ -582,7 +582,24 @@ def test_startup_fails_clearly_for_missing_unpinned_and_wrong_feed_models(tmp_pa
     assert feed.value.code == "MODEL_FEED_MISMATCH"
 
 
+def approve(model_root: Path, model_id: str, stage: str = "shadow") -> None:
+    from mike_trade.modeling.approvals import ApprovalRepository, approve_model
+
+    if ApprovalRepository(model_root).get(model_id, "1.0.0", stage) is None:
+        approve_model(model_root, model_id, "1.0.0", stage, approved_by="test", reason="test")
+
+
+def test_startup_requires_an_operator_approval_for_the_mode(tmp_path):
+    fresh = tmp_path / "fresh-models"
+    build_model(fresh, algorithm="xgboost", role="buy", model_id="xgboost_buy_m")
+    with pytest.raises(ConfigurationError) as raised:
+        build_runtime(settings_for(tmp_path, fresh), overrides={"clock": Clock()})
+    assert raised.value.code == "MODEL_NOT_APPROVED"
+    assert "model-approve" in str(raised.value)
+
+
 def test_startup_loads_pinned_models_once_and_binds_the_lifecycle(tmp_path, model_root):
+    approve(model_root, "xgboost_buy_m")
     runtime = build_runtime(settings_for(tmp_path, model_root), overrides={"clock": Clock()})
     provider = runtime.lifecycle._model_inputs
     assert provider is not None

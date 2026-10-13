@@ -446,3 +446,13 @@ strategy code. If referenced Parquet is absent on the host, chart and excursion
 diagnostics state that limitation while recorded fills remain inspectable.
 This supports R730 artifacts in place on the R730 and deterministic local DEV
 fixtures without copying the R730 datasets.
+
+## Model-driven experiments
+
+`ExperimentSpec` accepts `model_root`, `reference_dataset_ids` and `market_status_enabled` so a research run can
+carry registered model strategies. Model campaigns (`make model-backtest CAMPAIGN=...`) expand a versioned YAML
+file into these specs and run them through `run_experiment_batch` (spawn start method) and the existing
+`BacktestRunner`; windows are classified `out_of_sample` / `in_sample` / `tuning_overlap` against the pinned
+model's recorded ranges and the final holdout is always refused. Same-feed SPY/QQQ/IWM snapshots replay the
+Market Status Monitor. See `docs/MODEL_OPERATOR_GUIDE.md` §6.
+

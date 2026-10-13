@@ -99,6 +99,58 @@ class ExperimentRanges:
 
 
 @dataclass(frozen=True, slots=True)
+class WalkForwardConfig:
+    """Expanding purged walk-forward folds ending at the experiment's evaluation end.
+
+    Fold ``i`` of ``N`` validates on the ``validation_days``-long window that is ``N - i``
+    windows before the evaluation end; it trains on everything from ``fit_start`` up to the
+    validation start minus the embargo, split chronologically into fit, early-stopping and
+    (optionally) calibration partitions separated by the embargo.
+    """
+
+    folds: int = 3
+    validation_days: int = 7
+    early_stopping_fraction: float = 0.15
+    calibration_fraction: float = 0.15
+
+    def __post_init__(self) -> None:
+        if isinstance(self.folds, bool) or not 2 <= self.folds <= 12:
+            raise ValueError("walk_forward.folds must be an int in [2, 12]")
+        if isinstance(self.validation_days, bool) or not 1 <= self.validation_days <= 120:
+            raise ValueError("walk_forward.validation_days must be an int in [1, 120]")
+        for name in ("early_stopping_fraction", "calibration_fraction"):
+            value = getattr(self, name)
+            if not 0.05 <= value <= 0.4:
+                raise ValueError(f"walk_forward.{name} must be within [0.05, 0.4]")
+
+    def fold_ranges(self, config: ModelExperimentConfig) -> dict[str, ExperimentRanges]:
+        """Concrete, holdout-safe ranges for every fold (validated by ``ExperimentRanges``)."""
+        embargo = config.ranges.embargo
+        window = timedelta(days=self.validation_days)
+        end = config.ranges.evaluation.end
+        calibrating = config.probability_calibration
+        result: dict[str, ExperimentRanges] = {}
+        for number in range(1, self.folds + 1):
+            validation = TimeRange(
+                end - window * (self.folds - number + 1), end - window * (self.folds - number)
+            )
+            boundary = validation.start - embargo
+            total = boundary - config.ranges.fit.start
+            early_length = total * self.early_stopping_fraction
+            calibration_length = total * self.calibration_fraction if calibrating else timedelta(0)
+            calibration = (
+                TimeRange(boundary - calibration_length, boundary) if calibrating else None
+            )
+            early_end = (calibration.start - embargo) if calibration else boundary
+            early = TimeRange(early_end - early_length, early_end)
+            fit = TimeRange(config.ranges.fit.start, early.start - embargo)
+            result[f"fold_{number}"] = ExperimentRanges(
+                fit, early, validation, calibration, embargo
+            )
+        return result
+
+
+@dataclass(frozen=True, slots=True)
 class SearchConfig:
     candidates: tuple[Mapping[str, object], ...] = ()
     max_trials: int = 1
@@ -146,6 +198,7 @@ class ModelExperimentConfig:
     permutation_max_rows: int = 5000
     batch_size: int = 4096
     config_sha256: str = ""
+    walk_forward: WalkForwardConfig | None = None
 
     def __post_init__(self) -> None:
         if self.schema_version != 1:
@@ -226,6 +279,26 @@ class ModelExperimentConfig:
         return LightGBMTrainingConfig(**common, **values)  # type: ignore[arg-type]
 
 
+def _walk_forward(value: object) -> WalkForwardConfig | None:
+    if value is None:
+        return None
+    raw = _mapping(value, "walk_forward")
+    unknown = set(raw) - {
+        "folds",
+        "validation_days",
+        "early_stopping_fraction",
+        "calibration_fraction",
+    }
+    if unknown:
+        raise ValueError(f"unknown walk_forward keys: {sorted(unknown)}")
+    return WalkForwardConfig(
+        folds=int(raw.get("folds", 3)),
+        validation_days=int(raw.get("validation_days", 7)),
+        early_stopping_fraction=float(raw.get("early_stopping_fraction", 0.15)),
+        calibration_fraction=float(raw.get("calibration_fraction", 0.15)),
+    )
+
+
 def load_experiment_config(path: str | Path) -> ModelExperimentConfig:
     config_path = Path(path)
     payload = config_path.read_bytes()
@@ -258,6 +331,7 @@ def load_experiment_config(path: str | Path) -> ModelExperimentConfig:
         "permutation_max_rows",
         "batch_size",
         "entry_policy",
+        "walk_forward",
     }
     if set(raw) - allowed:
         raise ValueError(f"unknown experiment keys: {sorted(set(raw) - allowed)}")
@@ -367,7 +441,10 @@ def load_experiment_config(path: str | Path) -> ModelExperimentConfig:
         int(raw.get("permutation_max_rows", 5000)),
         int(raw.get("batch_size", 4096)),
         hashlib.sha256(payload).hexdigest(),
+        walk_forward=_walk_forward(raw.get("walk_forward")),
     )
+    if result.walk_forward is not None:
+        result.walk_forward.fold_ranges(result)  # fail at load, not mid-run
     if result.probability_calibration and result.ranges.calibration is None:
         raise ValueError("probability_calibration requires a separate calibration range")
     if result.task is LearningTask.REGRESSION and result.probability_calibration:

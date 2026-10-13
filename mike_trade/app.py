@@ -2069,6 +2069,9 @@ class VwapReferenceLifecycle:
         self._model_reasons: dict[tuple[str, str], str] = {}
         #: symbol -> end of the completed bar whose model evaluation lacked a reference bar
         self._reference_waits: dict[str, datetime] = {}
+        #: (strategy id, symbol) -> latest non-idle model decision summary (for read-only health)
+        self._model_last: dict[tuple[str, str], dict[str, object]] = {}
+        self._model_errors = 0
 
     @staticmethod
     def _bind(
@@ -2588,7 +2591,10 @@ class VwapReferenceLifecycle:
         try:
             order = await account.submit_order(intent, strategy_key=binding.strategy_id)
         except (BrokerRejectedError, EntryBlockedError, InsufficientBuyingPowerError) as exc:
-            if not short:
+            # An account eligibility block (for example the session entry-cycle limit) is a
+            # refusal, not a fault: level-triggered strategies, notably the model BUYs, keep
+            # signalling on later bars and must not abort the symbol's evaluation each time.
+            if not short and not isinstance(exc, EntryBlockedError):
                 raise
             # The account's own margin / exposure / eligibility rules refused the short:
             # release the authorization hold and record the refusal; nothing was submitted.
@@ -2596,7 +2602,8 @@ class VwapReferenceLifecycle:
                 await scenario.coordinator.release_reservation(decision.reservation)
             else:
                 await scenario.coordinator.complete(command)
-            actions.append(f"ENTRY_REFUSED:SHORT:{getattr(exc, 'code', 'refused')}")
+            side_name = "SHORT" if short else "LONG"
+            actions.append(f"ENTRY_REFUSED:{side_name}:{getattr(exc, 'code', 'refused')}")
             return actions
         actions.append(f"ENTRY:{order.broker_order_id}")
         if context.latest_quote is not None:
@@ -2711,6 +2718,44 @@ class VwapReferenceLifecycle:
         else:
             self._reference_waits.pop(symbol, None)
 
+    def model_health(self) -> Mapping[str, object] | None:
+        """Read-only model status for the dashboard; ``None`` when no model strategy exists."""
+        configured: list[dict[str, object]] = []
+        for symbol, collections in sorted(self._by_symbol.items()):
+            for binding in (*collections.buys, *collections.sells):
+                if not self._is_model_driven(binding):
+                    continue
+                provider = self._model_inputs
+                reference = type(binding.strategy).model_reference(binding.parameters)  # type: ignore[attr-defined]
+                loaded = provider is not None and provider.service.loaded(reference) is not None
+                configured.append(
+                    {
+                        "strategy": binding.strategy_id,
+                        "symbol": symbol,
+                        "role": binding.role,
+                        "model": reference.key,
+                        "pinned_sha256": reference.artifact_sha256,
+                        "state": "LOADED" if loaded else "UNAVAILABLE",
+                    }
+                )
+        if not configured:
+            return None
+        provider = self._model_inputs
+        summary: dict[str, object] = {
+            "strategies": configured[:500],
+            "models": [] if provider is None else provider.service.health(),
+            "decisions": [
+                self._model_last[key] for key in sorted(self._model_last)
+            ][:500],
+            "inference_errors": self._model_errors,
+            "diagnostics": {} if provider is None else provider.service.diagnostics(),
+        }
+        healthy = provider is not None and all(c["state"] == "LOADED" for c in configured)
+        return {
+            "connected": "true" if healthy else "false",
+            "summary_json": json.dumps(summary, sort_keys=True, default=str),
+        }
+
     def take_reference_waits(self, reference_bar_end: datetime) -> tuple[str, ...]:
         """Symbols whose latest bar ended exactly when a reference bar just closed.
 
@@ -2740,6 +2785,17 @@ class VwapReferenceLifecycle:
         reason = str(record.get("reason"))
         changed = self._model_reasons.get(key) != reason
         self._model_reasons[key] = reason
+        bars = context.candles.get(CandleTimeframe.M1, ())
+        self._model_last[key] = {
+            "strategy": binding.strategy_id,
+            "symbol": context.symbol,
+            "decision": "SIGNAL" if evaluation.is_signal else "NO_SIGNAL",
+            "reason": reason,
+            "observation_end": None if not bars else bars[-1].end.isoformat(),
+            "decided_at": self.clock.now().isoformat(),
+        }
+        if reason.startswith("PREDICTION_UNAVAILABLE") or reason == "EVALUATION_ERROR":
+            self._model_errors += 1
         if evaluation.is_signal:
             _MODEL_LOGGER.info("Model strategy signal", extra={"model_audit": record})
         elif changed:
@@ -3648,6 +3704,18 @@ def _build_model_inputs(
                 code="MODEL_FEED_MISMATCH",
                 context={"model": reference.key},
             )
+    from mike_trade.modeling.approvals import ApprovalError, ApprovalRepository
+
+    approvals = ApprovalRepository(settings.model_root)
+    for reference in service.references:
+        manifest = service.manifest(reference)
+        assert manifest is not None
+        try:
+            approvals.require(manifest, settings.mode.value)
+        except ApprovalError as exc:
+            raise ConfigurationError(
+                str(exc), code="MODEL_NOT_APPROVED", context={"model": reference.key}
+            ) from exc
     return ModelInputProvider(service, history, vwaps)
 
 

@@ -104,6 +104,13 @@ a validated SHADOW example is `config/model_strategies.example.yaml`. Research e
 `model_root` (same-feed reference series such as SPY are loaded automatically). The market-status
 monitor, protective stops and entry controls apply to these strategies unchanged.
 
+The end-to-end operator procedure (prepare, train, report, walk-forward, campaign backtests, approval,
+SHADOW, `make model-check`, `make model-health`) is `docs/MODEL_OPERATOR_GUIDE.md`. The engine and API
+containers mount `MIKE_TRADE_MODEL_DIR` (default `./research/models`) read-only; training happens
+offline with the CLI and never inside the engine container. The image includes `libgomp1` for both
+libraries. Every mode requires an operator approval record for the pinned artifact; PAPER/LIVE
+authorization is separate and unchanged.
+
 ## Short selling
 
 Short selling is **opt-in and fail-closed** and is never activated for LIVE

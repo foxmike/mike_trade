@@ -361,6 +361,14 @@ class Runtime:
         await self._persist_market_status()
         await _call_optional(self.persistence, ("heartbeat", "publish_heartbeat"), details)
         await _call_optional(self.broker, ("refresh_balance_snapshots",))
+        try:  # model status is advisory: its failure must never stop the heartbeat
+            model_details = await _call_optional(self.lifecycle, ("model_health",))
+            if isinstance(model_details, Mapping):
+                await _call_optional(
+                    self.persistence, ("heartbeat_component",), "models", model_details
+                )
+        except Exception as exc:
+            self.logger.error("Model status publication failed", extra={"error": type(exc).__name__})
         feed_details = await _call_optional(self.market_data, ("health_details",))
         if isinstance(feed_details, Mapping):
             await _call_optional(

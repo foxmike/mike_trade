@@ -84,6 +84,14 @@ search:
     - {num_leaves: 23, learning_rate: 0.05}
     - {num_leaves: 47, learning_rate: 0.03}
 
+# Purged walk-forward folds (`make model-walk-forward`): 4 expanding folds of 10 calendar days
+# ending at ranges.evaluation_end; the final holdout is rejected. No fold model is stored.
+walk_forward:
+  folds: 4
+  validation_days: 10
+  early_stopping_fraction: 0.15
+  calibration_fraction: 0.15
+
 probability_calibration: true
 permutation_importance: false
 permutation_max_rows: 5000

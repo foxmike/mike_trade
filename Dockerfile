@@ -14,6 +14,11 @@ ENV PYTHONDONTWRITEBYTECODE=1 \
 
 WORKDIR /app
 
+# XGBoost and LightGBM need the OpenMP runtime, which python:slim does not ship.
+RUN apt-get update \
+    && apt-get install -y --no-install-recommends libgomp1 \
+    && rm -rf /var/lib/apt/lists/*
+
 RUN groupadd --gid 1000 mike-trade \
     && useradd --uid 1000 --gid 1000 --create-home --shell /usr/sbin/nologin mike-trade
 

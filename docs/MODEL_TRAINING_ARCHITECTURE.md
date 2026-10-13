@@ -332,3 +332,39 @@ a primary training symbol for those configurations. Per-symbol configurations ca
 smaller explicit `symbols` list. A future strategy adapter should receive an already loaded,
 pinned `ModelPredictor`; it must keep model loading out of strategies and preserve existing
 arbitration, risk controls, protective stops, and broker boundaries.
+
+## Operational workflow additions
+
+The day-to-day procedure (data selection, preparation lock, training, evaluation, model-driven
+backtests, approval ladder, SHADOW monitoring, failure handling) is in
+[MODEL_OPERATOR_GUIDE.md](MODEL_OPERATOR_GUIDE.md). Contracts added on top of the training
+architecture above:
+
+* **Preparation lock** (`model-prepare`): resolves snapshots, builds features/labels once, records
+  per-partition observation counts and writes `prepared/<experiment_id>/<config_sha256>.json`.
+  `model-train --lock` fails before storing anything if the resolved dataset ids/checksums differ.
+  The manifest sidecar records `dataset_counts` and `training_ranges`.
+* **Walk-forward** (`model-walk-forward`, `walk_forward` config section): expanding purged and
+  embargoed folds that end at the evaluation end; each fold is trained by the same `fit` as the saved
+  model, labels must resolve inside their own partition, the final holdout is rejected while ranges
+  are built, and one create-only summary is stored under `walk_forward/`. No fold model is stored.
+* **Calibration**: confidence calibration and per-class one-vs-rest reliability tables
+  (`class_calibration`) with expected calibration error are part of every evaluation.
+* **XGBoost probability normalization**: the float32 softmax rows are renormalized
+  (`normalize_probability_matrix`) so downstream "rows sum to one" invariants hold for batch prediction.
+* **Reports** (`model-report`): derived only from the stored manifest, evaluation, walk-forward summary and
+  artifact; re-derivable and never authoritative over the manifest.
+* **Approvals** (`approvals/<id>/<version>/<stage>.json`): create-only records bound to the artifact
+  checksum and manifest digest, ladder shadow → paper → live; the runtime enforces the stage for the
+  engine mode (`MODEL_NOT_APPROVED`).
+* **Backtest campaigns**: versioned YAML expanded to `ExperimentSpec` jobs for the existing research batch
+  coordinator and `BacktestRunner`; see the operator guide §6.
+
+## Performance and resource guidance
+
+Training is offline and independent of the trading process. See the measured figures in the operator guide
+§10. Memory is proportional to the fit partition (`rows × features × 4 bytes` on disk-backed memmaps, ~3×
+in the native library) and feature generation holds one symbol at a time. Use a modest `resources.threads`
+(at most half the cores on the R730, which is also running data acquisition), train one model at a time,
+and keep `model-backtest` workers at the default of 2 unless memory headroom is confirmed. GPU
+(`resources.device: gpu`) is optional and unverified on this host; CPU is the reference path.

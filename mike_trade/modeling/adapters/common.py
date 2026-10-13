@@ -44,6 +44,14 @@ def normalize_probability_row(row: np.ndarray[Any, Any]) -> np.ndarray[Any, Any]
     return values / total
 
 
+def normalize_probability_matrix(matrix: np.ndarray[Any, Any]) -> np.ndarray[Any, Any]:
+    """Row-wise :func:`normalize_probability_row` for batch evaluation."""
+    values = np.asarray(matrix, dtype=np.float64)
+    if values.ndim != 2:
+        return values
+    return np.vstack([normalize_probability_row(row) for row in values]) if len(values) else values
+
+
 def _positive_int(value: int, name: str) -> None:
     if isinstance(value, bool) or not isinstance(value, int) or value < 1:
         raise ValueError(f"{name} must be a positive int")

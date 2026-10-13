@@ -35,6 +35,8 @@ class PredictiveEvaluation:
     calibration: tuple[Mapping[str, Any], ...] = ()
     confusion_matrix: tuple[tuple[int, ...], ...] = ()
     class_labels: tuple[str, ...] = ()
+    #: One-vs-rest reliability per class: predicted probability bins vs observed frequency.
+    class_calibration: Mapping[str, Any] | None = None
     disclaimer: str = (
         "Predictive metrics describe held-out labels; they do not establish trading profitability."
     )
@@ -53,6 +55,8 @@ class PredictiveEvaluation:
             "class_labels": self.class_labels,
             "disclaimer": self.disclaimer,
         }
+        if self.class_calibration is not None:
+            payload["class_calibration"] = self.class_calibration
         return (
             json.dumps(payload, sort_keys=True, separators=(",", ":"), allow_nan=False) + "\n"
         ).encode("utf-8")
@@ -161,6 +165,44 @@ def _calibration_bins(
     return tuple(rows), expected_error
 
 
+def _class_calibration(
+    targets: np.ndarray[Any, Any],
+    probabilities: np.ndarray[Any, Any],
+    class_labels: tuple[str, ...],
+    bins: int = 10,
+) -> dict[str, Any]:
+    """One-vs-rest reliability: does a predicted P(class) match how often the class occurs?"""
+    result: dict[str, Any] = {}
+    labels = np.asarray(targets, dtype=np.int64)
+    for index, label in enumerate(class_labels):
+        predicted = probabilities[:, index]
+        observed = labels == index
+        rows = []
+        error = 0.0
+        for number in range(bins):
+            low, high = number / bins, (number + 1) / bins
+            mask = (predicted >= low) & (
+                predicted <= high if number == bins - 1 else predicted < high
+            )
+            count = int(np.sum(mask))
+            if not count:
+                continue
+            mean_predicted = float(np.mean(predicted[mask]))
+            frequency = float(np.mean(observed[mask]))
+            error += count / len(labels) * abs(mean_predicted - frequency)
+            rows.append(
+                {
+                    "lower": low,
+                    "upper": high,
+                    "count": count,
+                    "mean_predicted": mean_predicted,
+                    "observed_frequency": frequency,
+                }
+            )
+        result[label] = {"bins": rows, "expected_calibration_error": error}
+    return result
+
+
 def evaluate_classification(
     dataset: MatrixDataset,
     probabilities: np.ndarray[Any, Any],
@@ -174,9 +216,7 @@ def evaluate_classification(
     calibration, ece = _calibration_bins(dataset.targets, probabilities)
     metrics = {key: value for key, value in core.items() if key not in {"confusion", "predicted"}}
     per_class = metrics.pop("per_class")
-    metrics["per_class"] = {
-        class_labels[int(index)]: values for index, values in per_class.items()
-    }
+    metrics["per_class"] = {class_labels[int(index)]: values for index, values in per_class.items()}
     metrics["expected_calibration_error"] = ece
     per_symbol = _grouped_classification(dataset, probabilities, dataset.symbols)
     periods = tuple(value.astimezone(UTC).strftime("%Y-%m") for value in dataset.times)
@@ -225,6 +265,7 @@ def evaluate_classification(
         calibration,
         confusion,
         class_labels,
+        _class_calibration(dataset.targets, probabilities, class_labels),
     )
 
 
