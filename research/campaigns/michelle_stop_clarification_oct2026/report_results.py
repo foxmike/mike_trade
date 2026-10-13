@@ -53,7 +53,8 @@ def audit_artifact(artifact: dict[str, Any]) -> tuple[int, dict[str, Any]]:
     events: dict[str, list[dict[str, Any]]] = {}
     rejections, errors = 0, []
     for event in artifact.get("protection_events", []):
-        if event.get("event_type") == REJECTION_EVENT and "cycle_id" not in event:
+        cycle_id = event.get("cycle_id")
+        if event.get("event_type") == REJECTION_EVENT and not cycle_id:
             entry, stop = dec(event.get("candidate_entry_price")), dec(event.get("initial_stop_price"))
             # Fill-derived: either no valid stop exists (None) or it is not below the fill.
             if event.get("reason") != "ENTRY_REJECTED_PROTECTIVE_STOP_NOT_BELOW_FILL" or entry is None or (
@@ -61,10 +62,10 @@ def audit_artifact(artifact: dict[str, Any]) -> tuple[int, dict[str, Any]]:
             ):
                 errors.append(f"malformed atomic rejection {event.get('order_id')}: {event}")
             rejections += 1
-        elif "cycle_id" not in event:
+        elif not cycle_id:
             errors.append(f"protection event without cycle_id: {event.get('event_type')} {event}")
         else:
-            events.setdefault(str(event["cycle_id"]), []).append(event)
+            events.setdefault(str(cycle_id), []).append(event)
     buy_fills: dict[str, list[dict[str, Any]]] = {}
     for fill in artifact.get("fills", []):
         if fill.get("side") == "BUY" and fill.get("cycle_id") is not None:

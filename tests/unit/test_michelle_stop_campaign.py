@@ -74,7 +74,7 @@ def test_audit_passes_a_real_replay_and_counts_cycleless_rejections(tmp_path) ->
     artifact["protection_events"] = [
         *artifact["protection_events"],
         {"event_type": "ENTRY_REJECTED_PROTECTION_INVALID", "candidate_entry_price": "0.25",
-         "initial_stop_price": None, "order_id": "o1",
+         "initial_stop_price": None, "order_id": "o1", "cycle_id": None,
          "reason": "ENTRY_REJECTED_PROTECTIVE_STOP_NOT_BELOW_FILL"},
     ]
     rejected, audit = report.audit_artifact(artifact)
@@ -83,7 +83,9 @@ def test_audit_passes_a_real_replay_and_counts_cycleless_rejections(tmp_path) ->
     assert audit["moves"] == 2 and audit["activation_ok"] == audit["monotonic_ok"] == 1
 
 
-@pytest.mark.parametrize("tamper", ["old_initial", "half_percent", "downward", "stray_event"])
+@pytest.mark.parametrize(
+    "tamper", ["old_initial", "half_percent", "downward", "stray_event", "null_cycle"]
+)
 def test_audit_flags_genuine_stop_discrepancies(tmp_path, tamper) -> None:
     report = _load("report_results")
     artifact = copy.deepcopy(_artifact(tmp_path))
@@ -97,8 +99,12 @@ def test_audit_flags_genuine_stop_discrepancies(tmp_path, tamper) -> None:
         artifact["cycles"][0]["final_stop_price"] = D("100.69")
     elif tamper == "downward":
         moves[-1]["new_stop_price"] = D("100.00")
-    else:
+    elif tamper == "stray_event":
         events.append({"event_type": "STOP_MOVED", "new_stop_price": D("1")})
+    else:
+        events.append(
+            {"event_type": "INITIAL_STOP_ESTABLISHED", "cycle_id": None, "stop_price": D("1")}
+        )
     rejected, audit = report.audit_artifact(artifact)
     assert not audit["passed"] and audit["errors"]
 

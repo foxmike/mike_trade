@@ -23,7 +23,7 @@
         "five_minute_orb_michelle_sell"
       ],
       "stop": null,
-      "rationale": "Five-minute opening-range break; fill-specific ORB fixed-to-trailing protection.",
+      "rationale": "Michelle ORB entry with fill-price-based $0.25 initial protection and the shared 0.2% trailing policy.",
       "comparison": null
     },
     {
@@ -36,7 +36,7 @@
         "vwap_bounce_break_michelle_sell"
       ],
       "stop": null,
-      "rationale": "Michelle VWAP bounce/break; fill-frozen VWAP fixed-to-trailing protection.",
+      "rationale": "Michelle VWAP entry with fill-price-based $0.25 initial protection and the shared 0.2% trailing policy.",
       "comparison": null
     },
     {
@@ -51,7 +51,7 @@
         "vwap_bounce_break_michelle_sell"
       ],
       "stop": null,
-      "rationale": "Independent ORB and VWAP entries; deterministic winner selects its matching stop.",
+      "rationale": "Independent ORB and VWAP entries; the winning entry receives the same fill-price-based $0.25 initial protection and 0.2% trailing policy.",
       "comparison": null
     }
   ],

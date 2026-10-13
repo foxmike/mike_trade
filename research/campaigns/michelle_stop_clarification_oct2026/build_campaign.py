@@ -82,7 +82,26 @@ def build() -> None:
         "holdout_start": previous_manifest["holdout_start"],
         "holdout_jobs": 0,
         "experiments": len(jobs),
-        "configurations": previous_manifest["configurations"],
+        "configurations": [
+            {
+                **configuration,
+                "rationale": {
+                    "michelle_orb": (
+                        "Michelle ORB entry with fill-price-based $0.25 initial protection and "
+                        "the shared 0.2% trailing policy."
+                    ),
+                    "michelle_vwap": (
+                        "Michelle VWAP entry with fill-price-based $0.25 initial protection and "
+                        "the shared 0.2% trailing policy."
+                    ),
+                    "michelle_combined": (
+                        "Independent ORB and VWAP entries; the winning entry receives the same "
+                        "fill-price-based $0.25 initial protection and 0.2% trailing policy."
+                    ),
+                }[configuration["name"]],
+            }
+            for configuration in previous_manifest["configurations"]
+        ],
         "datasets": previous_manifest["datasets"],
         "expected_execution": EXPECTED_EXECUTION,
         "intended_differences_from_baseline": [
