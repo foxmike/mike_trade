@@ -7,6 +7,14 @@ from mike_trade.modeling.artifacts import (
     schema_fingerprint,
 )
 from mike_trade.modeling.builder import ChronologicalTrainingDatasetBuilder
+from mike_trade.modeling.config import (
+    ExperimentRanges,
+    ModelAlgorithm,
+    ModelExperimentConfig,
+    ModelRole,
+    SearchConfig,
+    load_experiment_config,
+)
 from mike_trade.modeling.contracts import (
     DatasetProvider,
     DatasetSelection,
@@ -47,6 +55,13 @@ from mike_trade.modeling.labels import (
     TripleBarrierLabelGenerator,
     TripleBarrierOutcome,
 )
+from mike_trade.modeling.matrix import FeatureSchemaMismatch, MatrixDataset
+from mike_trade.modeling.metrics import PredictiveEvaluation
+from mike_trade.modeling.objectives import (
+    ScheduledEntryPolicy,
+    SellContinuationConfig,
+    SellPositionDatasetBuilder,
+)
 from mike_trade.modeling.registry import ModelAdapterFactory, ModelAdapterRegistry
 from mike_trade.modeling.splits import (
     DEVELOPMENT_START,
@@ -76,11 +91,13 @@ __all__ = [
     "DatasetSource",
     "EvaluationReport",
     "ExecutionCostAssumptions",
+    "ExperimentRanges",
     "ExperimentPurpose",
     "FeatureDatasetManifest",
     "FeatureDatasetRepository",
     "FeaturePipeline",
     "FeatureSchema",
+    "FeatureSchemaMismatch",
     "FeatureVector",
     "FileModelRepository",
     "FinalHoldoutAuthorization",
@@ -95,19 +112,28 @@ __all__ = [
     "LabelGenerator",
     "LabelSchema",
     "LearningTask",
+    "MatrixDataset",
+    "ModelAlgorithm",
     "ModelAdapterFactory",
     "ModelAdapterRegistry",
     "ModelArtifactManifest",
     "ModelBar",
+    "ModelExperimentConfig",
     "ModelEvaluator",
     "ModelPrediction",
     "ModelPredictor",
     "ModelRepository",
+    "ModelRole",
     "ModelTrainer",
     "ParquetDatasetProvider",
     "PredictionKind",
+    "PredictiveEvaluation",
     "PurgedWalkForwardSplitter",
     "RegressionEvaluator",
+    "ScheduledEntryPolicy",
+    "SearchConfig",
+    "SellContinuationConfig",
+    "SellPositionDatasetBuilder",
     "StoredModel",
     "SupervisedLabel",
     "TimeRange",
@@ -119,6 +145,7 @@ __all__ = [
     "TripleBarrierOutcome",
     "ValidationFold",
     "authorize_range",
+    "load_experiment_config",
     "model_bar_from_candle",
     "schema_fingerprint",
 ]

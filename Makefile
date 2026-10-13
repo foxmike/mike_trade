@@ -409,6 +409,7 @@ report-export: ## Export the trade report (VALUE=dataset, OUT=file path)
 
 .PHONY: backtest backtest-status backtest-report backtest-list research-build research-data research-six research-backtest research-batch research-results research-sync-r730
 .PHONY: research-data-plan research-data-preflight research-data-acquire research-data-status research-data-verify
+.PHONY: model-train model-evaluate model-inspect model-list model-compare
 
 WORKERS ?= auto
 JOBS ?=
@@ -422,6 +423,11 @@ RESEARCH_ENV ?= /home/mike/dev/mike/stocks/python/mike_trade/.env
 RESEARCH_WORKERS ?= 1
 RESEARCH_RPM ?= 20
 RESEARCH_UNIVERSE_FLAGS := --universe "$(RESEARCH_UNIVERSE)" --root "$(RESEARCH_DATA_ROOT)"
+MODEL_CONFIG ?= config/modeling/xgboost_buy.yaml
+MODEL_ROOT ?= research/models
+MODEL_ID ?=
+MODEL_VERSION ?=
+MODELS ?=
 
 research-build: ## Build only the manually invoked research image
 	docker compose build mike-trade-research
@@ -470,6 +476,21 @@ research-batch: ## Run a JSON experiment batch (JOBS=...json WORKERS=auto|N)
 
 research-results: ## List persisted research results
 	docker compose run --rm --no-deps mike-trade-research research-results --results /app/research/final-six
+
+model-train: ## Train one explicitly configured native model (MODEL_CONFIG=...yaml)
+	$(CLI) model-train --config "$(MODEL_CONFIG)"
+
+model-evaluate: ## Re-evaluate a pinned model using its experiment config
+	$(CLI) model-evaluate --config "$(MODEL_CONFIG)"
+
+model-inspect: ## Inspect one immutable model (MODEL_ID=... MODEL_VERSION=...)
+	$(CLI) model-inspect --root "$(MODEL_ROOT)" --model-id "$(MODEL_ID)" --version "$(MODEL_VERSION)"
+
+model-list: ## List immutable native models
+	$(CLI) model-list --root "$(MODEL_ROOT)"
+
+model-compare: ## Compare evaluations (MODELS=id@version,id@version)
+	$(CLI) model-compare --root "$(MODEL_ROOT)" --models "$(MODELS)"
 
 # --- cache and database ---
 

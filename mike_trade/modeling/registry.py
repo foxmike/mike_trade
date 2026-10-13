@@ -4,6 +4,7 @@ from __future__ import annotations
 
 from typing import Protocol
 
+from mike_trade.modeling.artifacts import ModelArtifactManifest
 from mike_trade.modeling.contracts import ModelPredictor, ModelTrainer, identifier, semver
 
 
@@ -14,7 +15,9 @@ class ModelAdapterFactory(Protocol):
 
     def trainer(self) -> ModelTrainer: ...
 
-    def predictor(self, artifact: bytes) -> ModelPredictor: ...
+    def predictor(
+        self, artifact: bytes, manifest: ModelArtifactManifest | None = None
+    ) -> ModelPredictor: ...
 
 
 class ModelRegistryError(LookupError):

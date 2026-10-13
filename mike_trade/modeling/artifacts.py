@@ -8,7 +8,7 @@ import os
 import re
 import tempfile
 from collections.abc import Mapping
-from dataclasses import asdict, dataclass
+from dataclasses import asdict, dataclass, field
 from datetime import datetime
 from decimal import Decimal
 from pathlib import Path
@@ -106,9 +106,19 @@ class ModelArtifactManifest:
     training_config_sha256: str
     validation_metrics: Mapping[str, object]
     holdout_evaluated: bool = False
+    algorithm: str | None = None
+    learning_objective: str | None = None
+    selected_feature_names: tuple[str, ...] = ()
+    class_labels: tuple[str, ...] = ()
+    hyperparameters: Mapping[str, object] = field(default_factory=dict)
+    calibration: Mapping[str, object] = field(default_factory=dict)
+    entry_policy: Mapping[str, object] = field(default_factory=dict)
+    feature_importance: Mapping[str, object] = field(default_factory=dict)
+    evaluation_sha256: str | None = None
+    evaluation_size: int | None = None
 
     def __post_init__(self) -> None:
-        if self.manifest_schema_version != 1:
+        if self.manifest_schema_version not in {1, 2}:
             raise ValueError("unsupported model manifest schema version")
         object.__setattr__(self, "model_id", identifier(self.model_id, "model_id"))
         object.__setattr__(self, "model_version", semver(self.model_version, "model_version"))
@@ -186,9 +196,62 @@ class ModelArtifactManifest:
         )
         if self.holdout_evaluated:
             raise ValueError("training manifests cannot claim final holdout evaluation")
+        if self.manifest_schema_version == 1:
+            if any(
+                (
+                    self.algorithm,
+                    self.learning_objective,
+                    self.selected_feature_names,
+                    self.class_labels,
+                    self.hyperparameters,
+                    self.calibration,
+                    self.entry_policy,
+                    self.feature_importance,
+                    self.evaluation_sha256,
+                    self.evaluation_size,
+                )
+            ):
+                raise ValueError("schema-v1 manifests cannot contain schema-v2 fields")
+            return
+        if self.algorithm is None or self.learning_objective is None:
+            raise ValueError("schema-v2 manifests require algorithm and learning_objective")
+        object.__setattr__(self, "algorithm", identifier(self.algorithm, "algorithm"))
+        object.__setattr__(
+            self,
+            "learning_objective",
+            identifier(self.learning_objective, "learning_objective"),
+        )
+        if not self.selected_feature_names:
+            raise ValueError("schema-v2 manifests require selected_feature_names")
+        expected_order = tuple(
+            name for name in self.feature_schema.names if name in self.selected_feature_names
+        )
+        if expected_order != self.selected_feature_names or len(expected_order) != len(
+            set(expected_order)
+        ):
+            raise ValueError("selected features must be unique and follow feature schema order")
+        labels = tuple(str(value) for value in self.class_labels)
+        if self.label_schema.task is LearningTask.REGRESSION and labels:
+            raise ValueError("regression manifests cannot contain class_labels")
+        if self.label_schema.task is LearningTask.BINARY_CLASSIFICATION and len(labels) != 2:
+            raise ValueError("binary manifests require exactly two class_labels")
+        if self.label_schema.task is LearningTask.MULTICLASS_CLASSIFICATION and len(labels) < 3:
+            raise ValueError("multiclass manifests require at least three class_labels")
+        object.__setattr__(self, "class_labels", labels)
+        for name in ("hyperparameters", "calibration", "entry_policy", "feature_importance"):
+            object.__setattr__(self, name, _freeze_str_mapping(getattr(self, name), name))
+        if self.evaluation_sha256 is None or self.evaluation_size is None:
+            raise ValueError("schema-v2 manifests require an evaluation sidecar identity")
+        object.__setattr__(
+            self,
+            "evaluation_sha256",
+            sha256(self.evaluation_sha256, "evaluation_sha256"),
+        )
+        if isinstance(self.evaluation_size, bool) or self.evaluation_size < 1:
+            raise ValueError("evaluation_size must be a positive int")
 
     def to_mapping(self) -> dict[str, Any]:
-        return {
+        result: dict[str, Any] = {
             "manifest_schema_version": self.manifest_schema_version,
             "model_id": self.model_id,
             "model_version": self.model_version,
@@ -217,6 +280,22 @@ class ModelArtifactManifest:
             "validation_metrics": dict(self.validation_metrics),
             "holdout_evaluated": self.holdout_evaluated,
         }
+        if self.manifest_schema_version == 2:
+            result.update(
+                {
+                    "algorithm": self.algorithm,
+                    "learning_objective": self.learning_objective,
+                    "selected_feature_names": self.selected_feature_names,
+                    "class_labels": self.class_labels,
+                    "hyperparameters": dict(self.hyperparameters),
+                    "calibration": dict(self.calibration),
+                    "entry_policy": dict(self.entry_policy),
+                    "feature_importance": dict(self.feature_importance),
+                    "evaluation_sha256": self.evaluation_sha256,
+                    "evaluation_size": self.evaluation_size,
+                }
+            )
+        return result
 
     def canonical(self) -> str:
         return canonical_json(self.to_mapping())
@@ -224,7 +303,7 @@ class ModelArtifactManifest:
     @classmethod
     def from_json(cls, payload: str) -> ModelArtifactManifest:
         raw = json.loads(payload)
-        expected = {
+        expected_v1 = {
             "manifest_schema_version",
             "model_id",
             "model_version",
@@ -253,6 +332,20 @@ class ModelArtifactManifest:
             "validation_metrics",
             "holdout_evaluated",
         }
+        expected = expected_v1
+        if raw.get("manifest_schema_version") == 2:
+            expected = expected_v1 | {
+                "algorithm",
+                "learning_objective",
+                "selected_feature_names",
+                "class_labels",
+                "hyperparameters",
+                "calibration",
+                "entry_policy",
+                "feature_importance",
+                "evaluation_sha256",
+                "evaluation_size",
+            }
         if set(raw) != expected:
             raise ValueError("model manifest has missing or unknown fields")
         raw["created_at"] = datetime.fromisoformat(raw["created_at"].replace("Z", "+00:00"))
@@ -273,6 +366,9 @@ class ModelArtifactManifest:
             )
             sources.append(DatasetSource(**source))
         raw["dataset_sources"] = tuple(sources)
+        if raw["manifest_schema_version"] == 2:
+            raw["selected_feature_names"] = tuple(raw["selected_feature_names"])
+            raw["class_labels"] = tuple(raw["class_labels"])
         for field_name in ("training_ranges", "validation_ranges"):
             raw[field_name] = tuple(
                 TimeRange(
@@ -289,6 +385,7 @@ class StoredModel:
     manifest_path: Path
     artifact_path: Path
     manifest: ModelArtifactManifest
+    evaluation_path: Path | None = None
 
 
 class FileModelRepository:
@@ -299,7 +396,12 @@ class FileModelRepository:
         self.artifact_dir = self.root / "artifacts"
         self.manifest_dir = self.root / "manifests"
 
-    def put(self, manifest: ModelArtifactManifest, artifact: bytes) -> StoredModel:
+    def put(
+        self,
+        manifest: ModelArtifactManifest,
+        artifact: bytes,
+        evaluation: bytes | None = None,
+    ) -> StoredModel:
         if not isinstance(manifest, ModelArtifactManifest):
             raise TypeError("manifest must be ModelArtifactManifest")
         if not isinstance(artifact, bytes) or not artifact:
@@ -307,7 +409,19 @@ class FileModelRepository:
         digest = hashlib.sha256(artifact).hexdigest()
         if digest != manifest.artifact_sha256 or len(artifact) != manifest.artifact_size:
             raise ValueError("artifact bytes do not match the manifest")
+        if manifest.manifest_schema_version == 2:
+            if not isinstance(evaluation, bytes) or not evaluation:
+                raise ValueError("schema-v2 model storage requires evaluation bytes")
+            if (
+                hashlib.sha256(evaluation).hexdigest() != manifest.evaluation_sha256
+                or len(evaluation) != manifest.evaluation_size
+            ):
+                raise ValueError("evaluation bytes do not match the manifest")
+        elif evaluation is not None:
+            raise ValueError("schema-v1 model storage does not accept an evaluation sidecar")
         self.artifact_dir.mkdir(parents=True, exist_ok=True)
+        evaluation_dir = self.root / "evaluations"
+        evaluation_dir.mkdir(parents=True, exist_ok=True)
         model_manifest_dir = self.manifest_dir / manifest.model_id
         model_manifest_dir.mkdir(parents=True, exist_ok=True)
         manifest_path = model_manifest_dir / f"{manifest.model_version}.json"
@@ -317,11 +431,21 @@ class FileModelRepository:
         artifact_path = self.artifact_dir / digest / f"model.{manifest.artifact_format}"
         artifact_path.parent.mkdir(parents=True, exist_ok=True)
         _atomic_create(artifact_path, artifact)
+        evaluation_path = None
+        if evaluation is not None:
+            assert manifest.evaluation_sha256 is not None
+            evaluation_path = evaluation_dir / f"{manifest.evaluation_sha256}.json"
+            _atomic_create(evaluation_path, evaluation)
         _atomic_create(manifest_path, manifest_payload)
         stored, stored_bytes = self.get(manifest.model_id, manifest.model_version)
         if stored.canonical() != manifest.canonical() or stored_bytes != artifact:
             raise ValueError("stored model verification failed")
-        return StoredModel(manifest_path, artifact_path, stored)
+        if (
+            evaluation is not None
+            and self.get_evaluation(manifest.model_id, manifest.model_version) != evaluation
+        ):
+            raise ValueError("stored evaluation verification failed")
+        return StoredModel(manifest_path, artifact_path, stored, evaluation_path)
 
     def get(self, model_id: str, version: str) -> tuple[ModelArtifactManifest, bytes]:
         model = identifier(model_id, "model_id")
@@ -337,6 +461,28 @@ class FileModelRepository:
         if hashlib.sha256(artifact).hexdigest() != manifest.artifact_sha256:
             raise ValueError("model artifact checksum mismatch")
         return manifest, artifact
+
+    def get_evaluation(self, model_id: str, version: str) -> bytes:
+        manifest, _ = self.get(model_id, version)
+        if manifest.evaluation_sha256 is None or manifest.evaluation_size is None:
+            raise ValueError("model does not have an evaluation sidecar")
+        path = self.root / "evaluations" / f"{manifest.evaluation_sha256}.json"
+        payload = path.read_bytes()
+        if len(payload) != manifest.evaluation_size:
+            raise ValueError("model evaluation size mismatch")
+        if hashlib.sha256(payload).hexdigest() != manifest.evaluation_sha256:
+            raise ValueError("model evaluation checksum mismatch")
+        return payload
+
+    def list(self) -> tuple[ModelArtifactManifest, ...]:
+        if not self.manifest_dir.is_dir():
+            return ()
+        manifests = []
+        for path in sorted(self.manifest_dir.glob("*/*.json")):
+            manifests.append(ModelArtifactManifest.from_json(path.read_text(encoding="utf-8")))
+        return tuple(
+            sorted(manifests, key=lambda item: (item.model_id, item.model_version))
+        )
 
 
 def _atomic_create(path: Path, payload: bytes) -> None:

@@ -1,0 +1,88 @@
+schema_version: 1
+experiment_id: xgboost_buy_tb_pooled_v1
+algorithm: xgboost
+role: buy
+model_id: xgboost_buy_tb_pooled
+model_version: 1.0.0
+dataset_root: research/data
+model_root: research/models
+universe_id: us-liquid-research-100-v1
+universe_file: config/research_universe_100_v1.json
+feed: iex
+timeframe: 1m
+adjustment: raw
+seed: 271828
+
+ranges:
+  fit_start: 2025-10-09T00:00:00Z
+  fit_end: 2026-06-01T00:00:00Z
+  early_stopping_start: 2026-06-08T00:00:00Z
+  early_stopping_end: 2026-07-06T00:00:00Z
+  calibration_start: 2026-07-13T00:00:00Z
+  calibration_end: 2026-08-03T00:00:00Z
+  evaluation_start: 2026-08-10T00:00:00Z
+  evaluation_end: 2026-09-21T00:00:00Z
+  embargo_minutes: 60
+
+features:
+  feature_id: intraday_core
+  version: 1.0.0
+  reference_symbols: [SPY]
+  include_vwap: true
+  selected_feature_names:
+    - return_1
+    - log_return_1
+    - return_5
+    - log_return_5
+    - realized_vol_5
+    - relative_volume_5
+    - candle_body_pct
+    - upper_wick_pct
+    - lower_wick_pct
+    - bar_range_pct
+    - price_acceleration
+    - ma_distance_5
+    - ma_distance_20
+    - ma_ratio_5_20
+    - vwap_distance
+    - rolling_zscore_20
+    - time_of_day_sin
+    - time_of_day_cos
+    - relative_strength_spy_5
+
+objective:
+  type: triple_barrier
+  task: MULTICLASS_CLASSIFICATION
+  class_labels: ["-1", "0", "1"]
+  positive_barrier: "0.004"
+  negative_barrier: "0.003"
+  horizon_bars: 30
+  entry_bps: "1.0"
+  exit_bps: "1.0"
+
+resources:
+  device: cpu
+  threads: 12
+
+hyperparameters:
+  class_balance: balanced
+  num_boost_round: 500
+  early_stopping_rounds: 30
+  max_depth: 6
+  learning_rate: 0.04
+  min_child_weight: 2.0
+  subsample: 0.85
+  colsample_bytree: 0.85
+  reg_alpha: 0.05
+  reg_lambda: 1.0
+
+search:
+  max_trials: 2
+  candidates:
+    - {max_depth: 5, learning_rate: 0.05}
+    - {max_depth: 7, learning_rate: 0.03}
+
+probability_calibration: true
+permutation_importance: false
+permutation_max_rows: 5000
+batch_size: 4096

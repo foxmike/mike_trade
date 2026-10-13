@@ -28,12 +28,21 @@ acquisition.
 | `evaluation.py` | Deterministic baseline classification and regression metrics. |
 | `registry.py` | Explicit trusted adapter registration, independent of any ML vendor. |
 | `artifacts.py` | Strict manifests and atomic, checksum-verified native model artifacts. |
+| `matrix.py` | Exact feature-order enforcement and disk-backed pooled matrices. |
+| `objectives.py` | Reproducible SELL position generation and continuation targets. |
+| `calibration.py` | Deterministic Platt/temperature calibration on a separate partition. |
+| `metrics.py` | Shared predictive metrics, grouping, calibration, baselines, and optional permutation importance. |
+| `adapters/xgboost.py` | Native UBJSON XGBoost classification/regression training and inference. |
+| `adapters/lightgbm.py` | Native text LightGBM classification/regression training and inference. |
+| `config.py`, `training.py` | Versioned experiment parsing and the shared bounded training workflow. |
+| `commands.py` | Train, evaluate, inspect, list, and compare CLI commands. |
 
 Policy and contracts point inward. Adapters depend on the contracts, the existing research
 repository, and pure market/session types. Model trainers must not import a broker or an
 operational account. Strategies may eventually depend on a narrow prediction provider that
 returns `ModelPrediction`; they must not load artifacts or instantiate XGBoost/LightGBM.
-Concrete model-library adapters will be registered at a composition root.
+Concrete model-library adapters are explicit trusted factories; no entry-point discovery or
+arbitrary deserialization is used.
 
 ## Public contracts
 
@@ -55,6 +64,11 @@ shortcut. A strategy remains responsible only for interpreting a prediction as o
 its normal pure evaluation; existing arbitration, risk, protection, and execution remain in
 their current layers.
 
+The production tree adapters additionally expose typed `fit()` methods over `MatrixDataset` for
+early stopping and shared evaluation. `XGBoostTrainingConfig` and `LightGBMTrainingConfig` own
+only algorithm settings. Dataset, feature, label, partition, calibration, evaluation, artifact,
+and lineage behavior remains in `ModelTrainingService`.
+
 ## Historical dataset selection and lineage
 
 `ParquetDatasetProvider` resolves exactly one immutable snapshot per symbol for a half-open UTC
@@ -67,6 +81,11 @@ DuckDB reads each symbol in configurable batches. `ChronologicalTrainingDatasetB
 materializes only one primary symbol at a time (plus the small declared set of market-reference
 series), never all 100 instruments together. The initial adapter emits regular-session bars and
 leaves extended-hours observations in their authoritative raw snapshot.
+
+`DiskMatrixWriter` appends each completed symbol partition to raw numeric files and returns
+read-only NumPy memory maps. This bounds Python object memory while still giving XGBoost and
+LightGBM a stable matrix interface. The configured reference symbols are cached because they are
+required concurrently by each primary symbol; other symbols are released before the next scan.
 
 Derived feature partitions are optional performance artifacts. They contain only features and
 keys, are versioned/content-addressed, and point back to every raw dataset ID and hash. They do
@@ -134,6 +153,15 @@ conservative policy records `LOSS`; `SKIP` omits it. A loss gap uses the worse o
 favorable gap assumes no improvement beyond the positive barrier. Timeout requires the complete
 contiguous horizon.
 
+The initial SELL objective is not built from hindsight winners. `ScheduledEntryPolicy` admits
+positions from a deterministic intraday schedule, executes each entry at the next contiguous
+positive-volume bar open, and holds it for a fixed maximum duration with an explicit cooldown.
+Every generated sample records the known position entry time/price and policy identity, and adds
+only point-in-time position state (unrealized return, holding bars, maximum favorable excursion,
+and maximum adverse excursion). Its three-way target is `RISK_EXIT`, `EXIT_FAVORABLE`, or
+`HOLD_FAVORABLE`, comparing a permitted next-bar exit with continued holding after costs and a
+configured risk barrier. Future outcomes affect labels only, never position admission.
+
 ## Temporal validation and holdout safety
 
 The development period starts at `2025-10-09T00:00:00Z`. The final holdout is exactly the
@@ -151,21 +179,31 @@ part of this test, so an overlapping label on stock B is removed at stock A's va
 boundary. Validation labels must resolve inside their validation range. This prevents overlapping
 horizons from leaking across either side of a fold.
 
+Tree experiments use explicit, disjoint half-open fit, early-stopping, optional calibration, and
+evaluation ranges. Every label must resolve strictly before its own partition end. Configured
+embargo gaps are enforced between all adjacent partitions, so pooled cross-symbol targets cannot
+cross a boundary. Bounded search candidates are selected only on the early-stopping partition;
+calibration is fitted only after selection, and the final development evaluation remains later
+than both. None of these ranges may overlap the final holdout.
+
 The holdout authorization only permits final evaluation. It does not authorize retraining,
 calibration, threshold changes, feature selection, or hyperparameter selection after results are
 seen.
 
 ## Artifact format and registration
 
-`ModelArtifactManifest` schema 1 is strict: unknown or missing fields fail decoding. It includes
+`ModelArtifactManifest` schemas 1 and 2 are strict: unknown or missing fields fail decoding. The
+schema-2 tree manifest includes
 all lineage listed above, model and adapter semantic versions, native artifact format, byte size,
-and SHA-256. Pickle-family formats (`pickle`, `pkl`, `joblib`, `cloudpickle`, `dill`) are rejected.
-Future adapters must save a library-native safe format such as XGBoost JSON/UBJSON or LightGBM
-text, not arbitrary Python object graphs.
+and SHA-256, plus algorithm/objective, exact selected feature order, class order, hyperparameters,
+calibration, entry-policy identity, feature importance, and a checksum for the evaluation
+sidecar. Pickle-family formats (`pickle`, `pkl`, `joblib`, `cloudpickle`, `dill`) are rejected.
+XGBoost saves UBJSON and LightGBM saves native text, never Python object graphs.
 
 `FileModelRepository` writes artifacts below their content SHA-256 and manifests below
 `model_id/model_version`. Files are fsynced and published with a non-replacing hard link; the
-manifest is committed last. An identical retry is idempotent. A different artifact or manifest
+evaluation JSON is content-addressed, and the pinned manifest is committed last. An identical
+retry is idempotent. A different artifact or manifest
 at an existing pinned version fails instead of replacing it. Reads require the explicit version
 and recheck byte size and checksum. There is deliberately no mutable `latest` alias or implicit
 promotion. A later promotion process must create an explicit, audited deployment reference and
@@ -198,11 +236,69 @@ Inference:
 5. Return `ModelPrediction` to a broker-neutral strategy integration adapter.
 6. Let existing signal arbitration, risk, stops, and execution handle any resulting signal.
 
-## Assignment 2 integration requirements
+## XGBoost and LightGBM behavior
 
-XGBoost and LightGBM adapters should implement `ModelTrainer`/`ModelPredictor` and expose trusted
-factories through `ModelAdapterRegistry`. They must validate exact feature field order and schema
-fingerprint, accept an injected seed, report their library versions, stream or use bounded
-matrices, and write native safe formats. They must not add pickle loading, broker dependencies,
-implicit `latest` selection, a second dataset store, alternative feature calculations, or access
-to the final holdout during training/tuning.
+Both adapters support regression, binary classification, and multiclass classification. CPU is
+the default. `resources.threads` controls the vendor worker limit, and no outer parallel trial
+executor is started, avoiding nested uncontrolled parallelism. `resources.device: gpu` opts into
+the library GPU path when that installed build and host support it. Seeds and all effective native
+parameters are stored in the manifest. Class balancing is implemented as shared per-row weights.
+
+Early stopping uses the same chronological partition for both libraries. An optional bounded list
+of configuration candidates may be compared there by RMSE or log loss. Probability calibration
+uses a later, separate partition: Platt scaling for binary models and scalar temperature scaling
+for multiclass models. Regression is not calibrated.
+
+Shared evaluation records log loss, multiclass Brier score, accuracy, macro and per-class
+precision/recall, a confusion matrix, calibration bins/error, per-symbol and per-month results,
+and prediction distributions. ROC-AUC is emitted only for meaningful two-class evaluation.
+Regression records MAE, RMSE, and R-squared. A training-class-frequency or training-mean baseline
+is stored beside model results. Optional held-out permutation importance and native gain/split or
+gain/weight importance are descriptive predictive attribution, not causation. No metric is
+presented as evidence of trading profitability.
+
+At inference, both loaders compare the native model's feature names with the pinned manifest.
+Each prediction then requires the complete feature schema identity and exact field ordering; a
+missing, additional, reordered, or incompatible field fails closed before vendor prediction.
+Re-evaluation resolves the exact dataset IDs recorded by the manifest; it does not drift to a
+newer matching snapshot, change feeds, or substitute missing coverage.
+
+## Operator commands and example configurations
+
+No command starts full-universe training implicitly. Every training/evaluation call requires an
+explicit versioned configuration:
+
+```bash
+uv run python -m mike_trade.cli model-train --config config/modeling/xgboost_buy.yaml
+uv run python -m mike_trade.cli model-train --config config/modeling/xgboost_sell.yaml
+uv run python -m mike_trade.cli model-train --config config/modeling/lightgbm_buy.yaml
+uv run python -m mike_trade.cli model-train --config config/modeling/lightgbm_sell.yaml
+
+uv run python -m mike_trade.cli model-evaluate --config config/modeling/xgboost_buy.yaml
+uv run python -m mike_trade.cli model-list --root research/models
+uv run python -m mike_trade.cli model-inspect --root research/models \
+  --model-id xgboost_buy_tb_pooled --version 1.0.0
+uv run python -m mike_trade.cli model-compare --root research/models \
+  --models xgboost_buy_tb_pooled@1.0.0,lightgbm_buy_tb_pooled@1.0.0
+```
+
+Equivalent Make targets are `model-train`, `model-evaluate`, `model-list`, `model-inspect`, and
+`model-compare`, parameterized by `MODEL_CONFIG`, `MODEL_ROOT`, `MODEL_ID`, `MODEL_VERSION`, and
+`MODELS`.
+
+Artifacts are written below the configured `model_root` (the examples use `research/models`):
+
+```text
+research/models/
+├── artifacts/<artifact-sha256>/model.xgboost_ubj|model.lightgbm_text
+├── evaluations/<evaluation-sha256>.json
+└── manifests/<model-id>/<model-version>.json
+```
+
+The examples select IEX explicitly. Changing `feed` to `sip` selects only immutable SIP snapshots;
+the provider fails if any requested symbol lacks matching coverage and never substitutes IEX.
+SPY is declared as a reference series, so it supplies relative-strength inputs and is excluded as
+a primary training symbol for those configurations. Per-symbol configurations can instead set a
+smaller explicit `symbols` list. A future strategy adapter should receive an already loaded,
+pinned `ModelPredictor`; it must keep model loading out of strategies and preserve existing
+arbitration, risk controls, protective stops, and broker boundaries.

@@ -45,10 +45,24 @@ CANONICAL_COMMANDS = (
     "report", "report-daily", "report-symbol", "report-strategy", "report-pairs", "report-shadow", "report-comparison", "report-export",
     "backtest", "backtest-status", "backtest-report", "backtest-list",
     "research-data", "research-backtest", "research-six", "research-batch", "research-results",
+    "model-train", "model-evaluate", "model-inspect", "model-list", "model-compare",
     "cache-status", "cache-refresh",
     "db-check", "db-backup", "db-restore-dry-run",
     "service-install", "service-uninstall", "service-status",
 )
+
+OFFLINE_COMMANDS = {
+    "research-data",
+    "research-backtest",
+    "research-six",
+    "research-batch",
+    "research-results",
+    "model-train",
+    "model-evaluate",
+    "model-inspect",
+    "model-list",
+    "model-compare",
+}
 
 HISTORY_COMMANDS = frozenset({"signals", "evaluations", "events", "logs", "health"})
 POSITION_COMMANDS = frozenset({
@@ -88,7 +102,7 @@ def build_parser() -> argparse.ArgumentParser:
     _global_options(parser, defaults=True)
     subs = parser.add_subparsers(dest="subcommand", required=True)
     for name in CANONICAL_COMMANDS:
-        if name in {"research-data", "research-backtest", "research-six", "research-batch", "research-results"}:
+        if name in OFFLINE_COMMANDS:
             continue
         command = subs.add_parser(name)
         _global_options(command, defaults=False)
@@ -119,6 +133,8 @@ def build_parser() -> argparse.ArgumentParser:
         command.add_argument("--reason", default="operator request")
     from mike_trade.research.commands import register as register_research
     register_research(subs)
+    from mike_trade.modeling.commands import register as register_modeling
+    register_modeling(subs)
     return parser
 
 
@@ -216,11 +232,11 @@ def main(argv: list[str] | None = None) -> int:
     if args.scenario is None and ":" in args.account and args.account.count(":") > 1:
         args.scenario = args.account.split(":", 2)[2]
     name = args.subcommand
-    if name in {"research-data", "research-backtest", "research-six", "research-batch", "research-results"}:
+    if name in OFFLINE_COMMANDS:
         try:
             return int(args.func(args))
         except Exception as exc:
-            print(f"Research command failed: {exc}", file=sys.stderr)
+            print(f"Offline command failed: {exc}", file=sys.stderr)
             return EXIT_UNHEALTHY
     if name in LIVE_CONFIRM_COMMANDS and not require_live_confirmation(args, command=name):
         return EXIT_REFUSED

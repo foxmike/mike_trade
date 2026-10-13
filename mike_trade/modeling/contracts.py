@@ -281,6 +281,7 @@ class SupervisedLabel:
 class TrainingExample:
     features: FeatureVector
     label: SupervisedLabel
+    metadata: Mapping[str, str] = field(default_factory=dict)
 
     def __post_init__(self) -> None:
         if self.features.symbol != self.label.symbol:
@@ -289,6 +290,10 @@ class TrainingExample:
             raise ValueError("feature and label anchors differ")
         if self.features.as_of > self.label.entry_time:
             raise ValueError("features contain data unavailable at label entry")
+        metadata = {str(key): str(value) for key, value in self.metadata.items()}
+        if any(not key for key in metadata):
+            raise ValueError("training example metadata keys must be non-empty")
+        object.__setattr__(self, "metadata", MappingProxyType(metadata))
 
 
 class PredictionKind(StrEnum):
