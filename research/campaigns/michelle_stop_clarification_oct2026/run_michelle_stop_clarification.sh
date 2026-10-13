@@ -68,15 +68,15 @@ printf 'Code revision: %s (tracked modifications: %s)\n' "$git_commit" "$git_dir
 container_jobs="/app/$campaign_rel/experiments.json"
 container_manifest="/app/$campaign_rel/campaign_manifest.json"
 
-if (cd "$project_root" && docker compose build mike-trade-research); then
+if (cd "$project_root" && docker compose --profile research build mike-trade-research); then
   # Fail closed unless the container carries exactly this working tree's stop code and the jobs
   # are exact; no experiment starts otherwise.
-  if (cd "$project_root" && docker compose run -T --rm --no-deps \
+  if (cd "$project_root" && docker compose --profile research run -T --rm --no-deps \
         --entrypoint python mike-trade-research \
         "/app/$campaign_rel/validate_campaign.py" \
         --experiments "$container_jobs" --manifest "$container_manifest" \
         --code-check --code-hashes "/app/$result_rel/code_hashes.json"); then
-    (cd "$project_root" && docker compose run -T --rm --no-deps \
+    (cd "$project_root" && docker compose --profile research run -T --rm --no-deps \
       mike-trade-research research-batch \
       --jobs "$container_jobs" \
       --root /app/research/data \
@@ -87,7 +87,7 @@ if (cd "$project_root" && docker compose build mike-trade-research); then
       overall_status=1
     fi
     if [[ -f "$result_host/batch.json" ]]; then
-      (cd "$project_root" && docker compose run -T --rm --no-deps \
+      (cd "$project_root" && docker compose --profile research run -T --rm --no-deps \
         --entrypoint python mike-trade-research \
         "/app/$campaign_rel/report_results.py" \
         --batch "/app/$result_rel/batch.json" \
