@@ -32,11 +32,20 @@ from collections.abc import Iterable, Sequence
 from dataclasses import dataclass, field
 from datetime import UTC, datetime, timedelta
 from decimal import Decimal
+from zoneinfo import ZoneInfo
 
 from mike_trade.modeling.contracts import ModelBar
 from mike_trade.scheduling.calendar import session_for
 
-__all__ = ["AggregationPolicy", "AggregationStats", "CandleAggregator", "aggregate_bars"]
+_NEW_YORK = ZoneInfo("America/New_York")
+
+__all__ = [
+    "AggregationPolicy",
+    "AggregationStats",
+    "CandleAggregator",
+    "aggregate_bars",
+    "is_candle_boundary",
+]
 
 _ZERO = Decimal(0)
 
@@ -239,3 +248,21 @@ def aggregate_bars(
     if stats is not None:
         stats.merge(aggregator.stats)
     return tuple(result)
+
+
+def is_candle_boundary(end: datetime, minutes: int) -> bool:
+    """True when ``end`` is the end of a ``minutes``-long, session-open-aligned candle window.
+
+    The grid starts at the regular-session open (so early-close sessions use the same grid) and a
+    window must finish at or before the session close.  This is the only moment a candle can have
+    just completed, which is when candle models are allowed to predict.
+    """
+    end = end.astimezone(UTC)
+    try:
+        session = session_for(end.astimezone(_NEW_YORK).date())
+    except ValueError:  # not a trading day / unknown calendar year
+        return False
+    if end <= session.open_utc or end > session.close_utc:
+        return False
+    elapsed = end - session.open_utc
+    return elapsed % timedelta(minutes=minutes) == timedelta(0)

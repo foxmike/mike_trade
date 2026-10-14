@@ -642,7 +642,9 @@ class _Model:
             return None, (insufficient, ModelReason.HORIZON_MISMATCH)
         if prediction.observation_end > context.as_of:
             return None, (ReasonCode.STALE_DATA, ModelReason.FUTURE_OBSERVATION)
-        if prediction.observation_end != latest.end or prediction.observation_start != latest.start:
+        # The observation ends with the latest completed 1m bar.  A 1m model observes exactly that
+        # bar; an aggregated-candle model observes the N-minute candle that bar just completed.
+        if prediction.observation_end != latest.end or prediction.observation_start > latest.start:
             return None, (ReasonCode.STALE_DATA, ModelReason.OBSERVATION_NOT_LATEST_BAR)
         limit = timedelta(seconds=int(params["maximum_prediction_age_seconds"]))  # type: ignore[call-overload]
         if (

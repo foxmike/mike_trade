@@ -38,19 +38,28 @@ same grid.
 
 from __future__ import annotations
 
+import hashlib
 import math
 from collections import defaultdict, deque
 from collections.abc import Iterator, Mapping, Sequence
 from dataclasses import dataclass
+from pathlib import Path
 from statistics import fmean, pstdev
 from zoneinfo import ZoneInfo
+
+import yaml
+
+from mike_trade.modeling.aggregation import AggregationPolicy
 
 from mike_trade.modeling.contracts import FeatureSchema, FeatureVector, ModelBar
 
 __all__ = [
     "CANDLE_WINDOW_FEATURE_ID",
+    "CandleDefinition",
+    "CandleDefinitionError",
     "CandleWindowFeatureConfig",
     "CandleWindowFeaturePipeline",
+    "resolve_candle_definition",
 ]
 
 CANDLE_WINDOW_FEATURE_ID = "intraday_candle_window"
@@ -321,3 +330,94 @@ class CandleWindowFeaturePipeline:
                 values["window_return"] - reference_return
             )
         return values
+
+
+# ------------------------------------------------------------------ serving definition
+
+
+class CandleDefinitionError(ValueError):
+    """The candle feature definition of a trained model cannot be reproduced exactly."""
+
+
+@dataclass(frozen=True, slots=True)
+class CandleDefinition:
+    """Everything serving needs to rebuild a candle model's features exactly as trained."""
+
+    features: CandleWindowFeatureConfig
+    policy: AggregationPolicy
+    training_config: str
+
+    @property
+    def window_minutes(self) -> int:
+        """One-minute span of the lookback: the longest history one prediction can need."""
+        return self.features.lookback_bars * self.features.bar_minutes
+
+
+def default_config_directories() -> tuple[Path, ...]:
+    return (Path(__file__).resolve().parents[2] / "config" / "modeling",)
+
+
+def resolve_candle_definition(
+    *,
+    feature_schema: FeatureSchema,
+    training_config_sha256: str,
+    config_directories: Sequence[Path] | None = None,
+) -> CandleDefinition:
+    """Recover lookback, half-life and candle policy of a trained candle-window model.
+
+    The manifest records the feature *names* (which fix the family, candle size, lookback and
+    reference symbols) and the SHA-256 of the training configuration, but not the recency
+    half-life, which the names cannot reveal.  The half-life is therefore read from the training
+    configuration whose SHA-256 equals the manifest's, i.e. byte-for-byte the file the model was
+    trained with, and the rebuilt pipeline must then reproduce the recorded names and order
+    exactly.  Anything else fails closed: a different half-life is never guessed.
+    """
+    directories = tuple(config_directories) if config_directories else default_config_directories()
+    matched: Path | None = None
+    for directory in directories:
+        for path in sorted(Path(directory).glob("*.yaml")):
+            try:
+                if hashlib.sha256(path.read_bytes()).hexdigest() == training_config_sha256:
+                    matched = path
+                    break
+            except OSError:
+                continue
+        if matched is not None:
+            break
+    if matched is None:
+        raise CandleDefinitionError(
+            "no training configuration with SHA-256 "
+            f"{training_config_sha256[:12]}... was found in "
+            f"{[str(item) for item in directories]}; the recency half-life of the candle-window "
+            "model cannot be reproduced"
+        )
+    try:
+        raw = yaml.safe_load(matched.read_bytes())
+        features = raw["features"]
+        candles = raw["candles"]
+        config = CandleWindowFeatureConfig(
+            bar_minutes=int(candles["bar_minutes"]),
+            lookback_bars=int(features["lookback_bars"]),
+            half_life_bars=float(features["recency_decay"]["half_life_bars"]),
+            version=str(features.get("version", "1.0.0")),
+            reference_symbols=tuple(str(v) for v in features.get("reference_symbols", ())),
+            include_vwap=bool(features.get("include_vwap", True)),
+        )
+        policy = AggregationPolicy(
+            int(candles["bar_minutes"]), int(candles.get("minimum_minutes_per_candle", 1))
+        )
+    except (KeyError, TypeError, ValueError) as exc:
+        raise CandleDefinitionError(f"{matched.name} is not a candle-window config: {exc}") from exc
+    rebuilt = CandleWindowFeaturePipeline(config).schema
+    if (
+        rebuilt.feature_id != feature_schema.feature_id
+        or rebuilt.version != feature_schema.version
+        or rebuilt.names != feature_schema.names
+        or tuple(rebuilt.required_reference_symbols) != tuple(feature_schema.required_reference_symbols)
+        or rebuilt.timeframe != feature_schema.timeframe
+    ):
+        raise CandleDefinitionError(
+            f"{matched.name} does not reproduce the model's recorded feature schema "
+            "(names, order, timeframe or reference symbols differ)"
+        )
+    return CandleDefinition(config, policy, matched.name)

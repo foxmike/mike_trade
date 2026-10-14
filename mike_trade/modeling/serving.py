@@ -32,6 +32,7 @@ from mike_trade.domain.model_signals import (
 )
 from mike_trade.market_data.candles import Candle, CandleTimeframe
 from mike_trade.market_data.context import MarketContext
+from mike_trade.modeling.aggregation import is_candle_boundary
 from mike_trade.modeling.contracts import ModelBar
 from mike_trade.modeling.inference import InferenceRequest, ModelInferenceService
 from mike_trade.modeling.inputs import model_bar_from_candle
@@ -164,6 +165,16 @@ class ModelInputProvider:
                 reference,
                 failure=PredictionFailure.INSUFFICIENT_HISTORY,
                 detail="no completed 1m candles in the context",
+            )
+        if loaded.candle is not None and not is_candle_boundary(
+            candles[-1].end, loaded.candle.policy.minutes
+        ):
+            # A candle model only looks at a candle that has just completed; skip the cheap
+            # idle minutes without converting any history.
+            return ModelPredictionResult(
+                reference,
+                failure=PredictionFailure.NOT_CANDLE_BOUNDARY,
+                detail=f"not the end of a {loaded.candle.policy.timeframe} candle",
             )
         window = loaded.feature_window
         count = window

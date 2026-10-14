@@ -15,6 +15,11 @@ a strategy, and never produces a prediction):
 * every bar used has the model's feed, timeframe and adjustment — IEX and SIP are never mixed;
 * features are produced by the same :class:`IntradayFeaturePipeline` used for training, from a
   window of completed bars only, so the result equals the streaming/batch computation;
+* candle-window models (``intraday_candle_window``) are served from the same one-minute bars:
+  they are aggregated by the training :class:`CandleAggregator` into session-aligned N-minute
+  candles and featurized by the training :class:`CandleWindowFeaturePipeline`.  They predict only
+  when a candle has just completed (``NOT_CANDLE_BOUNDARY`` otherwise), so a developing candle
+  never reaches the model;
 * SELL position features use :func:`position_feature_values`, the function training uses,
   with the *actual* entry fill price and time;
 * predictions are bounded-LRU cached by (model, symbol, observation end, position
@@ -31,6 +36,7 @@ from collections.abc import Callable, Mapping, Sequence
 from dataclasses import dataclass, field
 from datetime import datetime, timedelta
 from decimal import Decimal
+from pathlib import Path
 from types import MappingProxyType
 from typing import NamedTuple
 
@@ -42,7 +48,15 @@ from mike_trade.domain.model_signals import (
     PredictionFailure,
     ServedPrediction,
 )
+from mike_trade.modeling.aggregation import CandleAggregator, is_candle_boundary
 from mike_trade.modeling.artifacts import FileModelRepository, ModelArtifactManifest
+from mike_trade.modeling.candle_features import (
+    CANDLE_WINDOW_FEATURE_ID,
+    CandleDefinition,
+    CandleDefinitionError,
+    CandleWindowFeaturePipeline,
+    resolve_candle_definition,
+)
 from mike_trade.modeling.contracts import (
     FeatureSchema,
     FeatureVector,
@@ -52,6 +66,7 @@ from mike_trade.modeling.contracts import (
     ModelPredictor,
     PredictionKind,
 )
+from mike_trade.modeling.candle_features import CandleWindowFeatureConfig
 from mike_trade.modeling.features import IntradayFeatureConfig, IntradayFeaturePipeline
 from mike_trade.modeling.matrix import FeatureSchemaMismatch
 from mike_trade.modeling.objectives import POSITION_FEATURE_NAMES, position_feature_values
@@ -102,7 +117,7 @@ class LoadedModel:
     reference: ModelReference
     manifest: ModelArtifactManifest
     predictor: ModelPredictor
-    base_config: IntradayFeatureConfig
+    base_config: IntradayFeatureConfig | CandleWindowFeatureConfig
     base_schema: FeatureSchema
     trained_symbols: frozenset[str]
     class_returns: Mapping[str, Decimal]
@@ -110,9 +125,14 @@ class LoadedModel:
     #: Largest ``position_holding_bars`` the SELL model saw during training (None for BUY).
     max_supported_holding_bars: int | None
     predict_lock: threading.Lock
+    #: Present exactly for candle-window models: how to rebuild their candles and features.
+    candle: CandleDefinition | None = None
 
     @property
     def feature_window(self) -> int:
+        """One-minute bars one prediction can need (the lookback span for candle models)."""
+        if self.candle is not None:
+            return self.candle.window_minutes
         return self.base_config.maximum_history
 
 
@@ -201,6 +221,7 @@ class ModelInferenceService:
         max_inference_seconds: float = 2.0,
         cache_size: int = 4096,
         feature_cache_size: int = 2048,
+        candle_config_directories: Sequence[Path] | None = None,
     ) -> None:
         if not callable(clock):
             raise ValueError("clock must be callable")
@@ -211,6 +232,9 @@ class ModelInferenceService:
         if cache_size < 1 or feature_cache_size < 1:
             raise ValueError("cache sizes must be positive")
         self._repository = repository
+        self._candle_config_directories = (
+            None if candle_config_directories is None else tuple(candle_config_directories)
+        )
         self._adapters = adapters
         self._clock = clock
         self._max_age = max_observation_age
@@ -302,15 +326,14 @@ class ModelInferenceService:
                 code="PROVENANCE_UNSUPPORTED",
                 context=context,
             )
+        candle: CandleDefinition | None = None
         if manifest.feature_schema.timeframe != "1m":
-            raise ModelLoadError(
-                f"pinned model {reference.key} predicts from "
-                f"{manifest.feature_schema.timeframe} candles aggregated from one-minute data; "
-                "serving aggregated-candle models is not supported yet (train/evaluate only)",
-                code="PROVENANCE_UNSUPPORTED",
-                context=context,
-            )
-        base_config, base_schema = self._base_pipeline(reference, manifest)
+            candle = self._candle_definition(reference, manifest, role)
+        if candle is not None:
+            base_config: IntradayFeatureConfig | CandleWindowFeatureConfig = candle.features
+            base_schema = CandleWindowFeaturePipeline(candle.features).schema
+        else:
+            base_config, base_schema = self._base_pipeline(reference, manifest)
         max_support: int | None = None
         if role == "sell":
             if (
@@ -370,7 +393,47 @@ class ModelInferenceService:
             class_return_basis=basis,
             max_supported_holding_bars=max_support,
             predict_lock=threading.Lock(),
+            candle=candle,
         )
+
+    def _candle_definition(
+        self, reference: ModelReference, manifest: ModelArtifactManifest, role: str
+    ) -> CandleDefinition:
+        """Verify and rebuild the candle definition of an aggregated-candle model, or refuse."""
+        context = {"model": reference.key}
+        schema = manifest.feature_schema
+        if (
+            schema.feature_id != CANDLE_WINDOW_FEATURE_ID
+            or role != "buy"
+            or manifest.label_schema.task is not LearningTask.MULTICLASS_CLASSIFICATION
+        ):
+            raise ModelLoadError(
+                f"pinned model {reference.key} predicts from {schema.timeframe} "
+                f"{schema.feature_id!r} features; only {CANDLE_WINDOW_FEATURE_ID} BUY "
+                "classification models are served from aggregated candles",
+                code="PROVENANCE_UNSUPPORTED",
+                context=context,
+            )
+        try:
+            definition = resolve_candle_definition(
+                feature_schema=schema,
+                training_config_sha256=manifest.training_config_sha256,
+                config_directories=self._candle_config_directories,
+            )
+        except CandleDefinitionError as exc:
+            raise ModelLoadError(
+                f"pinned model {reference.key} candle definition cannot be reproduced: {exc}",
+                code="SCHEMA_MISMATCH",
+                context=context,
+            ) from exc
+        label = manifest.label_schema
+        if str(label.parameters.get("bar_minutes")) != str(definition.policy.minutes):
+            raise ModelLoadError(
+                f"pinned model {reference.key} label candle size differs from its feature schema",
+                code="SCHEMA_MISMATCH",
+                context=context,
+            )
+        return definition
 
     @staticmethod
     def _base_pipeline(
@@ -561,6 +624,14 @@ class ModelInferenceService:
                 f"observation ended {(now - last.end).total_seconds():.0f}s ago",
             )
 
+        candle = model.candle
+        if candle is not None and not is_candle_boundary(last.end, candle.policy.minutes):
+            return _fail(
+                reference,
+                PredictionFailure.NOT_CANDLE_BOUNDARY,
+                f"{last.end.isoformat()} is not the end of a {candle.policy.timeframe} candle",
+            )
+
         position = request.position
         fingerprint = ""
         if model.reference.role == "sell":
@@ -591,7 +662,7 @@ class ModelInferenceService:
             mismatch = self._provenance_failure(manifest, bar)
             if mismatch is not None:
                 return _fail(reference, mismatch.code, mismatch.detail)
-        if len(bars) < model.feature_window:
+        if candle is None and len(bars) < model.feature_window:
             return _fail(
                 reference,
                 PredictionFailure.INSUFFICIENT_HISTORY,
@@ -605,7 +676,7 @@ class ModelInferenceService:
                     PredictionFailure.REFERENCE_BAR_MISSING,
                     f"no completed {ref_symbol} bars",
                 )
-            if ref_bars[-1].start != last.start:
+            if candle is None and ref_bars[-1].start != last.start:
                 return _fail(
                     reference,
                     PredictionFailure.REFERENCE_BAR_MISSING,
@@ -620,7 +691,10 @@ class ModelInferenceService:
         if isinstance(vector_or_failure, _Failure):
             return _fail(reference, vector_or_failure.code, vector_or_failure.detail)
         base_vector = vector_or_failure
-        if base_vector.as_of != last.end or base_vector.bar_start != last.start:
+        observed_start = (
+            last.start if candle is None else last.end - timedelta(minutes=candle.policy.minutes)
+        )
+        if base_vector.as_of != last.end or base_vector.bar_start != observed_start:
             return _fail(
                 reference,
                 PredictionFailure.PROVENANCE_MISMATCH,
@@ -752,9 +826,12 @@ class ModelInferenceService:
                 self._features.move_to_end(feature_key)
                 self._diagnostics.feature_reuse += 1
                 return reusable
+        if model.candle is not None:
+            return self._candle_features(model, symbol, bars, references, feature_key)
         window = model.feature_window
         recent = tuple(bars[-window:])
         starts = {bar.start for bar in recent}
+        assert isinstance(model.base_config, IntradayFeatureConfig)
         pipeline = IntradayFeaturePipeline(model.base_config)
         aligned_refs: dict[str, dict[datetime, ModelBar]] = {
             name: {bar.start: bar for bar in series if bar.start in starts}
@@ -784,6 +861,75 @@ class ModelInferenceService:
                 else PredictionFailure.FEATURES_UNAVAILABLE
             )
             return _Failure(code, reason)
+        if tuple(produced.values) != model.base_schema.names:
+            return _Failure(
+                PredictionFailure.SCHEMA_MISMATCH, "feature order drifted from the schema"
+            )
+        with self._lock:
+            self._features[feature_key] = produced
+            self._features.move_to_end(feature_key)
+            while len(self._features) > self._feature_cache_size:
+                self._features.popitem(last=False)
+        return produced
+
+    def _candle_features(
+        self,
+        model: LoadedModel,
+        symbol: str,
+        bars: Sequence[ModelBar],
+        references: Mapping[str, Sequence[ModelBar]],
+        feature_key: tuple[str, str, datetime, int],
+    ) -> FeatureVector | _Failure:
+        """Features of the candle that has just completed, built exactly as in training.
+
+        The training aggregator turns the one-minute bars of the lookback span into candles; the
+        training pipeline featurizes them.  Only bars that ended by the observation time are used,
+        and a reference candle is closed by the observation time, never later.
+        """
+        definition = model.candle
+        assert definition is not None
+        last = bars[-1]
+        floor = last.end - timedelta(minutes=definition.window_minutes)
+
+        def candles_of(series: Sequence[ModelBar]) -> tuple[ModelBar, ...]:
+            aggregator = CandleAggregator(definition.policy)
+            built: list[ModelBar] = []
+            for bar in series:
+                if floor <= bar.start and bar.end <= last.end:
+                    built.extend(aggregator.update(bar))
+            built.extend(aggregator.flush(last.end))
+            return tuple(built)
+
+        try:
+            primary = candles_of(bars)
+            reference_candles = {
+                name: {candle.start: candle for candle in candles_of(series)}
+                for name, series in references.items()
+                if name in definition.features.reference_symbols
+            }
+            pipeline = CandleWindowFeaturePipeline(definition.features)
+            produced: FeatureVector | None = None
+            for candle in primary:
+                aligned = {
+                    name: index[candle.start]
+                    for name, index in reference_candles.items()
+                    if candle.start in index
+                }
+                produced = pipeline.update(candle, aligned)
+        except ValueError as exc:
+            return _Failure(PredictionFailure.FEATURES_UNAVAILABLE, str(exc))
+        expected_start = last.end - timedelta(minutes=definition.policy.minutes)
+        if produced is None or produced.bar_start != expected_start or produced.as_of != last.end:
+            if definition.features.include_vwap and primary and primary[-1].vwap is None:
+                return _Failure(
+                    PredictionFailure.VWAP_UNAVAILABLE, "VWAP missing for a minute of the candle"
+                )
+            return _Failure(
+                PredictionFailure.FEATURES_UNAVAILABLE,
+                f"fewer than {definition.features.lookback_bars} contiguous "
+                f"{definition.policy.timeframe} candles of this session (or a reference "
+                "candle) before the observation",
+            )
         if tuple(produced.values) != model.base_schema.names:
             return _Failure(
                 PredictionFailure.SCHEMA_MISMATCH, "feature order drifted from the schema"
@@ -934,7 +1080,7 @@ class ModelInferenceService:
                 feed=manifest.feed,
                 timeframe=manifest.timeframe,
                 adjustment=manifest.adjustment,
-                observation_start=last.start,
+                observation_start=vector.bar_start,
                 observation_end=last.end,
                 predicted_at=predicted_at,
                 horizon_bars=manifest.label_schema.horizon_bars,

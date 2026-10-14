@@ -10,6 +10,7 @@ import hashlib
 import json
 from datetime import UTC, datetime, timedelta
 from decimal import Decimal
+from dataclasses import replace
 from pathlib import Path
 
 import numpy as np
@@ -27,7 +28,7 @@ from mike_trade.modeling.config import load_experiment_config
 from mike_trade.modeling.contracts import FeatureVector
 from mike_trade.modeling.datasets import ParquetDatasetProvider
 from mike_trade.modeling.adapters import XGBoostAdapterFactory
-from mike_trade.modeling.inference import ModelInferenceService, ModelLoadError
+from mike_trade.modeling.inference import InferenceRequest, ModelInferenceService, ModelLoadError
 from mike_trade.modeling.labels import (
     AggregatedTripleBarrierConfig,
     AggregatedTripleBarrierLabelGenerator,
@@ -74,7 +75,10 @@ def trained(tmp_path_factory):
         dataset_ids={s["symbol"]: s["dataset_id"] for s in lock["dataset_sources"]},
         expected_sha256={s["symbol"]: s["sha256"] for s in lock["dataset_sources"]},
     )
-    return {"config": config, "outcome": outcome, "lock": lock, "models": models, "data": data}
+    return {
+        "config": config, "outcome": outcome, "lock": lock, "models": models, "data": data,
+        "config_path": path, "config_dir": base,
+    }
 
 
 def test_the_stored_model_records_candle_timeframe_horizon_and_feature_definitions(trained):
@@ -211,18 +215,181 @@ def test_training_and_streaming_feature_vectors_are_identical_and_drive_the_stor
         assert sum(prediction.probabilities.values()) == pytest.approx(1.0)
 
 
-def test_the_serving_stack_refuses_aggregated_models_with_a_clear_message(trained):
-    config = trained["config"]
+def _service(trained, clock, directories=None):
     registry = ModelAdapterRegistry()
     registry.register(XGBoostAdapterFactory())
+    config = trained["config"]
     reference = ModelReference(config.model_id, config.model_version, "xgboost", "buy")
-    with pytest.raises(ModelLoadError, match="5m candles") as caught:
-        ModelInferenceService(
-            FileModelRepository(trained["models"]), registry, [reference],
-            clock=lambda: datetime.now(UTC),
-        )
-    assert caught.value.code == "PROVENANCE_UNSUPPORTED"
+    directories = [trained["config_dir"]] if directories is None else directories
+    return reference, ModelInferenceService(
+        FileModelRepository(trained["models"]), registry, [reference], clock=clock,
+        candle_config_directories=directories,
+    )
+
+
+def test_serving_refuses_a_candle_model_whose_training_config_cannot_be_found(trained, tmp_path):
+    with pytest.raises(ModelLoadError, match="cannot be reproduced") as caught:
+        _service(trained, lambda: datetime.now(UTC), directories=[tmp_path])
+    assert caught.value.code == "SCHEMA_MISMATCH"
     assert isinstance(caught.value, MikeTradeError)
+
+
+def test_serving_refuses_a_config_that_does_not_reproduce_the_recorded_schema(trained, tmp_path):
+    other = yaml.safe_load(trained["config_path"].read_text())
+    other["features"]["lookback_bars"] = 5  # a different window than the one that was trained
+    (tmp_path / "other.yaml").write_text(yaml.safe_dump(other))
+    manifest = trained["outcome"].stored.manifest
+    from mike_trade.modeling.candle_features import CandleDefinitionError, resolve_candle_definition
+
+    with pytest.raises(CandleDefinitionError, match="no training configuration"):
+        resolve_candle_definition(
+            feature_schema=manifest.feature_schema,
+            training_config_sha256=manifest.training_config_sha256,
+            config_directories=[tmp_path],
+        )
+    # a config that does hash-match but cannot reproduce the recorded schema is rejected too
+    wrong = replace(manifest.feature_schema, names=manifest.feature_schema.names[:-1])
+    with pytest.raises(CandleDefinitionError, match="does not reproduce"):
+        resolve_candle_definition(
+            feature_schema=wrong,
+            training_config_sha256=manifest.training_config_sha256,
+            config_directories=[trained["config_dir"]],
+        )
+
+
+def test_served_candle_predictions_equal_the_training_features_and_stored_model(trained):
+    """Minute-by-minute serving reproduces the training rows exactly, only at candle closes."""
+    config = trained["config"]
+    now = [datetime(2026, 3, 24, tzinfo=UTC)]
+    reference, service = _service(trained, lambda: now[0])
+    loaded = service.loaded(reference)
+    assert loaded is not None and loaded.feature_window == 4 * 5
+    assert loaded.candle.features.half_life_bars == 2.0  # recovered from the hashed training config
+
+    provider = ParquetDatasetProvider(trained["data"])
+    window = config.ranges.evaluation
+    selection = provider.select(
+        ("AAA", "SPY"), window.start, window.end, feed="iex", timeframe="1m",
+        adjustment="raw", universe_id="synthetic_v1",
+    )
+    minutes = tuple(provider.iter_bars(selection, "AAA"))
+    spy = tuple(provider.iter_bars(selection, "SPY"))
+    builder = AggregatedTrainingDatasetBuilder(
+        CandleWindowFeaturePipeline(config.feature_config),
+        AggregatedTripleBarrierLabelGenerator(
+            AggregatedTripleBarrierConfig(
+                Decimal(str(config.objective_parameters["positive_barrier"])),
+                Decimal(str(config.objective_parameters["negative_barrier"])),
+                int(config.objective_parameters["horizon_bars"]), 5,
+            )
+        ),
+        config.candles,
+    )
+    trained_rows = {
+        row.features.as_of: row for row in builder.build_symbol(minutes, references={"SPY": spy})
+    }
+    assert trained_rows
+    _manifest, predictor = load_model_predictor(
+        FileModelRepository(trained["models"]), config.model_id, config.model_version
+    )
+
+    served = failures = compared = 0
+    for index, bar in enumerate(minutes):
+        now[0] = bar.end + timedelta(seconds=1)
+        # only data that existed at bar.end is handed over; the future is not even present
+        request = InferenceRequest(
+            reference=reference, symbol="AAA", bars=minutes[max(0, index - 80) : index + 1],
+            references={"SPY": tuple(b for b in spy if b.end <= bar.end)[-82:]},
+        )
+        result = service.predict(request)
+        if result.prediction is None:
+            failures += 1
+            continue
+        served += 1
+        prediction = result.prediction
+        assert (bar.end - bar.start) == timedelta(minutes=1)
+        assert prediction.observation_end == bar.end
+        assert prediction.observation_end - prediction.observation_start == timedelta(minutes=5)
+        assert prediction.timeframe == "1m" and prediction.horizon_bars == 4
+        assert prediction.feature_schema_id == "intraday_candle_window"
+        row = trained_rows.get(bar.end)
+        if row is not None:
+            assert dict(prediction.feature_values) == dict(row.features.values)
+            expected = predictor.predict(row.features)
+            for label in config.class_labels:
+                assert prediction.probabilities[label] == pytest.approx(
+                    expected.probabilities[label], abs=1e-9
+                )
+            compared += 1
+    assert served > 0 and compared > 0 and failures > served
+    # the first prediction of a session needs a full lookback: four 5m candles = 20 minutes
+    first = min(
+        r.prediction.observation_end
+        for b in minutes[:30]
+        if (r := _predict_at(service, reference, minutes, spy, b, now)).prediction is not None
+    )
+    assert first == minutes[0].start + timedelta(minutes=20)
+
+
+def _predict_at(service, reference, minutes, spy, bar, now):
+    now[0] = bar.end + timedelta(seconds=1)
+    index = minutes.index(bar)
+    return service.predict(
+        InferenceRequest(
+            reference=reference, symbol="AAA", bars=minutes[max(0, index - 80) : index + 1],
+            references={"SPY": tuple(b for b in spy if b.end <= bar.end)[-82:]},
+        )
+    )
+
+
+def test_a_developing_candle_is_never_scored_and_later_data_cannot_change_a_prediction(trained):
+    config = trained["config"]
+    now = [datetime(2026, 3, 24, tzinfo=UTC)]
+    reference, service = _service(trained, lambda: now[0])
+    provider = ParquetDatasetProvider(trained["data"])
+    window = config.ranges.evaluation
+    selection = provider.select(
+        ("AAA", "SPY"), window.start, window.end, feed="iex", timeframe="1m",
+        adjustment="raw", universe_id="synthetic_v1",
+    )
+    minutes = tuple(provider.iter_bars(selection, "AAA"))
+    spy = tuple(provider.iter_bars(selection, "SPY"))
+    boundary = 29  # the 30th minute of the session closes a 5m candle with a full lookback
+    assert minutes[boundary].end - minutes[0].start == timedelta(minutes=30)
+    for offset in (-1, 1, 2, 3, 4):  # every minute that is not the end of a 5m candle
+        bar = minutes[boundary + offset]
+        result = _predict_at(service, reference, minutes, spy, bar, now)
+        assert result.prediction is None
+        assert result.failure.value == "NOT_CANDLE_BOUNDARY"
+    base = _predict_at(service, reference, minutes, spy, minutes[boundary], now)
+    assert base.prediction is not None
+    # mutate every bar after the observation: the prediction must not change
+    tampered = tuple(
+        replace(b, close=b.close * 3, high=b.high * 3) if b.start > minutes[boundary].start else b
+        for b in minutes
+    )
+    again = _predict_at(
+        _service(trained, lambda: now[0])[1], reference, tampered, spy, tampered[boundary], now
+    )
+    assert again.prediction is not None
+    assert dict(again.prediction.feature_values) == dict(base.prediction.feature_values)
+    assert again.prediction.probabilities == base.prediction.probabilities
+
+
+def test_one_minute_models_keep_their_original_one_minute_behavior(tmp_path):
+    from model_fixtures import build_model
+
+    built = build_model(tmp_path, algorithm="xgboost", role="buy", model_id="xgb_one_minute")
+    registry = ModelAdapterRegistry()
+    registry.register(XGBoostAdapterFactory())
+    service = ModelInferenceService(
+        FileModelRepository(tmp_path), registry, [built.reference],
+        clock=lambda: datetime.now(UTC),
+    )
+    loaded = service.loaded(built.reference)
+    assert loaded is not None and loaded.candle is None
+    assert loaded.base_config.timeframe == "1m"
+    assert loaded.feature_window == loaded.base_config.maximum_history
 
 
 def test_stored_models_are_immutable(trained):
@@ -258,3 +425,102 @@ def test_summary_reports_outcome_frequencies_partition_metrics_and_deciles(train
     assert "Outcome frequency by partition" in text and "favorable (+ barrier first)" in text
     assert "adverse (- barrier first)" in text and "neither (timeout)" in text
     assert "ROC AUC" in text and "decile 1 = lowest" in text and "NOT trading results" in text
+
+
+def _candle_backtest(trained, tmp_path, tape, *, trail="0.5", **overrides):
+    """Run the real BacktestRunner (strategy, lifecycle, simulator, native trailing stop)."""
+    import test_model_backtest as harness
+
+    config = trained["config"]
+    registry = ModelAdapterRegistry()
+    registry.register(XGBoostAdapterFactory())
+    reference = ModelReference(config.model_id, config.model_version, "xgboost", "buy")
+    params = {
+        "xgboost_probability_buy": {
+            "model_id": config.model_id, "model_version": config.model_version,
+            "decision_mode": "MODEL_DIRECTED", **overrides,
+        }
+    }
+
+    def build(_model_root, _references, clock):
+        return ModelInferenceService(
+            FileModelRepository(trained["models"]), registry, [reference], clock=clock,
+            candle_config_directories=[trained["config_dir"]],
+        )
+
+    original = harness.build_inference_service
+    harness.build_inference_service = build
+    try:
+        return harness.run(
+            tmp_path, trained["models"],
+            {"AAA": harness.events("AAA", tape), "SPY": harness.spy_flat(len(tape))},
+            ("xgboost_probability_buy",), params,
+            config={"protective_stop": {"type": "native_trailing", "trail_percent": trail}},
+        )
+    finally:
+        harness.build_inference_service = original
+
+
+def _rally_then_reversal():
+    quiet = [str(Decimal("100") + Decimal("0.01") * i) for i in range(30)]
+    rally = [str(Decimal("100.3") + Decimal("0.2") * i) for i in range(1, 21)]  # about +4%
+    return [*quiet, *rally, *["104.2", "103.6", "103.0", "102.4", "102.4", "102.4"]]
+
+
+def test_the_real_engine_scores_a_candle_model_only_at_candle_closes(trained, tmp_path):
+    result = _candle_backtest(trained, tmp_path, _rally_then_reversal())
+    audits = [
+        json.loads(r["model_audit"])
+        for r in result.evaluations
+        if r["strategy"] == "xgboost_probability_buy" and r.get("model_audit")
+    ]
+    scored = [a for a in audits if "prediction" in a]
+    idle = [a for a in audits if "prediction" not in a]
+    assert scored, "the model must have been consulted"
+    session_open = datetime(2026, 3, 10, 13, 30, tzinfo=UTC)
+    for audit in scored:
+        end = datetime.fromisoformat(audit["bar_end"])
+        assert (end - session_open) % timedelta(minutes=5) == timedelta(0)
+        prediction = audit["prediction"]
+        assert prediction["feature_schema"] == "intraday_candle_window@1.0.0"
+        assert prediction["observation_end"] == audit["bar_end"]
+        assert prediction["horizon_bars"] == 4
+        assert audit["decision_mode"] == "MODEL_DIRECTED"
+        favorable, adverse = audit["favorable_probability_bps"], audit["adverse_probability_bps"]
+        assert (audit["decision"] == "SIGNAL") == (favorable > adverse)  # favorable vs adverse only
+    # every other minute is explicitly "no candle has just closed": never a prediction, never a signal
+    assert idle
+    for audit in idle:
+        end = datetime.fromisoformat(audit["bar_end"])
+        assert audit["decision"] == "NO_SIGNAL"
+        assert audit["reason"].endswith("NOT_CANDLE_BOUNDARY") or (
+            (end - session_open) % timedelta(minutes=5) == timedelta(0)
+        )
+
+
+def test_candle_signals_enter_on_the_next_open_and_only_the_trailing_stop_exits_a_winner(
+    trained, tmp_path
+):
+    # THRESHOLD with open limits only forces the tiny synthetic model to fire so the lifecycle can
+    # be exercised; the production backtests use MODEL_DIRECTED.
+    result = _candle_backtest(
+        trained, tmp_path, _rally_then_reversal(), decision_mode="THRESHOLD",
+        minimum_favorable_probability_bps=1, maximum_adverse_probability_bps=10000,
+    )
+    ordered = list(result.fills)
+    buys = [f for f in ordered if f["side"] == "BUY"]
+    sells = [f for f in ordered if f["side"] == "SELL"]
+    # no pyramiding: every BUY is preceded by the complete SELL of the earlier position
+    sides = [f["side"] for f in ordered]
+    assert sides[0] == "BUY" and all(a != b for a, b in zip(sides, sides[1:], strict=False))
+    assert all(f["quantity"] == buys[0]["quantity"] for f in ordered)
+    (signal, *_later) = sorted(result.signals, key=lambda s_: s_["bar_time"])
+    assert not any(f["purpose"] == "STRATEGY_EXIT" for f in sells), "no SELL strategy exists"
+    entry, exit_ = buys[0], sells[0]
+    assert exit_["purpose"] == "PROTECTIVE_STOP"
+    peak = max(Decimal(t) for t in _rally_then_reversal())
+    # the +1% training target is not a take-profit: the position rode well past +1% ...
+    assert exit_["price"] > entry["price"] * Decimal("1.03")
+    # ... and left through the 0.5% trailing stop measured from the high
+    assert abs(exit_["price"] - peak * Decimal("0.995")) <= Decimal("0.35")
+    assert exit_["time"] > entry["time"]

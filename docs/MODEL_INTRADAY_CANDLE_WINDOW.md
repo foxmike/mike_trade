@@ -52,9 +52,41 @@ partition, confusion matrix, calibration, score distribution, fit-vs-held-out me
 predictive/label statistics and not trading results.
 
 ## Limits
-* Serving: `ModelInferenceService` refuses aggregated-candle models with a clear error (training/evaluation only);
-  strategy/backtest integration needs an aggregation adapter and is not part of this change.
+* Serving: `ModelInferenceService` serves candle-window models from the same one-minute bars the
+  1m models use (see "Backtesting and serving" below).
 * Signals exist only after the lookback is full (A: from 10:20 ET, B: from 11:00 ET) and while the full horizon fits
   in the session (A: until 15:00 ET, B: until 14:30 ET).
 * IEX coverage is thin for some symbols; they contribute few contiguous windows (see the lock's counts and
   `build_stats`).
+
+## Backtesting and serving
+
+The inference service, the model-directed strategies and the backtest runner serve a candle-window
+model through the unchanged lifecycle (entries, protective stops, end-of-day liquidation):
+
+* **Same code as training.** The one-minute bars of the lookback span are aggregated by the training
+  `CandleAggregator` (session-open-aligned buckets, early closes included, no bridging of missing
+  minutes) and featurized by the training `CandleWindowFeaturePipeline`.  The feature names and
+  order are checked against the manifest on load.
+* **Half-life.** The manifest records the feature names and the SHA-256 of the training
+  configuration, not the recency half-life.  On load the half-life, lookback and candle policy are
+  read from the training configuration under `config/modeling/` whose SHA-256 equals the
+  manifest's, and the rebuilt pipeline must reproduce the recorded feature schema exactly; if the
+  file is missing or differs the model is refused (`SCHEMA_MISMATCH`), never guessed.
+* **Completed candles only.** A prediction is made only when the latest completed one-minute bar
+  is the last minute of an N-minute candle (`NOT_CANDLE_BOUNDARY` on every other minute).  Bars
+  that ended after the observation are never used; a reference candle is closed by the observation
+  time.  The prediction's `observation_start`/`observation_end` span the candle; `timeframe`
+  stays the source series (`1m`) and `horizon_bars` stays in candles.
+* **Signals** therefore occur at candle closes (5m from 10:20 ET, 15m from 11:00 ET at the
+  earliest), and the entry fills at the next minute's open, which is the next candle's open.
+* **Missing minute at a candle close.** If IEX printed no trade in a candle's last minute, there
+  is no one-minute bar to trigger an evaluation at that instant, so that candle is not scored (it
+  is still part of later windows).  Training would have scored it; the candle features are never
+  approximated.
+* **Scope.** Verified for BACKTEST.  Only BUY classification models of the `intraday_candle_window`
+  family are served; SELL candle models do not exist.
+
+`scripts/backtest_xgboost_intraday_ibm_tsla.sh` runs the two models on IBM and TSLA over the
+models' evaluation window (4 concurrent jobs) and writes a consolidated comparison to
+`research/analysis/xgboost_intraday_ibm_tsla/`.
