@@ -288,7 +288,7 @@ async def test_shadow_model_buy_then_model_sell_uses_the_real_fill_and_keeps_the
 
         expected = make_signal_id(
             "lightgbm_probability_sell",
-            "1.0.0",
+            LightgbmProbabilitySell.spec.version,
             "AAA",
             StrategyRole.SELL,
             datetime.fromisoformat(decision["bar_start"]),

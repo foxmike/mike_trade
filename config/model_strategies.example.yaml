@@ -79,6 +79,7 @@ strategies:
     plugin: xgboost_probability_buy
     side: buy
     parameters:
+      decision_mode: THRESHOLD
       model_id: xgboost_buy_tb_pooled
       model_version: 1.0.0
       minimum_favorable_probability_bps: 5500
@@ -88,6 +89,7 @@ strategies:
     plugin: lightgbm_probability_sell
     side: sell
     parameters:
+      decision_mode: THRESHOLD
       model_id: lightgbm_sell_continuation_pooled
       model_version: 1.0.0
       minimum_exit_probability_bps: 6500
@@ -96,6 +98,7 @@ strategies:
     plugin: lightgbm_probability_buy
     side: buy
     parameters:
+      decision_mode: THRESHOLD
       model_id: lightgbm_buy_tb_pooled
       model_version: 1.0.0
       minimum_favorable_probability_bps: 5500
@@ -105,6 +108,7 @@ strategies:
     plugin: xgboost_probability_buy
     side: buy
     parameters:
+      decision_mode: THRESHOLD
       model_id: xgboost_buy_tb_pooled
       model_version: 1.0.0
       minimum_favorable_probability_bps: 6000
@@ -112,6 +116,7 @@ strategies:
     plugin: xgboost_probability_sell
     side: sell
     parameters:
+      decision_mode: THRESHOLD
       model_id: xgboost_sell_continuation_pooled
       model_version: 1.0.0
       minimum_exit_probability_bps: 6500

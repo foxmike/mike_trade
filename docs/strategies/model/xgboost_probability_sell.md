@@ -4,7 +4,7 @@
 
 - Role: independent SELL (exits a long; never opens or shorts)
 - Algorithm: XGBoost (native UBJSON); the strategy accepts only an XGBoost artifact
-- Category: `machine_learning` / `gradient_boosted_trees`; version `1.0.0`
+- Category: `machine_learning` / `gradient_boosted_trees`; version `1.1.0`
 - Implementation: `mike_trade.strategies.sell.xgboost_probability_sell:XgboostProbabilitySell`, decision logic in
   `mike_trade.strategies.model_probability.ModelProbabilitySell`
 - Status: **implemented; ready for targeted historical backtesting and SHADOW evaluation**. No
@@ -12,8 +12,8 @@
 
 ## Contract
 
-Purpose: exit the entire open long when an explicitly pinned XGBoost position-continuation model judges
-exiting now at least as good as holding.
+Purpose: exit the entire open long when an explicitly pinned XGBoost position-continuation model favors
+an exit outcome over holding.
 
 The SELL model is trained and configured **independently of the BUY model**. Its classes are
 `-1` = holding would reach the risk barrier (`RISK_EXIT`), `0` = exiting now beats holding
@@ -36,10 +36,11 @@ Exact rule:
 
 1. Require a real open long and a valid prediction bound to it; otherwise `NO_SIGNAL`/`NOT_ELIGIBLE`/
    `INSUFFICIENT_DATA`/`STALE_DATA` with a finer audit reason.
-2. Exit when `P(-1) + P(0) >= minimum_exit_probability_bps`, **or** (when `minimum_risk_exit_probability_bps
-   > 0`) `P(-1) >= minimum_risk_exit_probability_bps`.
-3. Emit one `SIGNAL`; the engine's exit arbitration then applies the configured minimum hold and the
-   pending-exit rule and closes the whole position. The same bar never signals twice.
+2. Require the manifest to record label `sell_continuation` and the exact class meanings above.
+3. In `MODEL_DIRECTED` mode, exit when `P(-1) + P(0) > P(1)`; ties hold.
+4. In optional `THRESHOLD` mode, apply `minimum_exit_probability_bps` and the independent
+   `minimum_risk_exit_probability_bps` gate.
+5. Emit one `SIGNAL`; normal exit arbitration closes the whole position.
 
 An ML SELL is an ordinary discretionary exit. It never overrides a protective stop, manual close,
 hard-risk or forced-liquidation exit, and it is silent for positions the model cannot judge
@@ -47,6 +48,7 @@ hard-risk or forced-liquidation exit, and it is silent for positions the model c
 
 | Name | Kind | Default | Range / pattern |
 | --- | --- | --- | --- |
+| `decision_mode` | ENUM | `MODEL_DIRECTED` | `MODEL_DIRECTED`, `THRESHOLD` |
 | `model_id`, `model_version`, `artifact_sha256` | STRING | required, required, `""` | as BUY |
 | `minimum_exit_probability_bps` | INT | 6000 | 1–10000 |
 | `minimum_risk_exit_probability_bps` | INT | 0 | 0–10000 (0 disables) |
@@ -60,7 +62,7 @@ Persistent state keys: `last_signal_bar`, `model_audit`.
 
 | Rule | Python | Verification |
 | --- | --- | --- |
-| Exit thresholds; hold preferred | `model_probability.ModelProbabilitySell.decide` | `test_sell_signal_uses_the_actual_position_and_prediction`, `test_sell_holds_when_continuing_is_favored`, `test_sell_risk_trigger_is_independent_and_disabled_by_default` |
+| Model-directed exit/hold comparison and optional thresholds | `model_probability.ModelProbabilitySell.decide` | `test_model_directed_sell_requires_exit_direction_to_strictly_beat_hold`, `test_sell_holds_when_continuing_is_favored`, `test_sell_risk_trigger_is_independent_and_disabled_by_default` |
 | Actual entry fill price and time reach the model | `ModelInferenceService._position_vector`; `position_feature_values` | `test_sell_prediction_uses_the_actual_entry_fill_price`, `test_position_features_equal_the_training_builder_features`, `test_model_sell_receives_the_actual_entry_fill_and_exits_a_winner`, `test_paper_model_buy_and_sell_use_confirmed_broker_fills` |
 | Never signals without a position; prediction bound to this exact position | `decide`, `PositionFacts.fingerprint` | `test_sell_never_signals_without_a_real_position`, `test_sell_prediction_must_belong_to_this_exact_position`, `test_sell_strategy_is_inert_without_a_position` |
 | Out-of-support positions and missing entry bar | `ModelInferenceService` | `test_sell_requires_a_valid_position_inside_training_support` |

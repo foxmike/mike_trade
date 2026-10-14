@@ -4,7 +4,7 @@
 
 - Role: independent BUY
 - Algorithm: XGBoost (native UBJSON); the strategy accepts only an XGBoost artifact
-- Category: `machine_learning` / `gradient_boosted_trees`; version `1.0.0`
+- Category: `machine_learning` / `gradient_boosted_trees`; version `1.1.0`
 - Implementation: `mike_trade.strategies.buy.xgboost_probability_buy:XgboostProbabilityBuy`, decision logic in
   `mike_trade.strategies.model_probability.ModelProbabilityBuy`
 - Status: **implemented; ready for targeted historical backtesting and SHADOW evaluation**. No
@@ -12,8 +12,8 @@
 
 ## Contract
 
-Purpose: enter a long when an explicitly pinned XGBoost BUY model's calibrated outcome
-probabilities for the latest completed 1-minute bar clear configured thresholds.
+Purpose: enter a long when an explicitly pinned XGBoost BUY model favors the favorable
+outcome over the adverse outcome for the latest completed 1-minute bar.
 
 Required data (supplied by the composition root, never fetched by the strategy):
 
@@ -28,16 +28,15 @@ Required data (supplied by the composition root, never fetched by the strategy):
 Exact rule (classification, e.g. triple-barrier `-1/0/1`):
 
 1. Require every data condition above; otherwise `NO_SIGNAL` with the reason code in the table below.
-2. `P(favorable_class) >= minimum_favorable_probability_bps` (default class `"1"`).
-3. If the adverse class exists and `maximum_adverse_probability_bps < 10000`:
-   `P(adverse_class) <= maximum_adverse_probability_bps` (default class `"-1"`).
-4. If `use_expected_value`: `Σ P(c)·r(c) >= minimum_expected_value_bps`, with `r(c)` the model label
-   schema's modeled net return per class (timeout assumed flat before costs); declined as
-   `EXPECTED_VALUE_UNAVAILABLE` when the label schema defines none.
-5. Emit one `SIGNAL` for the bar (`reference_price` = the bar's close). The same bar never signals twice.
+2. In `MODEL_DIRECTED` mode, signal when `P(favorable_class) > P(adverse_class)`. The neutral
+   class adds no gate, and ties decline.
+3. In optional `THRESHOLD` mode, apply `minimum_favorable_probability_bps`,
+   `maximum_adverse_probability_bps`, and the optional expected-value gate.
+4. Emit one `SIGNAL` for the bar (`reference_price` = the bar's close). The same bar never signals twice.
 
-Regression model (`forward_return` label): signal when the predicted net return, in basis points, is at
-least `minimum_expected_value_bps`. Any other label is `UNSUPPORTED_OBJECTIVE`.
+In `THRESHOLD` mode, a regression model (`forward_return` label) signals when the predicted net return,
+in basis points, is at least `minimum_expected_value_bps`. Regression is unsupported in
+`MODEL_DIRECTED` because it has no favorable/adverse class probabilities.
 
 A probability above 50% is **not** treated as positive expected value; the threshold is a probability
 rule, and the optional expected-value test is a separate, explicitly estimated condition.
@@ -46,6 +45,7 @@ Parameters (`STRING` ids are validated at configuration time; thresholds are int
 
 | Name | Kind | Default | Range / pattern |
 | --- | --- | --- | --- |
+| `decision_mode` | ENUM | `MODEL_DIRECTED` | `MODEL_DIRECTED`, `THRESHOLD` |
 | `model_id` | STRING | required | `[a-z][a-z0-9_]{0,62}` |
 | `model_version` | STRING | required | `MAJOR.MINOR.PATCH` |
 | `artifact_sha256` | STRING | `""` | 64 lowercase hex or empty |
@@ -62,8 +62,8 @@ Persistent state keys: `last_signal_bar`, `model_audit`.
 
 No-signal reason codes: `NOT_ELIGIBLE` (not armed, closed session, untrained symbol), `STALE_DATA` (stale
 context, stale/future prediction, prediction not for the latest bar), `INSUFFICIENT_DATA` (warm-up, no
-inputs, prediction missing/unavailable/mismatched), `NO_SIGNAL` (below/above threshold, expected value
-below minimum). The finer reason (for example `BELOW_FAVORABLE_THRESHOLD`,
+inputs, prediction missing/unavailable/mismatched), `NO_SIGNAL` (favorable outcome not preferred,
+threshold rejection, or expected value below minimum). The finer reason (for example `BELOW_FAVORABLE_THRESHOLD`,
 `PREDICTION_UNAVAILABLE:REFERENCE_BAR_MISSING`) is in the `model_audit` record.
 
 The strategy only reports that an entry is warranted. Position sizing, entry arbitration, the
@@ -74,7 +74,7 @@ remain in the engine and always take precedence.
 
 | Rule | Python | Verification |
 | --- | --- | --- |
-| Probability thresholds, adverse cap | `model_probability.ModelProbabilityBuy._classify` | `test_buy_signal_above_threshold`, `test_buy_no_signal_below_threshold`, `test_adverse_probability_cap_and_expected_value_accounting` |
+| Model-directed comparison and optional threshold gates | `model_probability.ModelProbabilityBuy.decide` | `test_model_directed_buy_has_no_absolute_or_neutral_probability_gate`, `test_model_directed_buy_holds_when_adverse_is_at_least_favorable`, `test_threshold_buy_mode_retains_absolute_probability_gates` |
 | Probability > 50% is not expected value; regression | same | `test_favorable_probability_above_half_is_not_treated_as_positive_expectation`, `test_regression_model_uses_the_predicted_net_return` |
 | Exact pin, no `latest`, no algorithm/role/checksum drift | parameter schema; `ModelInferenceService._load` | `test_parameters_pin_the_model_and_reject_latest_or_malformed_values`, `test_exact_version_pinning_never_resolves_latest`, `test_algorithm_role_and_checksum_pins_are_enforced`, `test_buy_refuses_mismatched_or_unsuitable_predictions` |
 | Provenance, freshness, earlier-candle, invalid probabilities | `_Model._prediction`; `ServedPrediction` | `test_stale_and_future_dated_predictions_are_refused`, `test_prediction_for_an_earlier_candle_is_never_used_for_a_later_one`, `test_invalid_probability_distributions_cannot_be_constructed` |

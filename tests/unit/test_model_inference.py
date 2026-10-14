@@ -282,6 +282,29 @@ def test_feature_schema_that_the_pipeline_cannot_reproduce_is_refused(tmp_path):
     assert raised.value.code == "SCHEMA_MISMATCH"
 
 
+def test_sell_model_requires_recorded_continuation_class_semantics(tmp_path):
+    from mike_trade.modeling.artifacts import schema_fingerprint
+
+    built = build_model(tmp_path, algorithm="xgboost", role="sell")
+    wrong_label = replace(
+        built.manifest.label_schema,
+        parameters={**built.manifest.label_schema.parameters, "classes": "-1=HOLD,0=EXIT,1=RISK"},
+    )
+    manifest = replace(
+        built.manifest,
+        label_schema=wrong_label,
+        label_schema_sha256=schema_fingerprint(wrong_label),
+    )
+    manifest_path = (
+        tmp_path / "manifests" / manifest.model_id / f"{manifest.model_version}.json"
+    )
+    manifest_path.write_text(manifest.canonical() + "\n")
+
+    with pytest.raises(ModelLoadError) as raised:
+        _service(tmp_path, [built.reference], built.manifest.created_at)
+    assert raised.value.code == "SCHEMA_MISMATCH"
+
+
 def test_model_is_loaded_once_and_reused(models):
     built = models[("xgboost", "buy")]
     registry = _registry()

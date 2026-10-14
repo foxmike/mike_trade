@@ -38,22 +38,22 @@ models:
     strategy: xgboost_probability_buy
     model_id: xgboost_buy_tb_pooled
     model_version: 1.0.0
-    parameters: {minimum_favorable_probability_bps: 5500, maximum_adverse_probability_bps: 2500}
+    parameters: {decision_mode: THRESHOLD, minimum_favorable_probability_bps: 5500, maximum_adverse_probability_bps: 2500}
   lgbm_buy:
     strategy: lightgbm_probability_buy
     model_id: lightgbm_buy_tb_pooled
     model_version: 1.0.0
-    parameters: {minimum_favorable_probability_bps: 5500, maximum_adverse_probability_bps: 2500}
+    parameters: {decision_mode: THRESHOLD, minimum_favorable_probability_bps: 5500, maximum_adverse_probability_bps: 2500}
   xgb_sell:
     strategy: xgboost_probability_sell
     model_id: xgboost_sell_continuation_pooled
     model_version: 1.0.0
-    parameters: {minimum_exit_probability_bps: 6500}
+    parameters: {decision_mode: THRESHOLD, minimum_exit_probability_bps: 6500}
   lgbm_sell:
     strategy: lightgbm_probability_sell
     model_id: lightgbm_sell_continuation_pooled
     model_version: 1.0.0
-    parameters: {minimum_exit_probability_bps: 6500}
+    parameters: {decision_mode: THRESHOLD, minimum_exit_probability_bps: 6500}
 
 # Each configuration is an independent set of single-symbol accounts. Items are model names above
 # or registered strategy ids; any other combination uses the same two lists.

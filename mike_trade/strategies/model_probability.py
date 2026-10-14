@@ -67,6 +67,7 @@ __all__ = [
     "STATE_LAST_SIGNAL_BAR",
     "STATE_MODEL_AUDIT",
     "MODEL_REASON_CODES",
+    "ModelDecisionMode",
     "ModelReason",
     "ModelDecision",
     "buy_parameter_schema",
@@ -101,6 +102,13 @@ _SELL_CLASSES = ("-1", "0", "1")
 _CLASS_RISK_EXIT, _CLASS_EXIT_FAVORABLE, _CLASS_HOLD_FAVORABLE = _SELL_CLASSES
 
 
+class ModelDecisionMode(StrEnum):
+    """How a classification model's probabilities become a trading decision."""
+
+    MODEL_DIRECTED = "MODEL_DIRECTED"
+    THRESHOLD = "THRESHOLD"
+
+
 class ModelReason(StrEnum):
     """Fine-grained, stable explanation of one model-strategy decision."""
 
@@ -126,6 +134,7 @@ class ModelReason(StrEnum):
     STALE_PREDICTION = "STALE_PREDICTION"
     UNTRAINED_SYMBOL = "UNTRAINED_SYMBOL"
     UNSUPPORTED_OBJECTIVE = "UNSUPPORTED_OBJECTIVE"
+    FAVORABLE_NOT_PREFERRED = "FAVORABLE_NOT_PREFERRED"
     BELOW_FAVORABLE_THRESHOLD = "BELOW_FAVORABLE_THRESHOLD"
     ABOVE_ADVERSE_THRESHOLD = "ABOVE_ADVERSE_THRESHOLD"
     BELOW_EXPECTED_VALUE = "BELOW_EXPECTED_VALUE"
@@ -160,6 +169,16 @@ class ModelDecision:
 
 def _pin_parameters() -> tuple[ParameterSpec, ...]:
     return (
+        ParameterSpec(
+            "decision_mode",
+            ParameterKind.ENUM,
+            default=ModelDecisionMode.MODEL_DIRECTED.value,
+            choices=tuple(mode.value for mode in ModelDecisionMode),
+            description=(
+                "MODEL_DIRECTED compares the trained outcome directions; THRESHOLD applies "
+                "the optional experimental absolute probability gates."
+            ),
+        ),
         ParameterSpec(
             "model_id",
             ParameterKind.STRING,
@@ -291,11 +310,10 @@ _BUY_METHODOLOGY = (
     "within the horizon) whose output is a calibrated class probability, not a return "
     "forecast. A BUY signal requires the prediction to be valid, to describe the latest "
     "completed bar, to come from the pinned artifact and the runtime feed, to be fresh, and to "
-    "clear: P(favorable) >= minimum_favorable_probability_bps, P(adverse) <= "
-    "maximum_adverse_probability_bps, and optionally a barrier-implied expected net return >= "
-    "minimum_expected_value_bps (computed from the model's own label schema with timeouts "
-    "assumed flat before costs; skipped unless use_expected_value). Regression models instead "
-    "require the predicted net forward return >= minimum_expected_value_bps. One signal per "
+    "show P(favorable) > P(adverse) in MODEL_DIRECTED mode. The neutral class imposes no "
+    "additional gate. THRESHOLD mode retains the optional absolute favorable/adverse gates and "
+    "barrier-implied expected-value filter. Regression models remain available only through "
+    "THRESHOLD mode. One signal per "
     "bar; any invalid prediction yields no signal. This restates a decision rule and makes no "
     "profitability claim."
 )
@@ -305,9 +323,10 @@ _SELL_METHODOLOGY = (
     "continuation classifier over position-aware features that include the actual entry fill "
     "price (class -1 = holding would hit the risk barrier, 0 = exiting now beats holding, 1 = "
     "holding beats exiting now). A SELL signal requires a valid, fresh prediction bound to "
-    "this exact position (cycle, entry price and entry time) and either P(-1) + P(0) >= "
-    "minimum_exit_probability_bps or, when enabled, P(-1) >= "
-    "minimum_risk_exit_probability_bps. An ML SELL is an ordinary discretionary exit: minimum "
+    "this exact position (cycle, entry price and entry time). MODEL_DIRECTED mode exits when "
+    "P(RISK_EXIT) + P(EXIT_FAVORABLE) > P(HOLD_FAVORABLE), using the semantics recorded in the "
+    "trained model manifest. THRESHOLD mode retains the optional absolute exit gates. An ML "
+    "SELL is an ordinary discretionary exit: minimum "
     "hold and exit arbitration apply and it never outranks protective, manual, hard-risk or "
     "forced-liquidation exits. The engine closes the whole position. This restates a decision "
     "rule and makes no profitability claim."
@@ -321,7 +340,7 @@ def model_strategy_spec(*, strategy_id: str, algorithm: str, side: StrategyRole)
     methodology = (_BUY_METHODOLOGY if buy else _SELL_METHODOLOGY).format(algo=_DISPLAY[algorithm])
     return StrategySpec(
         strategy_id=strategy_id,
-        version="1.0.0",
+        version="1.1.0",
         side=side,
         category="machine_learning",
         sub_category="gradient_boosted_trees",
@@ -407,6 +426,9 @@ class _Model:
                 for key in sorted(params)
                 if key.endswith("_bps") or key in ("favorable_class", "adverse_class")
             },
+            "decision_mode": params.get(
+                "decision_mode", ModelDecisionMode.MODEL_DIRECTED.value
+            ),
         }
 
     @classmethod
@@ -606,11 +628,16 @@ class ModelProbabilityBuy(_Model, BuyStrategy):
         params: Mapping[str, object],
     ) -> ModelDecision:
         no_signal = ReasonCode.NO_SIGNAL
+        mode = ModelDecisionMode(str(params["decision_mode"]))
         minimum_bps = _int(params, "minimum_favorable_probability_bps")
         maximum_adverse_bps = _int(params, "maximum_adverse_probability_bps")
         use_ev = bool(params["use_expected_value"])
         minimum_ev_bps = _int(params, "minimum_expected_value_bps")
         if prediction.value is not None:  # regression: the value is the modeled net return
+            if mode is ModelDecisionMode.MODEL_DIRECTED:
+                return cls._rejected(
+                    base, ReasonCode.INSUFFICIENT_DATA, ModelReason.UNSUPPORTED_OBJECTIVE
+                )
             if prediction.label_id != "forward_return":
                 return cls._rejected(
                     base, ReasonCode.INSUFFICIENT_DATA, ModelReason.UNSUPPORTED_OBJECTIVE
@@ -629,20 +656,33 @@ class ModelProbabilityBuy(_Model, BuyStrategy):
             )
         favorable = str(params["favorable_class"])
         adverse = str(params["adverse_class"])
-        if favorable not in prediction.probabilities:
+        if (
+            favorable == adverse
+            or favorable not in prediction.probabilities
+            or adverse not in prediction.probabilities
+        ):
             return cls._rejected(
                 base, ReasonCode.INSUFFICIENT_DATA, ModelReason.UNSUPPORTED_OBJECTIVE
             )
         p_favorable = prediction.probabilities[favorable]
-        extra: dict[str, object] = {"favorable_probability_bps": _bps(p_favorable)}
-        if _bps(p_favorable) < minimum_bps:
-            return cls._rejected(base, no_signal, ModelReason.BELOW_FAVORABLE_THRESHOLD, extra)
-        if adverse in prediction.probabilities and maximum_adverse_bps < 10000:
-            p_adverse = prediction.probabilities[adverse]
-            extra["adverse_probability_bps"] = _bps(p_adverse)
+        p_adverse = prediction.probabilities[adverse]
+        extra: dict[str, object] = {
+            "favorable_probability_bps": _bps(p_favorable),
+            "adverse_probability_bps": _bps(p_adverse),
+        }
+        if mode is ModelDecisionMode.MODEL_DIRECTED:
+            if p_favorable <= p_adverse:
+                return cls._rejected(
+                    base, no_signal, ModelReason.FAVORABLE_NOT_PREFERRED, extra
+                )
+        else:
+            if _bps(p_favorable) < minimum_bps:
+                return cls._rejected(
+                    base, no_signal, ModelReason.BELOW_FAVORABLE_THRESHOLD, extra
+                )
             if _bps(p_adverse) > maximum_adverse_bps:
                 return cls._rejected(base, no_signal, ModelReason.ABOVE_ADVERSE_THRESHOLD, extra)
-        if use_ev:
+        if mode is ModelDecisionMode.THRESHOLD and use_ev:
             returns = prediction.class_net_returns
             if not returns or set(returns) != set(prediction.probabilities):
                 return cls._rejected(base, no_signal, ModelReason.EXPECTED_VALUE_UNAVAILABLE, extra)
@@ -727,7 +767,11 @@ class ModelProbabilitySell(_Model, SellStrategy):
             assert rejection is not None
             return cls._rejected(base, rejection[0], rejection[1])
         base["prediction"] = prediction.to_audit()
-        if tuple(prediction.class_labels) != _SELL_CLASSES or not prediction.probabilities:
+        if (
+            prediction.label_id != "sell_continuation"
+            or tuple(prediction.class_labels) != _SELL_CLASSES
+            or not prediction.probabilities
+        ):
             return cls._rejected(
                 base, ReasonCode.INSUFFICIENT_DATA, ModelReason.UNSUPPORTED_OBJECTIVE
             )
@@ -738,6 +782,16 @@ class ModelProbabilitySell(_Model, SellStrategy):
             "risk_exit_probability_bps": _bps(p_risk),
             "hold_probability_bps": _bps(prediction.probabilities[_CLASS_HOLD_FAVORABLE]),
         }
+        mode = ModelDecisionMode(str(params["decision_mode"]))
+        if mode is ModelDecisionMode.MODEL_DIRECTED:
+            if p_exit > prediction.probabilities[_CLASS_HOLD_FAVORABLE]:
+                return ModelDecision(
+                    True,
+                    ReasonCode.SIGNAL,
+                    ModelReason.SIGNAL,
+                    {**base, "decision": "SIGNAL", "reason": "SIGNAL", **extra},
+                )
+            return cls._rejected(base, ReasonCode.NO_SIGNAL, ModelReason.HOLD_PREFERRED, extra)
         minimum_exit = _int(params, "minimum_exit_probability_bps")
         minimum_risk = _int(params, "minimum_risk_exit_probability_bps")
         if _bps(p_exit) >= minimum_exit or (minimum_risk > 0 and _bps(p_risk) >= minimum_risk):

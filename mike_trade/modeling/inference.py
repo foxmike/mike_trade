@@ -67,6 +67,7 @@ __all__ = [
 ]
 
 EXPECTED_SELL_CLASSES = ("-1", "0", "1")
+EXPECTED_SELL_CLASS_SEMANTICS = "-1=RISK_EXIT,0=EXIT_FAVORABLE,1=HOLD_FAVORABLE"
 _SELL_FEATURE_ID = "intraday_position"
 _BPS = Decimal("10000")
 
@@ -307,9 +308,13 @@ class ModelInferenceService:
             if (
                 manifest.label_schema.task is not LearningTask.MULTICLASS_CLASSIFICATION
                 or tuple(manifest.class_labels) != EXPECTED_SELL_CLASSES
+                or manifest.label_schema.label_id != "sell_continuation"
+                or manifest.label_schema.parameters.get("classes")
+                != EXPECTED_SELL_CLASS_SEMANTICS
             ):
                 raise ModelLoadError(
-                    f"SELL model {reference.key} must be multiclass with classes -1, 0, 1",
+                    f"SELL model {reference.key} lacks the required recorded continuation "
+                    "class semantics",
                     code="SCHEMA_MISMATCH",
                     context=context,
                 )

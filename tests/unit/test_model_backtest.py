@@ -258,9 +258,8 @@ def test_model_buy_declines_on_quiet_and_falling_tapes(tmp_path, model_root):
         assert not result.fills and not result.signals
         rows = audit_rows(result, strategy)
         assert rows
-        assert {row["audit"]["reason"] for row in rows} <= {
-            "BELOW_FAVORABLE_THRESHOLD",
-            "ABOVE_ADVERSE_THRESHOLD",
+        assert {row["audit"]["reason"] for row in rows} == {
+            "FAVORABLE_NOT_PREFERRED"
         }
 
 
@@ -491,7 +490,10 @@ def test_multiple_sell_strategies_close_once(tmp_path, model_root):
 
 def test_protective_stop_outranks_a_model_that_prefers_to_hold(tmp_path, model_root):
     buy, sell = "xgboost_probability_buy", "lightgbm_probability_sell"
-    never_exit = {"minimum_exit_probability_bps": 10000}  # the model always says hold
+    never_exit = {
+        "decision_mode": "THRESHOLD",
+        "minimum_exit_probability_bps": 10000,
+    }  # threshold mode makes the model always hold
     tape = QUIET + RALLY + ["97.0"] * 5  # a 6% gap down through the trailing stop
     result = run(
         tmp_path,

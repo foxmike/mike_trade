@@ -445,9 +445,10 @@ def campaign_yaml(
         json.dumps({"universe_id": "synthetic_v1", "symbols": [{"symbol": s} for s in SYMBOLS]})
     )
     thresholds_buy = (
-        "{minimum_favorable_probability_bps: 1, maximum_adverse_probability_bps: 10000}"
+        "{decision_mode: THRESHOLD, minimum_favorable_probability_bps: 1, "
+        "maximum_adverse_probability_bps: 10000}"
     )
-    thresholds_sell = "{minimum_exit_probability_bps: 1}"
+    thresholds_sell = "{decision_mode: THRESHOLD, minimum_exit_probability_bps: 1}"
     text = dedent(
         f"""
         schema_version: 1
@@ -786,10 +787,20 @@ async def test_same_models_initialize_and_operate_in_shadow(approved, tmp_path):
             (
                 "xgboost_probability_buy",
                 "xgb_buy_t",
-                {"minimum_favorable_probability_bps": 1, "maximum_adverse_probability_bps": 10000},
+                {
+                    "decision_mode": "THRESHOLD",
+                    "minimum_favorable_probability_bps": 1,
+                    "maximum_adverse_probability_bps": 10000,
+                },
             )
         ],
-        [("lightgbm_probability_sell", "lgbm_sell_t", {"minimum_exit_probability_bps": 1})],
+        [
+            (
+                "lightgbm_probability_sell",
+                "lgbm_sell_t",
+                {"decision_mode": "THRESHOLD", "minimum_exit_probability_bps": 1},
+            )
+        ],
     )
     runtime = build_runtime(settings, overrides={"clock": clock})
     await runtime.start()

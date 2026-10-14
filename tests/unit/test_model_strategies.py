@@ -107,7 +107,7 @@ def served(
         "observation_end": bars[-1].end,
         "predicted_at": bars[-1].end + timedelta(seconds=2),
         "horizon_bars": 30,
-        "label_id": "triple_barrier",
+        "label_id": "triple_barrier" if role == "buy" else "sell_continuation",
         "class_labels": ("-1", "0", "1"),
         "probabilities": (
             {"-1": 0.1, "0": 0.2, "1": 0.7} if probabilities is None else probabilities
@@ -216,6 +216,12 @@ def test_parameters_pin_the_model_and_reject_latest_or_malformed_values():
     with pytest.raises(ParameterValidationError, match="unknown parameter"):
         schema.validate({**BUY_PARAMS, "thresholds": 1})
     ok = schema.validate({**BUY_PARAMS, "artifact_sha256": SHA})
+    assert ok["decision_mode"] == "MODEL_DIRECTED"
+    assert schema.validate({**BUY_PARAMS, "decision_mode": "THRESHOLD"})[
+        "decision_mode"
+    ] == "THRESHOLD"
+    with pytest.raises(ParameterValidationError, match="decision_mode"):
+        schema.validate({**BUY_PARAMS, "decision_mode": "UNSUPPORTED"})
     assert XgboostProbabilityBuy.model_reference(ok).artifact_sha256 == SHA
     assert XgboostProbabilityBuy.model_reference(ok).algorithm == "xgboost"
     assert (
@@ -230,7 +236,7 @@ def test_parameters_pin_the_model_and_reject_latest_or_malformed_values():
 
 
 @pytest.mark.parametrize("cls", BUY_CLASSES)
-def test_buy_signal_above_threshold(cls):
+def test_model_directed_buy_signals_when_favorable_outcome_beats_adverse(cls):
     prediction = served(cls, probabilities={"-1": 0.1, "0": 0.2, "1": 0.7})
     evaluation = decide(cls, context(cls, prediction))
     assert evaluation.is_signal and evaluation.reason_codes == (ReasonCode.SIGNAL,)
@@ -241,16 +247,38 @@ def test_buy_signal_above_threshold(cls):
     assert audit["decision"] == "SIGNAL" and audit["model"] == "buy_model@1.0.0"
     assert audit["prediction"]["probabilities"] == {"-1": 0.1, "0": 0.2, "1": 0.7}
     assert audit["prediction"]["artifact_sha256"] == SHA
+    assert audit["decision_mode"] == "MODEL_DIRECTED"
     assert audit["thresholds"]["minimum_favorable_probability_bps"] == 5000
 
 
 @pytest.mark.parametrize("cls", BUY_CLASSES)
-def test_buy_no_signal_below_threshold(cls):
+def test_model_directed_buy_has_no_absolute_or_neutral_probability_gate(cls):
     prediction = served(cls, probabilities={"-1": 0.2, "0": 0.4, "1": 0.4})
     evaluation = decide(cls, context(cls, prediction))
-    assert not evaluation.is_signal and evaluation.reason_codes == (ReasonCode.NO_SIGNAL,)
-    assert audit_of(evaluation)["reason"] == "BELOW_FAVORABLE_THRESHOLD"
+    assert evaluation.is_signal
     assert audit_of(evaluation)["favorable_probability_bps"] == 4000
+
+
+@pytest.mark.parametrize("cls", BUY_CLASSES)
+def test_model_directed_buy_holds_when_adverse_is_at_least_favorable(cls):
+    prediction = served(cls, probabilities={"-1": 0.4, "0": 0.3, "1": 0.3})
+    evaluation = decide(cls, context(cls, prediction))
+    assert not evaluation.is_signal and evaluation.reason_codes == (ReasonCode.NO_SIGNAL,)
+    assert audit_of(evaluation)["reason"] == "FAVORABLE_NOT_PREFERRED"
+
+    tied = served(cls, probabilities={"-1": 0.3, "0": 0.4, "1": 0.3})
+    assert audit_of(decide(cls, context(cls, tied)))["reason"] == (
+        "FAVORABLE_NOT_PREFERRED"
+    )
+
+
+@pytest.mark.parametrize("cls", BUY_CLASSES)
+def test_threshold_buy_mode_retains_absolute_probability_gates(cls):
+    params = {**BUY_PARAMS, "decision_mode": "THRESHOLD"}
+    below = served(cls, probabilities={"-1": 0.2, "0": 0.4, "1": 0.4})
+    evaluation = decide(cls, context(cls, below, params=params), params)
+    assert not evaluation.is_signal
+    assert audit_of(evaluation)["reason"] == "BELOW_FAVORABLE_THRESHOLD"
 
 
 def test_favorable_probability_above_half_is_not_treated_as_positive_expectation():
@@ -261,7 +289,11 @@ def test_favorable_probability_above_half_is_not_treated_as_positive_expectation
         probabilities={"-1": 0.40, "0": 0.05, "1": 0.55},
         class_net_returns={"1": D("0.0010"), "-1": D("-0.0030"), "0": D("-0.0001")},
     )
-    params = {**BUY_PARAMS, "maximum_adverse_probability_bps": 10000}
+    params = {
+        **BUY_PARAMS,
+        "decision_mode": "THRESHOLD",
+        "maximum_adverse_probability_bps": 10000,
+    }
     assert decide(cls, context(cls, prediction), params).is_signal  # probability rule alone
     strict = {**params, "use_expected_value": True, "minimum_expected_value_bps": 1}
     rejected = decide(cls, context(cls, prediction), strict)
@@ -272,10 +304,16 @@ def test_favorable_probability_above_half_is_not_treated_as_positive_expectation
 def test_adverse_probability_cap_and_expected_value_accounting():
     cls = LightgbmProbabilityBuy
     prediction = served(cls, probabilities={"-1": 0.35, "0": 0.0, "1": 0.65})
-    rejected = decide(cls, context(cls, prediction))
+    params = {**BUY_PARAMS, "decision_mode": "THRESHOLD"}
+    rejected = decide(cls, context(cls, prediction, params=params), params)
     assert audit_of(rejected)["reason"] == "ABOVE_ADVERSE_THRESHOLD"
     favorable = served(cls, probabilities={"-1": 0.1, "0": 0.1, "1": 0.8})
-    params = {**BUY_PARAMS, "use_expected_value": True, "minimum_expected_value_bps": 20}
+    params = {
+        **BUY_PARAMS,
+        "decision_mode": "THRESHOLD",
+        "use_expected_value": True,
+        "minimum_expected_value_bps": 20,
+    }
     accepted = decide(cls, context(cls, favorable), params)
     assert accepted.is_signal
     expected = 0.8 * 38 + 0.1 * -32 + 0.1 * -1  # bps, from the model's own class returns
@@ -295,7 +333,11 @@ def test_regression_model_uses_the_predicted_net_return():
         "class_net_returns": {},
         "value": 0.0015,
     }
-    params = {**BUY_PARAMS, "minimum_expected_value_bps": 10}
+    params = {
+        **BUY_PARAMS,
+        "decision_mode": "THRESHOLD",
+        "minimum_expected_value_bps": 10,
+    }
     assert decide(cls, context(cls, served(cls, **base)), params).is_signal
     weak = decide(cls, context(cls, served(cls, **{**base, "value": 0.0005})), params)
     assert audit_of(weak)["reason"] == "BELOW_EXPECTED_VALUE"
@@ -490,9 +532,30 @@ def test_sell_risk_trigger_is_independent_and_disabled_by_default():
     actual = position()
     prediction = served(cls, probabilities={"-1": 0.45, "0": 0.05, "1": 0.50}, position=actual)
     ctx = context(cls, prediction, position=actual)
-    assert not decide(cls, ctx).is_signal  # 50% exit < 60% default, risk trigger off
-    risky = decide(cls, ctx, {**SELL_PARAMS, "minimum_risk_exit_probability_bps": 4000})
+    threshold = {**SELL_PARAMS, "decision_mode": "THRESHOLD"}
+    assert not decide(cls, ctx, threshold).is_signal  # 50% exit < 60% default
+    risky = decide(
+        cls,
+        ctx,
+        {
+            **threshold,
+            "minimum_risk_exit_probability_bps": 4000,
+        },
+    )
     assert risky.is_signal
+
+
+@pytest.mark.parametrize("cls", SELL_CLASSES)
+def test_model_directed_sell_requires_exit_direction_to_strictly_beat_hold(cls):
+    actual = position()
+    exit_favored = served(
+        cls, probabilities={"-1": 0.2, "0": 0.31, "1": 0.49}, position=actual
+    )
+    assert decide(cls, context(cls, exit_favored, position=actual)).is_signal
+    tied = served(cls, probabilities={"-1": 0.2, "0": 0.3, "1": 0.5}, position=actual)
+    evaluation = decide(cls, context(cls, tied, position=actual))
+    assert not evaluation.is_signal
+    assert audit_of(evaluation)["reason"] == "HOLD_PREFERRED"
 
 
 @pytest.mark.parametrize("cls", SELL_CLASSES)
@@ -532,6 +595,10 @@ def test_sell_refuses_wrong_class_layout_and_buy_model():
     assert audit_of(decide(cls, context(cls, buy_model, position=actual)))["reason"] == (
         "ROLE_MISMATCH"
     )
+    wrong_semantics = served(cls, position=actual, label_id="triple_barrier")
+    assert audit_of(
+        decide(cls, context(cls, wrong_semantics, position=actual))
+    )["reason"] == "UNSUPPORTED_OBJECTIVE"
 
 
 # ------------------------------------------------------------------ purity and compatibility

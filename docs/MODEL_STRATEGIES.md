@@ -7,7 +7,8 @@ are in [strategies/model/](strategies/model/README.md).
 
 **Probabilistic inference is kept apart from deterministic policy.** A model produces calibrated
 class probabilities for the label it was trained on. Everything that decides what happens next —
-thresholds, entry/exit arbitration, minimum hold, sizing, budgets, buying-power checks, protective
+model-directed comparison or optional thresholds, entry/exit arbitration, minimum hold, sizing,
+budgets, buying-power checks, protective
 stops, market-status entry blocks, kill switches, reconciliation — is the existing deterministic
 engine and is unchanged. Nothing in this document, and no configuration shipped with it, claims
 that any model or threshold is profitable. Whether one is must be established by historical
@@ -73,6 +74,7 @@ pin is loaded once from `service.model_root` (default `research/models`, read-on
 | schema-2 manifest, internally consistent | `MODEL_MANIFEST_INVALID` |
 | manifest algorithm and adapter equal the strategy's algorithm (no XGBoost↔LightGBM fallback) | `MODEL_ALGORITHM_MISMATCH` |
 | BUY strategy ↔ BUY model, SELL ↔ SELL (derived from the feature schema) | `MODEL_ROLE_MISMATCH` |
+| SELL label id and recorded class semantics exactly match `-1=RISK_EXIT,0=EXIT_FAVORABLE,1=HOLD_FAVORABLE` | `MODEL_SCHEMA_MISMATCH` |
 | the shared feature pipeline reproduces the manifest's exact feature names and order; SELL ends with the four position features; native model feature order equals the manifest | `MODEL_SCHEMA_MISMATCH` |
 | 1-minute RAW observations only | `MODEL_PROVENANCE_UNSUPPORTED` |
 | the model's training feed equals `market_data.feed` (IEX is never used for a SIP model or vice versa) | `MODEL_FEED_MISMATCH` |
@@ -173,14 +175,17 @@ reuse, predictions, slow calls, latency, and failure counts by code.
 
 ## 6. Strategy parameters and decision rules
 
-Thresholds are integer basis points (5000 = 50.00%) because strategy parameters are scalar and floats
-are not accepted by the configuration schema. `STRING` is a new parameter kind with an optional
+`decision_mode` defaults to `MODEL_DIRECTED`. `THRESHOLD` retains the original absolute probability
+gates as an explicit experimental mode. Thresholds are integer basis points (5000 = 50.00%) because
+strategy parameters are scalar and floats are not accepted by the configuration schema. `STRING` is
+a parameter kind with an optional
 `pattern`; model ids and versions are validated at configuration time.
 
 ### BUY (`*_probability_buy`)
 
 | Parameter | Default | Meaning |
 | --- | --- | --- |
+| `decision_mode` | `MODEL_DIRECTED` | compare favorable and adverse outcomes; `THRESHOLD` enables the absolute gates below |
 | `model_id`, `model_version` | required | exact pin (`[a-z][a-z0-9_]*`, `X.Y.Z`) |
 | `artifact_sha256` | `""` | optional 64-hex checksum pin |
 | `minimum_favorable_probability_bps` | 5000 | required `P(favorable_class)` |
@@ -191,7 +196,9 @@ are not accepted by the configuration schema. `STRING` is a new parameter kind w
 | `expected_horizon_bars` | 0 | required label horizon; 0 accepts the model's own |
 | `require_trained_symbol` | true | refuse instruments outside the training universe |
 
-The defaults are neutral reference values, not fitted. **A probability above 50% is not an expected
+In `MODEL_DIRECTED`, classification signals exactly when `P(favorable_class) > P(adverse_class)`.
+The neutral class adds no gate. Ties decline. Regression and the expected-value filter are available
+in `THRESHOLD` mode. The threshold defaults are reference values, not fitted. **A probability above 50% is not an expected
 profit.** The favorable-class probability is the model's belief that the take-profit barrier is hit
 first; whether that pays depends on barrier sizes, the loss and timeout classes, and costs. With
 `use_expected_value` the strategy computes `Σ P(c)·r(c)` using the model's own label schema
@@ -213,11 +220,13 @@ exiting now.
 | Parameter | Default | Meaning |
 | --- | --- | --- |
 | `model_id`, `model_version`, `artifact_sha256`, `maximum_prediction_age_seconds`, `expected_horizon_bars`, `require_trained_symbol` | as BUY | |
+| `decision_mode` | `MODEL_DIRECTED` | exit when the combined trained exit direction beats continuation; `THRESHOLD` enables the gates below |
 | `minimum_exit_probability_bps` | 6000 | exit when `P(−1) + P(0)` reaches this |
 | `minimum_risk_exit_probability_bps` | 0 | also exit when `P(−1)` alone reaches this; 0 disables |
 
-A SELL signal needs a real open long, a valid fresh prediction bound to that exact position, and either
-threshold. It is an ordinary discretionary exit: `arbitrate_exit_decisions` applies the configured
+A `MODEL_DIRECTED` SELL signal requires `P(-1) + P(0) > P(1)`, using the exact class meanings recorded
+in the artifact manifest; ties hold. `THRESHOLD` mode uses either configured threshold. Every SELL
+signal needs a real open long and a valid fresh prediction bound to that exact position. It is an ordinary discretionary exit: `arbitrate_exit_decisions` applies the configured
 minimum hold and pending-exit rules, protective/manual/hard-risk/forced exits outrank it, and the engine
 closes the entire position. It never signals for a nonexistent position, never partially liquidates,
 and never pyramids.
@@ -249,11 +258,13 @@ strategies:
     plugin: xgboost_probability_buy
     side: buy
     parameters: {model_id: xgboost_buy_tb_pooled, model_version: 1.0.0,
+                 decision_mode: THRESHOLD,
                  minimum_favorable_probability_bps: 5500, maximum_adverse_probability_bps: 2500}
   aapl_lgbm_sell:
     plugin: lightgbm_probability_sell
     side: sell
     parameters: {model_id: lightgbm_sell_continuation_pooled, model_version: 1.0.0,
+                 decision_mode: THRESHOLD,
                  minimum_exit_probability_bps: 6500}
 ```
 
