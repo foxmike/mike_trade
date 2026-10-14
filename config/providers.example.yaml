@@ -45,3 +45,17 @@ market_data:
         provenance: IEX
 # Research providers are optional and never in the decision path.
 research: {}
+# Trade-review providers (optional; used only when decision_review.enabled is true). A reviewer
+# name selects an entry here. JEV is accessed exclusively through OpenRouter with the existing
+# OPENROUTER_API_KEY variable (the value is never stored in configuration). The model is
+# configurable; typesafe/jev-router is the identifier OpenRouter lists as "TypeSafe: Jev Router".
+reviewers:
+  jev:
+    provider: openrouter
+    model: typesafe/jev-router
+    api_key_env: OPENROUTER_API_KEY
+    temperature: 0
+    response_format: json_schema      # json_schema | json_object | none
+    max_concurrent_requests: 16
+    requests_per_minute: null         # null = no client-side rate limit
+    point_in_time_safe: false         # attest only if the reviewer cannot know the future

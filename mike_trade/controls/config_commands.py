@@ -106,6 +106,7 @@ TOP_LEVEL_KEYS: tuple[str, ...] = (
     "strategies",
     "shadow_scenarios",
     "reporting",
+    "decision_review",
 )
 
 _SECTION_KEYS: tuple[str, ...] = tuple(k for k in TOP_LEVEL_KEYS if k != "schema_version")
@@ -174,6 +175,7 @@ _DEFAULTS: dict[str, Any] = {
     "symbols": {},
     "strategies": {},
     "shadow_scenarios": [],
+    "decision_review": {"enabled": False},
     "reporting": {
         "evidence_dir": "evidence",
         "evidence_retention_days": 90,
@@ -1050,6 +1052,21 @@ def _validate_reporting(raw: Any, errors: _ErrorList) -> dict[str, Any] | None:
             "log_retention_days": log_retention}
 
 
+def _validate_decision_review(raw: Any, errors: _ErrorList) -> dict[str, Any] | None:
+    """Optional JEV trade review; ``enabled: false`` (the default) changes nothing anywhere."""
+    from mike_trade.domain.errors import ConfigurationError
+    from mike_trade.review.config import parse_decision_review
+
+    node = _req_mapping(raw, "decision_review", errors, "decision_review")
+    if node is None:
+        return None
+    try:
+        return parse_decision_review(node).to_dict()
+    except ConfigurationError as exc:
+        _err(errors, str(exc.context.get("path", "decision_review")), exc.message)
+        return None
+
+
 def _validate_config(raw: Mapping[str, Any]) -> dict[str, Any]:
     """Strictly validate the merged raw mapping into normalized settings."""
     errors: list[tuple[str, str]] = []
@@ -1069,17 +1086,18 @@ def _validate_config(raw: Mapping[str, Any]) -> dict[str, Any]:
     strategies = _validate_strategies(node.get("strategies", {}), errors)
     scenarios = _validate_scenarios(node.get("shadow_scenarios", []), errors)
     reporting = _validate_reporting(node.get("reporting", {}), errors)
+    decision_review = _validate_decision_review(node.get("decision_review", {}), errors)
     if errors:
         raise ConfigValidationError(errors)
     assert service is not None and market_data is not None and research is not None
     assert scheduler is not None and execution is not None and risk is not None
     assert symbols is not None and strategies is not None and scenarios is not None
-    assert reporting is not None
+    assert reporting is not None and decision_review is not None
     settings = {"schema_version": CONFIG_SCHEMA_VERSION, "service": service,
                 "market_data": market_data, "research": research, "scheduler": scheduler,
                 "execution": execution, "risk": risk, "symbols": symbols,
                 "strategies": strategies, "shadow_scenarios": scenarios,
-                "reporting": reporting}
+                "reporting": reporting, "decision_review": decision_review}
     _check_cross_field(settings, errors)
     if errors:
         raise ConfigValidationError(errors)
@@ -1416,7 +1434,12 @@ def _canonical(value: Any) -> Any:
 def trade_relevant_config(settings: Mapping[str, Any]) -> dict[str, Any]:
     """Return the trade-relevant subset of settings (no secrets, no bind info)."""
     market_data = settings["market_data"]
+    review = dict(settings.get("decision_review") or {})
+    review_active = bool(review.get("enabled")) and review.get("mode") != "disabled"
     return {
+        # Present only when review can change execution, so every existing configuration keeps
+        # its fingerprint.
+        **({"decision_review": copy.deepcopy(review)} if review_active else {}),
         "execution": copy.deepcopy(dict(settings["execution"])),
         "risk": copy.deepcopy(dict(settings["risk"])),
         "symbols": copy.deepcopy(dict(settings["symbols"])),
@@ -1471,7 +1494,7 @@ def load_provider_catalog(path: str | os.PathLike[str]) -> dict[str, Any]:
              f"unsupported catalog schema_version {doc.get('schema_version')!r}; "
              f"expected {CONFIG_SCHEMA_VERSION}")
     for key in doc:
-        if key not in ("schema_version", "brokers", "market_data", "research"):
+        if key not in ("schema_version", "brokers", "market_data", "research", "reviewers"):
             _err(errors, str(key), f"unknown key {key!r}")
 
     def env_name(value: Any, path: str) -> None:
@@ -1559,11 +1582,19 @@ def load_provider_catalog(path: str | os.PathLike[str]) -> dict[str, Any]:
     research = doc.get("research", {})
     if not isinstance(research, Mapping):
         _err(errors, "research", "research must be a mapping")
+    reviewers: dict[str, Any] = {}
+    try:
+        from mike_trade.review.factory import validate_reviewer_entries
+
+        reviewers = validate_reviewer_entries(doc.get("reviewers"))
+    except MikeTradeError as exc:
+        _err(errors, "reviewers", exc.message)
     if errors:
         raise ConfigValidationError(errors)
     return {"schema_version": CONFIG_SCHEMA_VERSION, "brokers": copy.deepcopy(dict(brokers)),
             "market_data": copy.deepcopy(dict(data)),
-            "research": copy.deepcopy(dict(research))}
+            "research": copy.deepcopy(dict(research)),
+            "reviewers": copy.deepcopy(reviewers)}
 
 
 def validate_against_catalog(
@@ -1855,6 +1886,14 @@ def _cmd_providers(args: Any, environ: Mapping[str, str]) -> tuple[str, dict[str
             "feed": settings["market_data"]["feed"], "brokers": brokers,
             "market_data": data, "research": copy.deepcopy(catalog["research"]),
             "verdict": verdict}
+    if catalog.get("reviewers"):
+        body["reviewers"] = {
+            name: {"provider": entry["provider"], "model": entry["model"],
+                   "api_key_env": entry.get("api_key_env", "OPENROUTER_API_KEY"),
+                   "api_key_status": "set" if environ.get(
+                       entry.get("api_key_env", "OPENROUTER_API_KEY")) else "unset"}
+            for name, entry in catalog["reviewers"].items()
+        }
     text = _header_line(settings, fingerprint) + "\n" + _render(body, "yaml")
     if not text.endswith("\n"):
         text += "\n"

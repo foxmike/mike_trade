@@ -82,6 +82,7 @@ _ALLOWED_KEYS = {
     "configurations",
     "strategy_parameters",
     "market_status_enabled",
+    "decision_review",
 }
 _MODEL_STRATEGIES = {
     "xgboost_probability_buy",
@@ -110,6 +111,8 @@ class CampaignConfiguration:
     buy: tuple[str, ...]
     sell: tuple[str, ...]
     description: str = ""
+    #: Per-configuration override of the campaign's decision review; ``{}`` disables it.
+    decision_review: Mapping[str, Any] | None = None
 
 
 @dataclass(frozen=True, slots=True)
@@ -141,6 +144,8 @@ class CampaignSpec:
     strategy_parameters: Mapping[str, Mapping[str, Any]]
     config_sha256: str
     source: Path
+    #: Campaign-wide JEV decision review (a configuration may override it); ``None`` = baseline.
+    decision_review: Mapping[str, Any] | None = None
 
     @property
     def run_directory(self) -> Path:
@@ -196,6 +201,19 @@ def _moment(value: object, name: str) -> datetime:
     return result.astimezone(UTC)
 
 
+def _check_review(raw: Any, where: str) -> None:
+    """Validate a decision_review mapping now so a bad campaign fails before any job exists."""
+    from mike_trade.domain.errors import ConfigurationError
+    from mike_trade.review.config import parse_decision_review
+
+    if not isinstance(raw, Mapping):
+        raise CampaignError(f"{where}: decision_review must be a mapping")
+    try:
+        parse_decision_review(raw, research=True)
+    except ConfigurationError as exc:
+        raise CampaignError(f"{where}: {exc.message}") from exc
+
+
 def load_campaign(path: str | Path) -> CampaignSpec:
     source = Path(path)
     payload = source.read_bytes()
@@ -242,20 +260,35 @@ def load_campaign(path: str | Path) -> CampaignSpec:
         )
     configs: list[CampaignConfiguration] = []
     for name, item in dict(raw.get("configurations") or {}).items():
-        if not isinstance(item, Mapping) or set(item) - {"buy", "sell", "description"}:
-            raise CampaignError(f"configuration {name!r} accepts only buy, sell, description")
+        if not isinstance(item, Mapping) or set(item) - {
+            "buy", "sell", "description", "decision_review"
+        }:
+            raise CampaignError(
+                f"configuration {name!r} accepts only buy, sell, description, decision_review"
+            )
         buy, sell = tuple(map(str, item.get("buy") or ())), tuple(map(str, item.get("sell") or ()))
         if not buy:
             raise CampaignError(f"configuration {name!r} needs at least one BUY strategy")
         label = str(name)
         if not label.replace("_", "").replace("-", "").isalnum():
             raise CampaignError(f"invalid configuration name {label!r}")
-        configs.append(CampaignConfiguration(label, buy, sell, str(item.get("description", ""))))
+        review = item.get("decision_review")
+        if review is not None:
+            _check_review(review, f"configuration {label!r}")
+        configs.append(
+            CampaignConfiguration(
+                label, buy, sell, str(item.get("description", "")),
+                None if review is None else dict(review),
+            )
+        )
     if not configs:
         raise CampaignError("at least one configuration is required")
     if len({c.name for c in configs}) != len(configs):
         raise CampaignError("configuration names must be unique")
     eod = raw.get("end_of_day_close")
+    campaign_review = raw.get("decision_review")
+    if campaign_review is not None:
+        _check_review(campaign_review, "campaign")
     return CampaignSpec(
         campaign_id=campaign_id,
         description=str(raw.get("description", "")),
@@ -288,6 +321,7 @@ def load_campaign(path: str | Path) -> CampaignSpec:
         },
         config_sha256=hashlib.sha256(payload).hexdigest(),
         source=source,
+        decision_review=None if campaign_review is None else dict(campaign_review),
     )
 
 
@@ -489,6 +523,11 @@ def plan_campaign(spec: CampaignSpec, *, skip_missing: bool = False) -> Campaign
                     model_root=str(spec.model_root.resolve()) if needs_model else None,
                     reference_dataset_ids=dict(reference_ids) if needs_references else None,
                     market_status_enabled=spec.market_status_enabled,
+                    decision_review=(
+                        configuration.decision_review
+                        if configuration.decision_review is not None
+                        else spec.decision_review
+                    ) or None,
                 )
             )
     return CampaignPlan(

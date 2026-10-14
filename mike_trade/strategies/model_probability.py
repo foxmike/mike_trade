@@ -46,6 +46,12 @@ from mike_trade.domain.model_signals import (
 )
 from mike_trade.domain.strategy_types import StrategyRole
 from mike_trade.market_data.candles import Candle, CandleTimeframe
+from mike_trade.review.evidence import (
+    EVIDENCE_INTERFACE_VERSION,
+    DecisionEvidence,
+    EvidenceError,
+    make_evidence,
+)
 from mike_trade.scheduling.calendar import SessionStatus
 from mike_trade.strategies.base import (
     BuyStrategy,
@@ -395,6 +401,144 @@ class _Model:
     ALGORITHM: ClassVar[str]
     ROLE: ClassVar[str]
     spec: ClassVar[StrategySpec]
+
+    #: Implements the decision-evidence interface (``mike_trade.review.evidence``).
+    EVIDENCE_INTERFACE_VERSION: ClassVar[int] = EVIDENCE_INTERFACE_VERSION
+
+    def build_evidence(
+        self,
+        context: MarketContext,
+        params: Mapping[str, object],
+        state: Mapping[str, object],
+        evaluation: StrategyEvaluation,
+    ) -> DecisionEvidence:
+        """The model facts behind this signal: probabilities, thresholds, provenance, features.
+
+        Everything comes from the decision audit this very evaluation recorded plus the validated
+        prediction it consumed; nothing is estimated and no score is derived.  ``state`` already
+        contains this evaluation's ``model_audit``.
+        """
+        spec = self.spec
+        text = state.get(STATE_MODEL_AUDIT)
+        try:
+            audit = json.loads(text) if isinstance(text, str) else None
+        except ValueError:
+            audit = None
+        if (
+            not isinstance(audit, dict)
+            or audit.get("decision") != "SIGNAL"
+            or audit.get("strategy") != spec.strategy_id
+        ):
+            raise EvidenceError(f"{spec.strategy_id}: no signal decision audit to explain")
+        recorded = audit.get("prediction") if isinstance(audit.get("prediction"), dict) else {}
+        prediction = self._served_prediction(context, params)
+        if prediction is not None and (
+            prediction.observation_end.isoformat() != recorded.get("observation_end")
+        ):
+            prediction = None  # not the prediction this decision used: never mix them
+
+        raw_probabilities: Mapping[str, float] = (
+            prediction.probabilities if prediction is not None
+            else recorded.get("probabilities", {})  # type: ignore[assignment]
+        )
+        evidence: dict[str, object] = {
+            "model": {
+                "model_id": params["model_id"],
+                "model_version": params["model_version"],
+                "algorithm": self.ALGORITHM,
+                "role": self.ROLE,
+                "artifact_sha256": recorded.get("artifact_sha256"),
+                "task": recorded.get("task"),
+                "feature_schema": recorded.get("feature_schema"),
+                "feature_schema_sha256": recorded.get("feature_schema_sha256"),
+                "feed": recorded.get("feed"),
+                "timeframe": recorded.get("timeframe"),
+                "horizon_bars": recorded.get("horizon_bars"),
+                "observation_end": recorded.get("observation_end"),
+                "predicted_at": recorded.get("predicted_at"),
+            },
+            "decision_mode": audit.get("decision_mode"),
+            "thresholds": audit.get("thresholds", {}),
+            "class_probabilities": dict(raw_probabilities),
+        }
+        if prediction is not None:
+            evidence["features"] = dict(prediction.feature_values)
+            evidence["model"]["label_id"] = prediction.label_id  # type: ignore[index]
+            evidence["model"]["symbol_in_training_universe"] = (  # type: ignore[index]
+                prediction.symbol_in_training_universe
+            )
+        else:
+            evidence["features_unavailable"] = "the consumed prediction is no longer in the context"
+        mode = str(audit.get("decision_mode"))
+        if self.ROLE == "buy":
+            favorable, adverse = str(params["favorable_class"]), str(params["adverse_class"])
+            others = {k: v for k, v in raw_probabilities.items() if k not in (favorable, adverse)}
+            probabilities: dict[str, object] = {
+                "favorable": raw_probabilities.get(favorable),
+                "adverse": raw_probabilities.get(adverse),
+            }
+            if len(others) == 1:
+                probabilities["neutral"] = next(iter(others.values()))
+            elif others:
+                probabilities["other"] = others
+            evidence["class_roles"] = {"favorable": favorable, "adverse": adverse}
+            evidence["probabilities"] = probabilities
+            evidence["decision_inputs"] = {
+                k: audit[k] for k in (
+                    "favorable_probability_bps", "adverse_probability_bps",
+                    "expected_value_bps", "expected_value_basis",
+                ) if k in audit
+            }
+            reason_code = (
+                "MODEL_FAVORABLE" if mode == ModelDecisionMode.MODEL_DIRECTED.value
+                else "MODEL_THRESHOLDS_MET"
+            )
+            reason = (
+                "P(favorable) exceeds P(adverse)" if reason_code == "MODEL_FAVORABLE"
+                else "favorable/adverse probability thresholds were met"
+            )
+        else:
+            evidence["class_roles"] = {
+                "risk_exit": _CLASS_RISK_EXIT,
+                "exit_favorable": _CLASS_EXIT_FAVORABLE,
+                "hold_favorable": _CLASS_HOLD_FAVORABLE,
+            }
+            evidence["probabilities"] = {
+                "risk_exit": raw_probabilities.get(_CLASS_RISK_EXIT),
+                "exit_favorable": raw_probabilities.get(_CLASS_EXIT_FAVORABLE),
+                "hold_favorable": raw_probabilities.get(_CLASS_HOLD_FAVORABLE),
+            }
+            evidence["decision_inputs"] = {
+                k: audit[k] for k in (
+                    "exit_probability_bps", "risk_exit_probability_bps", "hold_probability_bps",
+                ) if k in audit
+            }
+            if audit.get("position") is not None:
+                evidence["position"] = audit["position"]
+            if prediction is not None:
+                evidence["position_features"] = dict(prediction.position_features)
+            reason_code = (
+                "MODEL_EXIT_PREFERRED" if mode == ModelDecisionMode.MODEL_DIRECTED.value
+                else "MODEL_EXIT_THRESHOLD_MET"
+            )
+            reason = (
+                "P(risk exit)+P(exit favorable) exceeds P(hold favorable)"
+                if reason_code == "MODEL_EXIT_PREFERRED"
+                else "the absolute exit probability thresholds were met"
+            )
+        return make_evidence(
+            spec, evaluation, context, reason_code=reason_code, reason=reason, evidence=evidence
+        )
+
+    @classmethod
+    def _served_prediction(
+        cls, context: MarketContext, params: Mapping[str, object]
+    ) -> ServedPrediction | None:
+        inputs = context.model_inputs
+        if inputs is None:
+            return None
+        result = inputs.result_for(cls.model_reference(params).key)
+        return None if result is None else result.prediction
 
     @classmethod
     def model_reference(cls, params: Mapping[str, object]) -> ModelReference:

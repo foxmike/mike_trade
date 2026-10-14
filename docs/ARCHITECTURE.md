@@ -336,3 +336,12 @@ Explicitly out of scope unless separately approved:
   notifications; no earnings/economic blackout automation; no automatic live
   LIVE short selling (short selling exists as an opt-in, fail-closed
   capability in SHADOW/BACKTEST and PAPER; it is never activated for LIVE).
+
+## Optional decision review (JEV)
+
+`mike_trade.review` adds an optional stage between strategy arbitration and ordinary order submission
+(BACKTEST, SHADOW, PAPER and LIVE alike). It consumes only the already-built point-in-time
+`MarketContext`, strategy-supplied evidence and the position/stop facts the engine already holds, and
+returns APPROVE/REJECT; it owns no orders and cannot veto protective stops or other mandatory exits.
+Provider access is isolated behind `TradeDecisionReviewer` (OpenRouter is the first provider). See
+[JEV_REVIEW.md](JEV_REVIEW.md).

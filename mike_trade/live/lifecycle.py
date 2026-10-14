@@ -63,6 +63,7 @@ from mike_trade.live.reconciler import LiveReconciler, ReconcileReport, SymbolSt
 from mike_trade.market_data.candles import CandleTimeframe
 from mike_trade.market_data.context import MarketContext
 from mike_trade.persistence.repositories import EntryControlRepository
+from mike_trade.review.proposal import PositionView, StateToken, StopView
 from mike_trade.risk import michelle_stop
 from mike_trade.runtime import EntryGate
 from mike_trade.scheduling import calendar as exchange_calendar
@@ -288,6 +289,9 @@ class LiveStrategyLifecycle(VwapReferenceLifecycle):
                     raise ValueError("context mapping key must match context.symbol")
                 async with self.reconciler.lock:
                     result["live"].extend(await self._process_symbol_live(context))
+            # Enforced reviews wait outside the reconciler lock (other symbols, ratchets and
+            # reconciliation keep running); approved actions then re-enter it one at a time.
+            result["live"].extend(await self._resolve_deferred(self.scenario))
             return result
         finally:
             self._in_flight -= 1
@@ -378,6 +382,7 @@ class LiveStrategyLifecycle(VwapReferenceLifecycle):
             evaluation = binding.strategy.evaluate(context, binding.parameters, persisted)
             self._save_state(self.scenario, binding, symbol, evaluation.state_updates)
         exits: dict[str, _Binding] = {}
+        exit_evaluations: dict[str, StrategyEvaluation] = {}
         for binding in collections.sells:
             persisted = self._state(self.scenario, binding, symbol)
             self._inject_live_michelle_state(collections, binding, cycle, persisted)
@@ -387,6 +392,7 @@ class LiveStrategyLifecycle(VwapReferenceLifecycle):
             self._save_state(self.scenario, binding, symbol, evaluation.state_updates)
             if evaluation.is_signal and binding.strategy_id not in _MICHELLE_SELL_IDS:
                 exits[evaluation.signal_id or ""] = binding
+                exit_evaluations[evaluation.signal_id or ""] = evaluation
         if not exits or state.managed_quantity <= ZERO and not state.exit_pending:
             return []
         quantity = state.managed_quantity or cycle.remaining_quantity
@@ -411,7 +417,14 @@ class LiveStrategyLifecycle(VwapReferenceLifecycle):
         )
         if decision.selected is None:
             return []
-        return await self._exit(context, cycle, decision.selected.signal_id)
+        signal_id = decision.selected.signal_id
+        if self._gate_review(
+            self.scenario, context, exits[signal_id], exit_evaluations[signal_id],
+            [(exits[sid], exit_evaluations[sid]) for sid in exits], signal_id,
+            lambda ctx: self._exit(ctx, cycle, signal_id),
+        ):
+            return []
+        return await self._exit(context, cycle, signal_id)
 
     @staticmethod
     def _live_model_position(cycle: PositionCycle) -> PositionFacts | None:
@@ -490,6 +503,72 @@ class LiveStrategyLifecycle(VwapReferenceLifecycle):
         await self.reconciler.reconcile_locked("post-exit")
         return actions
 
+    # ------------------------------------------------------- decision review hooks
+
+    def _review_mode(self) -> str:
+        environment = getattr(self.ledger.scope, "environment", None)
+        return "LIVE" if getattr(environment, "value", environment) == "LIVE" else "PAPER"
+
+    def _order_serialization(self) -> Any:
+        return self.reconciler.lock
+
+    def _review_views(
+        self, scope: Any, context: MarketContext
+    ) -> tuple[PositionView | None, StopView | None]:
+        cycle = self.ledger.active_cycle(context.symbol)
+        if (
+            cycle is None or cycle.avg_entry_price is None or cycle.opened_at is None
+            or cycle.remaining_quantity <= ZERO
+        ):
+            return None, None
+        view = PositionView(
+            cycle.cycle_id, cycle.remaining_quantity, cycle.avg_entry_price, cycle.opened_at,
+            cycle.direction.value,
+        )
+        runtime = self.executor.stops.get(cycle.cycle_id)
+        if runtime is None:
+            return view, None
+        return view, StopView(
+            runtime.policy.kind.value, runtime.policy.initial_stop_price, runtime.stop_price,
+            runtime.policy.trail_percent, runtime.policy.require_broker_held,
+        )
+
+    def _review_token(self, scope: Any, symbol: str) -> StateToken:
+        cycle = self.ledger.active_cycle(symbol)
+        state = self.reconciler.state(symbol)
+        runtime = None if cycle is None else self.executor.stops.get(cycle.cycle_id)
+        now = self.clock.now()
+        cutoff_passed = False
+        try:
+            session = exchange_calendar.session_for(
+                now.astimezone(exchange_calendar.NEW_YORK).date()
+            )
+            cutoff_passed = now >= exchange_calendar.entry_cutoff(session, self.cutoff_minutes)
+        except ValueError:
+            pass
+        latest = None
+        provider = self._review_contexts
+        if provider is not None:
+            fresh = provider([symbol]).get(symbol)
+            bars = None if fresh is None else fresh.candles.get(CandleTimeframe.M1)
+            latest = bars[-1].end if bars else None
+        return StateToken(
+            {
+                "flat": cycle is None,
+                "cycle_id": None if cycle is None else cycle.cycle_id,
+                "quantity": None if cycle is None else str(cycle.remaining_quantity),
+                "entry_pending": state.entry_pending,
+                "exit_pending": state.exit_pending,
+                "protected": state.protected,
+                "protective_order_open": None if runtime is None else runtime.order_id is not None,
+                "frozen": state.frozen,
+                "entry_permitted": self._entry_permitted(PositionDirection.LONG),
+                "eod_active": self.eod_active,
+                "entry_cutoff_passed": cutoff_passed,
+            },
+            latest,
+        )
+
     # ---------------------------------------------------------------- flat
 
     async def _evaluate_flat(
@@ -531,6 +610,15 @@ class LiveStrategyLifecycle(VwapReferenceLifecycle):
         if arbitration.selected is None:
             return []
         binding, evaluation = entries[arbitration.selected.signal_id]
+        selected_id = arbitration.selected.signal_id
+        if not self._entry_blocked_early(context, collections, binding, evaluation) and (
+            self._gate_review(
+                self.scenario, context, binding, evaluation,
+                [(b, e) for b, e in entries.values()], selected_id,
+                lambda ctx: self._enter(ctx, collections, binding, evaluation),
+            )
+        ):
+            return []
         return await self._enter(context, collections, binding, evaluation)
 
     def _eligibility_block(self, symbol: str, strategy_id: str, now: datetime) -> tuple[str, ...]:
@@ -547,22 +635,30 @@ class LiveStrategyLifecycle(VwapReferenceLifecycle):
             reasons.append("max_entry_cycles")
         return tuple(reasons)
 
+    def _entry_blocked_early(
+        self, context: MarketContext, collections: _Collections, binding: _Binding,
+        evaluation: StrategyEvaluation,
+    ) -> bool:
+        """The cheap deterministic refusals of an entry (checked again when it is carried out)."""
+        local_day = context.as_of.astimezone(exchange_calendar.NEW_YORK).date()
+        session = exchange_calendar.session_for(local_day)
+        if context.as_of >= exchange_calendar.entry_cutoff(session, self.cutoff_minutes):
+            return True
+        if binding.strategy_id in MICHELLE_BUY_IDS and not entry_attempt_allowed(
+            self._shared_attempts(self.scenario, collections, context.symbol), context.as_of
+        ):
+            return True
+        return evaluation.reference_price is None
+
     async def _enter(
         self, context: MarketContext, collections: _Collections, binding: _Binding,
         evaluation: StrategyEvaluation,
     ) -> list[str]:
         symbol = context.symbol
-        local_day = context.as_of.astimezone(exchange_calendar.NEW_YORK).date()
-        session = exchange_calendar.session_for(local_day)
-        if context.as_of >= exchange_calendar.entry_cutoff(session, self.cutoff_minutes):
-            return []
-        if binding.strategy_id in MICHELLE_BUY_IDS and not entry_attempt_allowed(
-            self._shared_attempts(self.scenario, collections, symbol), context.as_of
-        ):
+        if self._entry_blocked_early(context, collections, binding, evaluation):
             return []
         reference = evaluation.reference_price
-        if reference is None:
-            return []
+        assert reference is not None
         sizing_price = context.latest_quote.ask if context.latest_quote is not None else reference
         quantity = (self.settings.per_symbol_budget / sizing_price).to_integral_value(rounding=ROUND_DOWN)
         if quantity <= ZERO:

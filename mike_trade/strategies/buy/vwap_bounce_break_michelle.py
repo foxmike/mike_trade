@@ -9,6 +9,11 @@ from typing import TYPE_CHECKING, Any
 
 from mike_trade.domain.strategy_types import StrategyRole
 from mike_trade.market_data.candles import Candle, CandleTimeframe
+from mike_trade.review.evidence import (
+    EVIDENCE_INTERFACE_VERSION,
+    DecisionEvidence,
+    make_evidence,
+)
 from mike_trade.scheduling.calendar import SessionStatus
 from mike_trade.strategies.base import (
     BuyStrategy,
@@ -25,6 +30,7 @@ from mike_trade.strategies.michelle_common import (
     ema_values,
     live_trade,
     regular_session_bars,
+    safe_decimal,
     session_vwaps,
     state_time,
 )
@@ -210,6 +216,61 @@ class VwapBounceBreakMichelleBuy(BuyStrategy):
     """Two-green-candle VWAP recovery with persistent cycle consumption."""
 
     spec = _SPEC
+    EVIDENCE_INTERFACE_VERSION = EVIDENCE_INTERFACE_VERSION
+
+    def build_evidence(
+        self,
+        context: MarketContext,
+        params: Mapping[str, object],
+        state: Mapping[str, object],
+        evaluation: StrategyEvaluation,
+    ) -> DecisionEvidence:
+        """The VWAP breakdown/recovery cycle that produced this entry."""
+        self.spec.parameter_schema.validate(params)
+        bars = regular_session_bars(context.candles.get(CandleTimeframe.M1, ()), context.session_id)
+        vwaps = session_vwaps(bars)
+        ema9, ema20 = ema_values(bars, 9), ema_values(bars, 20)
+        reference = safe_decimal(state.get("entry_reference_price"))
+        entry_vwap = safe_decimal(state.get("entry_vwap"))
+        evidence: dict[str, object] = {
+            "cycle": {
+                "cycle_id": state.get("signal_cycle_id"),
+                "breakdown_time": state.get("breakdown_time"),
+                "cycle_low": safe_decimal(state.get("cycle_low")),
+                "vwap_at_cycle_low": safe_decimal(state.get("cycle_low_vwap")),
+                "bottom_pattern": state.get("bottom_pattern"),
+                "first_confirmation_time": state.get("first_confirmation_time"),
+                "first_confirmation_close": safe_decimal(state.get("first_confirmation_close")),
+            },
+            "trigger": {
+                "kind": "live_trade_second_green" if live_trade(context) is not None
+                else "completed_second_green_candle",
+                "event_time": state.get("signal_event_time"),
+                "reference_price": reference,
+                "vwap_at_entry": entry_vwap,
+                "distance_above_vwap": None
+                if reference is None or entry_vwap is None else reference - entry_vwap,
+                "max_distance_above_vwap": Decimal("0.50"),
+            },
+            "latest_completed_bar": None,
+        }
+        if bars:
+            evidence["latest_completed_bar"] = {
+                "start": bars[-1].start,
+                "close": bars[-1].close,
+                "vwap": vwaps[-1],
+                "ema9": ema9[-1],
+                "ema20": ema20[-1],
+            }
+        return make_evidence(
+            self.spec, evaluation, context,
+            reason_code="VWAP_RECOVERY_SECOND_GREEN",
+            reason=(
+                "a qualifying below-VWAP bottom was followed by a first confirmation candle "
+                "above VWAP and a later green candle at or above its close"
+            ),
+            evidence=evidence,
+        )
 
     def evaluate(
         self,

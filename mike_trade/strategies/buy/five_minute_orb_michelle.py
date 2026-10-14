@@ -9,6 +9,11 @@ from typing import TYPE_CHECKING
 
 from mike_trade.domain.strategy_types import StrategyRole
 from mike_trade.market_data.candles import CandleTimeframe
+from mike_trade.review.evidence import (
+    EVIDENCE_INTERFACE_VERSION,
+    DecisionEvidence,
+    make_evidence,
+)
 from mike_trade.scheduling.calendar import SessionStatus
 from mike_trade.strategies.base import (
     BuyStrategy,
@@ -107,6 +112,87 @@ class FiveMinuteOrbMichelleBuy(BuyStrategy):
     """Event-driven live ORB entry with an approved completed-minute replay path."""
 
     spec = _SPEC
+    EVIDENCE_INTERFACE_VERSION = EVIDENCE_INTERFACE_VERSION
+
+    def build_evidence(
+        self,
+        context: MarketContext,
+        params: Mapping[str, object],
+        state: Mapping[str, object],
+        evaluation: StrategyEvaluation,
+    ) -> DecisionEvidence:
+        """The opening-range facts behind this entry (all recomputed from the same context)."""
+        validated = self.spec.parameter_schema.validate(params)
+        bars = regular_session_bars(context.candles.get(CandleTimeframe.M1, ()), context.session_id)
+        opening = bars[:5]
+        vwaps = session_vwaps(bars)
+        atr = daily_wilder_atr(context.candles.get(CandleTimeframe.D1, ()))
+        live = live_trade(context) is not None
+        reference = safe_decimal(state.get("entry_reference_price"))
+        entry_vwap = safe_decimal(state.get("entry_vwap"))
+        orb_high = safe_decimal(state.get("entry_orb_high"))
+        evidence: dict[str, object] = {
+            "trigger": {
+                "kind": "live_trade_cross" if live else "completed_minute_cross",
+                "event_time": state.get("signal_event_time"),
+                "reference_price": reference,
+                "orb_high": orb_high,
+                "vwap_at_entry": entry_vwap,
+                "signal_cycle_id": state.get("signal_cycle_id"),
+            },
+            "opening_range": None,
+            "risk_gates": None,
+            "spy_confirmation": {"enabled": bool(validated["spy_confirmation_enabled"])},
+        }
+        if len(opening) == 5:
+            low = min(bar.low for bar in opening)
+            high = max(bar.high for bar in opening)
+            evidence["opening_range"] = {
+                "start": opening[0].start,
+                "end": opening[-1].end,
+                "open": opening[0].open,
+                "high": high,
+                "low": low,
+                "close": opening[-1].close,
+                "height": high - low,
+                "height_percent": (high - low) / opening[0].open * Decimal(100),
+                "opening_close_vs_vwap": opening[-1].close - vwaps[4] if vwaps[4] else None,
+                "low_breached_since": bool(state.get("orb_low_breached")),
+            }
+        if len(vwaps) >= 2 and vwaps[-1] is not None and vwaps[-2] is not None:
+            evidence["completed_minute_vwap"] = {"latest": vwaps[-1], "previous": vwaps[-2]}
+        if reference is not None and orb_high is not None:
+            initial = orb_high - Decimal("0.25")
+            gates: dict[str, object] = {
+                "orb_high_minus_0_25": initial,
+                "risk_to_orb_gate": reference - initial,
+                "risk_percent_of_price": (reference - initial) / reference * Decimal(100),
+                "risk_gate_limit_percent": Decimal("1.0"),
+            }
+            if atr is not None and entry_vwap is not None:
+                gates.update(
+                    {
+                        "daily_wilder_atr14": atr,
+                        "extension_above_vwap": reference - entry_vwap,
+                        "max_extension_1_5_atr": Decimal("1.5") * atr,
+                    }
+                )
+            evidence["risk_gates"] = gates
+        if validated["spy_confirmation_enabled"]:
+            evidence["spy_confirmation"] = {
+                "enabled": True,
+                "spy_close": context.indicators.get("spy_close"),
+                "spy_close_prev": context.indicators.get("spy_close_prev"),
+            }
+        return make_evidence(
+            self.spec, evaluation, context,
+            reason_code="ORB_BREAKOUT",
+            reason=(
+                "price crossed above the first-five-minute opening-range high with a green "
+                "range, rising VWAP and the risk gates satisfied"
+            ),
+            evidence=evidence,
+        )
 
     def evaluate(
         self,

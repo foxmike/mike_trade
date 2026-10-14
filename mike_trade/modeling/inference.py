@@ -940,6 +940,7 @@ class ModelInferenceService:
                 position_fingerprint=fingerprint,
                 position_features=position_features,
                 inference_ms=inference_ms,
+                feature_values=dict(vector.values),
             )
         except ValueError as exc:
             return _Failure(PredictionFailure.INVALID_PROBABILITIES, str(exc))

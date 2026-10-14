@@ -60,6 +60,15 @@ from mike_trade.market_data.candles import (
 from mike_trade.market_data.context import ContextFreshness, MarketContext
 from mike_trade.market_data.session_candles import SessionCandleSource
 from mike_trade.market_data.session_reference import SessionReferenceTracker
+from mike_trade.review.evidence import DecisionEvidence, collect_evidence
+from mike_trade.review.proposal import (
+    Contributor,
+    PositionView,
+    StateToken,
+    StopView,
+    TradeProposal,
+)
+from mike_trade.review.stage import protective_exit
 from mike_trade.risk import michelle_stop
 from mike_trade.risk.fixed_stop import ALPACA_EQUITY_TICK_RULES
 from mike_trade.risk.stop_config import normalize_stop_spec, protection_policy_for_entry
@@ -95,6 +104,7 @@ from mike_trade.strategies.sell.base import ExitSource
 
 if TYPE_CHECKING:
     from mike_trade.backtest.model_replay import ReplayReferenceHistory
+    from mike_trade.review.stage import DecisionReviewStage
     from mike_trade.modeling.inference import ModelInferenceService
     from mike_trade.modeling.serving import BarVwapLedger, ModelInputProvider
 
@@ -497,6 +507,14 @@ class _SymbolPlan:
         return self.buys + self.sells + self.shorts + self.covers
 
 
+@dataclass(frozen=True, slots=True)
+class _ReviewInput:
+    """The strategies that signalled for one arbitration, handed to the decision-review stage."""
+
+    contributors: tuple[tuple[Any, StrategyEvaluation], ...]
+    selected_signal_id: str
+
+
 @dataclass(slots=True)
 class _Protection:
     """Backtest bookkeeping for one open cycle's protective stop."""
@@ -575,8 +593,11 @@ class BacktestRunner:
         protection_math: Any = None,
         session_candles: SessionCandleSource | None = None,
         model_service: ModelInferenceService | None = None,
+        review_stage: DecisionReviewStage | None = None,
     ) -> None:
         self.registry, self.feed, self.clock, self.execution = registry, feed, clock, execution
+        #: Optional decision-review stage (JEV).  ``None`` leaves every decision untouched.
+        self.review_stage = review_stage
         #: Optional completed D1/W1 history (point-in-time via ``available_at``). Without it a
         #: strategy that requires D1/W1 candles is refused and M1 behaviour is unchanged.
         self.session_candles = session_candles
@@ -751,6 +772,19 @@ class BacktestRunner:
         provenance = self.feed.provenance
         plans = self._plan(request)
         model_references = self._model_references(plans, provenance.feed)
+        review_stage = self.review_stage if (
+            self.review_stage is not None and self.review_stage.active
+        ) else None
+        if review_stage is not None:
+            if review_stage.mode != "BACKTEST":
+                raise ValueError("a backtest decision-review stage must be created for BACKTEST")
+            review_stage.validate_strategies(
+                (symbol, cls.spec.side.value, cls)
+                for symbol, plan in plans.items()
+                for cls in (*plan.buys, *plan.sells)
+            )
+        review_evidence: dict[str, DecisionEvidence] = {}
+        review_evidence_errors: dict[str, Exception] = {}
         model_reference_symbols: tuple[str, ...] = ()
         if model_references:
             assert self.model_service is not None  # _model_references enforces it
@@ -1504,8 +1538,92 @@ class BacktestRunner:
                 if cls.spec.strategy_id in MICHELLE_BUY_IDS:
                     state[(symbol, cls.spec.strategy_id)]["attempt_times"] = encoded
 
+        def review_token(symbol: str, at: datetime) -> StateToken:
+            history = candles_by_symbol.get(symbol)
+            return StateToken(
+                {
+                    "flat": quantities[symbol] <= ZERO,
+                    "cycle_id": str(open_cycles[symbol]["cycle_id"]) if symbol in open_cycles else None,
+                    "quantity": str(quantities[symbol]),
+                    "entry_pending": symbol in pending_entry,
+                    "exit_pending": symbol in pending_exit,
+                },
+                history[-1].end if history else None,
+            )
+
+        async def review_allows(
+            evaluation: StrategyEvaluation,
+            context: MarketContext,
+            symbol: str,
+            review: _ReviewInput | None,
+        ) -> bool:
+            """Decision review between arbitration and ordinary submission (BUY / strategy SELL)."""
+            stage = review_stage
+            if (
+                stage is None
+                or review is None
+                or evaluation.side not in (StrategyRole.BUY, StrategyRole.SELL)
+                or not stage.in_scope(evaluation.side.value, symbol, evaluation.strategy_id)
+            ):
+                return True
+            entry = evaluation.side is StrategyRole.BUY
+            position: PositionView | None = None
+            stop: StopView | None = None
+            if not entry:
+                cycle = open_cycles[symbol]
+                held = quantities[symbol]
+                position = PositionView(
+                    str(cycle["cycle_id"]), held, costs[symbol] / held, cycle["opened_at"]
+                )
+                protection = protections.get(symbol)
+                if protection is not None:
+                    stop = StopView(
+                        protection.policy.kind.value,
+                        protection.policy.initial_stop_price,
+                        protection.current_stop,
+                        protection.policy.trail_percent,
+                        protection.policy.require_broker_held,
+                    )
+            contributors = tuple(
+                Contributor(
+                    item_cls.spec.strategy_id,
+                    item_cls.spec.version,
+                    str(item.signal_id),
+                    item.signal_id == review.selected_signal_id,
+                    review_evidence.get(str(item.signal_id)),
+                )
+                for item_cls, item in review.contributors
+                if item.side is evaluation.side
+            )
+            proposal = TradeProposal(
+                mode="BACKTEST",
+                action=evaluation.side.value,
+                symbol=symbol,
+                as_of=context.as_of,
+                selected_strategy_id=evaluation.strategy_id,
+                selected_signal_id=str(evaluation.signal_id),
+                contributors=contributors,
+                reference_price=evaluation.reference_price,
+                position=position,
+                stop=stop,
+                exit_source=None if entry else "STRATEGY_SELL",
+                state=review_token(symbol, context.as_of),
+            )
+            failure = review_evidence_errors.get(str(evaluation.signal_id))
+            outcome = (
+                stage.fail(proposal, failure) if failure is not None
+                else await stage.review(proposal, context)
+            )
+            outcome = stage.authorize(
+                outcome, proposal, review_token(symbol, context.as_of), context.as_of
+            )
+            return outcome.allow
+
         async def submit(
-            evaluation: StrategyEvaluation, context: MarketContext, symbol: str
+            evaluation: StrategyEvaluation,
+            context: MarketContext,
+            symbol: str,
+            review: _ReviewInput | None = None,
         ) -> None:
             assert self.intent_factory is not None
             intent = self.intent_factory(evaluation, context, request)
@@ -1550,7 +1668,12 @@ class BacktestRunner:
                         "reason": "MICHELLE_ATTEMPT_LIMIT",
                     })
                     return
+                if not await review_allows(evaluation, context, symbol, review):
+                    return
             if intent.side.is_exit:
+                # Review precedes the protective stop being cancelled: a REJECT leaves it in place.
+                if not await review_allows(evaluation, context, symbol, review):
+                    return
                 # Make way for the discretionary exit exactly as the engine does:
                 # the stop is cancelled first and re-armed if the exit never fills.
                 protection = protections.get(symbol)
@@ -2073,6 +2196,19 @@ class BacktestRunner:
                 state[(symbol, spec.strategy_id)].update(evaluation.state_updates)
                 if not record:
                     return None
+                if (
+                    review_stage is not None
+                    and evaluation.is_signal
+                    and not protective_exit(cls)
+                    and review_stage.evidence_wanted(spec.side.value, symbol, spec.strategy_id)
+                ):
+                    try:
+                        review_evidence[str(evaluation.signal_id)] = collect_evidence(
+                            cls(), evaluation_context, plan.params[spec.strategy_id],
+                            state[(symbol, spec.strategy_id)], evaluation,
+                        )
+                    except Exception as exc:  # noqa: BLE001 - applied via the error policy
+                        review_evidence_errors[str(evaluation.signal_id)] = exc
                 context_bars = [
                     bar for history in strategy_candles[symbol].values() for bar in history
                 ]
@@ -2211,7 +2347,12 @@ class BacktestRunner:
                         {"kind": "EXIT", "time": ev.available_at, **result.to_dict()}
                     )
                     if result.selected is not None:
-                        await submit(winners[result.selected.signal_id][1], context, symbol)
+                        await submit(
+                            winners[result.selected.signal_id][1], context, symbol,
+                            review=_ReviewInput(
+                                tuple(winners.values()), result.selected.signal_id
+                            ),
+                        )
             else:
                 # Flat: SELL and COVER have nothing to close; keep their indicators advancing
                 # and discard any signal.  BUY and (when authorized) SHORT compete for entry.
@@ -2321,7 +2462,12 @@ class BacktestRunner:
                         and gate is None
                         and self.intent_factory is not None
                     ):
-                        await submit(candidates[result.selected.signal_id][1], context, symbol)
+                        await submit(
+                            candidates[result.selected.signal_id][1], context, symbol,
+                            review=_ReviewInput(
+                                tuple(candidates.values()), result.selected.signal_id
+                            ),
+                        )
         payload = {
             "schema_version": "2",
             "run_id": run_id,
@@ -2335,6 +2481,18 @@ class BacktestRunner:
             "cycles": cycles + list(open_cycles.values()),
             "equity_curve": equity_curve,
         }
+        if review_stage is not None:
+            # Only the deterministic part of each review is part of the immutable result (the
+            # wall-clock/latency/cost detail goes to the sidecar), so a run replayed from its
+            # recorded reviews reproduces this ledger exactly.
+            payload["reviews"] = [
+                record.summary() for record in review_stage.records
+                if record.source != "disposition"
+            ]
+            payload["review_validity"] = {
+                "point_in_time_valid": review_stage.point_in_time_valid(),
+                "enforcement": "enforce" if review_stage.enforcing else "advisory",
+            }
         manifest = replace(manifest, completed_at=datetime.now(UTC))
         result_hash = hashlib.sha256(canonical_json(payload).encode()).hexdigest()
         artifact_root = root / "executions" / execution_id
@@ -2371,6 +2529,15 @@ class BacktestRunner:
                         f.flush()
                     # Publish the manifest only after the immutable result ledger is complete.
                     write_manifest(manifest, artifact_root)
+                    if review_stage is not None and review_stage.config.record_reviews:
+                        # Full per-review records (request, response, usage, cost, latency)
+                        # for replay, caching and outcome analysis; written after the result.
+                        from mike_trade.review.reviewer import canonical_json as _canonical
+
+                        sidecar = artifact_root / f"{run_id}.reviews.jsonl"
+                        with sidecar.open("x", encoding="utf-8", newline="\n") as review_file:
+                            for record in review_stage.records:
+                                review_file.write(_canonical(record.to_dict()) + "\n")
             finally:
                 fcntl.flock(lock.fileno(), fcntl.LOCK_UN)
         return BacktestResult(

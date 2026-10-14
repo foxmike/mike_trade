@@ -9,6 +9,7 @@ instance lock is always acquired before SQLite migration or broker validation.
 from __future__ import annotations
 
 import asyncio
+import contextlib
 import hashlib
 import json
 import logging
@@ -39,6 +40,7 @@ from mike_trade.domain.errors import (
     EntryBlockedError,
     InsufficientBuyingPowerError,
     LiveTradingNotAuthorizedError,
+    MikeTradeError,
 )
 from mike_trade.domain.model_signals import PositionFacts, PredictionFailure
 from mike_trade.domain.protection import ProtectionKind, ProtectionPolicy
@@ -130,6 +132,15 @@ from mike_trade.runtime import (
     SchedulerPort,
     SystemClock,
 )
+from mike_trade.review.evidence import DecisionEvidence, collect_evidence
+from mike_trade.review.proposal import (
+    Contributor,
+    PositionView,
+    StateToken,
+    StopView,
+    TradeProposal,
+)
+from mike_trade.review.stage import protective_exit
 from mike_trade.scheduling import calendar as exchange_calendar
 from mike_trade.scheduling.scheduler import StrategyScheduler
 from mike_trade.scheduling.triggers import CANDLE_CLOSED, MARKET_DATA_ARRIVAL
@@ -408,6 +419,7 @@ from mike_trade.strategies.short.short_vwap_breakdown import ShortVwapBreakdown
 
 if TYPE_CHECKING:
     from mike_trade.modeling.serving import BarVwapLedger, ModelInputProvider
+    from mike_trade.review.stage import DecisionReviewStage, ReviewOutcome
 
 
 __all__ = [
@@ -567,6 +579,8 @@ class AppSettings:
     market_status_reference_symbols: tuple[str, ...] = ("SPY", "QQQ", "IWM")
     #: Root of the immutable model repository read by model-driven strategies (read-only).
     model_root: Path = Path("research/models")
+    #: Validated ``decision_review`` mapping (JEV trade review); ``None``/disabled changes nothing.
+    decision_review: Mapping[str, Any] | None = field(default=None, compare=False)
 
     def __post_init__(self) -> None:
         object.__setattr__(self, "mode", ExecutionMode(self.mode))
@@ -1694,6 +1708,7 @@ def load_app_settings(
         ),
         credential_environment=source,
         model_root=Path(str(service.get("model_root", "research/models"))),
+        decision_review=cast(Mapping[str, Any] | None, effective.get("decision_review")),
     )
 
 
@@ -1983,6 +1998,16 @@ class _Collections:
     covers: tuple[_Binding, ...] = ()
 
 
+@dataclass(slots=True)
+class _DeferredReview:
+    """An enforced review in flight: the proposal and how to carry it out once approved."""
+
+    scope: Any
+    context: MarketContext
+    proposal: TradeProposal
+    resume: Callable[[MarketContext], Any]
+
+
 _MODEL_LOGGER = get_logger("mike_trade.model")
 
 #: Minimum spacing between EOD liquidation attempts for one position; between attempts the
@@ -2072,6 +2097,12 @@ class VwapReferenceLifecycle:
         #: (strategy id, symbol) -> latest non-idle model decision summary (for read-only health)
         self._model_last: dict[tuple[str, str], dict[str, object]] = {}
         self._model_errors = 0
+        #: Optional decision-review stage (JEV); ``None`` leaves every decision untouched.
+        self._review: DecisionReviewStage | None = None
+        self._review_evidence: OrderedDict[str, DecisionEvidence] = OrderedDict()
+        self._review_evidence_errors: OrderedDict[str, Exception] = OrderedDict()
+        self._deferred: list[_DeferredReview] = []
+        self._review_contexts: Callable[[Sequence[str]], Mapping[str, MarketContext]] | None = None
 
     @staticmethod
     def _bind(
@@ -2176,6 +2207,9 @@ class VwapReferenceLifecycle:
                     if context.symbol != symbol.upper():
                         raise ValueError("context mapping key must match context.symbol")
                     actions.extend(await self._process_symbol(scenario, context))
+                # Enforced reviews run concurrently, outside the per-symbol evaluation, and
+                # their approved actions are then carried out one at a time.
+                actions.extend(await self._resolve_deferred(scenario))
                 result[name] = actions
             return result
         finally:
@@ -2407,6 +2441,7 @@ class VwapReferenceLifecycle:
             # Every configured exit strategy of this direction evaluates the held position
             # (its state advances even when a hold or pending exit blocks the exit).
             exits: dict[str, _Binding] = {}
+            exit_evaluations: dict[str, StrategyEvaluation] = {}
             for binding in exit_bindings:
                 state = self._state(scenario, binding, context.symbol)
                 self._inject_michelle_position_state(
@@ -2423,6 +2458,7 @@ class VwapReferenceLifecycle:
                     "vwap_bounce_break_michelle_sell",
                 }:
                     exits[evaluation.signal_id or ""] = binding
+                    exit_evaluations[evaluation.signal_id or ""] = evaluation
             if exits:
                 domain_position = Position(
                     account.scope.scope_id, position.symbol, position.quantity,
@@ -2451,9 +2487,15 @@ class VwapReferenceLifecycle:
                     ),
                 )
                 if decision.selected is not None:
-                    actions.extend(
-                        await self._exit(scenario, context, decision.selected.signal_id)
-                    )
+                    selected_binding = exits[decision.selected.signal_id]
+                    signal_id = decision.selected.signal_id
+                    if not self._gate_review(
+                        scenario, context, selected_binding, exit_evaluations[signal_id],
+                        [(exits[sid], exit_evaluations[sid]) for sid in exits],
+                        signal_id,
+                        lambda ctx: self._exit(scenario, ctx, signal_id),
+                    ):
+                        actions.extend(await self._exit(scenario, context, signal_id))
             return actions
 
         # Flat.  SELL and COVER have nothing to close: keep their indicators advancing and
@@ -2542,6 +2584,40 @@ class VwapReferenceLifecycle:
             quantity = quantity.quantize(Decimal("0.000000001"), rounding=ROUND_DOWN)
         if quantity <= 0:
             return actions
+        if not short:
+            # Decision review sits after arbitration and every deterministic pre-check, and
+            # before any budget reservation or order exists.
+            gated = self._gate_review(
+                scenario, context, binding, evaluation,
+                [(b, e) for b, e in entries.values() if b.role == "buy"],
+                arbitration.selected.signal_id,
+                lambda ctx: self._execute_entry(
+                    scenario, ctx, collections, binding, evaluation, quantity, reference, short
+                ),
+            )
+            if gated:
+                return actions
+        actions.extend(
+            await self._execute_entry(
+                scenario, context, collections, binding, evaluation, quantity, reference, short
+            )
+        )
+        return actions
+
+    async def _execute_entry(
+        self,
+        scenario: _ShadowScenario,
+        context: MarketContext,
+        collections: _Collections,
+        binding: _Binding,
+        evaluation: StrategyEvaluation,
+        quantity: Decimal,
+        reference: Decimal,
+        short: bool,
+    ) -> list[str]:
+        """Authorize, record and submit the (already reviewed) selected entry."""
+        actions: list[str] = []
+        account = scenario.account
         cycle_id = f"{context.symbol}-{evaluation.signal_id}"
         client_id = f"shadow-entry-{evaluation.signal_id}"
         command_intent = _CommandIntent(
@@ -2622,6 +2698,241 @@ class VwapReferenceLifecycle:
             await scenario.coordinator.complete(command)
         return actions
 
+
+    # ---- decision review (JEV) ---------------------------------------------------
+
+    def bind_review_stage(
+        self,
+        stage: DecisionReviewStage | None,
+        symbols: Sequence[str],
+        context_provider: Callable[[Sequence[str]], Mapping[str, MarketContext]] | None = None,
+    ) -> None:
+        """Attach the optional review stage; every in-scope strategy must produce evidence.
+
+        ``context_provider`` returns fresh per-symbol snapshots so a delayed approval is checked
+        against, and executed with, current market data.
+        """
+        self._review_contexts = context_provider
+        if stage is None or not stage.active:
+            self._review = None
+            return
+        configured: list[tuple[str, str, object]] = []
+        for symbol in symbols:
+            collections = self.collections(symbol)
+            configured.extend((symbol, "BUY", b.strategy) for b in collections.buys)
+            configured.extend((symbol, "SELL", b.strategy) for b in collections.sells)
+        stage.validate_strategies(configured)
+        self._review = stage
+
+    def _capture_evidence(
+        self,
+        binding: _Binding,
+        context: MarketContext,
+        state: Mapping[str, object],
+        evaluation: StrategyEvaluation,
+    ) -> None:
+        stage = self._review
+        if (
+            stage is None
+            or binding.role not in ("buy", "sell")
+            or protective_exit(binding.strategy)
+            or not stage.evidence_wanted(binding.role.upper(), context.symbol, binding.strategy_id)
+        ):
+            return
+        signal_id = str(evaluation.signal_id)
+        try:
+            self._review_evidence[signal_id] = collect_evidence(
+                binding.strategy, context, binding.parameters, state, evaluation
+            )
+        except Exception as exc:  # noqa: BLE001 - applied through the review error policy
+            self._review_evidence_errors[signal_id] = exc
+        for ledger in (self._review_evidence, self._review_evidence_errors):
+            while len(ledger) > 512:
+                ledger.popitem(last=False)
+
+    def _review_views(
+        self, scope: Any, context: MarketContext
+    ) -> tuple[PositionView | None, StopView | None]:
+        """The real held position and its protective stop (SHADOW account)."""
+        position = scope.account.state.positions.get(context.symbol)
+        if position is None:
+            return None, None
+        view = PositionView(
+            str(position.cycle_id), Decimal(position.quantity), Decimal(position.avg_cost),
+            position.opened_at, position.direction.value,
+        )
+        stop = scope.stops.state(position.cycle_id)
+        if stop is None:
+            return view, None
+        return view, StopView(
+            stop.policy.kind.value, stop.policy.initial_stop_price, stop.stop_price,
+            stop.policy.trail_percent, stop.policy.require_broker_held,
+        )
+
+    def _review_token(self, scope: Any, symbol: str) -> StateToken:
+        """Facts a delayed approval must still find true (see ``DecisionReviewStage``)."""
+        account = scope.account
+        position = account.state.positions.get(symbol)
+        stop = None if position is None else scope.stops.state(position.cycle_id)
+        now = self.clock.now()
+        local_day = now.astimezone(exchange_calendar.NEW_YORK).date()
+        cutoff_passed = False
+        try:
+            cutoff_passed = now >= exchange_calendar.entry_cutoff(
+                exchange_calendar.session_for(local_day), self.cutoff_minutes
+            )
+        except ValueError:
+            pass
+        latest = None
+        provider = self._review_contexts or self._context_provider
+        if provider is not None:
+            fresh = provider([symbol]).get(symbol)
+            bars = None if fresh is None else fresh.candles.get(CandleTimeframe.M1)
+            latest = bars[-1].end if bars else None
+        return StateToken(
+            {
+                "flat": position is None,
+                "cycle_id": None if position is None else position.cycle_id,
+                "quantity": None if position is None else str(position.quantity),
+                "entry_pending": self._open_orders(
+                    account, symbol, OrderSide.BUY, OrderSide.SELL_SHORT
+                ),
+                "exit_pending": self._open_orders(
+                    account, symbol, OrderSide.SELL, OrderSide.BUY_TO_COVER
+                ),
+                "protective_stop_status": None if stop is None else stop.status,
+                "entry_permitted": self._entry_permitted(PositionDirection.LONG),
+                "eod_begun": self._eod_begun(now),
+                "entry_cutoff_passed": cutoff_passed,
+            },
+            latest,
+        )
+
+    def _review_fresh_context(self, context: MarketContext) -> MarketContext:
+        """Execute a delayed approval against the latest snapshot when one is available."""
+        provider = self._review_contexts or self._context_provider
+        if provider is None:
+            return context
+        fresh = provider([context.symbol]).get(context.symbol)
+        if (
+            fresh is None
+            or fresh.as_of < context.as_of
+            or fresh.freshness.stale
+            or fresh.latest_quote is None
+        ):
+            return context  # never trade on a snapshot that is older or less complete
+        return fresh
+
+    def _gate_review(
+        self,
+        scope: Any,
+        context: MarketContext,
+        binding: _Binding,
+        evaluation: StrategyEvaluation,
+        contributors: Sequence[tuple[_Binding, StrategyEvaluation]],
+        selected_signal_id: str,
+        resume: Callable[[MarketContext], Any],
+    ) -> bool:
+        """Apply the review stage to an arbitration-selected BUY / strategy SELL.
+
+        Returns ``True`` when the action was deferred to the (enforced) review - the caller must
+        then do nothing - and ``False`` when it should proceed immediately (no stage, out of
+        scope, or an advisory review, which is recorded in the background and never waited for).
+        """
+        stage = self._review
+        action = binding.role.upper()
+        if (
+            stage is None
+            or binding.role not in ("buy", "sell")
+            or not stage.in_scope(action, context.symbol, binding.strategy_id)
+        ):
+            return False
+        position, stop = (None, None) if action == "BUY" else self._review_views(scope, context)
+        if action == "SELL" and position is None:
+            # Without confirmed fill facts there is nothing truthful to show a reviewer; the
+            # ordinary exit path applies its own confirmed-position checks.
+            _MODEL_LOGGER.warning(
+                "decision review skipped: no confirmed position facts",
+                extra={"symbol": context.symbol, "signal": selected_signal_id},
+            )
+            return False
+        proposal = TradeProposal(
+            mode=self._review_mode(),
+            action=action,
+            symbol=context.symbol,
+            as_of=context.as_of,
+            selected_strategy_id=binding.strategy_id,
+            selected_signal_id=selected_signal_id,
+            contributors=tuple(
+                Contributor(
+                    b.strategy_id, b.version, str(e.signal_id),
+                    e.signal_id == selected_signal_id,
+                    self._review_evidence.get(str(e.signal_id)),
+                )
+                for b, e in contributors
+                if b.role == binding.role
+            ),
+            reference_price=evaluation.reference_price,
+            position=position,
+            stop=stop,
+            exit_source=None if action == "BUY" else "STRATEGY_SELL",
+            state=self._review_token(scope, context.symbol),
+        )
+        if not stage.enforcing:
+            failure = self._review_evidence_errors.get(selected_signal_id)
+            if failure is not None:
+                stage.fail(proposal, failure)  # recorded; advisory never blocks
+            else:
+                stage.review_nonblocking(proposal, context)
+            return False
+        self._deferred.append(_DeferredReview(scope, context, proposal, resume))
+        return True
+
+    def _review_mode(self) -> str:
+        return "SHADOW"
+
+    def _order_serialization(self) -> Any:
+        """Async context manager serializing the post-review order path (none in SHADOW)."""
+        return contextlib.nullcontext()
+
+    async def _review_one(self, item: _DeferredReview) -> ReviewOutcome:
+        stage = self._review
+        assert stage is not None
+        failure = self._review_evidence_errors.get(item.proposal.selected_signal_id)
+        if failure is not None:
+            return stage.fail(item.proposal, failure)
+        try:
+            return await stage.review(item.proposal, item.context)
+        except MikeTradeError:
+            raise  # look-ahead leaks, replay misses and mandatory-exit misuse are never bypassed
+        except Exception as exc:  # noqa: BLE001 - any other defect follows the error policy
+            return stage.fail(item.proposal, exc)
+
+    async def _resolve_deferred(self, scope: Any) -> list[str]:
+        """Review this scope's deferred actions concurrently, then execute approved ones in order."""
+        items = [d for d in self._deferred if d.scope is scope]
+        if not items:
+            return []
+        self._deferred = [d for d in self._deferred if d.scope is not scope]
+        stage = self._review
+        assert stage is not None
+        outcomes = await asyncio.gather(*(self._review_one(d) for d in items))
+        actions: list[str] = []
+        for item, outcome in zip(items, outcomes, strict=True):
+            async with self._order_serialization():
+                outcome = stage.authorize(
+                    outcome, item.proposal, self._review_token(scope, item.proposal.symbol),
+                    self.clock.now(),
+                )
+                if outcome.allow:
+                    actions.extend(await item.resume(self._review_fresh_context(item.context)))
+                else:
+                    actions.append(
+                        f"REVIEW_BLOCKED:{item.proposal.action}:{item.proposal.symbol}:"
+                        f"{outcome.effect}"
+                    )
+        return actions
+
     # ---- end-of-day liquidation -------------------------------------------------
 
     def bind_context_provider(
@@ -2665,6 +2976,8 @@ class VwapReferenceLifecycle:
         )
         if model_driven and armed:
             self._log_model_decision(binding, evaluation_context, evaluation)
+        if armed and evaluation.is_signal:
+            self._capture_evidence(binding, evaluation_context, state, evaluation)
         return evaluation
 
     @staticmethod
@@ -3170,6 +3483,8 @@ class VwapReferenceLifecycle:
             import asyncio
 
             await asyncio.sleep(0)
+        if self._review is not None:
+            await self._review.drain()  # advisory reviews still being recorded
 
 
 class _NoopReporting:
@@ -3793,6 +4108,45 @@ def _fingerprint(settings: AppSettings) -> str:
     return hashlib.sha256(payload.encode("utf-8")).hexdigest()
 
 
+def _bind_decision_review(settings: AppSettings, lifecycle: object | None, market_data: object) -> None:
+    """Attach the optional JEV review stage to the SHADOW / PAPER / LIVE lifecycle.
+
+    Inactive (the default) is a no-op, so existing configurations are unchanged.  Active review
+    fails closed at startup: an in-scope strategy without evidence support, or a missing
+    ``OPENROUTER_API_KEY`` for ``source: live``, is a configuration error.
+    """
+    from mike_trade.review.config import parse_decision_review
+    from mike_trade.review.factory import build_stage, default_review_path
+
+    config = parse_decision_review(settings.decision_review)
+    if not config.active:
+        return
+    if lifecycle is None or not hasattr(lifecycle, "bind_review_stage"):
+        raise ConfigurationError(
+            "decision_review is enabled but this runtime has no strategy lifecycle to review "
+            "(BACKTEST reviews run through the research runner's decision_review setting)",
+            code="DECISION_REVIEW_UNSUPPORTED",
+        )
+    stage = build_stage(
+        config,
+        mode=settings.mode.value,
+        environ=settings.credential_environment,
+        record_path=default_review_path(settings.data_dir, settings.mode.value),
+    )
+    snapshot = getattr(market_data, "snapshot", None)
+    cast(Any, lifecycle).bind_review_stage(
+        stage, settings.symbols, snapshot if callable(snapshot) else None
+    )
+    logging.getLogger("mike_trade.review").info(
+        "Decision review ready",
+        extra={
+            "mode": settings.mode.value, "review_mode": config.mode,
+            "reviewer": config.reviewer, "source": config.source or "live",
+            "review_buy": config.review_buy, "review_sell": config.review_sell,
+        },
+    )
+
+
 def build_runtime(
     settings: AppSettings, *, overrides: Mapping[str, object] | None = None
 ) -> Runtime:
@@ -4236,6 +4590,7 @@ def build_runtime(
             "Model inference ready",
             extra={"models": sorted(model_references), "mode": settings.mode.value},
         )
+    _bind_decision_review(settings, lifecycle, market_data)
     execution = supplied.get("execution", lifecycle or broker)
     protection = supplied.get(
         "protection",

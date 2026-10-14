@@ -232,6 +232,10 @@ class ServedPrediction:
     position_fingerprint: str | None = None
     position_features: Mapping[str, float] = field(default_factory=dict)
     inference_ms: float = 0.0
+    #: The exact finite feature values the model was evaluated on (market features, plus the
+    #: position features for a SELL model).  Carried for decision evidence only; ``to_audit``
+    #: deliberately leaves it out so existing audit records are unchanged.
+    feature_values: Mapping[str, float] = field(default_factory=dict, compare=False)
 
     def __post_init__(self) -> None:
         _identifier(self.model_id, "model_id")
@@ -280,6 +284,9 @@ class ServedPrediction:
         object.__setattr__(self, "class_net_returns", MappingProxyType(returns))
         object.__setattr__(
             self, "position_features", _frozen_floats(self.position_features, "position_features")
+        )
+        object.__setattr__(
+            self, "feature_values", _frozen_floats(self.feature_values, "feature_values")
         )
         if (self.role == "sell") != (self.position_fingerprint is not None):
             raise ValueError("SELL predictions (and only SELL predictions) carry a position")

@@ -71,6 +71,10 @@ class ExperimentSpec:
     #: Replay the Market Status Monitor (SPY/QQQ/IWM, same feed) so CRASH/WARNING states gate
     #: new entries exactly as in SHADOW.
     market_status_enabled: bool = False
+    #: Optional JEV decision review (see ``mike_trade.review``).  A research run must state
+    #: ``source`` explicitly: ``live`` (call the reviewer; identical cached inputs are reused) or
+    #: ``replay`` (recorded reviews only, no model calls).
+    decision_review: Mapping[str, Any] | None = None
 
     def validate(self) -> None:
         if not self.symbol or not self.symbol.replace(".", "").isalnum():
@@ -101,6 +105,14 @@ class ExperimentSpec:
                 raise ValueError("short_borrow_bps_per_day must be >= 0")
         elif self.strategy not in {"vwap_bounce", "vwap_breakdown"}:
             raise ValueError(f"unsupported registered lifecycle focus: {self.strategy!r}")
+        if self.decision_review is not None:
+            from mike_trade.domain.errors import ConfigurationError
+            from mike_trade.review.config import parse_decision_review
+
+            try:
+                parse_decision_review(self.decision_review, research=True)
+            except ConfigurationError as exc:
+                raise ValueError(exc.message) from exc
         if self.protective_stop is not None:
             from mike_trade.risk.stop_config import normalize_stop_spec
 
@@ -392,6 +404,7 @@ def _execute_experiment(job_data: dict[str, Any], root: str, results: str) -> di
         model_root=spec.model_root,
         reference_dataset_ids=spec.reference_dataset_ids,
         market_status_enabled=spec.market_status_enabled,
+        decision_review=spec.decision_review,
     )
     ledger = result.pop("trade_ledger")
     ledger_dir = Path(results) / "trade_ledgers"
@@ -1389,6 +1402,7 @@ def _run_one(
     model_root: str | None = None,
     reference_dataset_ids: Mapping[str, str] | None = None,
     market_status_enabled: bool = False,
+    decision_review: Mapping[str, Any] | None = None,
 ) -> dict[str, Any]:
     from mike_trade.backtest.clock import ReplayClock
     from mike_trade.backtest.execution import (
@@ -1610,12 +1624,18 @@ def _run_one(
         end_of_day_close,
         (*buy_ids, *sell_ids, *short_ids, *cover_ids, strategy_name),
     )
+    from mike_trade.review.config import parse_decision_review
+    from mike_trade.review.factory import build_stage
+
+    review_config = parse_decision_review(decision_review, research=True)
+    review_stage = build_stage(review_config, mode="BACKTEST")  # None unless active
     request = BacktestRequest(
         (symbol,),
         start,
         end,
         PeriodRole.RESEARCH,
         {
+            **({"decision_review": review_config.to_dict()} if review_stage is not None else {}),
             "dataset_id": snapshot.dataset_id,
             **({"daily_dataset_id": daily_dataset} if daily_dataset else {}),
             **({"end_of_day_close": effective_eod} if effective_eod is not None else {}),
@@ -1652,17 +1672,25 @@ def _run_one(
         initial_strategy_state={buy_id: {"eligibility": "WATCHING_BUY"} for buy_id in buy_ids},
         result_directory=results,
     )
-    result = asyncio.run(
-        BacktestRunner(
-            registry,
-            replay_feed,
-            clock,
-            sim,
-            intent_factory=intent_factory,
-            session_candles=session_candles,
-            model_service=model_service,
-        ).run(request)
+    runner = BacktestRunner(
+        registry,
+        replay_feed,
+        clock,
+        sim,
+        intent_factory=intent_factory,
+        session_candles=session_candles,
+        model_service=model_service,
+        review_stage=review_stage,
     )
+
+    async def run_and_close() -> Any:
+        try:
+            return await runner.run(request)
+        finally:
+            if review_stage is not None:
+                await review_stage.aclose()
+
+    result = asyncio.run(run_and_close())
     metrics = compute_metrics(
         result,
         starting_capital=starting_capital,
@@ -1688,7 +1716,7 @@ def _run_one(
     )
     unmatched_benchmarks = sum(fill["time"] not in bar_open for fill in result.fills)
     ending_equity = result.equity_curve[-1]["equity"] if result.equity_curve else starting_capital
-    return {
+    summary: dict[str, Any] = {
         "symbol": symbol,
         "strategy": strategy_name,
         "lifecycle": lifecycle,
@@ -1733,6 +1761,12 @@ def _run_one(
             for t in metrics.trades
         ],
     }
+    if review_stage is not None:
+        summary["decision_review"] = {
+            "config": review_config.to_dict(),
+            "summary": review_stage.summary(),
+        }
+    return summary
 
 
 def run_backtest(args: argparse.Namespace) -> int:

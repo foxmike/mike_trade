@@ -2569,3 +2569,13 @@ Contract highlights:
 
 These specifications describe decision rules over a model's output. They make no claim that any model or
 threshold is profitable without historical, out-of-sample evidence.
+
+## Decision evidence and optional JEV review
+
+Eight strategies implement the versioned decision-evidence interface (`EVIDENCE_INTERFACE_VERSION = 1`,
+`build_evidence`) so an optional reviewer can read *why* they fired: `xgboost_probability_buy/sell`,
+`lightgbm_probability_buy/sell`, `five_minute_orb_michelle_buy`, `vwap_bounce_break_michelle_buy`, and the two
+Michelle protective SELLs (documentation only: they are mandatory protective exits and are never reviewed).
+Evidence changes no signal, parameter or decision; with `decision_review` off it is never built. See
+[JEV_REVIEW.md](JEV_REVIEW.md) for the evidence contract, how to add it to a new strategy, configuration,
+the OpenRouter provider, replay, and comparison against the baseline.

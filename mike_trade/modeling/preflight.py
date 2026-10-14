@@ -64,7 +64,10 @@ def preflight(plan: CampaignPlan, *, workers: str | int | None = None) -> dict[s
     stops: set[str] = set()
     feeds: set[str] = set()
     modes: set[str] = set()
+    reviewed: list[Mapping[str, Any]] = []
     for job in plan.jobs:
+        if getattr(job, "decision_review", None):
+            reviewed.append(job.decision_review)
         slippage.add(str(resolve_execution_assumptions(job.execution).slippage_bps.normalize()))
         stop = normalize_stop_spec(job.protective_stop or {})
         stops.add(str(stop["type"]))
@@ -77,7 +80,21 @@ def preflight(plan: CampaignPlan, *, workers: str | int | None = None) -> dict[s
     resolved = resolve_worker_count(
         requested, len(plan.jobs), memory_per_worker_bytes=spec.worker_memory_mb * 1024 * 1024
     )
+    review_summary: dict[str, Any] = {}
+    if reviewed:
+        review_summary["decision_review"] = {
+            "jobs_with_review": len(reviewed),
+            "jobs_without_review": len(plan.jobs) - len(reviewed),
+            "sources": sorted({str(r.get("source")) for r in reviewed}),
+            "modes": sorted({str(r.get("mode", "advisory")) for r in reviewed}),
+            "reviewers": sorted({str(r.get("reviewer", "jev")) for r in reviewed}),
+            "note": (
+                "reviews are produced while jobs run (live = OpenRouter calls, deduplicated by "
+                "input hash; replay = recorded reviews, no calls); planning makes no model calls"
+            ),
+        }
     return {
+        **review_summary,
         "campaign_id": spec.campaign_id,
         "config_file": str(spec.source),
         "config_sha256": spec.config_sha256,
@@ -118,6 +135,15 @@ def format_preflight(report: Mapping[str, Any]) -> str:
         ("protective stop", f"{report['protective_stop_type']} {report['trail_percent']}%"),
         ("workers", f"{report['workers']} (requested {report['workers_requested']})"),
         ("model directed", f"{str(report['model_directed']).lower()} {report['model_decision_modes']}"),
+        *(
+            (
+                ("decision review", (
+                    f"{r['jobs_with_review']} job(s) {r['modes']} source={r['sources']} "
+                    f"reviewer={r['reviewers']}; {r['jobs_without_review']} baseline job(s)"
+                )),
+            )
+            if (r := report.get("decision_review")) else ()
+        ),
         ("output directory", report["output_directory"]),
     )
     return "campaign preflight (effective settings)\n" + "\n".join(

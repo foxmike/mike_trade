@@ -11,6 +11,11 @@ from collections.abc import Mapping
 from typing import TYPE_CHECKING, ClassVar
 
 from mike_trade.market_data.candles import CandleTimeframe
+from mike_trade.review.evidence import (
+    EVIDENCE_INTERFACE_VERSION,
+    DecisionEvidence,
+    make_evidence,
+)
 from mike_trade.risk import michelle_stop
 from mike_trade.scheduling.calendar import SessionStatus
 from mike_trade.strategies.base import ReasonCode, SellStrategy, StrategyEvaluation, StrategySpec
@@ -24,6 +29,36 @@ class MichelleProtectiveSell(SellStrategy):
     """Advisory mirror of the engine-owned fixed-to-trailing protection state."""
 
     spec: ClassVar[StrategySpec]
+    EVIDENCE_INTERFACE_VERSION: ClassVar[int] = EVIDENCE_INTERFACE_VERSION
+    #: These signals mirror the engine-owned protective stop: a mandatory exit that decision
+    #: review never sees (see ``mike_trade.review.stage``).
+    PROTECTIVE_EXIT: ClassVar[bool] = True
+
+    def build_evidence(
+        self,
+        context: MarketContext,
+        params: Mapping[str, object],
+        state: Mapping[str, object],
+        evaluation: StrategyEvaluation,
+    ) -> DecisionEvidence:
+        """Describe the protective-stop state (documentation only: never reviewed)."""
+        fill = safe_decimal(state.get("position_fill_price"))
+        initial = None if fill is None else michelle_stop.initial_stop(fill)
+        return make_evidence(
+            self.spec, evaluation, context,
+            reason_code="PROTECTIVE_STOP",
+            reason="the market traded at or through the active protective stop",
+            evidence={
+                "mandatory_exit": True,
+                "position_cycle_id": state.get("position_cycle_id"),
+                "position_fill_price": fill,
+                "initial_stop": initial,
+                "highest_trade_price": safe_decimal(state.get("highest_trade_price")),
+                "active_stop_price": safe_decimal(state.get("active_stop_price")),
+                "active_stop_mode": state.get("active_stop_mode"),
+                "trail_percent": michelle_stop.MICHELLE_TRAIL_PERCENT,
+            },
+        )
 
     def evaluate(
         self,

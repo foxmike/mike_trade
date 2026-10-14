@@ -195,3 +195,23 @@ reporting:
   evidence_dir: evidence
   evidence_retention_days: 90
   log_retention_days: 30
+# Optional discretionary trade review (JEV). Off by default: with enabled: false nothing changes.
+# JEV is reached only through OpenRouter using the OPENROUTER_API_KEY environment variable; the
+# reviewer name selects a `reviewers:` entry in config/providers.yaml (default: OpenRouter with
+# the JEV model typesafe/jev-router). The review sits after strategy arbitration and before
+# ordinary order submission and can never veto protective stops, end-of-day or emergency exits.
+#   mode: advisory records JEV's opinion without changing execution; enforce lets APPROVE allow
+#   and REJECT block the ordinary BUY / strategy SELL. on_error: bypass proceeds as if there were
+#   no review when JEV times out or answers malformed; reject blocks instead (a blocked SELL
+#   leaves the position held under its protective stop / end-of-day close). See docs/JEV_REVIEW.md.
+decision_review:
+  enabled: false
+  reviewer: jev
+  review_buy: true
+  review_sell: true
+  mode: advisory
+  timeout_seconds: 10
+  on_error: bypass
+  record_reviews: true
+  strategies: []   # empty = every strategy configured on a reviewed side (each must emit evidence)
+  symbols: []      # empty = every symbol
