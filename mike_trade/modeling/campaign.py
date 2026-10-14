@@ -15,7 +15,10 @@ Safety properties enforced here, before any job runs:
   repository (a campaign can never pick "the latest model");
 * a window that overlaps a model's training or tuning data is refused unless the campaign says
   ``allow_in_sample: true``, and is labelled in every report either way;
-* a large campaign needs explicit approval at the command line.
+* the effective settings (slippage, stop, feed, workers, job count, model mode) satisfy the
+  campaign's ``expect`` block and any ``--expect`` requirements (see ``preflight``).
+
+Campaign size is never limited and never needs approval.
 """
 
 from __future__ import annotations
@@ -74,6 +77,7 @@ _ALLOWED_KEYS = {
     "allow_in_sample",
     "max_workers",
     "worker_memory_mb",
+    "expect",
     "models",
     "configurations",
     "strategy_parameters",
@@ -131,6 +135,7 @@ class CampaignSpec:
     market_status_enabled: bool
     max_workers: str | int
     worker_memory_mb: int
+    expect: Mapping[str, Any]
     models: Mapping[str, ModelPin]
     configurations: tuple[CampaignConfiguration, ...]
     strategy_parameters: Mapping[str, Mapping[str, Any]]
@@ -275,6 +280,7 @@ def load_campaign(path: str | Path) -> CampaignSpec:
         market_status_enabled=bool(raw.get("market_status_enabled", False)),
         max_workers=_workers(raw.get("max_workers", "auto")),
         worker_memory_mb=_positive(raw.get("worker_memory_mb", 1024), "worker_memory_mb"),
+        expect=_expect(raw.get("expect")),
         models=models,
         configurations=tuple(configs),
         strategy_parameters={
@@ -293,6 +299,16 @@ def _positive(value: object, name: str) -> int:
     if number < 1:
         raise CampaignError(f"{name} must be a positive integer")
     return number
+
+
+def _expect(value: object) -> dict[str, Any]:
+    if value is None:
+        return {}
+    from mike_trade.modeling.preflight import EXPECTATION_KEYS
+
+    if not isinstance(value, Mapping) or set(value) - set(EXPECTATION_KEYS):
+        raise CampaignError(f"expect must be a mapping with keys from {list(EXPECTATION_KEYS)}")
+    return dict(value)
 
 
 def _workers(value: object) -> str | int:
@@ -492,12 +508,22 @@ def run_campaign(
     plan: CampaignPlan,
     *,
     workers: str | int | None = None,
+    expect: Mapping[str, Any] | None = None,
 ) -> dict[str, Any]:
-    """Execute the planned jobs on the existing batch runner and write the report set."""
+    """Execute the planned jobs on the existing batch runner and write the report set.
+
+    The effective settings are checked against the campaign's ``expect`` block and the
+    ``expect`` argument first; a mismatch raises before any result directory is created or job submitted.
+    """
     from mike_trade.modeling.campaign_report import write_campaign_report
+    from mike_trade.modeling.preflight import PreflightError, enforce, preflight
     from mike_trade.research.commands import run_experiment_batch
 
     spec = plan.spec
+    try:
+        enforce(preflight(plan, workers=workers), {**spec.expect, **(expect or {})})
+    except PreflightError as exc:
+        raise CampaignError(str(exc)) from exc
     directory = spec.run_directory
     directory.mkdir(parents=True, exist_ok=True)
     shutil.copyfile(spec.source, directory / "campaign.yaml")  # the exact reproducible input

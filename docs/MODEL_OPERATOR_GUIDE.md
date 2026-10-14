@@ -158,6 +158,21 @@ model and snapshot; each model is pinned by id, version and its checksum (resolv
 repository); a window overlapping a model's training or tuning data is refused unless `allow_in_sample: true`
 (and is labelled `in_sample` everywhere); missing symbol coverage is an error unless `SKIP_MISSING=1` (then
 listed). There is no job-count limit and no approval flag: a campaign of 8,000 jobs starts like one of 8. `max_workers` (campaign YAML) or `MODEL_WORKERS` is `auto` or an integer; `auto` uses the available CPUs minus ~1/8 for co-tenants, and any count is lowered only if free memory cannot hold that many workers (`worker_memory_mb`, default 1024 each). Workers start with one-thread OpenMP/BLAS pools so N processes do not oversubscribe the host.
+**Preflight.** Before any job starts, `model-backtest` prints the *effective* settings — campaign id, file, hash,
+trading and excluded-reference instruments, configurations, planned jobs, feed, window, slippage per side,
+protective trail, resolved workers, model-directed flag and output directory — read from the planned jobs through
+the runner's own resolvers, not from the YAML text. A campaign file may carry an `expect:` block (and the command
+line `--expect KEY=VALUE`, repeatable); if an effective value differs, the launch aborts before any backtest is
+submitted. This checks correctness; it never asks anyone to approve anything. `model_strategy_comparison_model_directed_corrected_v1.yaml`
+is the model-directed 792-job campaign (2 bps per side, 0.5% trailing stop, 16 workers) and is launched by
+`scripts/run_model_directed_corrected.sh`. Model strategies default to `decision_mode: MODEL_DIRECTED`
+(P(favorable) > P(adverse) for BUY; P(risk exit)+P(exit) > P(hold) for SELL, no confidence thresholds);
+`THRESHOLD` remains available for explicit experiments.
+
+**Failures.** Each failed job is appended at once to `<run>/batch.failures.<utc>-<pid>.jsonl` (job id, symbol,
+configuration, exception type and message, traceback, timestamp) and a one-line `research failure …` message is
+printed to the campaign log; `batch.json` keeps the final records.
+
 Jobs run in `spawn`ed processes (a forked child of a process that used OpenMP is unsafe).
 
 **Output** — `research/model_campaigns/<campaign_id>/<sha12>/`: `campaign.yaml` (the exact bytes), `plan.json`,

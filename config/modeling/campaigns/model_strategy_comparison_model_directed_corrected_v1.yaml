@@ -1,0 +1,78 @@
+schema_version: 1
+campaign_id: model_strategy_comparison_model_directed_corrected_v1
+description: >
+  Model-directed A-H comparison over the frozen 100-instrument research universe: 99 trading
+  targets (SPY is the models' market-reference feed and is never traded) x 8 configurations = 792
+  jobs, 2 bps slippage per side, 0.5% native trailing stop, 15:55 end-of-day liquidation.
+feed: iex
+universe_file: config/research_universe_100_v1.json
+universe_id: us-liquid-research-100-v1
+dataset_root: research/data
+model_root: research/models
+output_root: research/model_campaigns
+seed: 271828
+starting_capital: "10000"
+max_workers: 16
+worker_memory_mb: 1024
+max_entry_cycles_per_session: 10
+market_status_enabled: true
+
+window:
+  start: 2026-08-10T00:00:00Z
+  end: 2026-09-21T00:00:00Z
+
+execution:
+  slippage_bps: "2"       # per side: every fill is moved 2 bps against the trader
+protective_stop:
+  type: native_trailing
+  trail_percent: "0.5"
+end_of_day_close:
+  enabled: true
+  at: "15:55"
+
+# Launch requirements, checked against the EFFECTIVE resolved settings (read from the planned
+# jobs and the runner's own resolvers) before any job starts; a mismatch aborts the launch.
+expect:
+  feed: iex
+  slippage_bps: 2
+  trail_percent: 0.5
+  planned_jobs: 792
+  trading_instruments: 99
+  excluded_reference_instruments: [SPY]
+  configurations: 8
+  workers: 16
+  model_directed: true
+  evaluation_start: 2026-08-10T00:00:00Z
+  evaluation_end: 2026-09-21T00:00:00Z
+
+models:
+  xgb_buy:
+    strategy: xgboost_probability_buy
+    model_id: xgboost_buy_tb_pooled
+    model_version: 1.0.0
+    parameters: {decision_mode: MODEL_DIRECTED}
+  lgbm_buy:
+    strategy: lightgbm_probability_buy
+    model_id: lightgbm_buy_tb_pooled
+    model_version: 1.0.0
+    parameters: {decision_mode: MODEL_DIRECTED}
+  xgb_sell:
+    strategy: xgboost_probability_sell
+    model_id: xgboost_sell_continuation_pooled
+    model_version: 1.0.0
+    parameters: {decision_mode: MODEL_DIRECTED}
+  lgbm_sell:
+    strategy: lightgbm_probability_sell
+    model_id: lightgbm_sell_continuation_pooled
+    model_version: 1.0.0
+    parameters: {decision_mode: MODEL_DIRECTED}
+
+configurations:
+  A_xgb_buy_trail:        {buy: [xgb_buy],  sell: [], description: "XGBoost BUY, protective trailing stop only"}
+  B_lgbm_buy_trail:       {buy: [lgbm_buy], sell: [], description: "LightGBM BUY, protective trailing stop only"}
+  C_xgb_buy_xgb_sell:     {buy: [xgb_buy],  sell: [xgb_sell],  description: "XGBoost BUY + XGBoost SELL + protection"}
+  D_lgbm_buy_lgbm_sell:   {buy: [lgbm_buy], sell: [lgbm_sell], description: "LightGBM BUY + LightGBM SELL + protection"}
+  E_xgb_buy_lgbm_sell:    {buy: [xgb_buy],  sell: [lgbm_sell], description: "XGBoost BUY + LightGBM SELL + protection"}
+  F_technical_buy_model_sell: {buy: [vwap_bounce], sell: [xgb_sell], description: "Existing VWAP bounce BUY + XGBoost SELL + protection"}
+  G_model_buy_technical_sell: {buy: [xgb_buy], sell: [vwap_breakdown], description: "XGBoost BUY + existing VWAP breakdown SELL + protection"}
+  H_baseline_vwap_reference:  {buy: [vwap_bounce], sell: [vwap_breakdown], description: "Existing technical reference pair, for comparison"}

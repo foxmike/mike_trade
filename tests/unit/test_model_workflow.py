@@ -682,6 +682,138 @@ def test_reference_symbols_are_reported_not_traded(workflow, tmp_path):
     assert "SPY" not in plan.symbols and {job.symbol for job in plan.jobs} == {"AAA"}
 
 
+def _corrected_text(workflow, tmp_path, name, *, thresholds=False):
+    path = campaign_yaml(workflow, directory=tmp_path / name)
+    text = path.read_text()
+    text = text.replace('slippage_bps: "5"', 'slippage_bps: "2"').replace(
+        'trail_percent: "1.5"', 'trail_percent: "0.5"'
+    )
+    if not thresholds:
+        text = text.replace("decision_mode: THRESHOLD, ", "decision_mode: MODEL_DIRECTED, ")
+    return path, text
+
+
+def test_requested_cost_and_stop_reach_the_execution_manifests(workflow, tmp_path):
+    configs = "  A_xgb_buy: {buy: [xgb_buy], sell: []}\n  H_baseline: {buy: [vwap_bounce], sell: [vwap_breakdown]}\n"
+    path = campaign_yaml(workflow, directory=tmp_path / "eff", configs=configs)
+    path.write_text(
+        path.read_text()
+        .replace('slippage_bps: "5"', 'slippage_bps: "2"')
+        .replace('trail_percent: "1.5"', 'trail_percent: "0.5"')
+    )
+    spec = load_campaign(path)
+    plan = plan_campaign(spec)
+    from mike_trade.modeling.preflight import preflight
+
+    effective = preflight(plan, workers=1)
+    assert effective["slippage_bps"] == "2" and effective["trail_percent"] == "0.5"
+    outcome = run_campaign(plan, workers=1, expect={"slippage_bps": 2, "trail_percent": "0.5"})
+    assert outcome["batch"]["failed_count"] == 0
+    manifests = sorted((spec.run_directory / "executions").glob("*/*.manifest.json"))
+    assert len(manifests) == len(plan.jobs) > 0
+    for manifest in manifests:
+        configuration = json.loads(manifest.read_text())["configuration"]
+        assert configuration["execution_assumptions"]["slippage_bps"] == "2"
+        assert configuration["assumptions"]["slippage_bps"] == "2"
+        assert configuration["protective_stop"] == {
+            "type": "native_trailing",
+            "trail_percent": "0.5",
+        }
+
+
+def test_preflight_rejects_wrong_settings_before_any_job_or_directory(
+    workflow, tmp_path, monkeypatch
+):
+    import mike_trade.research.commands as research
+
+    path, text = _corrected_text(workflow, tmp_path, "pre")
+    path.write_text(text)
+    spec = load_campaign(path)
+    plan = plan_campaign(spec)
+    started = []
+    monkeypatch.setattr(research, "run_experiment_batch", lambda *a, **k: started.append(1))
+    for wrong in ({"slippage_bps": 5}, {"trail_percent": "1.5"}, {"planned_jobs": 800},
+                  {"feed": "sip"}, {"workers": 16}, {"model_directed": False}):
+        with pytest.raises(CampaignError, match="nothing was started"):
+            run_campaign(plan, workers=2, expect=wrong)
+    with pytest.raises(CampaignError, match="unknown expectation"):
+        run_campaign(plan, workers=2, expect={"slippage": 2})
+    assert not started and not spec.run_directory.exists()
+    # the campaign file's own expect block is enforced too
+    path.write_text(text.replace("max_workers: 2\n", "max_workers: 2\nexpect: {slippage_bps: 5}\n"))
+    with pytest.raises(CampaignError, match="slippage_bps"):
+        run_campaign(plan_campaign(load_campaign(path)))
+    assert not started
+
+
+def test_threshold_mode_is_reported_as_not_model_directed(workflow, tmp_path):
+    from mike_trade.modeling.preflight import preflight
+
+    path = campaign_yaml(workflow, directory=tmp_path / "thr")  # fixture pins THRESHOLD mode
+    assert preflight(plan_campaign(load_campaign(path)), workers=1)["model_directed"] is False
+    path, text = _corrected_text(workflow, tmp_path, "dir")
+    path.write_text(text)
+    assert preflight(plan_campaign(load_campaign(path)), workers=1)["model_directed"] is True
+
+
+def test_full_universe_plans_792_jobs_without_any_approval(workflow, tmp_path, monkeypatch):
+    from types import SimpleNamespace
+
+    from mike_trade.research.datasets import HistoricalDatasetRepository
+
+    symbols = ["SPY"] + [f"S{index:02d}" for index in range(99)]
+    universe = workflow["base"] / "universe100.json"
+    universe.write_text(
+        json.dumps({"universe_id": "synthetic100", "symbols": [{"symbol": s} for s in symbols]})
+    )
+    snapshots = [
+        SimpleNamespace(
+            symbol=symbol, feed="iex", adjustment="raw", timeframe="1m",
+            start="2026-01-01T00:00:00+00:00", end="2026-12-31T00:00:00+00:00",
+            acquired_at="2026-10-01T00:00:00+00:00", dataset_id=f"ds-{symbol}",
+        )
+        for symbol in symbols
+    ]
+    monkeypatch.setattr(HistoricalDatasetRepository, "snapshots", lambda self: snapshots)
+    path, text = _corrected_text(workflow, tmp_path, "full")
+    text = text.replace("symbols: [AAA]\n", "").replace(
+        "universe_id: synthetic_v1", "universe_id: synthetic100"
+    )
+    text = text.replace(f"universe_file: {workflow['base'] / 'universe.json'}", f"universe_file: {universe}")
+    path.write_text(text)
+    plan = plan_campaign(load_campaign(path))
+    assert len(plan.jobs) == 792 and len(plan.symbols) == 99
+    assert plan.excluded_reference_symbols == ("SPY",)
+    from mike_trade.modeling.preflight import enforce, preflight
+
+    enforce(
+        preflight(plan, workers=16),
+        {"planned_jobs": 792, "trading_instruments": 99, "configurations": 8,
+         "excluded_reference_instruments": ["SPY"], "workers": 16, "model_directed": True},
+    )
+
+
+def test_shipped_corrected_campaign_file_pins_the_requested_settings():
+    spec = load_campaign(
+        "config/modeling/campaigns/model_strategy_comparison_model_directed_corrected_v1.yaml"
+    )
+    assert spec.execution == {"slippage_bps": "2"}
+    assert spec.protective_stop == {"type": "native_trailing", "trail_percent": "0.5"}
+    assert spec.max_workers == 16 and spec.feed == "iex" and len(spec.configurations) == 8
+    assert spec.end_of_day_close == {"enabled": True, "at": "15:55"}
+    assert spec.starting_capital == "10000" and spec.max_entry_cycles_per_session == 10
+    assert spec.window.start.isoformat() == "2026-08-10T00:00:00+00:00"
+    assert spec.window.end.isoformat() == "2026-09-21T00:00:00+00:00"
+    assert {pin.model_id: pin.model_version for pin in spec.models.values()} == {
+        "xgboost_buy_tb_pooled": "1.0.0",
+        "lightgbm_buy_tb_pooled": "1.0.0",
+        "xgboost_sell_continuation_pooled": "1.0.0",
+        "lightgbm_sell_continuation_pooled": "1.0.0",
+    }
+    assert all(dict(pin.parameters) == {"decision_mode": "MODEL_DIRECTED"} for pin in spec.models.values())
+    assert spec.expect["planned_jobs"] == 792 and spec.expect["workers"] == 16
+
+
 def test_market_crash_gating_blocks_model_entries_in_the_campaign(workflow, tmp_path):
     crash_data = workflow["base"] / "crash-data"
     build_dataset(crash_data, crash=True)

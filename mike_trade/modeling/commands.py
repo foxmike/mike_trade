@@ -82,6 +82,14 @@ def register(subparsers: Any) -> None:
         "--workers", default=None, help="worker processes: integer or auto (default: campaign)"
     )
     backtest.add_argument("--dry-run", action="store_true", help="validate and print the plan")
+    backtest.add_argument(
+        "--expect",
+        action="append",
+        default=[],
+        metavar="KEY=VALUE",
+        help="required effective setting (e.g. slippage_bps=2, planned_jobs=792); a mismatch "
+        "fails the launch before any job starts. Repeatable.",
+    )
     backtest.add_argument("--skip-missing", action="store_true", help="skip symbols lacking data")
     backtest.set_defaults(func=run_backtest)
 
@@ -334,22 +342,35 @@ def run_backtest(args: argparse.Namespace) -> int:
         run_campaign,
     )
 
+    from mike_trade.modeling.preflight import PreflightError, enforce, format_preflight, preflight
+
     try:
+        expectations = dict(_parse_expectation(item) for item in args.expect)
         spec = load_campaign(args.campaign)
         plan = plan_campaign(spec, skip_missing=args.skip_missing)
-    except CampaignError as exc:
+        effective = preflight(plan, workers=args.workers)
+        print(format_preflight(effective), flush=True)
+        enforce(effective, {**spec.expect, **expectations})
+    except (CampaignError, PreflightError) as exc:
         print(f"Campaign refused: {exc}", file=sys.stderr)
         return EXIT_REFUSED
     if args.dry_run:
         _print({"dry_run": True, **plan.summary()})
         return 0
     try:
-        outcome = run_campaign(plan, workers=args.workers)
+        outcome = run_campaign(plan, workers=args.workers, expect=expectations)
     except CampaignError as exc:
         print(f"Campaign refused: {exc}", file=sys.stderr)
         return EXIT_REFUSED
     _print({"run_directory": str(spec.run_directory), **outcome})
     return 0 if outcome["batch"]["failed_count"] == 0 else EXIT_UNHEALTHY
+
+
+def _parse_expectation(item: str) -> tuple[str, str]:
+    key, separator, value = item.partition("=")
+    if not separator or not key.strip():
+        raise CampaignError(f"--expect needs KEY=VALUE, got {item!r}")
+    return key.strip(), value.strip()
 
 
 def run_backtest_compare(args: argparse.Namespace) -> int:

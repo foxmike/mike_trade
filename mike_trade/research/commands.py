@@ -1185,6 +1185,58 @@ def research_default_execution_assumptions() -> dict[str, Any]:
     }
 
 
+def resolve_execution_assumptions(execution: Mapping[str, Any] | None) -> Any:
+    """The simulator assumptions a job runs with: research defaults overlaid by ``execution``.
+
+    Shared by the runner and campaign preflight so the validated values are the executed ones.
+    """
+    from mike_trade.backtest.execution import AmbiguityPolicy, BarFillPolicy, ExecutionAssumptions
+    from mike_trade.domain.trading import OrderType
+
+    assumption_values: dict[str, Any] = research_default_execution_assumptions()
+    allowed_assumptions = set(ExecutionAssumptions.__dataclass_fields__)
+    unexpected = set(execution or {}) - allowed_assumptions
+    if unexpected:
+        raise ValueError(f"unknown execution assumptions: {sorted(unexpected)}")
+    assumption_values.update(execution or {})
+    decimal_fields = {
+        "slippage_bps",
+        "slippage_ticks",
+        "tick_size",
+        "price_quantum",
+        "participation",
+        "quote_size_multiplier",
+        "fee_per_order",
+        "fee_per_share",
+        "fee_bps",
+        "fee_quantum",
+        "quantity_quantum",
+    }
+    for field_name in decimal_fields:
+        if field_name in assumption_values and not isinstance(
+            assumption_values[field_name], Decimal
+        ):
+            assumption_values[field_name] = Decimal(str(assumption_values[field_name]))
+    if isinstance(assumption_values.get("bar_fill_policy"), str):
+        assumption_values["bar_fill_policy"] = BarFillPolicy(assumption_values["bar_fill_policy"])
+    if isinstance(assumption_values.get("ambiguity_policy"), str):
+        assumption_values["ambiguity_policy"] = AmbiguityPolicy(
+            assumption_values["ambiguity_policy"]
+        )
+    for field_name in ("submission_latency", "stop_replace_latency", "max_quote_age"):
+        value = assumption_values.get(field_name)
+        if isinstance(value, (int, float)):
+            assumption_values[field_name] = timedelta(seconds=value)
+        elif isinstance(value, Mapping) and "seconds" in value:
+            assumption_values[field_name] = timedelta(seconds=float(value["seconds"]))
+    if "fractional_order_types" in assumption_values:
+        assumption_values["fractional_order_types"] = frozenset(
+            value if isinstance(value, OrderType) else OrderType(value)
+            for value in assumption_values["fractional_order_types"]
+        )
+    return ExecutionAssumptions(**assumption_values)
+
+
 def _reference_events(
     repo: Any,
     symbols: Sequence[str],
@@ -1466,48 +1518,7 @@ def _run_one(
         clock=clock,
         seed=seed,
     )
-    assumption_values: dict[str, Any] = research_default_execution_assumptions()
-    allowed_assumptions = set(ExecutionAssumptions.__dataclass_fields__)
-    unexpected = set(execution or {}) - allowed_assumptions
-    if unexpected:
-        raise ValueError(f"unknown execution assumptions: {sorted(unexpected)}")
-    assumption_values.update(execution or {})
-    decimal_fields = {
-        "slippage_bps",
-        "slippage_ticks",
-        "tick_size",
-        "price_quantum",
-        "participation",
-        "quote_size_multiplier",
-        "fee_per_order",
-        "fee_per_share",
-        "fee_bps",
-        "fee_quantum",
-        "quantity_quantum",
-    }
-    for field_name in decimal_fields:
-        if field_name in assumption_values and not isinstance(
-            assumption_values[field_name], Decimal
-        ):
-            assumption_values[field_name] = Decimal(str(assumption_values[field_name]))
-    if isinstance(assumption_values.get("bar_fill_policy"), str):
-        assumption_values["bar_fill_policy"] = BarFillPolicy(assumption_values["bar_fill_policy"])
-    if isinstance(assumption_values.get("ambiguity_policy"), str):
-        assumption_values["ambiguity_policy"] = AmbiguityPolicy(
-            assumption_values["ambiguity_policy"]
-        )
-    for field_name in ("submission_latency", "stop_replace_latency", "max_quote_age"):
-        value = assumption_values.get(field_name)
-        if isinstance(value, (int, float)):
-            assumption_values[field_name] = timedelta(seconds=value)
-        elif isinstance(value, Mapping) and "seconds" in value:
-            assumption_values[field_name] = timedelta(seconds=float(value["seconds"]))
-    if "fractional_order_types" in assumption_values:
-        assumption_values["fractional_order_types"] = frozenset(
-            value if isinstance(value, OrderType) else OrderType(value)
-            for value in assumption_values["fractional_order_types"]
-        )
-    assumptions = ExecutionAssumptions(**assumption_values)
+    assumptions = resolve_execution_assumptions(execution)
     sim = HistoricalExecutionSimulator(replay_feed, clock, assumptions)
     explicit_roles = any(
         item is not None
