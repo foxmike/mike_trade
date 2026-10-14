@@ -50,11 +50,7 @@ __all__ = [
     "load_campaign",
     "plan_campaign",
     "run_campaign",
-    "MAX_JOBS_WITHOUT_APPROVAL",
 ]
-
-#: Jobs above this count require ``--approve-large-run`` (a full 100-symbol campaign does).
-MAX_JOBS_WITHOUT_APPROVAL = 50
 
 _ALLOWED_KEYS = {
     "schema_version",
@@ -77,6 +73,7 @@ _ALLOWED_KEYS = {
     "max_entry_cycles_per_session",
     "allow_in_sample",
     "max_workers",
+    "worker_memory_mb",
     "models",
     "configurations",
     "strategy_parameters",
@@ -132,7 +129,8 @@ class CampaignSpec:
     max_entry_cycles_per_session: int
     allow_in_sample: bool
     market_status_enabled: bool
-    max_workers: int
+    max_workers: str | int
+    worker_memory_mb: int
     models: Mapping[str, ModelPin]
     configurations: tuple[CampaignConfiguration, ...]
     strategy_parameters: Mapping[str, Mapping[str, Any]]
@@ -154,6 +152,8 @@ class CampaignPlan:
     dataset_ids: Mapping[str, str]
     reference_dataset_ids: Mapping[str, str]
     jobs: tuple[Any, ...]
+    #: Universe members used as pinned models' market-reference feed, so never traded as targets.
+    excluded_reference_symbols: tuple[str, ...] = ()
 
     def summary(self) -> dict[str, Any]:
         return {
@@ -163,6 +163,7 @@ class CampaignPlan:
             "feed": self.spec.feed,
             "window": [self.spec.window.start.isoformat(), self.spec.window.end.isoformat()],
             "symbols": len(self.symbols),
+            "excluded_reference_symbols": list(self.excluded_reference_symbols),
             "skipped_symbols": dict(self.skipped),
             "configurations": [item.name for item in self.spec.configurations],
             "jobs": len(self.jobs),
@@ -272,7 +273,8 @@ def load_campaign(path: str | Path) -> CampaignSpec:
         max_entry_cycles_per_session=int(raw.get("max_entry_cycles_per_session", 10)),
         allow_in_sample=bool(raw.get("allow_in_sample", False)),
         market_status_enabled=bool(raw.get("market_status_enabled", False)),
-        max_workers=int(raw.get("max_workers", 2)),
+        max_workers=_workers(raw.get("max_workers", "auto")),
+        worker_memory_mb=_positive(raw.get("worker_memory_mb", 1024), "worker_memory_mb"),
         models=models,
         configurations=tuple(configs),
         strategy_parameters={
@@ -281,6 +283,22 @@ def load_campaign(path: str | Path) -> CampaignSpec:
         config_sha256=hashlib.sha256(payload).hexdigest(),
         source=source,
     )
+
+
+def _positive(value: object, name: str) -> int:
+    try:
+        number = int(str(value))
+    except ValueError as exc:
+        raise CampaignError(f"{name} must be a positive integer") from exc
+    if number < 1:
+        raise CampaignError(f"{name} must be a positive integer")
+    return number
+
+
+def _workers(value: object) -> str | int:
+    if str(value).strip().lower() == "auto":
+        return "auto"
+    return _positive(value, "max_workers (a positive integer or 'auto')")
 
 
 def _universe_symbols(spec: CampaignSpec) -> tuple[str, ...]:
@@ -366,6 +384,7 @@ def plan_campaign(spec: CampaignSpec, *, skip_missing: bool = False) -> Campaign
 
     universe = _universe_symbols(spec)
     candidates = tuple(s for s in universe if s not in set(spec.exclude_symbols) | reference)
+    excluded_reference = tuple(s for s in universe if s in reference)
     snapshots = HistoricalDatasetRepository(spec.dataset_root).snapshots()
     dataset_ids: dict[str, str] = {}
     skipped: dict[str, str] = {}
@@ -465,6 +484,7 @@ def plan_campaign(spec: CampaignSpec, *, skip_missing: bool = False) -> Campaign
         dataset_ids,
         reference_ids,
         tuple(jobs),
+        excluded_reference,
     )
 
 
@@ -472,18 +492,12 @@ def run_campaign(
     plan: CampaignPlan,
     *,
     workers: str | int | None = None,
-    approve_large_run: bool = False,
 ) -> dict[str, Any]:
     """Execute the planned jobs on the existing batch runner and write the report set."""
     from mike_trade.modeling.campaign_report import write_campaign_report
     from mike_trade.research.commands import run_experiment_batch
 
     spec = plan.spec
-    if len(plan.jobs) > MAX_JOBS_WITHOUT_APPROVAL and not approve_large_run:
-        raise CampaignError(
-            f"{len(plan.jobs)} jobs exceeds {MAX_JOBS_WITHOUT_APPROVAL}; an operator must "
-            "re-run with --approve-large-run"
-        )
     directory = spec.run_directory
     directory.mkdir(parents=True, exist_ok=True)
     shutil.copyfile(spec.source, directory / "campaign.yaml")  # the exact reproducible input
@@ -497,6 +511,7 @@ def run_campaign(
         results=str(directory),
         batch_file=str(directory / "batch.json"),
         mp_context=multiprocessing.get_context("spawn"),
+        memory_per_worker_bytes=spec.worker_memory_mb * 1024 * 1024,
     )
     paths = write_campaign_report(plan, batch, directory / "report")
     return {"batch": {k: v for k, v in batch.items() if k != "jobs"}, "report": paths}

@@ -15,6 +15,7 @@ from typing import Any
 
 import yaml  # type: ignore[import-untyped]
 
+from mike_trade.host_resources import default_native_threads
 from mike_trade.modeling.adapters.common import (
     ClassBalance,
     ComputeDevice,
@@ -259,8 +260,15 @@ class ModelExperimentConfig:
             raise ValueError("universe file identity does not match experiment universe_id")
         return tuple(dict.fromkeys(str(item["symbol"]).upper() for item in raw.get("symbols", ())))
 
+    def resolved_threads(self) -> int:
+        """``resources.threads``: an explicit count is kept; absent or ``auto`` uses the host."""
+        value = self.resources.get("threads", "auto")
+        if str(value).strip().lower() == "auto":
+            return default_native_threads()
+        return int(str(value))
+
     def adapter_config(self) -> XGBoostTrainingConfig | LightGBMTrainingConfig:
-        threads = int(str(self.resources.get("threads", 4)))
+        threads = self.resolved_threads()
         device = ComputeDevice(str(self.resources.get("device", "cpu")))
         balance = ClassBalance(str(self.hyperparameters.get("class_balance", "balanced")))
         common = {

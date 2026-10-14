@@ -20,6 +20,35 @@ def test_explicit_worker_count_respects_memory_budget(monkeypatch: pytest.Monkey
     assert resolve_worker_count("auto", 10) == 2
 
 
+def test_auto_workers_reserve_cpu_headroom_and_explicit_counts_are_honoured(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    import mike_trade.research.commands as commands
+
+    monkeypatch.setattr(commands, "available_cpu_count", lambda: 72)
+    monkeypatch.setattr(commands, "_available_memory_bytes", lambda: 256 * 1024**3)
+    assert resolve_worker_count("auto", 800) == 63
+    assert resolve_worker_count(40, 800) == 40
+    assert resolve_worker_count(200, 800) == 72  # never beyond the CPUs
+    assert resolve_worker_count("auto", 800, memory_per_worker_bytes=8 * 1024**3) == 32
+    assert resolve_worker_count(1, 800) == 1
+
+
+def test_batch_children_inherit_single_thread_native_pools(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    import os
+
+    from mike_trade.research.commands import _single_threaded_workers
+
+    monkeypatch.delenv("OMP_NUM_THREADS", raising=False)
+    monkeypatch.setenv("OPENBLAS_NUM_THREADS", "4")  # an operator's value is kept
+    with _single_threaded_workers():
+        assert os.environ["OMP_NUM_THREADS"] == "1"
+        assert os.environ["OPENBLAS_NUM_THREADS"] == "4"
+    assert "OMP_NUM_THREADS" not in os.environ
+
+
 @pytest.mark.parametrize(
     "spec",
     [

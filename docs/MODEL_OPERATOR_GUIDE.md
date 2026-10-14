@@ -107,7 +107,7 @@ the configuration file. `make model-prepare`/`model-train` call
   bytes resolved differ. Without `--lock` the newest matching snapshots are used and recorded in the
   manifest (still reproducible, but a new snapshot could change the next run).
 * Training is a foreground offline process. Do not run it while the R730 is acquiring SIP data at full
-  tilt; keep `resources.threads` ≤ half the cores. Output summary: artifact, manifest and evaluation paths.
+  tilt; `resources.threads: auto` (or an explicit count) sizes the native pool; on a shared host set a lower number. Output summary: artifact, manifest and evaluation paths.
 
 ## 5. Evaluating a model
 
@@ -141,7 +141,7 @@ monitor, the trade ledger and equity/drawdown accounting are all the existing co
 chooses the inputs; nothing is retrained and no model sees the test period.
 
 Shipped campaigns: `model_strategy_comparison_pilot_v1.yaml` (5 symbols × 8 configurations = 40 jobs) and
-`model_strategy_comparison_v1.yaml` (the full 100-symbol universe, 800 jobs; requires `APPROVE_LARGE_RUN=1`).
+`model_strategy_comparison_v1.yaml` (the full 100-symbol universe: 99 tradable symbols × 8 configurations = 792 jobs; `SPY` is the models' market-reference feed and is never a trade target — the plan lists it under `excluded_reference_symbols`).
 Configurations: **A** XGBoost BUY + trailing stop; **B** LightGBM BUY + trailing stop; **C** XGBoost BUY +
 XGBoost SELL; **D** LightGBM BUY + LightGBM SELL; **E** XGBoost BUY + LightGBM SELL; **F** technical BUY
 (`vwap_bounce`) + model SELL; **G** model BUY + technical SELL (`vwap_breakdown`); **H** the technical
@@ -150,14 +150,14 @@ strategy id; add configurations freely (including several BUYs or SELLs) — not
 
 ```bash
 make model-backtest CAMPAIGN=config/modeling/campaigns/model_strategy_comparison_pilot_v1.yaml DRY_RUN=1   # plan only
-make model-backtest CAMPAIGN=config/modeling/campaigns/model_strategy_comparison_pilot_v1.yaml MODEL_WORKERS=2
+make model-backtest CAMPAIGN=config/modeling/campaigns/model_strategy_comparison_pilot_v1.yaml MODEL_WORKERS=auto   # optional; default is the campaign's max_workers
 ```
 
 Safety checks happen *before* any job runs: the window must avoid the holdout; the feed must match every
 model and snapshot; each model is pinned by id, version and its checksum (resolved from the immutable
 repository); a window overlapping a model's training or tuning data is refused unless `allow_in_sample: true`
 (and is labelled `in_sample` everywhere); missing symbol coverage is an error unless `SKIP_MISSING=1` (then
-listed); more than 50 jobs need `APPROVE_LARGE_RUN=1`; workers default to 2 and are capped by CPU and memory.
+listed). There is no job-count limit and no approval flag: a campaign of 8,000 jobs starts like one of 8. `max_workers` (campaign YAML) or `MODEL_WORKERS` is `auto` or an integer; `auto` uses the available CPUs minus ~1/8 for co-tenants, and any count is lowered only if free memory cannot hold that many workers (`worker_memory_mb`, default 1024 each). Workers start with one-thread OpenMP/BLAS pools so N processes do not oversubscribe the host.
 Jobs run in `spawn`ed processes (a forked child of a process that used OpenMP is unsafe).
 
 **Output** — `research/model_campaigns/<campaign_id>/<sha12>/`: `campaign.yaml` (the exact bytes), `plan.json`,
@@ -267,9 +267,11 @@ the other three.
   times that inside the native library; `model-prepare` prints the estimate for your configuration. Feature
   generation holds one symbol's examples in RAM at a time (hundreds of MB), so peak RAM is dominated by one
   symbol, not by the universe.
-* Defaults are CPU with `threads` ≤ half the cores. Training is one process; hyperparameter candidates run
-  sequentially (no nested pools). `model-backtest` uses 2 workers by default and caps by CPU/memory.
-  Inference in the engine is single-threaded per prediction.
+* Defaults are CPU. `resources.threads` is an integer or `auto` (the default: available CPUs minus ~1/8). Training is
+  one process whose native library owns those threads; hyperparameter candidates run sequentially (no nested
+  pools) and `model-prepare` builds features one symbol at a time on one core — the main single-threaded stage.
+  `model-backtest` defaults to `auto` worker processes, capped by CPU and free memory. Inference in the engine is
+  single-threaded per prediction.
 * `resources.device: gpu` opts in to the library GPU path where the installed build supports it; CPU
   results are the reference. Reproducibility across devices and thread counts is not bit-guaranteed — the
   immutable artifact, not a retrain, is the source of truth.

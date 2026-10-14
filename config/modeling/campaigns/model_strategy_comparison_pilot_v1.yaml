@@ -1,7 +1,7 @@
 schema_version: 1
 campaign_id: model_strategy_comparison_pilot_v1
 description: >
-  Pilot of the A-H comparison on five liquid symbols (40 jobs, no approval flag needed).
+  Pilot of the A-H comparison on five liquid symbols (5 symbols x 8 configurations = 40 jobs).
 feed: iex
 universe_file: config/research_universe_100_v1.json
 universe_id: us-liquid-research-100-v1
@@ -11,10 +11,10 @@ model_root: research/models
 output_root: research/model_campaigns
 seed: 271828
 starting_capital: "10000"
-max_workers: 2            # keep small on the R730; the batch runner also caps by CPU and memory
+max_workers: auto         # CPUs minus a co-tenant reserve, lowered if free memory (worker_memory_mb each) is short
+worker_memory_mb: 1024
 max_entry_cycles_per_session: 10
 market_status_enabled: true   # replay SPY, QQQ and IWM; CRASH/WARNING gate new entries as in SHADOW
-market_status_enabled: true   # replay SPY/QQQ/IWM; CRASH/WARNING states gate new entries as in SHADOW
 
 # The window is the models' own evaluation partition: after every fit, early-stopping and
 # calibration range in config/modeling/*.yaml and before the reserved final holdout

@@ -435,7 +435,6 @@ CAMPAIGN ?= config/modeling/campaigns/model_strategy_comparison_v1.yaml
 REPORTS ?=
 MODEL_WORKERS ?=
 DRY_RUN ?=
-APPROVE_LARGE_RUN ?=
 SKIP_MISSING ?=
 STAGE ?=
 APPROVED_BY ?=
@@ -519,7 +518,7 @@ model-report: ## Write the JSON/Markdown/CSV report of one model (MODEL_ID=... M
 	$(CLI) model-report --root "$(MODEL_ROOT)" --model-id "$(MODEL_ID)" --version "$(MODEL_VERSION)" $(OUT_DIR_FLAG)
 
 model-backtest: ## Run a model backtest campaign (CAMPAIGN=...yaml [DRY_RUN=1] [MODEL_WORKERS=N])
-	$(CLI) model-backtest --campaign "$(CAMPAIGN)" $(if $(MODEL_WORKERS),--workers "$(MODEL_WORKERS)") $(if $(DRY_RUN),--dry-run) $(if $(SKIP_MISSING),--skip-missing) $(if $(APPROVE_LARGE_RUN),--approve-large-run)
+	$(CLI) model-backtest --campaign "$(CAMPAIGN)" $(if $(MODEL_WORKERS),--workers "$(MODEL_WORKERS)") $(if $(DRY_RUN),--dry-run) $(if $(SKIP_MISSING),--skip-missing)
 
 model-backtest-compare: ## Compare campaign reports (REPORTS=a/report.json,b/report.json [OUT=file])
 	$(CLI) model-backtest-compare --reports "$(REPORTS)" $(OUT_FLAG)

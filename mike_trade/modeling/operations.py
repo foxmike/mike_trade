@@ -94,7 +94,7 @@ def prepare_training_lock(
         "resources": {
             "fit_matrix_disk_bytes": cells * _CELL_BYTES,
             "estimated_training_memory_bytes": cells * _CELL_BYTES * _TRAINING_COPY_FACTOR,
-            "threads": int(str(config.resources.get("threads", 4))),
+            "threads": config.resolved_threads(),
             "device": str(config.resources.get("device", "cpu")),
             "note": (
                 "Disk-backed matrices are memory-mapped; the estimate is the native library's "

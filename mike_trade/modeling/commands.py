@@ -78,12 +78,11 @@ def register(subparsers: Any) -> None:
         "model-backtest", help="run a model-driven backtest campaign on the research runner"
     )
     backtest.add_argument("--campaign", required=True, help="versioned campaign YAML")
-    backtest.add_argument("--workers", default=None, help="worker processes (default: campaign)")
+    backtest.add_argument(
+        "--workers", default=None, help="worker processes: integer or auto (default: campaign)"
+    )
     backtest.add_argument("--dry-run", action="store_true", help="validate and print the plan")
     backtest.add_argument("--skip-missing", action="store_true", help="skip symbols lacking data")
-    backtest.add_argument(
-        "--approve-large-run", action="store_true", help="allow more than 50 jobs"
-    )
     backtest.set_defaults(func=run_backtest)
 
     compare_runs = subparsers.add_parser(
@@ -345,7 +344,7 @@ def run_backtest(args: argparse.Namespace) -> int:
         _print({"dry_run": True, **plan.summary()})
         return 0
     try:
-        outcome = run_campaign(plan, workers=args.workers, approve_large_run=args.approve_large_run)
+        outcome = run_campaign(plan, workers=args.workers)
     except CampaignError as exc:
         print(f"Campaign refused: {exc}", file=sys.stderr)
         return EXIT_REFUSED

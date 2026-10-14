@@ -625,13 +625,60 @@ def test_campaign_refuses_unsafe_inputs_before_running_anything(workflow, tmp_pa
         plan_campaign(load_campaign(bad_side))
 
 
-def test_large_campaigns_need_explicit_approval(workflow, tmp_path, monkeypatch):
-    import mike_trade.modeling.campaign as module
+def test_large_campaign_runs_without_approval_and_forwards_resources(
+    workflow, tmp_path, monkeypatch
+):
+    import argparse
 
-    plan = plan_campaign(load_campaign(campaign_yaml(workflow, directory=tmp_path / "big")))
-    monkeypatch.setattr(module, "MAX_JOBS_WITHOUT_APPROVAL", 3)
-    with pytest.raises(CampaignError, match="approve-large-run"):
-        run_campaign(plan)
+    import mike_trade.modeling.campaign_report as report_module
+    import mike_trade.research.commands as research
+
+    configs = "".join(
+        f"  C{index:02d}: {{buy: [vwap_bounce], sell: [vwap_breakdown]}}\n" for index in range(60)
+    )
+    plan = plan_campaign(
+        load_campaign(campaign_yaml(workflow, directory=tmp_path / "big", configs=configs))
+    )
+    assert len(plan.jobs) == 60
+    seen: dict[str, object] = {}
+
+    def fake_batch(jobs, **kwargs):
+        seen.update(kwargs, count=len(jobs))
+        return {"jobs": [], "failed_count": 0, "completed_count": len(jobs)}
+
+    monkeypatch.setattr(research, "run_experiment_batch", fake_batch)
+    monkeypatch.setattr(report_module, "write_campaign_report", lambda *a, **k: {})
+    outcome = run_campaign(plan)
+    assert outcome["batch"]["completed_count"] == 60 and seen["count"] == 60
+    assert seen["workers"] == 2  # the campaign file's explicit max_workers
+    assert seen["memory_per_worker_bytes"] == 1024 * 1024 * 1024
+    run_campaign(plan, workers="auto")
+    assert seen["workers"] == "auto"
+
+    parser = argparse.ArgumentParser()
+    from mike_trade.modeling.commands import register
+
+    register(parser.add_subparsers())
+    with pytest.raises(SystemExit):
+        parser.parse_args(["model-backtest", "--campaign", "x.yaml", "--approve-large-run"])
+
+
+def test_campaign_workers_default_to_auto_and_validate(workflow, tmp_path):
+    text = campaign_yaml(workflow, directory=tmp_path / "w").read_text()
+    path = tmp_path / "w" / "auto.yaml"
+    path.write_text(text.replace("max_workers: 2\n", ""))
+    assert load_campaign(path).max_workers == "auto"
+    path.write_text(text.replace("max_workers: 2", "max_workers: 0"))
+    with pytest.raises(CampaignError, match="max_workers"):
+        load_campaign(path)
+
+
+def test_reference_symbols_are_reported_not_traded(workflow, tmp_path):
+    path = campaign_yaml(workflow, directory=tmp_path / "ref")
+    path.write_text(path.read_text().replace("symbols: [AAA]", "symbols: [AAA, SPY]"))
+    plan = plan_campaign(load_campaign(path))
+    assert plan.summary()["excluded_reference_symbols"] == ["SPY"]
+    assert "SPY" not in plan.symbols and {job.symbol for job in plan.jobs} == {"AAA"}
 
 
 def test_market_crash_gating_blocks_model_entries_in_the_campaign(workflow, tmp_path):

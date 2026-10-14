@@ -10,6 +10,7 @@ from typing import Any
 
 import numpy as np
 
+from mike_trade.host_resources import default_native_threads
 from mike_trade.modeling.calibration import ProbabilityCalibrator
 from mike_trade.modeling.contracts import LearningTask, ModelPredictor
 
@@ -69,7 +70,7 @@ class XGBoostTrainingConfig:
     selected_feature_names: tuple[str, ...]
     class_labels: tuple[str, ...] = ()
     device: ComputeDevice = ComputeDevice.CPU
-    threads: int = 4
+    threads: int = field(default_factory=default_native_threads)
     num_boost_round: int = 300
     early_stopping_rounds: int = 25
     max_depth: int = 6
@@ -123,7 +124,7 @@ class LightGBMTrainingConfig:
     selected_feature_names: tuple[str, ...]
     class_labels: tuple[str, ...] = ()
     device: ComputeDevice = ComputeDevice.CPU
-    threads: int = 4
+    threads: int = field(default_factory=default_native_threads)
     num_boost_round: int = 300
     early_stopping_rounds: int = 25
     num_leaves: int = 31

@@ -5,13 +5,14 @@ from __future__ import annotations
 import argparse
 import asyncio
 import concurrent.futures
+import contextlib
 import hashlib
 import json
 import os
 import tempfile
 import time
 import traceback
-from collections.abc import Iterable, Mapping, Sequence
+from collections.abc import Iterable, Iterator, Mapping, Sequence
 from concurrent.futures import FIRST_COMPLETED, ProcessPoolExecutor, wait
 from dataclasses import asdict, dataclass, replace
 from datetime import UTC, datetime, time as dt_time, timedelta
@@ -20,6 +21,11 @@ from functools import lru_cache
 from pathlib import Path
 from typing import Any
 
+from mike_trade.host_resources import (
+    auto_worker_ceiling,
+    available_cpu_count,
+    available_memory_bytes as _available_memory_bytes,
+)
 from mike_trade.research.datasets import HistoricalDatasetRepository
 
 
@@ -137,72 +143,67 @@ class ExperimentSpec:
                 raise ValueError("end_of_day_close.at must be HH:MM before 16:00") from exc
 
 
-def available_cpu_count() -> int:
-    """Return CPUs available to this process, honoring affinity and cgroup quota."""
-    affinity = (
-        len(os.sched_getaffinity(0)) if hasattr(os, "sched_getaffinity") else (os.cpu_count() or 1)
-    )
-    quota_count = affinity
-    for quota_path in ("/sys/fs/cgroup/cpu.max", "/sys/fs/cgroup/cpu/cpu.cfs_quota_us"):
-        try:
-            values = Path(quota_path).read_text().strip().split()
-            if quota_path.endswith("cpu.max"):
-                quota, period = values
-            else:
-                quota, period = (
-                    values[0],
-                    Path("/sys/fs/cgroup/cpu/cpu.cfs_period_us").read_text().strip(),
-                )
-            if quota != "max" and int(quota) > 0:
-                quota_count = max(1, int((int(quota) + int(period) - 1) // int(period)))
-                break
-        except (OSError, ValueError, IndexError):
-            continue
-    return max(1, min(affinity, quota_count))
+#: Default working-set estimate for one experiment process (override per batch).
+DEFAULT_WORKER_MEMORY_BYTES = 512 * 1024 * 1024
 
 
-def _available_memory_bytes() -> int | None:
-    for path in ("/sys/fs/cgroup/memory.max", "/sys/fs/cgroup/memory/memory.limit_in_bytes"):
-        try:
-            raw = Path(path).read_text().strip()
-            if raw != "max":
-                limit = int(raw)
-                if limit < (1 << 60):
-                    current_path = (
-                        "/sys/fs/cgroup/memory.current"
-                        if path.endswith("memory.max")
-                        else "/sys/fs/cgroup/memory/memory.usage_in_bytes"
-                    )
-                    used = int(Path(current_path).read_text().strip())
-                    return max(0, limit - used)
-        except (OSError, ValueError):
-            pass
-    try:
-        pages = os.sysconf("SC_AVPHYS_PAGES")
-        page_size = os.sysconf("SC_PAGE_SIZE")
-        return int(pages * page_size)
-    except (ValueError, OSError, AttributeError):
-        return None
+def resolve_worker_count(
+    requested: str | int,
+    job_count: int,
+    *,
+    memory_per_worker_bytes: int = DEFAULT_WORKER_MEMORY_BYTES,
+) -> int:
+    """Pick the process count: ``auto`` or an explicit value, bounded by real resources.
 
-
-def resolve_worker_count(requested: str | int, job_count: int) -> int:
+    ``auto`` uses the CPUs minus a small co-tenant reserve; an explicit count is honoured up to
+    the CPUs available.  Both are lowered only when free memory cannot hold that many workers.
+    """
     if job_count < 1:
         raise ValueError("a batch must contain at least one experiment")
+    if memory_per_worker_bytes < 1:
+        raise ValueError("memory_per_worker_bytes must be positive")
     cpu_limit = available_cpu_count()
     available_memory = _available_memory_bytes()
     memory_limit = (
-        cpu_limit if available_memory is None else max(1, available_memory // (512 * 1024 * 1024))
+        cpu_limit
+        if available_memory is None
+        else max(1, available_memory // memory_per_worker_bytes)
     )
-    resource_limit = min(cpu_limit, memory_limit)
     if str(requested).lower() == "auto":
-        return max(1, min(resource_limit, job_count))
+        return max(1, min(auto_worker_ceiling(cpu_limit), memory_limit, job_count))
     try:
         workers = int(requested)
     except (TypeError, ValueError) as exc:
         raise ValueError("--workers must be a positive integer or 'auto'") from exc
     if workers < 1:
         raise ValueError("--workers must be at least 1")
-    return min(workers, resource_limit, job_count)
+    return min(workers, cpu_limit, memory_limit, job_count)
+
+
+_NATIVE_THREAD_VARIABLES = (
+    "OMP_NUM_THREADS",
+    "OPENBLAS_NUM_THREADS",
+    "MKL_NUM_THREADS",
+    "NUMEXPR_NUM_THREADS",
+    "VECLIB_MAXIMUM_THREADS",
+)
+
+
+@contextlib.contextmanager
+def _single_threaded_workers() -> Iterator[None]:
+    """Children inherit one-thread native pools: parallelism comes from the process count.
+
+    Without this every worker's OpenMP/BLAS runtime would start one thread per CPU and N workers
+    would oversubscribe the host N-fold.  A value the operator already exported is kept.
+    """
+    added = [name for name in _NATIVE_THREAD_VARIABLES if name not in os.environ]
+    for name in added:
+        os.environ[name] = "1"
+    try:
+        yield
+    finally:
+        for name in added:
+            os.environ.pop(name, None)
 
 
 def run_experiment_batch(
@@ -213,6 +214,7 @@ def run_experiment_batch(
     results: str,
     batch_file: str | None = None,
     mp_context: Any | None = None,
+    memory_per_worker_bytes: int = DEFAULT_WORKER_MEMORY_BYTES,
 ) -> dict[str, Any]:
     """Bounded process coordinator; each child invokes the existing runner.
 
@@ -242,11 +244,15 @@ def run_experiment_batch(
                 )
         resolved_jobs.append(job)
     jobs = resolved_jobs
-    selected_workers = resolve_worker_count(workers, len(jobs))
+    selected_workers = resolve_worker_count(
+        workers, len(jobs), memory_per_worker_bytes=memory_per_worker_bytes
+    )
     started = time.monotonic()
     completed: list[dict[str, Any]] = []
     pending_specs = iter(enumerate(jobs))
     in_flight: dict[concurrent.futures.Future[dict[str, Any]], int] = {}
+    thread_scope = _single_threaded_workers()
+    thread_scope.__enter__()
     pool = ProcessPoolExecutor(max_workers=selected_workers, mp_context=mp_context)
     try:
 
@@ -300,6 +306,8 @@ def run_experiment_batch(
         raise
     else:
         pool.shutdown(wait=True)
+    finally:
+        thread_scope.__exit__(None, None, None)
 
     completed.sort(key=lambda row: row["job_index"])
     elapsed = time.monotonic() - started
