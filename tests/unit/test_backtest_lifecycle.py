@@ -49,14 +49,14 @@ def _flat(price: str = "100") -> Bar:
     return (price, price, price, price)
 
 
-def _events(symbol: str, bars: list[Bar]) -> list[ReplayEvent]:
+def _events(symbol: str, bars: list[Bar], volumes: dict[int, str] | None = None) -> list[ReplayEvent]:
     events = []
     for index, (o, h, low, c) in enumerate(bars):
         start = OPEN + index * MIN
         events.append(
             ReplayEvent.bar(
                 Candle(symbol, Timeframe.M1, start, start + MIN, D(o), D(h), D(low), D(c),
-                       D("100000"), FEED)
+                       D((volumes or {}).get(index, "100000")), FEED)
             )
         )
     return events
@@ -94,8 +94,9 @@ def _run_sync(
     config: dict | None = None,
     result_dir: Path,
     seed: int = 3,
+    volumes: dict[int, str] | None = None,
 ) -> BacktestResult:
-    events = [e for sym, bars in bars_by_symbol.items() for e in _events(sym, bars)]
+    events = [e for sym, bars in bars_by_symbol.items() for e in _events(sym, bars, volumes)]
     clock = ReplayClock(OPEN)
     feed = HistoricalReplayFeed(events, PROV, clock=clock, seed=seed)
     sim = HistoricalExecutionSimulator(feed, clock, assumptions or ExecutionAssumptions())
@@ -357,6 +358,58 @@ def test_stop_covers_the_whole_position_through_partial_entry_fills(tmp_path):
     sells = _fills(result, "SELL")
     assert sum(s["quantity"] for s in sells) == D("25")  # the stop covered every share
     assert all(s["exit_reason"] == "PROTECTIVE_STOP" for s in sells)
+
+
+def test_same_bar_partial_entry_and_stop_rearms_confirmed_remainder(tmp_path):
+    bars = (
+        _quiet(4)
+        + [("100", "100", "97", "98"), ("98", "98", "97", "97.5")]
+        + [_flat("97.5")] * 3
+    )
+    result = _run_sync(
+        {"AAA": bars},
+        ("buy_alpha",),
+        params={"buy_alpha": {"fire_at": 3}},
+        assumptions=ExecutionAssumptions(participation=D("0.002")),  # 200 shares per bar
+        quantity="327",
+        config={"protective_stop": {"type": "fixed", "stop_percent": "2"}},
+        result_dir=tmp_path,
+    )
+
+    # On the second entry bar, the remaining 127 BUY shares fill before the old
+    # protection consumes the bar's remaining 73-share liquidity.  Re-protection
+    # must use the simulator-confirmed 254 shares while lifecycle bookkeeping catches up.
+    assert [fill["quantity"] for fill in _fills(result, "BUY")] == [D("200"), D("127")]
+    sells = _fills(result, "SELL")
+    assert sells[0]["quantity"] == D("73")
+    assert sum(fill["quantity"] for fill in sells) == D("327")
+    assert all(fill["exit_reason"] == "PROTECTIVE_STOP" for fill in sells)
+
+
+def test_same_bar_entry_remainder_and_full_stop_fill_reprotects_confirmed_holdings(tmp_path):
+    # The campaign failure ("SELL quantity 327 exceeds held 227"): 100 shares are held and
+    # fully protected; on the next bar the remaining 227 BUY shares fill and then the
+    # protective stop fills completely.  The simulator has committed both fills (held 227)
+    # before the lifecycle sees the BUY, whose stale local quantity of 327 once sized the
+    # replacement stop.
+    bars = _quiet(4) + [("100", "100", "97", "97.5")] + [_flat("97.5")] * 3
+    result = _run_sync(
+        {"AAA": bars},
+        ("buy_alpha",),
+        params={"buy_alpha": {"fire_at": 3}},
+        assumptions=ExecutionAssumptions(participation=D("0.002")),
+        quantity="327",
+        config={"protective_stop": {"type": "fixed", "stop_percent": "2"}},
+        result_dir=tmp_path,
+        volumes={3: "50000", 4: "200000"},  # participation caps of 100, then 400 shares
+    )
+
+    assert [fill["quantity"] for fill in _fills(result, "BUY")] == [D("100"), D("227")]
+    sells = _fills(result, "SELL")
+    assert sells[0]["quantity"] == D("100")  # the original stop, filled in full
+    assert all(fill["exit_reason"] == "PROTECTIVE_STOP" for fill in sells)
+    assert sum(fill["quantity"] for fill in sells) == D("327")  # re-protected exactly 227
+    assert len(result.cycles) == 1 and result.cycles[0]["closed_at"] is not None
 
 
 def test_initial_stop_can_exit_on_the_entry_fill_candle(tmp_path):

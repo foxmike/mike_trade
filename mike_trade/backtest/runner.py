@@ -1151,6 +1151,12 @@ class BacktestRunner:
         async def arm_protection(symbol: str, reference: Decimal) -> _Protection | None:
             """Cover the held quantity with the configured stop (post-fill, GTC)."""
             nonlocal protection_count
+            # ``process_event`` commits every fill for one market event before returning
+            # them to the lifecycle.  While that fill list is being consumed, the local
+            # quantity can therefore temporarily precede a later exit in the same list.
+            # Size protection from the simulator's already-confirmed position so a partial
+            # entry followed by a same-bar stop cannot re-arm an oversized SELL order.
+            confirmed_quantity = self.execution.held_quantity(symbol)
             held = protections.get(symbol)
             if held is not None and held.policy.kind is ProtectionKind.FIXED_THEN_TRAILING_STOP:
                 # Re-protecting (e.g. an exit lapsed) keeps the policy fixed at the original fill.
@@ -1158,16 +1164,19 @@ class BacktestRunner:
             else:
                 resolved = michelle_policy(symbol, reference)
             active_spec = resolved[0] if resolved is not None else stop_spec
-            if active_spec is None or quantities[symbol] <= ZERO:
+            if active_spec is None or confirmed_quantity <= ZERO:
                 return None
             cycle_id = str(open_cycles[symbol]["cycle_id"])
             current = protections.get(symbol)
             if current is not None and await order_is_open(current.order_id):
-                if (await self.execution.get_order(current.order_id)).quantity != quantities[
-                    symbol
-                ]:
+                current_order = await self.execution.get_order(current.order_id)
+                assert current_order is not None
+                # Replacement quantity is the order's lifetime total.  Preserve fills
+                # already received and cover the entire confirmed remainder.
+                target_quantity = current_order.filled_quantity + confirmed_quantity
+                if current_order.quantity != target_quantity:
                     await self.execution.replace_order(
-                        current.order_id, quantity=quantities[symbol]
+                        current.order_id, quantity=target_quantity
                     )
                 return current
             entry_reference = current.entry_reference if current is not None else reference
@@ -1191,7 +1200,7 @@ class BacktestRunner:
                 purpose=OrderPurpose.PROTECTIVE_STOP,
                 time_in_force=TimeInForce.GTC,
                 created_at=self.clock.now(),
-                quantity=quantities[symbol],
+                quantity=confirmed_quantity,
             )
             if policy.kind is ProtectionKind.BROKER_TRAILING_STOP:
                 intent = OrderIntent(

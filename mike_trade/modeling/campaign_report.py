@@ -271,9 +271,15 @@ def build_campaign_report(plan: CampaignPlan, batch: Mapping[str, Any]) -> dict[
         if record is None or record.get("status") != "completed":
             failures.append(
                 {
+                    "job_index": index,
+                    "job_id": (record or {}).get("job_id"),
                     "configuration": name,
                     "symbol": job.symbol,
+                    "exception_type": (record or {}).get("exception_type")
+                    or (record or {}).get("error_type"),
                     "error": (record or {}).get("error", "no result"),
+                    "traceback": (record or {}).get("traceback"),
+                    "timestamp": (record or {}).get("timestamp"),
                 }
             )
             continue

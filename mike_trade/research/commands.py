@@ -248,12 +248,22 @@ def run_experiment_batch(
         workers, len(jobs), memory_per_worker_bytes=memory_per_worker_bytes
     )
     started = time.monotonic()
+    output = Path(batch_file) if batch_file else Path(results) / "batch-results.json"
+    output.parent.mkdir(parents=True, exist_ok=True)
+    batch_started_at = datetime.now(UTC)
+    failure_log = output.with_name(
+        f"{output.stem}.failures.{batch_started_at.strftime('%Y%m%dT%H%M%SZ')}-{os.getpid()}.jsonl"
+    )
     completed: list[dict[str, Any]] = []
     pending_specs = iter(enumerate(jobs))
     in_flight: dict[concurrent.futures.Future[dict[str, Any]], int] = {}
     thread_scope = _single_threaded_workers()
     thread_scope.__enter__()
-    pool = ProcessPoolExecutor(max_workers=selected_workers, mp_context=mp_context)
+    pool = (
+        ProcessPoolExecutor(max_workers=selected_workers)
+        if mp_context is None
+        else ProcessPoolExecutor(max_workers=selected_workers, mp_context=mp_context)
+    )
     try:
 
         def submit_next() -> bool:
@@ -277,14 +287,36 @@ def run_experiment_batch(
                     result["job_index"] = index
                     completed.append(result)
                 except BaseException as exc:
-                    completed.append(
-                        {
-                            "job_index": index,
-                            "status": "failed",
-                            "error_type": type(exc).__name__,
-                            "error": str(exc),
-                            "traceback": "".join(traceback.format_exception(exc))[-12000:],
-                        }
+                    spec = jobs[index]
+                    failure = {
+                        "job_index": index,
+                        "job_id": hashlib.sha256(
+                            json.dumps(asdict(spec), sort_keys=True, default=str).encode()
+                        ).hexdigest(),
+                        "symbol": spec.symbol.upper(),
+                        "strategy_configuration": spec.strategy,
+                        "status": "failed",
+                        "exception_type": type(exc).__name__,
+                        "exception_message": str(exc),
+                        "traceback": "".join(traceback.format_exception(exc))[-12000:],
+                        "timestamp": datetime.now(UTC).isoformat(),
+                    }
+                    # Keep the historical batch/report field names while adding the complete,
+                    # self-describing failure record.
+                    failure["error_type"] = failure["exception_type"]
+                    failure["error"] = failure["exception_message"]
+                    with failure_log.open("a", encoding="utf-8") as stream:
+                        stream.write(json.dumps(failure, sort_keys=True, default=str) + "\n")
+                        stream.flush()
+                        os.fsync(stream.fileno())
+                    completed.append(failure)
+                    print(
+                        f"research failure job_index={index} job_id={failure['job_id']} "
+                        f"symbol={failure['symbol']} "
+                        f"configuration={failure['strategy_configuration']} "
+                        f"{failure['exception_type']}: {failure['exception_message']} "
+                        f"failure_log={failure_log}",
+                        flush=True,
                     )
                 counts = {
                     state: sum(row["status"] == state for row in completed)
@@ -323,10 +355,9 @@ def run_experiment_batch(
         "throughput_experiments_per_second": round(successes / elapsed, 4) if elapsed else 0,
         "completed_count": successes,
         "failed_count": failures,
+        "failure_log": str(failure_log) if failures else None,
         "jobs": completed,
     }
-    output = Path(batch_file) if batch_file else Path(results) / "batch-results.json"
-    output.parent.mkdir(parents=True, exist_ok=True)
     output.write_text(json.dumps(batch, sort_keys=True, indent=2, default=str) + "\n")
     print(json.dumps({key: value for key, value in batch.items() if key != "jobs"}, sort_keys=True))
     print(f"batch results: {output}")

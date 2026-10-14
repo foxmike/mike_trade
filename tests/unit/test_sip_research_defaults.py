@@ -1,8 +1,11 @@
 from __future__ import annotations
 
 import argparse
+import concurrent.futures
+import json
 from datetime import UTC, date, datetime
 from decimal import Decimal
+from pathlib import Path
 from typing import Any
 from unittest.mock import MagicMock
 
@@ -180,8 +183,6 @@ def test_batch_snapshot_resolution_iex_vs_sip(monkeypatch: pytest.MonkeyPatch, t
             "run_id": "test-run",
         }
 
-    import concurrent.futures
-
     monkeypatch.setattr(
         "mike_trade.research.commands.ProcessPoolExecutor",
         concurrent.futures.ThreadPoolExecutor,
@@ -208,6 +209,55 @@ def test_batch_snapshot_resolution_iex_vs_sip(monkeypatch: pytest.MonkeyPatch, t
     # Default job resolved to iex snapshot
     assert executed_jobs[2]["dataset_id"] == "snap-iex-1"
     assert executed_jobs[2]["feed"] is None
+
+
+def test_batch_persists_and_prints_structured_job_failure_immediately(
+    monkeypatch: pytest.MonkeyPatch, tmp_path: Any, capsys: pytest.CaptureFixture[str]
+) -> None:
+    snapshot = _make_snapshot("iex", dataset_id="snap-iex-failure")
+    repo_mock = MagicMock(spec=HistoricalDatasetRepository)
+    repo_mock.snapshots.return_value = [snapshot]
+    monkeypatch.setattr(
+        "mike_trade.research.commands.HistoricalDatasetRepository", lambda root: repo_mock
+    )
+    monkeypatch.setattr(
+        "mike_trade.research.commands.ProcessPoolExecutor",
+        concurrent.futures.ThreadPoolExecutor,
+    )
+
+    def fail(job_data: dict[str, Any], root: str, results: str) -> dict[str, Any]:
+        raise ValueError("original worker failure")
+
+    monkeypatch.setattr("mike_trade.research.commands._execute_experiment", fail)
+    batch_file = tmp_path / "batch.json"
+    result = run_experiment_batch(
+        [
+            ExperimentSpec(
+                "IBM",
+                "vwap_bounce",
+                "2026-07-09T00:00:00Z",
+                "2026-10-09T00:00:00Z",
+                dataset_id=snapshot.dataset_id,
+                feed="iex",
+            )
+        ],
+        workers=1,
+        root=str(tmp_path),
+        results=str(tmp_path / "results"),
+        batch_file=str(batch_file),
+    )
+
+    failure_path = Path(str(result["failure_log"]))
+    row = json.loads(failure_path.read_text())
+    assert row["symbol"] == "IBM"
+    assert row["strategy_configuration"] == "vwap_bounce"
+    assert row["exception_type"] == "ValueError"
+    assert row["exception_message"] == "original worker failure"
+    assert "ValueError: original worker failure" in row["traceback"]
+    assert row["timestamp"] and len(row["job_id"]) == 64
+    output = capsys.readouterr().out
+    assert "research failure job_index=0" in output
+    assert "symbol=IBM configuration=vwap_bounce ValueError: original worker failure" in output
 
 
 def test_run_one_feed_mismatch_rejection(monkeypatch: pytest.MonkeyPatch, tmp_path: Any) -> None:
