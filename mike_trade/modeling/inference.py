@@ -302,6 +302,14 @@ class ModelInferenceService:
                 code="PROVENANCE_UNSUPPORTED",
                 context=context,
             )
+        if manifest.feature_schema.timeframe != "1m":
+            raise ModelLoadError(
+                f"pinned model {reference.key} predicts from "
+                f"{manifest.feature_schema.timeframe} candles aggregated from one-minute data; "
+                "serving aggregated-candle models is not supported yet (train/evaluate only)",
+                code="PROVENANCE_UNSUPPORTED",
+                context=context,
+            )
         base_config, base_schema = self._base_pipeline(reference, manifest)
         max_support: int | None = None
         if role == "sell":

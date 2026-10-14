@@ -7,7 +7,7 @@ import json
 import platform
 import tempfile
 from collections.abc import Mapping
-from dataclasses import dataclass, replace
+from dataclasses import dataclass, field, replace
 from datetime import UTC, datetime
 from decimal import Decimal
 from pathlib import Path
@@ -32,7 +32,14 @@ from mike_trade.modeling.artifacts import (
     StoredModel,
     schema_fingerprint,
 )
-from mike_trade.modeling.builder import ChronologicalTrainingDatasetBuilder
+from mike_trade.modeling.builder import (
+    AggregatedTrainingDatasetBuilder,
+    ChronologicalTrainingDatasetBuilder,
+)
+from mike_trade.modeling.candle_features import (
+    CandleWindowFeatureConfig,
+    CandleWindowFeaturePipeline,
+)
 from mike_trade.modeling.calibration import fit_probability_calibrator
 from mike_trade.modeling.config import (
     ExperimentRanges,
@@ -52,6 +59,8 @@ from mike_trade.modeling.contracts import (
 from mike_trade.modeling.datasets import ParquetDatasetProvider
 from mike_trade.modeling.features import IntradayFeaturePipeline
 from mike_trade.modeling.labels import (
+    AggregatedTripleBarrierConfig,
+    AggregatedTripleBarrierLabelGenerator,
     ExecutionCostAssumptions,
     ForwardReturnConfig,
     ForwardReturnLabelGenerator,
@@ -84,6 +93,8 @@ class PreparedMatrices:
     calibration: MatrixDataset | None
     entry_policy: Mapping[str, str]
     execution_assumptions: Mapping[str, str]
+    #: Candle-aggregation and label-resolution counters (candle experiments only).
+    build_stats: Mapping[str, Any] = field(default_factory=dict)
 
 
 @dataclass(frozen=True, slots=True)
@@ -110,7 +121,7 @@ def prepared_counts(
     prepared: PreparedMatrices, class_labels: tuple[str, ...] = ()
 ) -> dict[str, Any]:
     """Real, recorded observation counts for every partition (and the label mix of fit)."""
-    return {
+    counts: dict[str, Any] = {
         "fit": prepared.fit.row_count,
         "early_stopping": prepared.early_stopping.row_count,
         "calibration": 0 if prepared.calibration is None else prepared.calibration.row_count,
@@ -119,6 +130,20 @@ def prepared_counts(
         "primary_symbols_in_selection": len(prepared.selection.sources),
         "fit_target_counts": _target_distribution(prepared.fit.targets, class_labels),
     }
+    if prepared.build_stats:  # candle experiments record every partition's class prevalence
+        partitions = {
+            "fit": prepared.fit,
+            "early_stopping": prepared.early_stopping,
+            "calibration": prepared.calibration,
+            "evaluation": prepared.evaluation,
+        }
+        counts["target_counts"] = {
+            name: _target_distribution(part.targets, class_labels)
+            for name, part in partitions.items()
+            if part is not None
+        }
+        counts["build_stats"] = dict(prepared.build_stats)
+    return counts
 
 
 def _range_mapping(ranges: ExperimentRanges) -> dict[str, Any]:
@@ -177,11 +202,22 @@ def _evaluation(
             predictor.raw_matrix_predictions(dataset),
             training_targets=training_targets,
         )
+    favorable = config.diagnostics.get("favorable_class")
+    barrier_returns = None
+    if favorable is not None:
+        barrier_returns = {
+            str(favorable): float(str(config.objective_parameters.get("positive_barrier", 0))),
+            "-1": -float(str(config.objective_parameters.get("negative_barrier", 0))),
+            "0": 0.0,
+        }
     return evaluate_classification(
         dataset,
         predictor.probability_matrix(dataset),
         config.class_labels,
         training_targets=training_targets,
+        favorable_class=None if favorable is None else str(favorable),
+        deciles=int(str(config.diagnostics.get("probability_deciles", 10))),
+        barrier_returns=barrier_returns,
     )
 
 
@@ -214,18 +250,43 @@ class ModelTrainingService:
     def _builder(
         self,
     ) -> tuple[
-        ChronologicalTrainingDatasetBuilder | SellPositionDatasetBuilder,
+        ChronologicalTrainingDatasetBuilder
+        | AggregatedTrainingDatasetBuilder
+        | SellPositionDatasetBuilder,
         FeatureSchema,
         LabelSchema,
         Mapping[str, str],
         Mapping[str, str],
     ]:
-        pipeline = IntradayFeaturePipeline(self.config.feature_config)
         objective = self.config.objective_parameters
         costs = ExecutionCostAssumptions(
             Decimal(str(objective.get("entry_bps", 0))),
             Decimal(str(objective.get("exit_bps", 0))),
         )
+        if str(objective.get("type", "triple_barrier")) == "triple_barrier_aggregated":
+            assert self.config.candles is not None
+            assert isinstance(self.config.feature_config, CandleWindowFeatureConfig)
+            candle_pipeline = CandleWindowFeaturePipeline(self.config.feature_config)
+            candle_labels = AggregatedTripleBarrierLabelGenerator(
+                AggregatedTripleBarrierConfig(
+                    Decimal(str(objective["positive_barrier"])),
+                    Decimal(str(objective["negative_barrier"])),
+                    int(str(objective["horizon_bars"])),
+                    self.config.candles.minutes,
+                    costs,
+                )
+            )
+            return (
+                AggregatedTrainingDatasetBuilder(
+                    candle_pipeline, candle_labels, self.config.candles
+                ),
+                candle_pipeline.schema,
+                candle_labels.schema,
+                {},
+                costs.parameters(),
+            )
+        assert isinstance(self.config.feature_config, IntradayFeatureConfig)
+        pipeline = IntradayFeaturePipeline(self.config.feature_config)
         if self.config.role is ModelRole.SELL:
             assert self.config.entry_policy is not None and self.config.sell_config is not None
             builder = SellPositionDatasetBuilder(
@@ -352,6 +413,12 @@ class ModelTrainingService:
                     writers[name][part].append(
                         tuple(item for item in examples if _in_range(item, interval))
                     )
+        build_stats: dict[str, Any] = {}
+        if isinstance(builder, AggregatedTrainingDatasetBuilder):
+            build_stats = {
+                "aggregation": builder.aggregation_stats.as_mapping(),
+                "labels": dict(builder.label_generator.stats),
+            }
         return {
             name: PreparedMatrices(
                 selection,
@@ -363,6 +430,7 @@ class ModelTrainingService:
                 parts["calibration"].finish() if "calibration" in parts else None,
                 entry_policy,
                 assumptions,
+                build_stats,
             )
             for name, parts in writers.items()
         }
@@ -471,6 +539,30 @@ class ModelTrainingService:
             evaluation_payload["dataset_counts"] = prepared_counts(
                 prepared, self.config.class_labels
             )
+            if self.config.diagnostics.get("partition_metrics"):
+                # Scalar log-loss/Brier/accuracy of the FINAL (calibrated) model on every partition,
+                # so fit vs held-out behaviour can be compared; the evaluation block stays the
+                # authoritative held-out result.
+                partitions = {
+                    "fit": prepared.fit,
+                    "early_stopping": prepared.early_stopping,
+                    "calibration": prepared.calibration,
+                    "evaluation": prepared.evaluation,
+                }
+                evaluation_payload["partition_metrics"] = {
+                    name: {
+                        "sample_count": part.row_count,
+                        **{
+                            key: value
+                            for key, value in _evaluation(
+                                self.config, fitted.predictor, part, prepared.fit.targets
+                            ).metrics.items()
+                            if isinstance(value, (int, float))
+                        },
+                    }
+                    for name, part in partitions.items()
+                    if part is not None
+                }
             evaluation_payload["training_ranges"] = _range_mapping(self.config.ranges)
             evaluation_payload["feature_importance_disclaimer"] = (
                 "Importance is predictive attribution, not evidence of causation."

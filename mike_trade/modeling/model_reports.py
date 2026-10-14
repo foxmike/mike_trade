@@ -175,6 +175,7 @@ def build_model_report(model_root: str | Path, model_id: str, version: str) -> d
             "class_labels": evaluation.get("class_labels"),
             "calibration": evaluation.get("calibration"),
             "class_calibration": evaluation.get("class_calibration"),
+            "favorable_deciles": evaluation.get("favorable_deciles"),
             "per_symbol": evaluation.get("per_symbol"),
             "per_period": evaluation.get("per_period"),
             "search_trials": evaluation.get("search_trials"),
@@ -210,6 +211,62 @@ def _fmt(value: Any, digits: int = 4) -> str:
     if isinstance(value, float):
         return f"{value:.{digits}f}"
     return str(value)
+
+
+def _prevalence_markdown(obs: Mapping[str, Any]) -> list[str]:
+    """Class counts and prevalence per partition (candle experiments), plus build counters."""
+    counts = obs.get("target_counts")
+    if not counts:
+        return []
+    lines = ["", "### Class prevalence by partition", ""]
+    labels = sorted({label for part in counts.values() for label in part})
+    lines += [
+        "| Partition | Rows | " + " | ".join(f"class {l} (n, %)" for l in labels) + " |",
+        "|---|---:|" + "---:|" * len(labels),
+    ]
+    for name, part in counts.items():
+        total = sum(part.values())
+        cells = " | ".join(
+            f"{part.get(l, 0)} ({100 * part.get(l, 0) / total:.2f}%)" if total else "—"
+            for l in labels
+        )
+        lines.append(f"| {name} | {total} | {cells} |")
+    stats = obs.get("build_stats") or {}
+    for group in ("aggregation", "labels"):
+        if stats.get(group):
+            lines += ["", f"{group.capitalize()} counters: `{json.dumps(stats[group], sort_keys=True)}`"]
+    return lines
+
+
+def _decile_markdown(block: Mapping[str, Any]) -> list[str]:
+    fav = block["favorable_class"]
+    lines = [
+        "",
+        f"### Outcome mix by decile of predicted P(class {fav}) "
+        f"(base rate {_fmt(block['base_favorable_rate'])}; "
+        f"AUC {_fmt(block.get('favorable_vs_rest_roc_auc'))}; "
+        f"decile-vs-rate correlation {_fmt(block.get('correlation_decile_vs_favorable_rate'))})",
+        "",
+        f"*{block['ordering']}. {block['disclaimer']}*",
+        "",
+    ]
+    labels = list(block["deciles"][0]["observed_rates"]) if block["deciles"] else []
+    lines += [
+        "| Decile | Rows | P range | Mean P | "
+        + " | ".join(f"rate {l}" for l in labels)
+        + " | Lift | Barrier-implied mean return (pre-cost) |",
+        "|---:|---:|---|---:|" + "---:|" * len(labels) + "---:|---:|",
+    ]
+    for row in block["deciles"]:
+        rates = " | ".join(_fmt(row["observed_rates"][l]) for l in labels)
+        lines.append(
+            f"| {row['decile']} | {row['count']} | "
+            f"{_fmt(row['min_probability'])}–{_fmt(row['max_probability'])} | "
+            f"{_fmt(row['mean_probability'])} | {rates} | "
+            f"{_fmt(row['favorable_lift_vs_base_rate'], 2)} | "
+            f"{_fmt(row.get('barrier_implied_mean_return_before_costs'), 5)} |"
+        )
+    return lines
 
 
 def render_markdown(report: Mapping[str, Any]) -> str:
@@ -251,6 +308,7 @@ def render_markdown(report: Mapping[str, Any]) -> str:
             f"- Features: {obs['features']}",
             f"- Fit label mix: {json.dumps(obs.get('fit_target_counts', {}), sort_keys=True)}",
         ]
+        lines += _prevalence_markdown(obs)
     lines += ["", "## Features and label", ""]
     lines += [
         f"- Feature schema: `{feats['schema']}` (`{feats['schema_sha256'][:16]}…`)",
@@ -305,6 +363,9 @@ def render_markdown(report: Mapping[str, Any]) -> str:
                 f"{_fmt(r['mean_predicted'])} | {_fmt(r['observed_frequency'])} |"
                 for r in block["bins"]
             ]
+        deciles = evaluation.get("favorable_deciles")
+        if deciles:
+            lines += _decile_markdown(deciles)
         per_period = evaluation.get("per_period") or {}
         if per_period:
             lines += [
@@ -403,6 +464,31 @@ def write_model_report(
             ["period", "sample_count", "log_loss", "brier_score", "accuracy", "rmse", "mae", "r2"],
         ),
     }
+    block = evaluation.get("favorable_deciles")
+    if block and block["deciles"]:
+        labels = list(block["deciles"][0]["observed_rates"])
+        tables["favorable_deciles.csv"] = _csv(
+            [
+                {
+                    "decile": row["decile"],
+                    "count": row["count"],
+                    "min_probability": row["min_probability"],
+                    "max_probability": row["max_probability"],
+                    "mean_probability": row["mean_probability"],
+                    **{f"rate_{label}": row["observed_rates"][label] for label in labels},
+                    "favorable_lift_vs_base_rate": row["favorable_lift_vs_base_rate"],
+                    "barrier_implied_mean_return_before_costs": row.get(
+                        "barrier_implied_mean_return_before_costs"
+                    ),
+                }
+                for row in block["deciles"]
+            ],
+            [
+                "decile", "count", "min_probability", "max_probability", "mean_probability",
+                *[f"rate_{label}" for label in labels], "favorable_lift_vs_base_rate",
+                "barrier_implied_mean_return_before_costs",
+            ],
+        )
     walk = report.get("walk_forward")
     if walk:
         tables["walk_forward_folds.csv"] = _csv(

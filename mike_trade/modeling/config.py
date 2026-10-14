@@ -22,6 +22,8 @@ from mike_trade.modeling.adapters.common import (
     LightGBMTrainingConfig,
     XGBoostTrainingConfig,
 )
+from mike_trade.modeling.aggregation import AggregationPolicy
+from mike_trade.modeling.candle_features import CANDLE_WINDOW_FEATURE_ID, CandleWindowFeatureConfig
 from mike_trade.modeling.contracts import LearningTask, identifier, semver
 from mike_trade.modeling.features import IntradayFeatureConfig
 from mike_trade.modeling.labels import ExecutionCostAssumptions
@@ -184,7 +186,7 @@ class ModelExperimentConfig:
     adjustment: str
     ranges: ExperimentRanges
     seed: int
-    feature_config: IntradayFeatureConfig
+    feature_config: IntradayFeatureConfig | CandleWindowFeatureConfig
     selected_feature_names: tuple[str, ...]
     task: LearningTask
     class_labels: tuple[str, ...]
@@ -200,6 +202,10 @@ class ModelExperimentConfig:
     batch_size: int = 4096
     config_sha256: str = ""
     walk_forward: WalkForwardConfig | None = None
+    #: One-minute -> N-minute candle derivation (present exactly for candle-window experiments).
+    candles: AggregationPolicy | None = None
+    #: Extra evaluation diagnostics, e.g. ``{"favorable_class": "1", "probability_deciles": 10}``.
+    diagnostics: Mapping[str, object] = MappingProxyType({})
 
     def __post_init__(self) -> None:
         if self.schema_version != 1:
@@ -218,6 +224,19 @@ class ModelExperimentConfig:
         if self.role is ModelRole.BUY and self.entry_policy is not None:
             raise ValueError("BUY experiments do not use a historical position entry policy")
         objective_type = str(self.objective_parameters.get("type", "triple_barrier"))
+        aggregated = objective_type == "triple_barrier_aggregated"
+        candle_features = isinstance(self.feature_config, CandleWindowFeatureConfig)
+        if aggregated or candle_features or self.candles is not None:
+            if not (aggregated and candle_features and self.candles is not None):
+                raise ValueError(
+                    "candle experiments need all of: candles, features.feature_id="
+                    f"{CANDLE_WINDOW_FEATURE_ID}, objective.type=triple_barrier_aggregated"
+                )
+            assert isinstance(self.feature_config, CandleWindowFeatureConfig)
+            if self.role is not ModelRole.BUY:
+                raise ValueError("candle-window experiments are BUY-only")
+            if self.feature_config.bar_minutes != self.candles.minutes:
+                raise ValueError("features.bar_minutes must equal candles.bar_minutes")
         if self.role is ModelRole.SELL and (
             self.task is not LearningTask.MULTICLASS_CLASSIFICATION
             or self.class_labels != ("-1", "0", "1")
@@ -225,7 +244,7 @@ class ModelExperimentConfig:
             raise ValueError("SELL continuation requires multiclass labels -1, 0, 1")
         if (
             self.role is ModelRole.BUY
-            and objective_type == "triple_barrier"
+            and objective_type in {"triple_barrier", "triple_barrier_aggregated"}
             and (
                 self.task is not LearningTask.MULTICLASS_CLASSIFICATION
                 or self.class_labels != ("-1", "0", "1")
@@ -250,6 +269,10 @@ class ModelExperimentConfig:
         )
         object.__setattr__(self, "resources", MappingProxyType(dict(self.resources)))
         object.__setattr__(self, "hyperparameters", MappingProxyType(dict(self.hyperparameters)))
+        object.__setattr__(self, "diagnostics", MappingProxyType(dict(self.diagnostics)))
+        favorable = self.diagnostics.get("favorable_class")
+        if favorable is not None and str(favorable) not in self.class_labels:
+            raise ValueError("diagnostics.favorable_class must be one of the class labels")
 
     def resolved_symbols(self) -> tuple[str, ...]:
         if self.symbols:
@@ -340,6 +363,8 @@ def load_experiment_config(path: str | Path) -> ModelExperimentConfig:
         "batch_size",
         "entry_policy",
         "walk_forward",
+        "candles",
+        "diagnostics",
     }
     if set(raw) - allowed:
         raise ValueError(f"unknown experiment keys: {sorted(set(raw) - allowed)}")
@@ -368,12 +393,46 @@ def load_experiment_config(path: str | Path) -> ModelExperimentConfig:
         timedelta(minutes=int(ranges_raw.get("embargo_minutes", 0))),
     )
     feature_raw = _mapping(raw.get("features", {}), "features")
-    feature_config = IntradayFeatureConfig(
-        feature_id=str(feature_raw.get("feature_id", "intraday_core")),
-        version=str(feature_raw.get("version", "1.0.0")),
-        reference_symbols=tuple(str(value) for value in feature_raw.get("reference_symbols", ())),
-        include_vwap=bool(feature_raw.get("include_vwap", True)),
-    )
+    candles: AggregationPolicy | None = None
+    feature_config: IntradayFeatureConfig | CandleWindowFeatureConfig
+    if str(feature_raw.get("feature_id", "intraday_core")) == CANDLE_WINDOW_FEATURE_ID:
+        candle_raw = _mapping(raw.get("candles", {}), "candles")
+        unknown_candles = set(candle_raw) - {"bar_minutes", "minimum_minutes_per_candle"}
+        if unknown_candles or "bar_minutes" not in candle_raw:
+            raise ValueError("candles requires bar_minutes (and optionally minimum_minutes_per_candle)")
+        candles = AggregationPolicy(
+            int(candle_raw["bar_minutes"]), int(candle_raw.get("minimum_minutes_per_candle", 1))
+        )
+        decay = _mapping(feature_raw.get("recency_decay", {}), "features.recency_decay")
+        if set(decay) != {"half_life_bars"}:
+            raise ValueError("features.recency_decay requires exactly half_life_bars")
+        unknown_features = set(feature_raw) - {
+            "feature_id", "version", "lookback_bars", "recency_decay", "reference_symbols",
+            "include_vwap", "selected_feature_names",
+        }
+        if unknown_features or "lookback_bars" not in feature_raw:
+            raise ValueError(
+                f"unsupported or missing candle feature keys: {sorted(unknown_features)}"
+            )
+        feature_config = CandleWindowFeatureConfig(
+            bar_minutes=candles.minutes,
+            lookback_bars=int(feature_raw["lookback_bars"]),
+            half_life_bars=float(decay["half_life_bars"]),
+            version=str(feature_raw.get("version", "1.0.0")),
+            reference_symbols=tuple(str(v) for v in feature_raw.get("reference_symbols", ())),
+            include_vwap=bool(feature_raw.get("include_vwap", True)),
+        )
+    elif "candles" in raw:
+        raise ValueError("candles is only valid with features.feature_id=" + CANDLE_WINDOW_FEATURE_ID)
+    else:
+        feature_config = IntradayFeatureConfig(
+            feature_id=str(feature_raw.get("feature_id", "intraday_core")),
+            version=str(feature_raw.get("version", "1.0.0")),
+            reference_symbols=tuple(
+                str(value) for value in feature_raw.get("reference_symbols", ())
+            ),
+            include_vwap=bool(feature_raw.get("include_vwap", True)),
+        )
     objective = _mapping(raw["objective"], "objective")
     task = LearningTask(str(objective.get("task", "MULTICLASS_CLASSIFICATION")))
     role = ModelRole(str(raw["role"]))
@@ -450,6 +509,8 @@ def load_experiment_config(path: str | Path) -> ModelExperimentConfig:
         int(raw.get("batch_size", 4096)),
         hashlib.sha256(payload).hexdigest(),
         walk_forward=_walk_forward(raw.get("walk_forward")),
+        candles=candles,
+        diagnostics=_mapping(raw.get("diagnostics", {}), "diagnostics"),
     )
     if result.walk_forward is not None:
         result.walk_forward.fold_ranges(result)  # fail at load, not mid-run

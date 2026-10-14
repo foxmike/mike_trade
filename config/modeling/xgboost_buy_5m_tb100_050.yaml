@@ -1,0 +1,83 @@
+# XGBoost BUY, 5m candles: will price rise +1.0% before a -0.5% adverse move from the entry
+# price within 12 x 5m candles?  An ALTERNATIVE to xgboost_buy_tb_pooled (never replaces it).
+#
+# Same universe, data source (IEX 1m, raw), seed, date partitions and hyperparameters as
+# config/modeling/xgboost_buy.yaml.  Candles are derived locally from the stored one-minute bars
+# (no new data, no duplicated dataset).  See docs/MODEL_INTRADAY_CANDLE_WINDOW.md.
+schema_version: 1
+experiment_id: xgboost_buy_5m_tb100_050_v1
+algorithm: xgboost
+role: buy
+model_id: xgboost_buy_5m_tb100_050
+model_version: 1.0.0
+dataset_root: research/data
+model_root: research/models
+universe_id: us-liquid-research-100-v1
+universe_file: config/research_universe_100_v1.json
+feed: iex
+timeframe: 1m            # the stored source series; candles below are derived from it
+adjustment: raw
+seed: 271828
+
+ranges:                  # identical to xgboost_buy.yaml; the final holdout stays untouched
+  fit_start: 2025-10-09T00:00:00Z
+  fit_end: 2026-06-01T00:00:00Z
+  early_stopping_start: 2026-06-08T00:00:00Z
+  early_stopping_end: 2026-07-06T00:00:00Z
+  calibration_start: 2026-07-13T00:00:00Z
+  calibration_end: 2026-08-03T00:00:00Z
+  evaluation_start: 2026-08-10T00:00:00Z
+  evaluation_end: 2026-09-21T00:00:00Z
+  embargo_minutes: 60
+
+candles:
+  bar_minutes: 5
+  # A bucket becomes a candle if at least this many one-minute bars exist in it. IEX is one venue:
+  # a missing minute means no IEX trade printed, so 1 reproduces the IEX 5-minute bar; raise it
+  # to demand denser candles. Missing buckets are never filled or bridged.
+  minimum_minutes_per_candle: 1
+
+features:
+  feature_id: intraday_candle_window
+  version: 1.0.0
+  lookback_bars: 10      # the 10 most recent completed 5-minute candles of the same session
+  recency_decay:
+    half_life_bars: 3.0   # weight 0.5 ** (lag / half_life); lag 0 = latest candle (weight 1)
+  reference_symbols: [SPY]
+  include_vwap: true
+
+objective:
+  type: triple_barrier_aggregated
+  task: MULTICLASS_CLASSIFICATION
+  class_labels: ["-1", "0", "1"]
+  positive_barrier: "0.010"    # +1.0% from the entry price
+  negative_barrier: "0.005"    # -0.5% from the entry price
+  horizon_bars: 12             # 12 candles of 5 minutes = 60 minutes (NOT one-minute bars)
+  entry_bps: "1.0"
+  exit_bps: "1.0"
+
+diagnostics:
+  favorable_class: "1"
+  probability_deciles: 10
+  partition_metrics: true      # also score the final model on fit / early-stopping / calibration
+
+resources:
+  device: cpu
+  threads: auto
+
+hyperparameters:        # the original XGBoost BUY values; no hyperparameter search is run here
+  class_balance: balanced
+  num_boost_round: 500
+  early_stopping_rounds: 30
+  max_depth: 6
+  learning_rate: 0.04
+  min_child_weight: 2.0
+  subsample: 0.85
+  colsample_bytree: 0.85
+  reg_alpha: 0.05
+  reg_lambda: 1.0
+
+probability_calibration: true
+permutation_importance: false
+permutation_max_rows: 5000
+batch_size: 4096

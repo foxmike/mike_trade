@@ -37,6 +37,8 @@ class PredictiveEvaluation:
     class_labels: tuple[str, ...] = ()
     #: One-vs-rest reliability per class: predicted probability bins vs observed frequency.
     class_calibration: Mapping[str, Any] | None = None
+    #: Outcome mix by decile of the favorable-class probability (only when requested).
+    favorable_deciles: Mapping[str, Any] | None = None
     disclaimer: str = (
         "Predictive metrics describe held-out labels; they do not establish trading profitability."
     )
@@ -57,6 +59,8 @@ class PredictiveEvaluation:
         }
         if self.class_calibration is not None:
             payload["class_calibration"] = self.class_calibration
+        if self.favorable_deciles is not None:
+            payload["favorable_deciles"] = self.favorable_deciles
         return (
             json.dumps(payload, sort_keys=True, separators=(",", ":"), allow_nan=False) + "\n"
         ).encode("utf-8")
@@ -203,12 +207,92 @@ def _class_calibration(
     return result
 
 
+def favorable_decile_analysis(
+    targets: np.ndarray[Any, Any],
+    probabilities: np.ndarray[Any, Any],
+    class_labels: tuple[str, ...],
+    favorable_class: str,
+    deciles: int = 10,
+    barrier_returns: Mapping[str, float] | None = None,
+) -> dict[str, Any]:
+    """Do higher predicted P(favorable) identify genuinely higher rates of favorable outcomes?
+
+    Rows are ranked by P(favorable) (ties broken by row order, so groups are equal-sized) and cut into
+    ``deciles`` groups; decile ``deciles`` holds the HIGHEST probabilities.  For each group the
+    observed rate of every class is reported next to the mean predicted probability.  The optional
+    ``barrier_returns`` (class label -> return) yield a barrier-implied mean return per prediction
+    BEFORE costs and ignoring where timeouts end; it is a descriptive label statistic, not a
+    profitability claim.
+    """
+    labels = np.asarray(targets, dtype=np.int64)
+    probs = np.asarray(probabilities, dtype=np.float64)
+    column = class_labels.index(favorable_class)
+    score = probs[:, column]
+    order = np.argsort(score, kind="mergesort")
+    groups = np.array_split(order, deciles)
+    base_rate = float(np.mean(labels == column))
+    rows: list[dict[str, Any]] = []
+    for number, members in enumerate(groups, start=1):
+        if len(members) == 0:
+            continue
+        subset = labels[members]
+        rates = {
+            label: float(np.mean(subset == index)) for index, label in enumerate(class_labels)
+        }
+        row: dict[str, Any] = {
+            "decile": number,
+            "count": int(len(members)),
+            "min_probability": float(score[members].min()),
+            "max_probability": float(score[members].max()),
+            "mean_probability": float(score[members].mean()),
+            "observed_rates": rates,
+            "favorable_rate": rates[favorable_class],
+            "favorable_lift_vs_base_rate": (
+                rates[favorable_class] / base_rate if base_rate > 0 else None
+            ),
+        }
+        if barrier_returns is not None:
+            row["barrier_implied_mean_return_before_costs"] = float(
+                sum(rates[label] * value for label, value in barrier_returns.items())
+            )
+        rows.append(row)
+    rates_by_decile = np.asarray([row["favorable_rate"] for row in rows])
+    positions = np.arange(len(rows), dtype=np.float64)
+    if len(rows) > 2 and np.std(rates_by_decile) > 0:
+        monotonic = float(np.corrcoef(positions, rates_by_decile)[0, 1])
+    else:
+        monotonic = None
+    auc = None
+    binary = (labels == column).astype(np.int64)
+    if 0 < int(binary.sum()) < len(binary):
+        auc = _binary_auc(binary, score)
+    return {
+        "favorable_class": favorable_class,
+        "deciles": rows,
+        "base_favorable_rate": base_rate,
+        "ordering": "decile 1 = lowest predicted P(favorable); the last decile = highest",
+        "favorable_probability_quantiles": {
+            str(q): float(np.quantile(score, q)) for q in (0, 0.01, 0.05, 0.25, 0.5, 0.75, 0.95, 0.99, 1)
+        },
+        "correlation_decile_vs_favorable_rate": monotonic,
+        "favorable_vs_rest_roc_auc": auc,
+        "top_decile_lift_vs_base_rate": rows[-1]["favorable_lift_vs_base_rate"] if rows else None,
+        "barrier_returns": None if barrier_returns is None else dict(barrier_returns),
+        "disclaimer": (
+            "Outcome rates are label statistics on held-out rows; they are not trading results."
+        ),
+    }
+
+
 def evaluate_classification(
     dataset: MatrixDataset,
     probabilities: np.ndarray[Any, Any],
     class_labels: tuple[str, ...],
     *,
     training_targets: np.ndarray[Any, Any] | None = None,
+    favorable_class: str | None = None,
+    deciles: int = 10,
+    barrier_returns: Mapping[str, float] | None = None,
 ) -> PredictiveEvaluation:
     if len(class_labels) != probabilities.shape[1]:
         raise ValueError("class labels must match probability columns")
@@ -266,6 +350,11 @@ def evaluate_classification(
         confusion,
         class_labels,
         _class_calibration(dataset.targets, probabilities, class_labels),
+        None
+        if favorable_class is None
+        else favorable_decile_analysis(
+            dataset.targets, probabilities, class_labels, favorable_class, deciles, barrier_returns
+        ),
     )
 
 
