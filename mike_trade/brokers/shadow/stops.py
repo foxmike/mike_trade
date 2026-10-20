@@ -208,11 +208,13 @@ class ShadowStopSimulator:
         direction = position.direction
         long = direction is PositionDirection.LONG
         state = replace(state, direction=direction)
-        # Michelle's transition policy explicitly follows traded prices. Existing
+        # Michelle's transition policies explicitly follow traded prices. Existing
         # policies retain their quote-side high-water semantics.
         touch = quote.bid if long else quote.ask
         favorable = touch
-        if state.policy.kind is ProtectionKind.FIXED_THEN_TRAILING_STOP:
+        if state.policy.kind in (
+            ProtectionKind.FIXED_THEN_TRAILING_STOP, ProtectionKind.FIXED_THEN_BREAKEVEN_STOP
+        ):
             if (
                 trade is not None
                 and trade.symbol == state.symbol
@@ -237,6 +239,13 @@ class ShadowStopSimulator:
             if activated:
                 step_state = advance(step_state, high, self._step_policy(state.policy))
                 stop = tighter(stop, step_state.candidate_stop)
+        elif state.policy.kind is ProtectionKind.FIXED_THEN_BREAKEVEN_STOP:
+            # Michelle (corrected) Stage 2: once the market has traded at fill + $0.50 the stop
+            # moves to breakeven, never downward.  The EMA9 exit is application-managed (SELL).
+            assert state.policy.activation_reference is not None
+            assert state.policy.breakeven_price is not None
+            if long and high >= state.policy.activation_reference:
+                stop = tighter(stop, state.policy.breakeven_price)
         elif state.policy.kind is ProtectionKind.FIXED_THEN_TRAILING_STOP:
             assert state.policy.trail_percent is not None
             assert state.policy.activation_reference is not None
@@ -450,6 +459,7 @@ def _policy_data(policy: ProtectionPolicy) -> dict[str, object]:
     for name in (
         "stop_offset_percent", "stop_offset_amount", "trail_percent", "trail_amount",
         "step_size", "activation_gain", "initial_stop_price", "activation_reference",
+        "breakeven_price",
     ):
         value = getattr(policy, name)
         values[name] = None if value is None else str(value)
@@ -465,11 +475,11 @@ def _step_state_data(state: SteppedTrailingState | None) -> dict[str, object] | 
 def _state_from_record(data: dict[str, Any], at: datetime, version: str) -> ShadowStopState:
     raw = data["policy"]
     policy = ProtectionPolicy(kind=ProtectionKind(raw["kind"]), **{
-        name: (None if raw[name] is None else Decimal(raw[name])) if name != "require_broker_held" else raw[name]
+        name: (None if raw.get(name) is None else Decimal(raw[name])) if name != "require_broker_held" else raw[name]
         for name in (
             "stop_offset_percent", "stop_offset_amount", "trail_percent", "trail_amount",
             "step_size", "activation_gain", "initial_stop_price", "activation_reference",
-            "require_broker_held",
+            "breakeven_price", "require_broker_held",
         )})
     raw_step = data.get("stepped_state")
     step = None if raw_step is None else SteppedTrailingState(

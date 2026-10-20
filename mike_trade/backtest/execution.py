@@ -130,6 +130,7 @@ from mike_trade.scheduling.calendar import (
 
 __all__ = [
     "AMBIGUOUS_INTRABAR_ORDER",
+    "MODELED_INTRABAR_ENTRY",
     "EXECUTION_SIMULATOR_VERSION",
     "AmbiguityPolicy",
     "BarFillPolicy",
@@ -140,6 +141,9 @@ __all__ = [
 
 EXECUTION_SIMULATOR_VERSION = "backtest-exec/2"
 AMBIGUOUS_INTRABAR_ORDER = "AMBIGUOUS_INTRABAR_ORDER"
+#: A bar-only fill that the strategy's OHLC emulation placed INSIDE the candle (not at the next
+#: open): an explicit, auditable modeling assumption, never a measured execution.
+MODELED_INTRABAR_ENTRY = "MODELED_INTRABAR_ENTRY"
 
 _DATA_GAP_BEFORE_FILL = "DATA_GAP_BEFORE_FILL"
 _BAR_ONLY = "BAR_ONLY"
@@ -843,6 +847,53 @@ class HistoricalExecutionSimulator:
         ):
             self._ratchet_order(order, candle.high, candle.low)
         return tuple(out)
+
+    def fill_entry_in_bar(
+        self, broker_order_id: str, candle: Candle, touch: Decimal, at: datetime
+    ) -> tuple[SimulatedExecution, ...]:
+        """Book a MODELED intrabar fill for a just-submitted MARKET entry (bar-only evidence).
+
+        The strategy's OHLC emulation (``strategies.michelle_corrected.bar_entry``) decides that
+        an entry print happened inside ``candle`` - at its open, or at a trigger level the candle
+        traded through - which the normal path (next-bar open) cannot represent.  ``touch`` must lie
+        inside the candle's range and ``at`` inside its interval.  Slippage, fees, liquidity cap
+        and entry-protection checks are the ordinary ones; the execution carries
+        ``MODELED_INTRABAR_ENTRY`` and the usual ``BAR_ONLY`` fidelity limitation.  With quote
+        evidence available nothing is modeled (the order then fills from quotes as usual).
+        """
+        order = self._orders.get(broker_order_id)
+        if order is None:
+            raise BrokerRejectedError(f"unknown order {broker_order_id!r}", code="unknown_order")
+        if (
+            not order.is_open
+            or order.order_type is not OrderType.MARKET
+            or not order.side.is_entry
+            or order.fills
+            or candle.symbol != order.intent.symbol
+            or self._feed.quote_fidelity(candle.symbol) is not QuoteFidelity.UNAVAILABLE
+            or self._last_bar_end.get(candle.symbol) != candle.end
+        ):
+            return ()
+        if not candle.low <= touch <= candle.high or not candle.start <= at <= candle.end:
+            raise ValueError("modeled entry price/time must lie inside the entry candle")
+        if self._bar_block_reason(candle, _bar_in_regular_session(candle)) is not None:
+            return ()
+        # The conditional entry was armed when the window opened, i.e. no later than this
+        # candle's start: the modeled fill may not precede its own order's submission.
+        order.submitted_at = min(order.submitted_at, candle.start)
+        order.eligible_at = min(order.eligible_at, candle.start)
+        order.updated_at = min(order.updated_at, candle.start)
+        execution = self._try_fill(
+            order,
+            touch,
+            self._price(order, touch, capped=False),
+            at,
+            (candle.symbol, "BAR", candle.start),
+            candle.volume * self._a.participation,
+            self._bar_evidence(candle),
+            (MODELED_INTRABAR_ENTRY,),
+        )
+        return () if execution is None else (execution,)
 
     # ---- admission
 

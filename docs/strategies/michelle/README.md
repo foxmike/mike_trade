@@ -10,7 +10,12 @@ The approved October 2026 clarifications supersede contradictory source wording.
 | `Five_Minute_ORB_Formatted.docx` | [`five_minute_orb_michelle_buy`](five_minute_orb_michelle_buy.md) | [`five_minute_orb_michelle_sell`](five_minute_orb_michelle_sell.md) | Implemented |
 | `VWAP_Bounce_Break_Formatted.docx` | [`vwap_bounce_break_michelle_buy`](vwap_bounce_break_michelle_buy.md) | [`vwap_bounce_break_michelle_sell`](vwap_bounce_break_michelle_sell.md) | Implemented |
 
-All four identifiers are independent registry entries. A same-stem SELL is optional; when it is
+| `vwap_bounce_break_business_rules_final.docx` (55 rules, supersedes the row above) | [`vwap_bounce_break_michelle_corrected_buy`](vwap_bounce_break_michelle_corrected.md) | [`vwap_bounce_break_michelle_corrected_sell`](vwap_bounce_break_michelle_corrected.md) | Implemented (focused tests only) |
+
+All six identifiers are independent registry entries; the corrected pair follows its own rule set
+and protection (see its specification) and never shares the original attempt limiter.
+
+The first four are independent registry entries. A same-stem SELL is optional; when it is
 configured for a position opened by its matching BUY, the lifecycle installs the approved
 fixed-then-trailing protection. Without that SELL, the symbol's ordinary mandatory stop policy
 continues to apply.

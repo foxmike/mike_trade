@@ -317,10 +317,21 @@ class ShadowAccountState:
     fills: dict[str, Fill] = field(default_factory=dict)
     fill_slippage: dict[str, Decimal] = field(default_factory=dict)
     realized_pnl: Decimal = _ZERO
+    #: Realized P&L (net of fees) per New York trading day; rebuilt by ledger replay, so the
+    #: account-level daily-loss control never depends on in-memory baselines.
+    realized_by_day: dict[date, Decimal] = field(default_factory=dict)
     closed_cycles: int = 0
     entry_cycles: dict[tuple[str, date], int] = field(default_factory=dict)
     consecutive_losses: dict[tuple[str, str], int] = field(default_factory=dict)
     cooldown_until: dict[str, datetime] = field(default_factory=dict)
+
+    def _book_realized_day(self, filled_at: datetime, amount: Decimal) -> None:
+        day = filled_at.astimezone(NEW_YORK).date()
+        self.realized_by_day[day] = self.realized_by_day.get(day, _ZERO) + amount
+
+    def realized_on(self, day: date) -> Decimal:
+        """Realized trading-day P&L (net of fees) for a New York date."""
+        return self.realized_by_day.get(day, _ZERO)
 
     @property
     def estimated(self) -> bool:
@@ -866,12 +877,14 @@ class ShadowAccountState:
             )
             cycle_pnl = gross - position.entry_fees_total - exit_fees - borrow_total
             self.realized_pnl += cycle_pnl - position.realized_pnl
+            self._book_realized_day(filled_at, cycle_pnl - position.realized_pnl)
         else:
             cost = position.cost_basis * quantity / position.quantity
             entry_fees = position.entry_fees * quantity / position.quantity
             gross_part = quantity * price - cost if long else cost - quantity * price
             pnl = gross_part - fee - entry_fees - borrow
             self.realized_pnl += pnl
+            self._book_realized_day(filled_at, pnl)
             self.positions[symbol] = replace(
                 position,
                 quantity=position.quantity - quantity,

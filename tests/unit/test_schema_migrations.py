@@ -86,7 +86,7 @@ def _event(conn: sqlite3.Connection, scope_id: str, event_id: str = "event-1") -
 def test_fresh_apply_configures_connection_and_creates_expected_tables(tmp_path: Path) -> None:
     conn = initialize_database(tmp_path / "fresh.db", "PAPER", now=NOW)
     try:
-        assert current_schema_version(conn) == discover_migrations()[-1].version == 3
+        assert current_schema_version(conn) == discover_migrations()[-1].version == 4
         assert conn.execute("PRAGMA journal_mode").fetchone()[0].lower() == "wal"
         assert conn.execute("PRAGMA foreign_keys").fetchone()[0] == 1
         assert conn.execute("PRAGMA synchronous").fetchone()[0] == 2
@@ -382,7 +382,7 @@ def test_upgrade_of_a_populated_version_1_database_keeps_rows_triggers_and_keys(
         with pytest.raises(sqlite3.IntegrityError):  # version 1 really refuses a short side
             _order(conn, "shadow:a", "o-short", "SELL_SHORT")
         apply_migrations(conn, now=NOW + timedelta(days=1))  # upgrade in place
-        assert current_schema_version(conn) == 3
+        assert current_schema_version(conn) == 4
         # existing rows survive, and the SAME connection already accepts the new vocabulary
         assert conn.execute("SELECT count(*) FROM fills").fetchone()[0] == 1
         _order(conn, "shadow:a", "o2", "SELL_SHORT")

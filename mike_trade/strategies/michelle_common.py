@@ -14,6 +14,16 @@ ZERO = Decimal("0")
 
 MICHELLE_BUY_IDS = frozenset({"five_minute_orb_michelle_buy", "vwap_bounce_break_michelle_buy"})
 
+#: Michelle's corrected VWAP Bounce/Break (business rules 1-55).  Independent of the original
+#: strategies: deliberately NOT in ``MICHELLE_BUY_IDS`` because the original strategies' shared
+#: attempt limiter (2 per 10 minutes, never adjacent minutes) is not part of the corrected rules.
+CORRECTED_BUY_ID = "vwap_bounce_break_michelle_corrected_buy"
+CORRECTED_SELL_ID = "vwap_bounce_break_michelle_corrected_sell"
+CORRECTED_BUY_IDS = frozenset({CORRECTED_BUY_ID})
+CORRECTED_SELL_IDS = frozenset({CORRECTED_SELL_ID})
+#: Every BUY whose persisted state carries position/fill facts for its protective SELL.
+FACT_BUY_IDS = MICHELLE_BUY_IDS | CORRECTED_BUY_IDS
+
 
 def regular_session_bars(candles: Iterable[Candle], session_id: str | None = None) -> list[Candle]:
     """Return ascending completed M1 bars from one regular-session date."""
@@ -182,6 +192,25 @@ def signal_facts(state: Mapping[str, object]) -> dict[str, object]:
         "entry_orb_high",
         "entry_reference_price",
         "signal_event_time",
+        "position_cycle_id",
+        "position_fill_price",
+        "position_fill_time",
+        "position_vwap_at_entry",
+    )
+    return {key: state[key] for key in keys if key in state}
+
+
+def corrected_signal_facts(state: Mapping[str, object]) -> dict[str, object]:
+    """Copy the approved fill/protection/evidence facts emitted by the corrected BUY."""
+    keys = (
+        "signal_cycle_id",
+        "entry_vwap",
+        "entry_reference_price",
+        "signal_event_time",
+        "entry_mode",
+        "entry_price_hint",
+        "entry_time_hint",
+        "entry_evidence",
         "position_cycle_id",
         "position_fill_price",
         "position_fill_time",

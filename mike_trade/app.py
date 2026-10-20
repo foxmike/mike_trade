@@ -103,7 +103,8 @@ from mike_trade.persistence.schema import initialize_database, to_db_timestamp
 from mike_trade.persistence.transaction import WriterSession
 from mike_trade.portfolio.budgets import BudgetPolicy
 from mike_trade.portfolio.reservations import ReservationLedger
-from mike_trade.risk import michelle_stop
+from mike_trade.risk import michelle_corrected_stop, michelle_stop
+from mike_trade.risk.daily_loss import DailyLossGuard, effective_limit
 from mike_trade.risk.protection import ProtectionCoordinator
 from mike_trade.risk.stop_config import protection_policy_for_entry
 from mike_trade.risk.stop_policy import (
@@ -141,7 +142,11 @@ from mike_trade.signals.decisions import (
 )
 from mike_trade.strategies.base import StrategyEvaluation
 from mike_trade.strategies.michelle_common import (
+    CORRECTED_BUY_IDS,
+    CORRECTED_SELL_IDS,
+    FACT_BUY_IDS,
     MICHELLE_BUY_IDS,
+    corrected_signal_facts,
     decode_attempts,
     encode_attempts,
     entry_attempt_allowed,
@@ -185,6 +190,9 @@ from mike_trade.strategies.buy.higher_high_higher_low import HigherHighHigherLow
 from mike_trade.strategies.buy.holy_grail_pullback import HolyGrailPullbackBuy
 from mike_trade.strategies.buy.hull_moving_average import HullMovingAverageBuy
 from mike_trade.strategies.buy.vwap_bounce_break_michelle import VwapBounceBreakMichelleBuy
+from mike_trade.strategies.buy.vwap_bounce_break_michelle_corrected import (
+    VwapBounceBreakMichelleCorrectedBuy,
+)
 from mike_trade.strategies.buy.ichimoku_cloud_breakout import IchimokuCloudBreakoutBuy
 from mike_trade.strategies.buy.inside_bar_breakout import InsideBarBreakoutBuy
 from mike_trade.strategies.buy.intraday_consolidation_breakout import (
@@ -349,6 +357,9 @@ from mike_trade.strategies.sell.lightgbm_probability_sell import LightgbmProbabi
 from mike_trade.strategies.sell.xgboost_probability_sell import XgboostProbabilitySell
 from mike_trade.strategies.sell.five_minute_orb_michelle import FiveMinuteOrbMichelleSell
 from mike_trade.strategies.sell.vwap_bounce_break_michelle import VwapBounceBreakMichelleSell
+from mike_trade.strategies.sell.vwap_bounce_break_michelle_corrected import (
+    VwapBounceBreakMichelleCorrectedSell,
+)
 from mike_trade.strategies.sell.williams_r_reversal import WilliamsRReversalSell
 from mike_trade.strategies.short.short_adx_bearish_trend_confirmation import (
     ShortAdxBearishTrendConfirmation,
@@ -888,7 +899,33 @@ class ProductionMarketData:
         indicators = dict(context.indicators)
         indicators["spy_close"] = spy[-1].close if len(spy) >= 1 else None
         indicators["spy_close_prev"] = spy[-2].close if len(spy) >= 2 else None
-        return replace(context, indicators=indicators)
+        return self._with_qqq_reference(replace(context, indicators=indicators))
+
+    #: A QQQ trade older than this is not "contemporaneous"; the last completed close is used.
+    _REFERENCE_TRADE_MAX_AGE = timedelta(seconds=30)
+
+    def _with_qqq_reference(self, context: MarketContext) -> MarketContext:
+        """Attach QQQ's completed M1 candles and contemporaneous price (corrected Michelle)."""
+        if context.symbol == "QQQ":
+            return context
+        qqq = tuple(
+            candle
+            for candle in self.candles.get_completed_candles("QQQ", CandleTimeframe.M1)
+            if candle.end <= context.as_of
+        )
+        if not qqq:
+            return context
+        price = qqq[-1].close
+        trade = self.cache.latest_trade("QQQ")
+        if (
+            trade is not None
+            and trade.provider_source_ts <= context.as_of
+            and context.as_of - trade.provider_source_ts <= self._REFERENCE_TRADE_MAX_AGE
+        ):
+            price = cast(Decimal, trade.price)
+        return replace(
+            context, reference_candles={"QQQ": qqq}, reference_prices={"QQQ": price}
+        )
 
     def on_candle(self, candle: Candle) -> None:
         self.session_references.add_bar(candle)
@@ -2058,6 +2095,24 @@ class VwapReferenceLifecycle:
                     self._bind(registry, item.symbol, StrategyRole.SHORT, item.shorts),
                     self._bind(registry, item.symbol, StrategyRole.COVER, item.covers),
                 )
+        for symbol, collection in self._by_symbol.items():
+            corrected_buy = any(b.strategy_id in CORRECTED_BUY_IDS for b in collection.buys)
+            corrected_sell = any(b.strategy_id in CORRECTED_SELL_IDS for b in collection.sells)
+            if corrected_buy and not corrected_sell:
+                raise ConfigurationError(
+                    f"{symbol}: the corrected Michelle BUY requires the corrected Michelle SELL "
+                    "(its mandatory two-stage protective exit) on the same symbol",
+                    code="CORRECTED_SELL_REQUIRED",
+                )
+        #: Account-level $150 cumulative daily-loss control (rule 51), active for any SHADOW
+        #: scenario that runs a corrected Michelle strategy; one latch per scenario account.
+        self._daily_loss_limit = effective_limit(None)
+        self._loss_guards: dict[str, DailyLossGuard] = {}
+        self._corrected_active = any(
+            b.strategy_id in (CORRECTED_BUY_IDS | CORRECTED_SELL_IDS)
+            for collection in self._by_symbol.values()
+            for b in (*collection.buys, *collection.sells)
+        )
         self._in_flight = 0
         self._entry_facts: dict[tuple[str, str], dict[str, object]] = {}
         #: (hour, minute) New York time at which EOD liquidation begins; None = disabled.
@@ -2176,6 +2231,7 @@ class VwapReferenceLifecycle:
                     if context.symbol != symbol.upper():
                         raise ValueError("context mapping key must match context.symbol")
                     actions.extend(await self._process_symbol(scenario, context))
+                await self._daily_loss_sweep(scenario, contexts, actions)
                 result[name] = actions
             return result
         finally:
@@ -2199,11 +2255,15 @@ class VwapReferenceLifecycle:
         if facts is not None:
             return facts
         for binding in collections.buys:
-            if binding.strategy_id not in MICHELLE_BUY_IDS:
+            if binding.strategy_id not in FACT_BUY_IDS:
                 continue
             state = self._state(scenario, binding, symbol)
             if state.get("position_cycle_id") == cycle_id:
-                facts = {"entry_strategy_id": binding.strategy_id, **signal_facts(state)}
+                extract = (
+                    corrected_signal_facts if binding.strategy_id in CORRECTED_BUY_IDS
+                    else signal_facts
+                )
+                facts = {"entry_strategy_id": binding.strategy_id, **extract(state)}
                 self._entry_facts[key] = facts
                 return facts
         return None
@@ -2221,6 +2281,10 @@ class VwapReferenceLifecycle:
         )
         if facts is None:
             return None
+        if facts.get("entry_strategy_id") in CORRECTED_BUY_IDS:
+            # Michelle (corrected): Stage 1 is established the moment the fill is confirmed.
+            fill = safe_decimal(facts.get("position_fill_price"))
+            return None if fill is None else michelle_corrected_stop.policy_for_fill(fill)
         if not michelle_stop.protection_applies(
             facts.get("entry_strategy_id"), (binding.strategy_id for binding in collections.sells)
         ):
@@ -2299,6 +2363,7 @@ class VwapReferenceLifecycle:
         if binding.strategy_id not in {
             "five_minute_orb_michelle_sell",
             "vwap_bounce_break_michelle_sell",
+            *CORRECTED_SELL_IDS,
         }:
             return
         facts = self._michelle_entry_facts(
@@ -2347,6 +2412,7 @@ class VwapReferenceLifecycle:
         quote = context.latest_quote
         if quote is not None:
             account.update_quote(context.symbol, (quote.bid + quote.ask) / Decimal("2"))
+        loss_latched = self._observe_daily_loss(scenario, context.as_of)
 
         # Existing entry/exit orders may consume another deterministic partial fill,
         # but strategy replay can never submit a second order for the same signal.
@@ -2372,6 +2438,13 @@ class VwapReferenceLifecycle:
         if await self._evaluate_stop(scenario, context, context.as_of):
             actions.append("STOP_EXIT")
             await self._release_closed(scenario, context.symbol, context.as_of)
+            return actions
+
+        if loss_latched:
+            # Rule 51: exits first, for every open position; no strategy may act afterwards.
+            await self._liquidate_for_daily_loss(
+                scenario, {context.symbol: context}, context.as_of, actions, only=context.symbol
+            )
             return actions
 
         # End-of-day liquidation outranks every strategy: once it has begun, the held
@@ -2433,9 +2506,25 @@ class VwapReferenceLifecycle:
                 decision = arbitrate_exit_decisions(
                     [
                         ExitCandidate(
-                            signal_id=signal_id, source=exit_source,
-                            symbol=context.symbol, strategy_id=binding.strategy_id,
-                            version=binding.version, position_cycle_id=position.cycle_id,
+                            signal_id=signal_id,
+                            # Michelle's corrected SELL is a mandatory PROTECTIVE exit: highest
+                            # priority, no minimum hold, never reviewable (see docs).
+                            source=(
+                                ExitSource.PROTECTIVE_STOP
+                                if binding.strategy_id in CORRECTED_SELL_IDS
+                                else exit_source
+                            ),
+                            symbol=context.symbol,
+                            # protective candidates carry no strategy identity (decisions.py)
+                            strategy_id=(
+                                None if binding.strategy_id in CORRECTED_SELL_IDS
+                                else binding.strategy_id
+                            ),
+                            version=(
+                                None if binding.strategy_id in CORRECTED_SELL_IDS
+                                else binding.version
+                            ),
+                            position_cycle_id=position.cycle_id,
                             bar_time=self._bar_time(context),
                         )
                         for signal_id, binding in exits.items()
@@ -2577,6 +2666,19 @@ class VwapReferenceLifecycle:
             ] = {
                 "entry_strategy_id": binding.strategy_id,
                 **signal_facts(entry_state),
+                "position_cycle_id": cycle_id,
+            }
+        elif binding.strategy_id in CORRECTED_BUY_IDS:
+            # One setup = one trade (Rule 40): submitting the order consumes the setup.
+            entry_state = self._state(scenario, binding, context.symbol)
+            entry_state["position_cycle_id"] = cycle_id
+            entry_state["consumed_after"] = context.as_of.isoformat()
+            self._save_state(scenario, binding, context.symbol, entry_state)
+            self._entry_facts[
+                (scenario.account.scope.scope_id, cycle_id)
+            ] = {
+                "entry_strategy_id": binding.strategy_id,
+                **corrected_signal_facts(entry_state),
                 "position_cycle_id": cycle_id,
             }
         intent = OrderIntent(
@@ -2801,6 +2903,82 @@ class VwapReferenceLifecycle:
         elif changed:
             level = logging.WARNING if reason.startswith("PREDICTION_UNAVAILABLE") else logging.INFO
             _MODEL_LOGGER.log(level, "Model strategy decision", extra={"model_audit": record})
+
+    # ---- account-level daily loss (business rule 51) ---------------------------------
+
+    def _guard(self, scenario: _ShadowScenario) -> DailyLossGuard | None:
+        if not self._corrected_active:
+            return None
+        key = scenario.account.scope.scope_id
+        if key not in self._loss_guards:
+            self._loss_guards[key] = DailyLossGuard(self._daily_loss_limit)
+        return self._loss_guards[key]
+
+    def _observe_daily_loss(self, scenario: _ShadowScenario, at: datetime) -> bool:
+        """Update the scenario's latch from its own account; True while the latch is set."""
+        guard = self._guard(scenario)
+        if guard is None:
+            return False
+        account = scenario.account
+        day = at.astimezone(exchange_calendar.NEW_YORK).date()
+        reading = guard.observe(at, account.state.realized_on(day), account.unrealized_pnl())
+        return reading.latched
+
+    async def _daily_loss_sweep(
+        self, scenario: _ShadowScenario, contexts: Mapping[str, MarketContext], actions: list[str]
+    ) -> None:
+        """Account-wide pass: positions in symbols outside this snapshot are closed too."""
+        guard = self._guard(scenario)
+        if guard is None or not scenario.account.state.positions:
+            return
+        now = self.clock.now()
+        if not guard.liquidation_required(now, len(scenario.account.state.positions)):
+            return
+        gathered = dict(contexts)
+        missing = sorted(set(scenario.account.state.positions) - set(gathered))
+        if missing and self._context_provider is not None:
+            try:
+                gathered.update(self._context_provider(missing))
+            except Exception:  # the next pass retries; entries are already blocked
+                logging.getLogger("mike_trade.app").exception(
+                    "daily-loss liquidation could not build market snapshots"
+                )
+        await self._liquidate_for_daily_loss(scenario, gathered, now, actions)
+
+    async def _liquidate_for_daily_loss(
+        self,
+        scenario: _ShadowScenario,
+        contexts: Mapping[str, MarketContext],
+        at: datetime,
+        actions: list[str],
+        *,
+        only: str | None = None,
+    ) -> None:
+        """Rule 51: market-close every open position and cancel working entries now."""
+        account = scenario.account
+        for order in tuple(account.state.orders.values()):
+            if order.is_open and order.side.is_entry:
+                await account.cancel_order(order.broker_order_id, at=at)
+                actions.append(f"DAILY_LOSS_ENTRY_CANCELED:{order.broker_order_id}")
+        for symbol in sorted(account.state.positions):
+            if only is not None and symbol != only:
+                continue
+            context = contexts.get(symbol)
+            if context is None or context.latest_quote is None:
+                actions.append(f"DAILY_LOSS_WAITING_FOR_QUOTE:{symbol}")
+                continue
+            if any(o.side.is_exit for o in self._live_orders(account, symbol)):
+                continue  # an exit is already working; it is only ever filled further
+            position = account.state.positions[symbol]
+            stamp = at.astimezone(exchange_calendar.NEW_YORK).strftime("%Y%m%dT%H%M%S")
+            actions.extend(
+                await self._exit(
+                    scenario, context, None, purpose=OrderPurpose.SAFETY_EXIT,
+                    client_order_id=f"shadow-dailyloss-{position.cycle_id}-{stamp}", now=at,
+                )
+            )
+            actions.append(f"DAILY_LOSS_LIQUIDATION:{symbol}")
+            await self._release_closed(scenario, symbol, at)
 
     def _eod_begun(self, at: datetime) -> bool:
         """Whether EOD liquidation is enabled and in effect at ``at`` (regular session)."""
@@ -3848,6 +4026,7 @@ def build_runtime(
         VwapBreakdownSell, MomentumReversalSell, RsiReversalSell,
         FiveMinuteOrbMichelleBuy, VwapBounceBreakMichelleBuy,
         FiveMinuteOrbMichelleSell, VwapBounceBreakMichelleSell,
+        VwapBounceBreakMichelleCorrectedBuy, VwapBounceBreakMichelleCorrectedSell,
         AroonTrendBuy,
         CciZeroLineCrossoverBuy,
         DmiCrossoverBuy,
@@ -4090,6 +4269,8 @@ def build_runtime(
                 triggers = [CANDLE_CLOSED(CandleTimeframe.M1)]
                 if strategy_id in {
                     *MICHELLE_BUY_IDS,
+                    *CORRECTED_BUY_IDS,
+                    *CORRECTED_SELL_IDS,
                     "five_minute_orb_michelle_sell",
                     "vwap_bounce_break_michelle_sell",
                 }:
