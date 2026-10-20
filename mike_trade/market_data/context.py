@@ -430,6 +430,11 @@ class MarketContext:
     #: Immutable, pinned-model predictions (and the real position they describe) attached by
     #: the composition root for model-driven strategies; ``None`` for every other strategy.
     model_inputs: ModelInputs | None = None
+    #: Completed M1 candles of declared *reference* symbols (for example QQQ), point-in-time:
+    #: nothing that closes after ``as_of`` may be present.  ``None`` when not supplied.
+    reference_candles: Mapping[str, tuple[Candle, ...]] | None = None
+    #: Contemporaneous price of each reference symbol (latest trade, else last completed close).
+    reference_prices: Mapping[str, Decimal] | None = None
 
     def __post_init__(self) -> None:
         symbol = _symbol(self.symbol)
@@ -484,6 +489,12 @@ class MarketContext:
             if self.model_inputs.symbol != symbol:
                 raise _invalid(f"{self.model_inputs.symbol} model inputs in {symbol} context")
 
+        object.__setattr__(
+            self, "reference_candles", self._freeze_reference_candles(self.reference_candles, as_of)
+        )
+        object.__setattr__(
+            self, "reference_prices", self._freeze_reference_prices(self.reference_prices)
+        )
         closed = self._freeze_closed(self.candles, symbol, as_of)
         developing = self._freeze_developing(self.developing_candles, symbol)
         if self.completed_bars_only and developing:
@@ -544,6 +555,47 @@ class MarketContext:
                 if cur.start < prev.end:
                     raise _invalid(f"candles[{tf.value}] must be ascending and non-overlapping")
             frozen[tf] = seq
+        return MappingProxyType(frozen)
+
+    @staticmethod
+    def _freeze_reference_candles(
+        candles: Mapping[str, Iterable[Candle]] | None, as_of: datetime
+    ) -> Mapping[str, tuple[Candle, ...]] | None:
+        if candles is None:
+            return None
+        if not isinstance(candles, Mapping):
+            raise _invalid("reference_candles must map symbols to candles")
+        frozen: dict[str, tuple[Candle, ...]] = {}
+        for key, value in candles.items():
+            ref = _symbol(key)
+            seq = tuple(value)
+            for candle in seq:
+                if not isinstance(candle, Candle) or candle.status is not CandleStatus.CLOSED:
+                    raise _invalid(f"reference_candles[{ref}] must hold CLOSED candles")
+                if candle.symbol != ref:
+                    raise _invalid(f"reference_candles[{ref}] holds a foreign symbol")
+                if candle.end > as_of:
+                    raise _integrity(
+                        CODE_FUTURE_DATA,
+                        f"{ref}: reference candle {candle.start.isoformat()} closes after as_of",
+                        symbol=ref,
+                    )
+            frozen[ref] = seq
+        return MappingProxyType(frozen)
+
+    @staticmethod
+    def _freeze_reference_prices(
+        prices: Mapping[str, Decimal] | None,
+    ) -> Mapping[str, Decimal] | None:
+        if prices is None:
+            return None
+        if not isinstance(prices, Mapping):
+            raise _invalid("reference_prices must map symbols to prices")
+        frozen: dict[str, Decimal] = {}
+        for key, value in prices.items():
+            if not isinstance(value, Decimal) or not value.is_finite() or value <= 0:
+                raise _invalid(f"reference_prices[{key}] must be a positive finite Decimal")
+            frozen[_symbol(key)] = value
         return MappingProxyType(frozen)
 
     @staticmethod

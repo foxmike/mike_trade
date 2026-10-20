@@ -64,7 +64,9 @@ from mike_trade.market_data.candles import CandleTimeframe
 from mike_trade.market_data.context import MarketContext
 from mike_trade.persistence.repositories import EntryControlRepository
 from mike_trade.review.proposal import PositionView, StateToken, StopView
-from mike_trade.risk import michelle_stop
+from mike_trade.persistence.schema import to_db_timestamp
+from mike_trade.risk import michelle_corrected_stop, michelle_stop
+from mike_trade.risk.daily_loss import DailyLossGuard
 from mike_trade.runtime import EntryGate
 from mike_trade.scheduling import calendar as exchange_calendar
 from mike_trade.signals.decisions import (
@@ -75,6 +77,9 @@ from mike_trade.signals.decisions import (
 )
 from mike_trade.strategies.base import StrategyEvaluation
 from mike_trade.strategies.michelle_common import (
+    CORRECTED_BUY_IDS,
+    CORRECTED_SELL_IDS,
+    corrected_signal_facts,
     current_session_vwap,
     decode_attempts,
     encode_attempts,
@@ -159,6 +164,11 @@ class LiveStrategyLifecycle(VwapReferenceLifecycle):
         self._eod_attempts: dict[str, int] = {}
         self._tasks: list[asyncio.Task[None]] = []
         self._ratchet_inflight: set[str] = set()
+        #: Last traded price per symbol (marks for the account-level daily-loss control).
+        self._marks: dict[str, Decimal] = {}
+        self._realized_day: tuple[date, Decimal] | None = None
+        self._loss_liquidation_inflight = False
+        self._loss_liquidation_at: datetime | None = None
         self.alerts: list[str] = []
         self.account_check: Any = None
         self._bound = False
@@ -209,13 +219,19 @@ class LiveStrategyLifecycle(VwapReferenceLifecycle):
             collections = self.collections(symbol)
             if any(b.strategy_id in MICHELLE_BUY_IDS for b in collections.buys):
                 kinds.add(ProtectionKind.FIXED_THEN_TRAILING_STOP)
+            if any(b.strategy_id in CORRECTED_BUY_IDS for b in collections.buys):
+                kinds.add(ProtectionKind.FIXED_THEN_BREAKEVEN_STOP)
             slot = needs.setdefault(symbol, set())
             for kind in kinds:
                 if kind is ProtectionKind.BROKER_TRAILING_STOP:
                     slot.add("trailing_submit")
                 else:
                     slot.add("stop_submit")
-                    if kind in (ProtectionKind.FIXED_THEN_TRAILING_STOP, ProtectionKind.STEPPED_TRAILING_STOP):
+                    if kind in (
+                        ProtectionKind.FIXED_THEN_TRAILING_STOP,
+                        ProtectionKind.FIXED_THEN_BREAKEVEN_STOP,
+                        ProtectionKind.STEPPED_TRAILING_STOP,
+                    ):
                         slot.add("stop_replace")
         return needs
 
@@ -300,6 +316,8 @@ class LiveStrategyLifecycle(VwapReferenceLifecycle):
         """Every traded price feeds the high-water mark; the ratchet runs off the hot path."""
         if not self._bound or symbol not in self.symbols:
             return
+        self._marks[symbol] = price
+        self._check_daily_loss(at)
         cycle = self.ledger.active_cycle(symbol)
         if cycle is None or cycle.opened_at is None or at < cycle.opened_at:
             return
@@ -352,6 +370,11 @@ class LiveStrategyLifecycle(VwapReferenceLifecycle):
         collections = self.collections(symbol)
         cycle = self.ledger.active_cycle(symbol)
         state = self.reconciler.state(symbol)
+        trade = context.latest_trade
+        self._marks[symbol] = trade.price if trade is not None else self._marks.get(symbol, ZERO)
+        if self._check_daily_loss(context.as_of):
+            # Rule 51: the cumulative daily loss limit was reached - exits first, no new entries.
+            return actions + await self._daily_loss_liquidate("evaluation", locked=True)
 
         # Keep the broker stop tight with whatever the market just printed.
         if cycle is not None and cycle.opened_at is not None:
@@ -405,8 +428,18 @@ class LiveStrategyLifecycle(VwapReferenceLifecycle):
         decision = arbitrate_exit_decisions(
             [
                 ExitCandidate(
-                    signal_id=signal_id, source=ExitSource.STRATEGY_SELL, symbol=symbol,
-                    strategy_id=binding.strategy_id, version=binding.version,
+                    signal_id=signal_id,
+                    # Michelle's corrected SELL is a mandatory PROTECTIVE exit (never reviewable).
+                    source=(
+                        ExitSource.PROTECTIVE_STOP if binding.strategy_id in CORRECTED_SELL_IDS
+                        else ExitSource.STRATEGY_SELL
+                    ),
+                    symbol=symbol,
+                    # protective candidates carry no strategy identity (decisions.py)
+                    strategy_id=(
+                        None if binding.strategy_id in CORRECTED_SELL_IDS else binding.strategy_id
+                    ),
+                    version=None if binding.strategy_id in CORRECTED_SELL_IDS else binding.version,
                     position_cycle_id=cycle.cycle_id, bar_time=self._bar_time(context),
                 )
                 for signal_id, binding in exits.items()
@@ -460,7 +493,7 @@ class LiveStrategyLifecycle(VwapReferenceLifecycle):
         self, collections: _Collections, binding: _Binding, cycle: PositionCycle,
         persisted: dict[str, object],
     ) -> None:
-        if binding.strategy_id not in _MICHELLE_SELL_IDS:
+        if binding.strategy_id not in _MICHELLE_SELL_IDS | CORRECTED_SELL_IDS:
             return
         facts = self._michelle_entry_facts(self.scenario, collections, cycle.cycle_id, cycle.symbol)
         if facts is None:
@@ -594,6 +627,9 @@ class LiveStrategyLifecycle(VwapReferenceLifecycle):
             persisted.pop("eligibility", None)
             evaluation = binding.strategy.evaluate(context, binding.parameters, persisted)
             self._save_state(self.scenario, binding, symbol, evaluation.state_updates)
+        guard = self._guard(self.scenario)
+        if entries and guard is not None and guard.entries_blocked(context.as_of):
+            return ["ENTRY_BLOCKED:DAILY_LOSS_LIMIT"]
         if not entries or not self._entry_permitted(PositionDirection.LONG) or self.eod_active:
             return []
         arbitration = arbitrate_entry_decisions(
@@ -702,6 +738,16 @@ class LiveStrategyLifecycle(VwapReferenceLifecycle):
                 "entry_strategy_id": binding.strategy_id, **signal_facts(entry_state),
                 "position_cycle_id": cycle_id,
             }
+        elif binding.strategy_id in CORRECTED_BUY_IDS:
+            # One setup = one trade (Rule 40): submitting the order consumes the setup.
+            entry_state = self._state(self.scenario, binding, symbol)
+            entry_state["position_cycle_id"] = cycle_id
+            entry_state["consumed_after"] = context.as_of.isoformat()
+            self._save_state(self.scenario, binding, symbol, entry_state)
+            self._entry_facts[(self.ledger.scope_id, cycle_id)] = {
+                "entry_strategy_id": binding.strategy_id, **corrected_signal_facts(entry_state),
+                "position_cycle_id": cycle_id,
+            }
         self.ledger.open_cycle(cycle_id, symbol, binding.strategy_id)
         try:
             order = self.executor.submit_entry(
@@ -754,7 +800,8 @@ class LiveStrategyLifecycle(VwapReferenceLifecycle):
         facts.setdefault("position_fill_time", self.clock.now().isoformat())
         facts["position_cycle_id"] = cycle_id
         if (
-            facts.get("entry_strategy_id") == "vwap_bounce_break_michelle_buy"
+            facts.get("entry_strategy_id")
+            in {"vwap_bounce_break_michelle_buy", *CORRECTED_BUY_IDS}
             and "position_vwap_at_entry" not in facts
         ):
             bars = regular_session_bars(context.candles.get(CandleTimeframe.M1, ()), context.session_id)
@@ -782,6 +829,9 @@ class LiveStrategyLifecycle(VwapReferenceLifecycle):
         self, symbol: str, collections: _Collections, facts: Mapping[str, object]
     ) -> ProtectionPolicy | None:
         """Fill-based Michelle protection from the confirmed BUY fill (``risk.michelle_stop``)."""
+        if facts.get("entry_strategy_id") in CORRECTED_BUY_IDS:
+            fill_c = safe_decimal(facts.get("position_fill_price"))
+            return None if fill_c is None else michelle_corrected_stop.policy_for_fill(fill_c)
         if not michelle_stop.protection_applies(
             facts.get("entry_strategy_id"), (binding.strategy_id for binding in collections.sells)
         ):
@@ -800,7 +850,9 @@ class LiveStrategyLifecycle(VwapReferenceLifecycle):
             stored = facts.get("stop_policy")
             if isinstance(stored, Mapping):
                 policy = policy_from_dict(stored)
-                if not michelle_stop.is_current_policy(policy):
+                if policy.kind is not ProtectionKind.FIXED_THEN_BREAKEVEN_STOP and (
+                    not michelle_stop.is_current_policy(policy)
+                ):
                     # A policy persisted before the fill-based rule: rebuild it from the fill.
                     policy = self._michelle_policy_from_facts(cycle.symbol, collections, facts)
             else:
@@ -838,6 +890,8 @@ class LiveStrategyLifecycle(VwapReferenceLifecycle):
             return
         closed_at = cycle.closed_at or self.clock.now()
         session_day = closed_at.astimezone(exchange_calendar.NEW_YORK).date()
+        if self._realized_day is not None and self._realized_day[0] == session_day:
+            self._realized_day = (session_day, self._realized_day[1] + cycle.realized_pnl)
         strategy = cycle.entry_strategy_key
         if not external:
             self.controls.record_trade_result(
@@ -851,6 +905,110 @@ class LiveStrategyLifecycle(VwapReferenceLifecycle):
                 strategy if self.settings.eligibility.lockout_scope_by_strategy else None,
             )
         self.executor.retire(cycle.cycle_id)
+
+    # ================================================== account-level daily loss (Rule 51)
+
+    def _realized_today(self, day: date) -> Decimal:
+        """Realized net P&L of cycles closed on the New York ``day`` (DB-backed after restart)."""
+        if self._realized_day is None or self._realized_day[0] != day:
+            start = datetime.combine(day, datetime.min.time(), exchange_calendar.NEW_YORK)
+            end = start + timedelta(days=1)
+            rows = self.ledger.writer.connection.execute(
+                "SELECT cycle_id FROM position_cycles WHERE account_scope_id = ? "
+                "AND state = 'CLOSED' AND closed_at >= ? AND closed_at < ?",
+                (self.ledger.scope_id, to_db_timestamp(start), to_db_timestamp(end)),
+            ).fetchall()
+            total = ZERO
+            for row in rows:
+                closed = self.ledger.cycle(row[0])
+                if closed is not None:
+                    total += closed.realized_pnl
+            self._realized_day = (day, total)
+        return self._realized_day[1]
+
+    def _unrealized(self) -> Decimal:
+        total = ZERO
+        for runtime in self.executor.stops.values():
+            mark = self._marks.get(runtime.symbol)
+            if mark is not None and runtime.covered > ZERO:
+                total += runtime.covered * (mark - runtime.entry_reference)
+        return total
+
+    def _check_daily_loss(self, at: datetime) -> bool:
+        """Update the account latch (realized + unrealized); True while it is set."""
+        if not self._bound:
+            return False
+        guard = self._guard(self.scenario)
+        if guard is None:
+            return False
+        day = at.astimezone(exchange_calendar.NEW_YORK).date()
+        reading = guard.observe(at, self._realized_today(day), self._unrealized())
+        if reading.newly_latched:
+            self.alerts.append(
+                f"DAILY LOSS LIMIT reached: {reading.cumulative} <= -{reading.limit}; "
+                "liquidating all positions and blocking entries for the trading day"
+            )
+            self._persist_daily_loss_block(at, day)
+            with contextlib.suppress(RuntimeError):
+                asyncio.get_running_loop().create_task(self._daily_loss_liquidate("tick"))
+        return reading.latched
+
+    def _persist_daily_loss_block(self, at: datetime, day: date) -> None:
+        """Durable entry block until the next session opens (survives a restart)."""
+        try:
+            until = exchange_calendar.next_session(day).open_utc
+            for symbol in self.symbols:
+                self.controls.set_cooldown(symbol, until, "daily_loss_limit")
+        except Exception as exc:  # the in-memory latch still blocks; surface the persistence gap
+            self.alerts.append(f"daily-loss block could not be persisted: {exc}")
+
+    async def _daily_loss_liquidate(self, origin: str, *, locked: bool = False) -> list[str]:
+        """Market-close every managed position now; retried on later evaluations until flat.
+
+        ``locked`` is True when the caller already holds ``reconciler.lock`` (the evaluation path).
+        """
+        if self._loss_liquidation_inflight:
+            return []
+        now = self.clock.now()
+        if (
+            self._loss_liquidation_at is not None
+            and now - self._loss_liquidation_at < timedelta(seconds=2)
+            and origin != "test"
+        ):
+            return []
+        self._loss_liquidation_inflight = True
+        self._loss_liquidation_at = now
+        try:
+            if locked:
+                return await self._daily_loss_close(now)
+            async with self.reconciler.lock:
+                return await self._daily_loss_close(now)
+        finally:
+            self._loss_liquidation_inflight = False
+
+    async def _daily_loss_close(self, now: datetime) -> list[str]:
+        actions: list[str] = []
+        report = await self.reconciler.reconcile_locked("daily-loss")
+        if not report.ok:
+            self.alerts.append("daily-loss liquidation: broker read failed; will retry")
+            return ["DAILY_LOSS_RETRY:STALE_HOLDINGS"]
+        actions.extend(await self._cancel_pending_entries(report))
+        for symbol, state in sorted(report.states.items()):
+            if state.managed_quantity <= ZERO or state.exit_pending:
+                continue
+            cycle = self.ledger.active_cycle(symbol)
+            if cycle is None:
+                continue
+            runtime = self.executor.stops.get(cycle.cycle_id)
+            outcome = await self.executor.close(
+                cycle, state.managed_quantity, "SAFETY_EXIT",
+                signal_id=f"dailyloss-{int(now.timestamp())}", runtime=runtime,
+            )
+            actions.append(f"DAILY_LOSS_CLOSE:{symbol}:{outcome.status}")
+            if outcome.status in {"UNPROTECTED", "FROZEN"}:
+                self.executor.coordinator.unfreeze(cycle.cycle_id)
+        await self.reconciler.reconcile_locked("daily-loss-post")
+        return actions
 
     # ================================================================== EOD
 

@@ -127,7 +127,8 @@ def test_approval_guards_on_the_command_line(approved, capsys):
 def test_backtest_dry_run_prints_the_plan_and_refuses_unsafe_windows(approved, capsys, tmp_path):
     campaign = campaign_yaml(approved, directory=tmp_path / "c")
     code, out, _ = run(capsys, "model-backtest", "--campaign", str(campaign), "--dry-run")
-    plan = json.loads(out)
+    assert "campaign preflight (effective settings)" in out
+    plan = json.loads(out[out.index("{"):])
     assert code == 0 and plan["dry_run"] and plan["jobs"] == 8 and plan["feed"] == "iex"
     assert {m["sample_role"] for m in plan["models"].values()} == {"out_of_sample_development_test"}
     holdout = campaign_yaml(

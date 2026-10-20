@@ -133,6 +133,7 @@ def policy_to_dict(policy: ProtectionPolicy) -> dict[str, object]:
     for name in (
         "stop_offset_percent", "stop_offset_amount", "trail_percent", "trail_amount",
         "step_size", "activation_gain", "initial_stop_price", "activation_reference",
+        "breakeven_price",
     ):
         value = getattr(policy, name)
         values[name] = None if value is None else str(value)
@@ -145,6 +146,7 @@ def policy_from_dict(data: Mapping[str, object]) -> ProtectionPolicy:
         for name in (
             "stop_offset_percent", "stop_offset_amount", "trail_percent", "trail_amount",
             "step_size", "activation_gain", "initial_stop_price", "activation_reference",
+            "breakeven_price",
         )
     }
     return ProtectionPolicy(
@@ -188,6 +190,10 @@ def ratchet_candidate(
         # Michelle: the raw candidate must exceed the initial stop; the caller additionally
         # requires the tick-adjusted candidate to strictly exceed it (see ``ratchet``).
         return candidate if candidate > policy.activation_reference else None
+    if policy.kind is ProtectionKind.FIXED_THEN_BREAKEVEN_STOP:
+        # Michelle (corrected) Stage 2: breakeven once the market has traded at fill + $0.50.
+        assert policy.activation_reference is not None and policy.breakeven_price is not None
+        return policy.breakeven_price if high >= policy.activation_reference else None
     if policy.kind is ProtectionKind.STEPPED_TRAILING_STOP:
         activation = policy.activation_gain or ZERO
         if high < entry_reference + activation:
@@ -497,7 +503,7 @@ class LiveExecutor:
         proposed = start_protection(policy, _live_cycle(cycle, self.ledger.scope_id, quantity), entry_price)
         if policy.kind is ProtectionKind.FIXED_THEN_TRAILING_STOP:
             stop = ceil_to_tick(proposed.stop_price, tick)
-        else:
+        else:  # includes FIXED_THEN_BREAKEVEN_STOP: its levels are already floored to the grid
             stop = floor_to_tick(proposed.stop_price, tick)
         if stop <= ZERO or stop >= entry_price:
             raise ProtectionFailure(
@@ -616,7 +622,7 @@ class LiveExecutor:
             self._persist_quietly(runtime)
             return False
         tick = self.gateway.tick_size(runtime.symbol)
-        target = floor_to_tick(candidate, tick)
+        target = floor_to_tick(candidate, tick)  # a breakeven candidate is already on the grid
         if (
             runtime.policy.kind is ProtectionKind.FIXED_THEN_TRAILING_STOP
             and runtime.policy.activation_reference is not None

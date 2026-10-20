@@ -13,7 +13,7 @@ import random
 import uuid
 from collections import defaultdict, deque
 from dataclasses import dataclass, field, replace
-from datetime import UTC, datetime, time, timedelta
+from datetime import UTC, date, datetime, time, timedelta
 from decimal import Decimal
 from pathlib import Path
 from typing import TYPE_CHECKING, Any, Callable, Mapping, Sequence
@@ -69,7 +69,8 @@ from mike_trade.review.proposal import (
     TradeProposal,
 )
 from mike_trade.review.stage import protective_exit
-from mike_trade.risk import michelle_stop
+from mike_trade.risk import michelle_corrected_stop, michelle_stop
+from mike_trade.risk.daily_loss import DailyLossGuard, effective_limit, trading_date
 from mike_trade.risk.fixed_stop import ALPACA_EQUITY_TICK_RULES
 from mike_trade.risk.stop_config import normalize_stop_spec, protection_policy_for_entry
 from mike_trade.risk.trailing import (
@@ -90,8 +91,12 @@ from mike_trade.signals.decisions import (
 )
 from mike_trade.strategies.base import StrategyEvaluation
 from mike_trade.strategies.indicators.core import rsi as calculate_rsi
+from mike_trade.strategies import michelle_corrected
 from mike_trade.strategies.michelle_common import (
+    CORRECTED_BUY_IDS,
+    CORRECTED_SELL_IDS,
     MICHELLE_BUY_IDS,
+    corrected_signal_facts,
     decode_attempts,
     encode_attempts,
     entry_attempt_allowed,
@@ -972,6 +977,27 @@ class BacktestRunner:
                 raise ValueError
         except ValueError as exc:
             raise ValueError("end_of_day_close.at must be HH:MM") from exc
+        corrected_active = any(
+            cls.spec.strategy_id in CORRECTED_BUY_IDS | CORRECTED_SELL_IDS
+            for plan in plans.values()
+            for cls in plan.all
+        )
+        for symbol_plan in plans.values():
+            has_corrected_buy = any(c.spec.strategy_id in CORRECTED_BUY_IDS for c in symbol_plan.buys)
+            has_corrected_sell = any(c.spec.strategy_id in CORRECTED_SELL_IDS for c in symbol_plan.sells)
+            if has_corrected_buy and not has_corrected_sell:
+                raise ValueError(
+                    f"{symbol_plan.symbol}: the corrected Michelle BUY requires the corrected "
+                    "Michelle SELL (its mandatory two-stage protective exit)"
+                )
+        if corrected_active:
+            # Rule 52: no overnight positions - forced liquidation at 15:55 New York (or five
+            # minutes before an early close, which the EOD helper derives from the session) is a
+            # property of the corrected strategies, whatever the run configuration says.
+            eod_enabled = True
+            if (eod_hour, eod_minute) > (15, 55):
+                eod_hour, eod_minute = 15, 55
+        loss_guard = DailyLossGuard(effective_limit(None)) if corrected_active else None
         evaluations: list[Mapping[str, Any]] = []
         signals: list[Mapping[str, Any]] = []
         intents: list[Mapping[str, Any]] = []
@@ -1082,6 +1108,15 @@ class BacktestRunner:
         feed_symbols = request.symbols
         if backtest_monitor is not None:
             feed_symbols = tuple(dict.fromkeys((*request.symbols, *ref_symbols)))
+        #: Reference symbols (e.g. QQQ for the corrected Michelle filter) the strategies declared.
+        declared_references: frozenset[str] = frozenset(
+            ref
+            for plan in plans.values()
+            for cls in plan.all
+            for ref in cls.spec.reference_symbols
+        )
+        if declared_references:
+            feed_symbols = tuple(dict.fromkeys((*feed_symbols, *sorted(declared_references))))
         if model_reference_symbols:
             feed_symbols = tuple(dict.fromkeys((*feed_symbols, *model_reference_symbols)))
 
@@ -1174,6 +1209,13 @@ class BacktestRunner:
         ) -> tuple[Mapping[str, Any], ProtectionPolicy] | None:
             """Fill-based Michelle protection for the entry fill that opened this cycle."""
             cycle = open_cycles.get(symbol)
+            if cycle is not None and cycle.get("entry_strategy") in CORRECTED_BUY_IDS:
+                # Michelle (corrected): Stage 1 is established the moment the fill is confirmed.
+                corrected = michelle_corrected_stop.policy_for_fill(fill_price)
+                if corrected is None:
+                    return None
+                corrected_spec: Mapping[str, Any] = {"type": "fixed_then_breakeven"}
+                return corrected_spec, corrected
             if cycle is None or not michelle_applies(symbol, cycle.get("entry_strategy")):
                 return None
             policy = michelle_stop.policy_for_fill(fill_price)
@@ -1192,9 +1234,16 @@ class BacktestRunner:
             # entry followed by a same-bar stop cannot re-arm an oversized SELL order.
             confirmed_quantity = self.execution.held_quantity(symbol)
             held = protections.get(symbol)
-            if held is not None and held.policy.kind is ProtectionKind.FIXED_THEN_TRAILING_STOP:
+            if held is not None and held.policy.kind in (
+                ProtectionKind.FIXED_THEN_TRAILING_STOP, ProtectionKind.FIXED_THEN_BREAKEVEN_STOP
+            ):
                 # Re-protecting (e.g. an exit lapsed) keeps the policy fixed at the original fill.
-                resolved = ({"type": "fixed_then_trailing"}, held.policy)
+                resolved = (
+                    {"type": "fixed_then_breakeven"}
+                    if held.policy.kind is ProtectionKind.FIXED_THEN_BREAKEVEN_STOP
+                    else {"type": "fixed_then_trailing"},
+                    held.policy,
+                )
             else:
                 resolved = michelle_policy(symbol, reference)
             active_spec = resolved[0] if resolved is not None else stop_spec
@@ -1245,7 +1294,10 @@ class BacktestRunner:
                 )
                 stop_now = ZERO
             else:
-                if policy.kind is ProtectionKind.FIXED_THEN_TRAILING_STOP:
+                if policy.kind in (
+                    ProtectionKind.FIXED_THEN_TRAILING_STOP,
+                    ProtectionKind.FIXED_THEN_BREAKEVEN_STOP,
+                ):
                     assert policy.initial_stop_price is not None
                     raw_stop = policy.initial_stop_price
                 elif policy.kind is ProtectionKind.FIXED_STOP:
@@ -1320,6 +1372,11 @@ class BacktestRunner:
 
         def stepped_would_tighten(protection: _Protection, high: Decimal, low: Decimal) -> bool:
             """Whether this completed bar contains a favorable engine-managed stop move."""
+            if protection.policy.kind is ProtectionKind.FIXED_THEN_BREAKEVEN_STOP:
+                activation = protection.policy.activation_reference
+                breakeven = protection.policy.breakeven_price
+                assert activation is not None and breakeven is not None
+                return high >= activation and breakeven > protection.current_stop
             if protection.policy.kind is ProtectionKind.FIXED_THEN_TRAILING_STOP:
                 policy = protection.policy
                 assert policy.trail_percent is not None
@@ -1380,6 +1437,92 @@ class BacktestRunner:
                 else candidate < protection.current_stop
             )
 
+        async def reposition_two_stage(symbol: str) -> None:
+            """Michelle (corrected) Stages 1-2 as one resting stop for the NEXT candle.
+
+            Called with a completed candle's information; the new level is in force from the
+            following candle on (the simulator's own rule for replacements), which keeps OHLC
+            replay causal and resolves a candle that spans the initial stop and the +$0.50
+            activation as stop-first (rule 55).  Stage 2's stop is ``max(breakeven, EMA9 level)``
+            where EMA9 is that of the last COMPLETED candle (rule 48): the breakeven part never
+            moves down; the EMA9 part may ease back toward it, which a resting stop can only do
+            by cancel-and-rearm.
+            """
+            protection = protections.get(symbol)
+            cycle = open_cycles.get(symbol)
+            if (
+                protection is None
+                or cycle is None
+                or protection.policy.kind is not ProtectionKind.FIXED_THEN_BREAKEVEN_STOP
+                or not await order_is_open(protection.order_id)
+            ):
+                return
+            fill = safe_decimal(cycle.get("entry_fill_price"))
+            if fill is None:
+                return
+            highest = safe_decimal(cycle.get("highest_trade_price")) or fill
+            stage_two = michelle_corrected_stop.stage_two_reached(highest, fill)
+            latest_bar = strategy_candles[symbol][CandleTimeframe.M1][-1]
+            session_bars = michelle_corrected.prepare_session(
+                strategy_candles[symbol][CandleTimeframe.M1],
+                latest_bar.start.astimezone(NEW_YORK).date(),
+            )
+            ema9 = session_bars[-1].ema9 if session_bars else None
+            target = michelle_corrected_stop.effective_stop_level(
+                fill, ema9, stage_two=stage_two
+            )
+            previous = protection.current_stop
+            if target is None or target == previous:
+                return
+            if target > previous:
+                await self.execution.replace_order(protection.order_id, stop_price=target)
+                protection.current_stop = target
+                order_id = protection.order_id
+            else:
+                nonlocal protection_count
+                await self.execution.cancel_order(protection.order_id)
+                protection_count += 1
+                order = await self.execution.submit_order(
+                    OrderIntent(
+                        intent_id=f"{run_id}:{symbol}:protection:{protection_count}",
+                        client_order_id=f"{run_id[:20]}-protect-{symbol}-{protection_count}",
+                        account_scope_id=scope_id,
+                        cycle_id=str(cycle["cycle_id"]),
+                        symbol=symbol,
+                        side=OrderSide.SELL,
+                        purpose=OrderPurpose.PROTECTIVE_STOP,
+                        time_in_force=TimeInForce.GTC,
+                        created_at=self.clock.now(),
+                        quantity=self.execution.held_quantity(symbol),
+                        order_type=OrderType.STOP,
+                        stop_price=target,
+                    ),
+                    protection_reference=protection.entry_reference,
+                )
+                order_meta[order.broker_order_id] = {
+                    "purpose": OrderPurpose.PROTECTIVE_STOP.value,
+                    "strategy": None,
+                    "protection_mode": "FIXED_THEN_BREAKEVEN",
+                }
+                protection.order_id = order.broker_order_id
+                protection.current_stop = target
+                order_id = order.broker_order_id
+            cycle["final_stop_price"] = target
+            protection_events.append({
+                "cycle_id": str(cycle["cycle_id"]),
+                "symbol": symbol,
+                "event_type": "STOP_MOVED",
+                "time": self.clock.now(),
+                "protection_mode": "FIXED_THEN_BREAKEVEN",
+                "order_id": order_id,
+                "previous_stop_price": previous,
+                "new_stop_price": target,
+                "stop_price": target,
+                "stage_two": stage_two,
+                "ema9_last_completed": ema9,
+                "highest_price": highest,
+            })
+
         async def ratchet_stepped(symbol: str, high: Decimal, low: Decimal) -> None:
             """Engine-managed stepped trailing: tighten (never loosen) the stop.
 
@@ -1393,6 +1536,9 @@ class BacktestRunner:
             if protection is None or not await order_is_open(protection.order_id):
                 return
             policy = protection.policy
+            if policy.kind is ProtectionKind.FIXED_THEN_BREAKEVEN_STOP:
+                await reposition_two_stage(symbol)
+                return
             long = protection.direction is PositionDirection.LONG
             favorable = high if long else low
             if policy.kind is ProtectionKind.FIXED_THEN_TRAILING_STOP:
@@ -1515,6 +1661,7 @@ class BacktestRunner:
                 "native_trailing": "TRAILING_NATIVE",
                 "stepped_trailing": "TRAILING_STEPPED",
                 "fixed_then_trailing": "FIXED_THEN_TRAILING",
+                "fixed_then_breakeven": "FIXED_THEN_BREAKEVEN",
             }[spec["type"]]
 
         def shared_michelle_attempts(symbol: str) -> tuple[datetime, ...]:
@@ -1699,10 +1846,17 @@ class BacktestRunner:
                 entry_state = state[(symbol, evaluation.strategy_id)]
                 if evaluation.strategy_id == "vwap_bounce_break_michelle_buy":
                     entry_state["consumed_after"] = context.as_of.isoformat()
+            if intent.side.is_entry and evaluation.strategy_id in CORRECTED_BUY_IDS:
+                # One setup = one trade (rule 40): submitting the order consumes the setup.
+                state[(symbol, evaluation.strategy_id)]["consumed_after"] = (
+                    context.as_of.isoformat()
+                )
             order = await self.execution.submit_order(intent)
             facts = (
                 signal_facts(state[(symbol, evaluation.strategy_id)])
                 if evaluation.strategy_id in MICHELLE_BUY_IDS
+                else corrected_signal_facts(state[(symbol, evaluation.strategy_id)])
+                if evaluation.strategy_id in CORRECTED_BUY_IDS
                 else {}
             )
             intents[-1]["order_id"] = order.broker_order_id
@@ -1717,6 +1871,15 @@ class BacktestRunner:
             }
             if (
                 intent.side is OrderSide.BUY
+                and evaluation.strategy_id in CORRECTED_BUY_IDS
+                and callable(getattr(self.execution, "require_entry_protection", None))
+            ):
+                # Rule 46: an entry whose fill admits no valid Stage 1 stop is never accepted.
+                self.execution.require_entry_protection(
+                    order.broker_order_id, michelle_corrected_stop.initial_stop
+                )
+            if (
+                intent.side is OrderSide.BUY
                 and evaluation.strategy_id in MICHELLE_BUY_IDS
                 and michelle_applies(symbol, evaluation.strategy_id)
                 and callable(getattr(self.execution, "require_entry_protection", None))
@@ -1726,10 +1889,33 @@ class BacktestRunner:
                 self.execution.require_entry_protection(
                     order.broker_order_id, michelle_stop.initial_stop
                 )
+            if evaluation.strategy_id in CORRECTED_SELL_IDS:
+                # Mandatory protective exit: classified as such in every artifact (never a
+                # discretionary strategy SELL).
+                order_meta[order.broker_order_id]["exit_reason"] = ExitSource.PROTECTIVE_STOP.value
             if intent.side.is_entry:
                 pending_entry[symbol] = order.broker_order_id
             else:
                 pending_exit[symbol] = order.broker_order_id
+            entry_state_c = state[(symbol, evaluation.strategy_id)]
+            if (
+                intent.side.is_entry
+                and evaluation.strategy_id in CORRECTED_BUY_IDS
+                and entry_state_c.get("entry_mode") in {"OPEN", "TRIGGER"}
+                and callable(getattr(self.execution, "fill_entry_in_bar", None))
+                and current_event is not None
+                and current_event.kind == ReplayEvent.KIND_BAR
+                and current_event.candle is not None
+            ):
+                # OHLC emulation placed the entry INSIDE this candle (open leg or trigger level):
+                # book it there (documented MODELED_INTRABAR_ENTRY) instead of at the next open.
+                modeled = self.execution.fill_entry_in_bar(
+                    order.broker_order_id,
+                    current_event.candle,
+                    Decimal(str(entry_state_c["entry_price_hint"])),
+                    datetime.fromisoformat(str(entry_state_c["entry_time_hint"])),
+                )
+                await drain_outputs(deque(modeled), current_event, set(), modeled_entry=True)
 
         async def submit_eod_close(symbol: str, at: datetime) -> None:
             """Submit a regular-session DAY market close at the configured cutoff."""
@@ -1836,44 +2022,125 @@ class BacktestRunner:
                 return context
             return model_provider.enrich(context, (reference,))
 
-        for ev in replay_events:
-            assert ev.available_at
-            self.clock.advance_to(ev.available_at)
-            if reference_history is not None:
-                reference_history.advance(ev.available_at)
-            if backtest_monitor is not None:
-                feed_reference(ev.available_at)
-            outputs = deque(self.execution.process_event(ev))
-            rejections = getattr(self.execution, "entry_protection_rejections", ())
-            for rejection in rejections[entry_protection_rejection_cursor:]:
-                rejected_meta = order_meta.get(str(rejection["order_id"]), {})
-                record = {
-                    "kind": "ENTRY_REFUSED",
-                    "time": rejection["time"],
-                    "symbol": rejection["symbol"],
-                    "signal_id": rejected_meta.get("signal_id"),
-                    "strategy_id": rejected_meta.get("strategy"),
-                    "side": OrderSide.BUY.value,
-                    "reason": rejection["reason"],
-                    "candidate_entry_price": rejection["entry_price"],
-                    "initial_stop_price": rejection["initial_stop_price"],
-                    "order_id": rejection["order_id"],
-                }
-                decisions.append(record)
-                protection_events.append(
-                    {
-                        "event_type": "ENTRY_REJECTED_PROTECTION_INVALID",
-                        **{key: value for key, value in record.items() if key != "kind"},
-                    }
-                )
-                for intent_row in intents:
-                    if intent_row.get("order_id") == rejection["order_id"]:
-                        intent_row["status"] = "REJECTED"
-                        intent_row["rejection_reason"] = rejection["reason"]
-                        break
-            entry_protection_rejection_cursor = len(rejections)
-            suppress_stepped_ratchet: set[str] = set()
-            await record_native_stop(ev.symbol)
+        current_event: ReplayEvent | None = None
+        day_baseline: tuple[date, Decimal] | None = None
+        loss_attempts: dict[str, int] = defaultdict(int)
+        #: Completed M1 bars of the strategy-declared reference symbols (e.g. QQQ), in
+        #: availability order - point-in-time by construction.
+        reference_bars: dict[str, deque[StrategyCandle]] = defaultdict(
+            lambda: deque(maxlen=request.context_history_bars)
+        )
+
+        def strategy_candle(candle: Any) -> StrategyCandle:
+            return StrategyCandle(
+                candle.symbol,
+                CandleTimeframe(candle.timeframe.value),
+                candle.start,
+                candle.end,
+                candle.open,
+                candle.high,
+                candle.low,
+                candle.close,
+                candle.volume,
+                candle.provenance.feed,
+                candle.provenance.is_consolidated,
+                CandleOrigin.REPLAY,
+                PriceBasis.RAW,
+                CandleStatus.CLOSED,
+                candle.trade_count,
+            )
+
+        async def submit_forced_close(symbol: str, at: datetime, reason: str) -> None:
+            """Account-level market close of one open position (rule 51), retried until flat."""
+            if quantities[symbol] <= ZERO:
+                return
+            existing = pending_exit.get(symbol)
+            if existing is not None and await order_is_open(existing):
+                return
+            direction = directions.get(symbol)
+            if direction is None:
+                return
+            protection = protections.get(symbol)
+            if protection is not None and await order_is_open(protection.order_id):
+                await self.execution.cancel_order(protection.order_id)
+            loss_attempts[symbol] += 1
+            side = (
+                OrderSide.SELL if direction is PositionDirection.LONG else OrderSide.BUY_TO_COVER
+            )
+            cycle = open_cycles[symbol]
+            ident = f"dailyloss-{symbol}-{at.astimezone(NEW_YORK).date().isoformat()}-{loss_attempts[symbol]}"
+            intent = OrderIntent(
+                intent_id=ident,
+                client_order_id=ident,
+                account_scope_id=scope_id,
+                cycle_id=str(cycle["cycle_id"]),
+                symbol=symbol,
+                side=side,
+                purpose=OrderPurpose.SAFETY_EXIT,
+                order_type=OrderType.MARKET,
+                time_in_force=TimeInForce.DAY,
+                created_at=at,
+                quantity=quantities[symbol],
+            )
+            order = await self.execution.submit_order(intent)
+            order_meta[order.broker_order_id] = {
+                "purpose": OrderPurpose.SAFETY_EXIT.value,
+                "strategy": None,
+                "exit_reason": reason,
+            }
+            intents.append({
+                "symbol": symbol, "strategy": None, "signal_id": None, "signal_time": at,
+                "signal_bar_time": None, "cycle_id": str(cycle["cycle_id"]), "side": side.value,
+                "purpose": OrderPurpose.SAFETY_EXIT.value, "time": at,
+                "intent_id": intent.intent_id, "order_id": order.broker_order_id,
+            })
+            pending_exit[symbol] = order.broker_order_id
+
+        async def observe_daily_loss(at: datetime, symbol: str, bar_low: Decimal) -> bool:
+            """Rule 51: realized + unrealized (adverse extreme of this candle) vs the limit."""
+            if loss_guard is None or day_baseline is None:
+                return False
+            unrealized_mark = ZERO
+            unrealized_adverse = ZERO
+            for sym, qty in quantities.items():
+                if qty <= ZERO:
+                    continue
+                average = costs[sym] / qty
+                sign = Decimal(-1) if is_short(sym) else Decimal(1)
+                mark = marks.get(sym, average)
+                adverse = bar_low if sym == symbol and sign > 0 else mark
+                unrealized_mark += sign * qty * (mark - average)
+                unrealized_adverse += sign * qty * (adverse - average)
+            realized = (portfolio_equity() - day_baseline[1]) - unrealized_mark
+            reading = loss_guard.observe(at, realized, unrealized_adverse)
+            if reading.newly_latched:
+                decisions.append({
+                    "kind": "DAILY_LOSS_LIMIT_REACHED", "time": at, "symbol": symbol,
+                    **reading.facts(),
+                })
+            if not reading.latched:
+                return False
+            for pending_symbol, order_id in list(pending_entry.items()):
+                if await order_is_open(order_id):
+                    await self.execution.cancel_order(order_id)
+                    pending_entry.pop(pending_symbol, None)
+            for open_symbol in [s_ for s_, q_ in quantities.items() if q_ > ZERO]:
+                await submit_forced_close(open_symbol, at, "DAILY_LOSS_LIMIT")
+            return True
+
+        async def drain_outputs(
+            outputs: deque[Any],
+            ev: ReplayEvent,
+            suppress_stepped_ratchet: set[str],
+            *,
+            modeled_entry: bool = False,
+        ) -> None:
+            """Book simulated executions: cash, positions, cycles, protection (one code path).
+
+            ``modeled_entry`` marks fills the strategy-side OHLC emulation placed inside the
+            candle (after this candle's own stop bookkeeping already ran).
+            """
+            nonlocal cash
             while outputs:
                 x = outputs.popleft()
                 meta = order_meta.get(x.fill.broker_order_id, {})
@@ -1991,6 +2258,21 @@ class BacktestRunner:
                         )
                         if x.fill.filled_at != ev.candle.start:
                             suppress_stepped_ratchet.add(x.symbol)
+                    if (
+                        modeled_entry
+                        and protection is not None
+                        and protection.policy.kind is ProtectionKind.FIXED_THEN_BREAKEVEN_STOP
+                        and ev.kind == ReplayEvent.KIND_BAR
+                        and ev.candle is not None
+                        and x.fill.filled_at == ev.candle.start
+                    ):
+                        # An OPEN-leg fill precedes every other print of its candle, so that
+                        # candle's high counts toward Stage 2; the stop for the NEXT candle is set
+                        # from it (this candle's own stop test above was already stop-first).
+                        row = open_cycles[x.symbol]
+                        seeded = safe_decimal(row.get("highest_trade_price")) or x.price
+                        row["highest_trade_price"] = str(max(seeded, ev.candle.high))
+                        await reposition_two_stage(x.symbol)
                 else:
                     average = costs[x.symbol] / quantities[x.symbol]
                     costs[x.symbol] -= average * x.quantity
@@ -2023,35 +2305,70 @@ class BacktestRunner:
                             cycle["closed_at"] = x.fill.filled_at
                             cycles.append(cycle)
                 equity_curve.append(equity_row(x.fill.filled_at))
+
+        for ev in replay_events:
+            assert ev.available_at
+            current_event = ev
+            self.clock.advance_to(ev.available_at)
+            if loss_guard is not None and (
+                day_baseline is None or day_baseline[0] != trading_date(ev.available_at)
+            ):
+                day_baseline = (trading_date(ev.available_at), portfolio_equity())
+            if reference_history is not None:
+                reference_history.advance(ev.available_at)
+            if backtest_monitor is not None:
+                feed_reference(ev.available_at)
+            outputs = deque(self.execution.process_event(ev))
+            rejections = getattr(self.execution, "entry_protection_rejections", ())
+            for rejection in rejections[entry_protection_rejection_cursor:]:
+                rejected_meta = order_meta.get(str(rejection["order_id"]), {})
+                record = {
+                    "kind": "ENTRY_REFUSED",
+                    "time": rejection["time"],
+                    "symbol": rejection["symbol"],
+                    "signal_id": rejected_meta.get("signal_id"),
+                    "strategy_id": rejected_meta.get("strategy"),
+                    "side": OrderSide.BUY.value,
+                    "reason": rejection["reason"],
+                    "candidate_entry_price": rejection["entry_price"],
+                    "initial_stop_price": rejection["initial_stop_price"],
+                    "order_id": rejection["order_id"],
+                }
+                decisions.append(record)
+                protection_events.append(
+                    {
+                        "event_type": "ENTRY_REJECTED_PROTECTION_INVALID",
+                        **{key: value for key, value in record.items() if key != "kind"},
+                    }
+                )
+                for intent_row in intents:
+                    if intent_row.get("order_id") == rejection["order_id"]:
+                        intent_row["status"] = "REJECTED"
+                        intent_row["rejection_reason"] = rejection["reason"]
+                        break
+            entry_protection_rejection_cursor = len(rejections)
+            suppress_stepped_ratchet: set[str] = set()
+            await record_native_stop(ev.symbol)
+            await drain_outputs(outputs, ev, suppress_stepped_ratchet)
             await record_native_stop(ev.symbol)
             await submit_eod_close(ev.symbol, ev.available_at)
             if ev.kind != ReplayEvent.KIND_BAR or ev.candle is None:
                 continue
             symbol = ev.symbol
+            if (
+                symbol in declared_references
+                and ev.candle.timeframe is Timeframe.M1
+            ):
+                reference_bars[symbol].append(strategy_candle(ev.candle))
             plan = plans.get(symbol)
             if plan is None:
                 continue
             marks[symbol] = ev.candle.close
             equity_curve.append(equity_row(ev.available_at))
+            loss_latched = await observe_daily_loss(ev.available_at, symbol, ev.candle.low)
             candles_by_symbol[symbol].append(ev.candle)
             candle = ev.candle
-            strategy_bar = StrategyCandle(
-                    candle.symbol,
-                    CandleTimeframe(candle.timeframe.value),
-                    candle.start,
-                    candle.end,
-                    candle.open,
-                    candle.high,
-                    candle.low,
-                    candle.close,
-                    candle.volume,
-                    candle.provenance.feed,
-                    candle.provenance.is_consolidated,
-                    CandleOrigin.REPLAY,
-                    PriceBasis.RAW,
-                    CandleStatus.CLOSED,
-                    candle.trade_count,
-                )
+            strategy_bar = strategy_candle(candle)
             window[symbol].append(strategy_bar)
             strategy_candles[symbol][CandleTimeframe.M1].append(strategy_bar)
             if vwap_ledger is not None:
@@ -2166,6 +2483,26 @@ class BacktestRunner:
                  "rsi": rsi_values.get(symbol, (None, None))[0],
                  "rsi_prev": rsi_values.get(symbol, (None, None))[1]},
                 session_reference=session_references.reference(symbol, ev.available_at),
+                reference_candles=(
+                    {
+                        ref: tuple(reference_bars[ref])
+                        for ref in sorted(declared_references)
+                        if ref != symbol and reference_bars[ref]
+                    }
+                    or None
+                    if declared_references
+                    else None
+                ),
+                reference_prices=(
+                    {
+                        ref: reference_bars[ref][-1].close
+                        for ref in sorted(declared_references)
+                        if ref != symbol and reference_bars[ref]
+                    }
+                    or None
+                    if declared_references
+                    else None
+                ),
             )
 
             def evaluate(cls: type, record: bool = True) -> StrategyEvaluation | None:
@@ -2273,7 +2610,10 @@ class BacktestRunner:
                             "position_fill_time": cycle["opened_at"].isoformat(),
                             "highest_trade_price": cycle.get("highest_trade_price", ""),
                         })
-                    elif cls.spec.strategy_id == "vwap_bounce_break_michelle_sell":
+                    elif cls.spec.strategy_id in {
+                        "vwap_bounce_break_michelle_sell",
+                        *CORRECTED_SELL_IDS,
+                    }:
                         exit_state.update({
                             "position_cycle_id": str(cycle["cycle_id"]),
                             "position_fill_price": str(costs[symbol] / quantities[symbol]),
@@ -2324,10 +2664,22 @@ class BacktestRunner:
                         [
                             ExitCandidate(
                                 signal_id=sid,
-                                source=exit_source,
+                                # Michelle's corrected SELL is a mandatory PROTECTIVE exit.
+                                source=(
+                                    ExitSource.PROTECTIVE_STOP
+                                    if cls.spec.strategy_id in CORRECTED_SELL_IDS
+                                    else exit_source
+                                ),
                                 symbol=symbol,
-                                strategy_id=cls.spec.strategy_id,
-                                version=cls.spec.version,
+                                # protective candidates carry no strategy identity (decisions.py)
+                                strategy_id=(
+                                    None if cls.spec.strategy_id in CORRECTED_SELL_IDS
+                                    else cls.spec.strategy_id
+                                ),
+                                version=(
+                                    None if cls.spec.strategy_id in CORRECTED_SELL_IDS
+                                    else cls.spec.version
+                                ),
                                 position_cycle_id=str(cycle["cycle_id"]),
                                 bar_time=e.bar_time,
                                 requested_at=ev.available_at,
@@ -2372,6 +2724,21 @@ class BacktestRunner:
                         # Not authorized: ineligible, advance-only (never a signal).
                         state[(symbol, cls.spec.strategy_id)].pop("eligibility", None)
                         evaluate(cls, record=False)
+                if candidates and loss_guard is not None and (
+                    loss_latched or loss_guard.entries_blocked(ev.available_at)
+                ):
+                    for sid, (cls_b, e_b) in candidates.items():
+                        decisions.append({
+                            "kind": "ENTRY_REFUSED",
+                            "time": ev.available_at,
+                            "symbol": symbol,
+                            "signal_id": sid,
+                            "strategy_id": cls_b.spec.strategy_id,
+                            "side": cls_b.spec.side.value,
+                            "reason": "DAILY_LOSS_LIMIT",
+                            "gate": "ACCOUNT_DAILY_LOSS",
+                        })
+                    candidates.clear()
                 market_blocked: dict[PositionDirection, str] = {}
                 if candidates and backtest_monitor is not None:
                     # Market-state authorization is additional to every other entry gate and is

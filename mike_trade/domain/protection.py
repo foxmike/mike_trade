@@ -91,6 +91,9 @@ class ProtectionKind(Enum):
     BROKER_TRAILING_STOP = "BROKER_TRAILING_STOP"
     STEPPED_TRAILING_STOP = "STEPPED_TRAILING_STOP"
     FIXED_THEN_TRAILING_STOP = "FIXED_THEN_TRAILING_STOP"
+    #: Michelle (corrected): fixed initial stop, then a monotonic move to breakeven once the
+    #: market reaches ``activation_reference``; the EMA9 exit is application-managed.
+    FIXED_THEN_BREAKEVEN_STOP = "FIXED_THEN_BREAKEVEN_STOP"
 
 
 class ProtectionStatus(Enum):
@@ -115,6 +118,7 @@ class ProtectionPolicy:
     require_broker_held: bool = True
     initial_stop_price: Decimal | None = None
     activation_reference: Decimal | None = None
+    breakeven_price: Decimal | None = None
 
     def __post_init__(self) -> None:
         if not isinstance(self.kind, ProtectionKind):
@@ -127,6 +131,7 @@ class ProtectionPolicy:
             "step_size",
             "initial_stop_price",
             "activation_reference",
+            "breakeven_price",
         ):
             object.__setattr__(
                 self, field, _optional_decimal(getattr(self, field), field=field)
@@ -145,7 +150,28 @@ class ProtectionPolicy:
         trail_count = int(self.trail_percent is not None) + int(
             self.trail_amount is not None
         )
-        if self.kind is ProtectionKind.FIXED_STOP:
+        if self.breakeven_price is not None and self.kind is not ProtectionKind.FIXED_THEN_BREAKEVEN_STOP:
+            raise ValueError("breakeven_price is only valid for FIXED_THEN_BREAKEVEN_STOP")
+        if self.kind is ProtectionKind.FIXED_THEN_BREAKEVEN_STOP:
+            if (
+                self.initial_stop_price is None
+                or self.activation_reference is None
+                or self.breakeven_price is None
+            ):
+                raise ValueError(
+                    "FIXED_THEN_BREAKEVEN_STOP requires initial_stop_price, "
+                    "activation_reference and breakeven_price"
+                )
+            if (
+                stop_count or trail_count or self.step_size is not None
+                or self.activation_gain is not None
+            ):
+                raise ValueError("FIXED_THEN_BREAKEVEN_STOP does not accept offset/trail/step fields")
+            if not self.initial_stop_price < self.breakeven_price < self.activation_reference:
+                raise ValueError(
+                    "FIXED_THEN_BREAKEVEN_STOP requires initial_stop < breakeven < activation"
+                )
+        elif self.kind is ProtectionKind.FIXED_STOP:
             if stop_count != 1:
                 raise ValueError("FIXED_STOP requires exactly one stop offset")
             if (
@@ -319,7 +345,9 @@ def start_protection(
     if not isinstance(direction, PositionDirection):
         raise ValueError("cycle direction must be PositionDirection")
 
-    if policy.kind is ProtectionKind.FIXED_THEN_TRAILING_STOP:
+    if policy.kind in (
+        ProtectionKind.FIXED_THEN_TRAILING_STOP, ProtectionKind.FIXED_THEN_BREAKEVEN_STOP
+    ):
         assert policy.initial_stop_price is not None
         stop = policy.initial_stop_price
     elif policy.kind is ProtectionKind.FIXED_STOP:
