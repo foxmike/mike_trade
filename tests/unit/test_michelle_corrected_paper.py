@@ -1,4 +1,4 @@
-"""PAPER lifecycle of the corrected Michelle strategies on the simulated Alpaca exchange.
+"""PAPER lifecycle of the corrected Michelle strategies (V2 rules) on the simulated Alpaca exchange.
 
 Covers the broker-facing half of the rules: Stage 1 stop established with the fill, the one-way
 breakeven replacement at fill + $0.50, the application-managed protective exit (classified as a
@@ -21,6 +21,7 @@ from michelle_corrected_support import (
     ctx,
     developing_candle,
     qqq_bars,
+    qqq_session,
     regular_bars,
 )
 from scripted_strategies import build_registry
@@ -49,7 +50,7 @@ def session_context(price: str, ask: str, *, high: str | None = None) -> MarketC
     candles = regular_bars(symbol="AAA")
     dev = developing_candle(7, price, high or price, price, price, symbol="AAA")
     context, _ = ctx(
-        candles, developing=dev, trade=price, qqq=qqq_bars(7), qqq_price="408", symbol="AAA",
+        candles, developing=dev, trade=price, qqq=qqq_session(7), qqq_price="408", symbol="AAA",
         as_of=NOW, quote=(price, ask),
     )
     return context
@@ -70,7 +71,7 @@ def exchange() -> FakeAlpacaExchange:
     return ex
 
 
-async def test_entry_establishes_the_fixed_stage_one_stop_immediately(tmp_path, exchange):
+async def test_rule42_entry_establishes_the_fixed_stage_one_stop_immediately(tmp_path, exchange):
     runtime = await start_paper(
         tmp_path, exchange, [(BUY_ID, {})], [(SELL_ID, {})], registry=registry()
     )
@@ -91,7 +92,7 @@ async def test_entry_establishes_the_fixed_stage_one_stop_immediately(tmp_path, 
         await runtime.stop()
 
 
-async def test_stage_two_replaces_the_stop_with_breakeven_once_and_never_lowers_it(tmp_path, exchange):
+async def test_rule43_45_stage_two_replaces_the_stop_with_breakeven_once_and_never_lowers_it(tmp_path, exchange):
     runtime = await start_paper(
         tmp_path, exchange, [(BUY_ID, {})], [(SELL_ID, {})], registry=registry()
     )
@@ -115,7 +116,7 @@ async def test_stage_two_replaces_the_stop_with_breakeven_once_and_never_lowers_
         await runtime.stop()
 
 
-async def test_breakeven_breach_is_an_immediate_full_protective_exit_not_a_reviewable_sell(
+async def test_rule44_46_breakeven_breach_is_an_immediate_full_protective_exit_not_a_reviewable_sell(
     tmp_path, exchange
 ):
     runtime = await start_paper(
@@ -142,7 +143,7 @@ async def test_breakeven_breach_is_an_immediate_full_protective_exit_not_a_revie
         await runtime.stop()
 
 
-async def test_daily_loss_limit_liquidates_everything_and_blocks_every_strategys_entries(
+async def test_rule47_daily_loss_limit_liquidates_everything_and_blocks_every_strategys_entries(
     tmp_path, exchange
 ):
     runtime = await start_paper(

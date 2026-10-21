@@ -1,5 +1,5 @@
 """Strategy adapters, two-stage protection, daily-loss guard and the backtest lifecycle of the
-corrected Michelle VWAP Bounce/Break (business rules 1-55).
+corrected Michelle VWAP Bounce/Break (business rules V2, 1-51).
 
 The end-to-end tests replay a synthetic session through the real ``BacktestRunner`` and
 execution simulator; unit tests cover the BUY/SELL adapters on hand-built contexts.
@@ -71,6 +71,7 @@ from michelle_corrected_support import (  # noqa: E402  (tests/unit is on sys.pa
     developing_candle,
     premarket,
     qqq_bars,
+    qqq_session,
     regular_bars,
 )
 
@@ -100,37 +101,46 @@ def test_corrected_strategies_register_independently_of_the_originals() -> None:
     assert stops.CORRECTED_BUY_ID == BUY_ID and stops.CORRECTED_SELL_ID == SELL_ID
 
 
+def test_rule1_buy_is_a_long_entry_strategy_on_one_minute_candles() -> None:
+    spec = VwapBounceBreakMichelleCorrectedBuy.spec
+    assert spec.side is StrategyRole.BUY
+    assert spec.required_timeframes == (CandleTimeframe.M1,)
+    assert spec.trigger_timeframe is CandleTimeframe.M1
+    assert spec.version == "2.0.0"  # V2 rules: results of V1 runs are not comparable
+    assert "final_2.docx" in spec.source
+
+
 def test_corrected_buy_is_not_subject_to_the_original_attempt_limiter() -> None:
     from mike_trade.strategies.michelle_common import CORRECTED_BUY_IDS, MICHELLE_BUY_IDS
 
     assert not CORRECTED_BUY_IDS & MICHELLE_BUY_IDS
 
 
-# ------------------------------------------------------------------ Rules 46-50: stops
+# ------------------------------------------------------------------ Rules 42-46: stops
 
 
 @pytest.mark.parametrize(
     ("fill", "initial"),
     [("100.00", "99.25"), ("100.004", "99.25"), ("100.0099", "99.25"), ("10.00", "9.25")],
 )
-def test_rule46_initial_stop_is_fill_minus_075_and_never_follows_vwap(fill: str, initial: str) -> None:
+def test_rule42_initial_stop_is_fill_minus_075_and_never_follows_vwap(fill: str, initial: str) -> None:
     assert stops.initial_stop(D(fill)) == D(initial)
 
 
-def test_rule46_no_valid_stop_below_a_fill_at_or_under_075() -> None:
+def test_rule42_no_valid_stop_below_a_fill_at_or_under_075() -> None:
     assert stops.initial_stop(D("0.75")) is None
     assert stops.initial_stop(D("0.50")) is None
     assert stops.initial_stop(D("0.76")) == D("0.0100")
 
 
-def test_rule47_activation_is_exactly_fill_plus_050() -> None:
+def test_rule43_activation_is_exactly_fill_plus_050() -> None:
     fill = D("100.00")
     assert not stops.stage_two_reached(D("100.49"), fill)
     assert stops.stage_two_reached(D("100.50"), fill)
     assert not stops.stage_two_reached(None, fill)
 
 
-def test_rule47_policy_carries_initial_activation_and_breakeven() -> None:
+def test_rule43_policy_carries_initial_activation_and_breakeven() -> None:
     policy = stops.policy_for_fill(D("100.004"))
     assert policy is not None and policy.kind is ProtectionKind.FIXED_THEN_BREAKEVEN_STOP
     assert policy.initial_stop_price == D("99.25")
@@ -139,7 +149,7 @@ def test_rule47_policy_carries_initial_activation_and_breakeven() -> None:
     assert stops.policy_for_fill(D("0.70")) is None
 
 
-def test_rule48_stage_one_only_the_initial_stop_applies() -> None:
+def test_rule44_stage_one_only_the_initial_stop_applies() -> None:
     fill = D("100.00")
     assert stops.exit_trigger(D("99.26"), fill, D("99.0"), stage_two=False) is None
     assert stops.exit_trigger(D("99.25"), fill, D("99.0"), stage_two=False) is stops.ExitTrigger.INITIAL_STOP
@@ -147,14 +157,14 @@ def test_rule48_stage_one_only_the_initial_stop_applies() -> None:
     assert stops.exit_trigger(D("99.90"), fill, D("101.0"), stage_two=False) is None
 
 
-def test_rule48_stage_two_breakeven_touch_exits_inclusive() -> None:
+def test_rule44_stage_two_breakeven_touch_exits_inclusive() -> None:
     fill = D("100.00")
     assert stops.exit_trigger(D("100.01"), fill, None, stage_two=True) is None
     assert stops.exit_trigger(D("100.00"), fill, None, stage_two=True) is stops.ExitTrigger.BREAKEVEN
     assert stops.exit_trigger(D("99.99"), fill, None, stage_two=True) is stops.ExitTrigger.BREAKEVEN
 
 
-def test_rule48_stage_two_ema9_is_strictly_below_and_uses_the_last_completed_candle() -> None:
+def test_rule44_stage_two_ema9_is_strictly_below_and_uses_the_last_completed_candle() -> None:
     fill = D("100.00")
     ema9 = D("100.40")
     assert stops.exit_trigger(D("100.40"), fill, ema9, stage_two=True) is None  # not strictly below
@@ -162,7 +172,7 @@ def test_rule48_stage_two_ema9_is_strictly_below_and_uses_the_last_completed_can
     assert stops.exit_trigger(D("100.41"), fill, ema9, stage_two=True) is None
 
 
-def test_rule49_effective_stop_never_drops_below_breakeven_and_ema_part_can_ease() -> None:
+def test_rule45_effective_stop_never_drops_below_breakeven_and_ema_part_can_ease() -> None:
     fill = D("100.00")
     assert stops.effective_stop_level(fill, None, stage_two=False) == D("99.25")
     assert stops.effective_stop_level(fill, D("99.0"), stage_two=True) == D("100.00")  # floor
@@ -173,7 +183,7 @@ def test_rule49_effective_stop_never_drops_below_breakeven_and_ema_part_can_ease
     assert stops.ema9_stop_level(D("101.201")) == D("101.20")
 
 
-def test_rule50_policy_validation_rejects_a_backward_ladder() -> None:
+def test_rule46_policy_validation_rejects_a_backward_ladder() -> None:
     from mike_trade.domain.protection import ProtectionPolicy
 
     with pytest.raises(ValueError):
@@ -183,10 +193,10 @@ def test_rule50_policy_validation_rejects_a_backward_ladder() -> None:
         )
 
 
-# --------------------------------------------------------------- Rules 51-52: account loss
+# --------------------------------------------------------------- Rules 47-48: account loss
 
 
-def test_rule51_daily_loss_reaches_or_exceeds_150_realized_plus_unrealized() -> None:
+def test_rule47_daily_loss_reaches_or_exceeds_150_realized_plus_unrealized() -> None:
     at = OPEN + 10 * MIN
     guard = DailyLossGuard()
     assert guard.limit == DEFAULT_DAILY_LOSS_LIMIT == D("150.00")
@@ -197,7 +207,7 @@ def test_rule51_daily_loss_reaches_or_exceeds_150_realized_plus_unrealized() -> 
     assert guard.liquidation_required(at, 1) and not guard.liquidation_required(at, 0)
 
 
-def test_rule51_latch_survives_a_pnl_recovery_and_resets_next_trading_day() -> None:
+def test_rule47_latch_survives_a_pnl_recovery_and_resets_next_trading_day() -> None:
     at = OPEN + 10 * MIN
     guard = DailyLossGuard()
     guard.observe(at, D("-200"), D("0"))
@@ -209,7 +219,7 @@ def test_rule51_latch_survives_a_pnl_recovery_and_resets_next_trading_day() -> N
     assert not guard.entries_blocked(next_day)
 
 
-def test_rule51_stricter_account_limit_is_honoured_and_default_is_not_loosened() -> None:
+def test_rule47_stricter_account_limit_is_honoured_and_default_is_not_loosened() -> None:
     assert effective_limit(None) == D("150.00")
     assert effective_limit(D("100")) == D("100")
     assert effective_limit(D("300")) == D("150.00")
@@ -219,7 +229,7 @@ def test_rule51_stricter_account_limit_is_honoured_and_default_is_not_loosened()
     ("day", "expected_close_hour"),
     [(date(2026, 10, 8), 16), (date(2026, 11, 27), 13), (date(2026, 12, 24), 13)],
 )
-def test_rule52_liquidation_is_five_minutes_before_close_on_standard_and_early_sessions(
+def test_rule48_liquidation_is_five_minutes_before_close_on_standard_and_early_sessions(
     day: date, expected_close_hour: int
 ) -> None:
     from mike_trade.scheduling.calendar import NEW_YORK, eod_close_time
@@ -271,10 +281,10 @@ def test_fixture_reaches_a_confirmed_window_with_a_hammer() -> None:
     assert snapshot.confirm_close == D("100.3")
 
 
-def test_buy_live_tick_in_c_plus_one_signals_with_evidence_and_intrabar_semantics() -> None:
+def test_rule33_buy_live_tick_in_c_plus_one_signals_with_evidence_and_intrabar_semantics() -> None:
     candles = regular_bars()
     dev = developing_candle(7, "100.35", "100.45", "100.35", "100.45")
-    context, state = ctx(candles, developing=dev, trade="100.45", qqq=qqq_bars(7), qqq_price="408")
+    context, state = ctx(candles, developing=dev, trade="100.45", qqq=qqq_session(7), qqq_price="408")
     evaluation = VwapBounceBreakMichelleCorrectedBuy().evaluate(context, {}, state)
     assert evaluation.is_signal, evaluation.reason_codes
     assert evaluation.reference_price == D("100.45")
@@ -285,64 +295,110 @@ def test_buy_live_tick_in_c_plus_one_signals_with_evidence_and_intrabar_semantic
     assert evaluation.bar_time == dev.start
 
 
-def test_buy_live_tick_below_confirmation_close_waits_then_triggers_without_green_candle() -> None:
+def test_rule33_35_buy_live_tick_below_confirmation_close_waits_then_triggers_without_green_candle() -> None:
     candles = regular_bars()
     below = developing_candle(7, "100.10", "100.15", "100.05", "100.10")
-    context, state = ctx(candles, developing=below, trade="100.10", qqq=qqq_bars(7), qqq_price="408")
+    context, state = ctx(candles, developing=below, trade="100.10", qqq=qqq_session(7), qqq_price="408")
     assert not VwapBounceBreakMichelleCorrectedBuy().evaluate(context, {}, state).is_signal
     # the same (still red) candle later prints the confirmation close: immediate market buy
     hit = developing_candle(7, "100.10", "100.30", "100.05", "100.30")
-    context, state = ctx(candles, developing=hit, trade="100.30", qqq=qqq_bars(7), qqq_price="408")
+    context, state = ctx(candles, developing=hit, trade="100.30", qqq=qqq_session(7), qqq_price="408")
     assert VwapBounceBreakMichelleCorrectedBuy().evaluate(context, {}, state).is_signal
 
 
-def test_buy_live_rejects_trades_above_vwap_plus_half_dollar_and_c_plus_six() -> None:
+def test_rule30_33_38_buy_live_rejects_trades_above_the_frozen_ceiling_and_c_plus_six() -> None:
     candles = regular_bars()
-    vwap = mc.vwap_with(mc.prepare_session(premarket() + candles, DAY), None)
-    assert vwap is not None
-    rich = str(vwap + D("0.51"))
+    snapshot = mc.scan(mc.prepare_session(premarket() + candles, DAY))
+    assert snapshot.entry_ceiling is not None
+    ceiling = snapshot.entry_ceiling  # Candle C's VWAP + 0.50, fixed when C completed
+    rich = str((ceiling + D("0.01")).quantize(D("0.01")))
     dev = developing_candle(7, rich, rich, rich, rich)
-    context, state = ctx(candles, developing=dev, trade=rich, qqq=qqq_bars(7), qqq_price="408")
+    context, state = ctx(candles, developing=dev, trade=rich, qqq=qqq_session(7), qqq_price="408")
     assert not VwapBounceBreakMichelleCorrectedBuy().evaluate(context, {}, state).is_signal
+    ok = str(ceiling.quantize(D("0.01"), rounding="ROUND_DOWN"))  # on the ceiling: allowed
+    dev = developing_candle(7, ok, ok, ok, ok)
+    context, state = ctx(candles, developing=dev, trade=ok, qqq=qqq_session(7), qqq_price="408")
+    assert VwapBounceBreakMichelleCorrectedBuy().evaluate(context, {}, state).is_signal
     late_candles = regular_bars([("100.4", "100.5", "100.3", "100.4", "1000")] * 5)
     late = developing_candle(12, "100.4", "100.5", "100.4", "100.5")  # C+6
     context, state = ctx(
-        late_candles, developing=late, trade="100.45", qqq=qqq_bars(12), qqq_price="410"
+        late_candles, developing=late, trade="100.45", qqq=qqq_session(12), qqq_price="410"
     )
     assert not VwapBounceBreakMichelleCorrectedBuy().evaluate(context, {}, state).is_signal
 
 
-def test_buy_requires_qqq_filter_and_fails_closed_without_qqq_data() -> None:
+def test_rule33_buy_live_ask_above_the_frozen_ceiling_defers_the_entry() -> None:
+    candles = regular_bars()
+    dev = developing_candle(7, "100.55", "100.60", "100.55", "100.60")
+    context, state = ctx(
+        candles, developing=dev, trade="100.60", qqq=qqq_session(7), quote=("100.60", "100.70")
+    )
+    assert not VwapBounceBreakMichelleCorrectedBuy().evaluate(context, {}, state).is_signal
+    context, state = ctx(
+        candles, developing=dev, trade="100.60", qqq=qqq_session(7), quote=("100.60", "100.62")
+    )
+    assert VwapBounceBreakMichelleCorrectedBuy().evaluate(context, {}, state).is_signal
+
+
+#: Candle C closes 101.80 while its VWAP is 100.2764, so the frozen ceiling (100.7764) is below the
+#: confirmation close: Scenario 2 (wait for a pullback; EMA9 99.755 / EMA20 99.474 are below it).
+SCENARIO_TWO = [
+    *REGULAR[:6],
+    ("98.7", "101.9", "98.6", "101.8", "9000"),
+]
+
+
+def test_rule34_buy_live_scenario_two_waits_for_a_pullback_to_the_ceiling_above_vwap_and_emas() -> None:
+    candles = regular_bars()[:6] + [cd("ABC", OPEN + 6 * MIN, *SCENARIO_TWO[6])]
+    snapshot = mc.scan(mc.prepare_session(premarket() + candles, DAY))
+    assert snapshot.scenario is mc.EntryScenario.ABOVE_CEILING
+    assert snapshot.confirm_close == D("101.8") and snapshot.entry_ceiling < snapshot.confirm_close
+    strategy = VwapBounceBreakMichelleCorrectedBuy()
+    for trade, expected in (
+        ("101.80", False),  # at the confirmation close: above the ceiling, wait
+        ("100.80", False),  # still above the ceiling
+        ("100.60", True),  # pulled back below the confirmation close: allowed in Scenario 2
+        ("100.15", False),  # at/under the last completed candle's VWAP
+    ):
+        dev = developing_candle(7, trade, trade, trade, trade)
+        context, state = ctx(candles, developing=dev, trade=trade, qqq=qqq_session(7))
+        assert strategy.evaluate(context, {}, state).is_signal is expected, trade
+
+
+def test_rule40_buy_requires_qqq_momentum_and_fails_closed_without_qqq_data() -> None:
     candles = regular_bars()
     dev = developing_candle(7, "100.35", "100.45", "100.35", "100.45")
     context, state = ctx(candles, developing=dev, trade="100.45")  # no QQQ data at all
     assert not VwapBounceBreakMichelleCorrectedBuy().evaluate(context, {}, state).is_signal
-    falling = [
+    falling = premarket("QQQ", "410") + [
         cd("QQQ", OPEN + i * MIN, str(410 - i), str(411 - i), str(409 - i), str(410 - i), "5000")
         for i in range(7)
     ]
     context, state = ctx(candles, developing=dev, trade="100.45", qqq=falling, qqq_price="403")
     assert not VwapBounceBreakMichelleCorrectedBuy().evaluate(context, {}, state).is_signal
+    # without QQQ premarket candles the EMAs are undefined: fails closed
+    context, state = ctx(candles, developing=dev, trade="100.45", qqq=qqq_bars(7), qqq_price="403")
+    assert not VwapBounceBreakMichelleCorrectedBuy().evaluate(context, {}, state).is_signal
 
 
-def test_buy_ignores_stale_data_non_eligible_symbols_and_held_positions() -> None:
+def test_rule5_buy_ignores_stale_data_non_eligible_symbols_and_held_positions() -> None:
     candles = regular_bars()
     dev = developing_candle(7, "100.35", "100.45", "100.35", "100.45")
-    stale_ctx, state = ctx(candles, developing=dev, trade="100.45", qqq=qqq_bars(7), stale=True)
+    stale_ctx, state = ctx(candles, developing=dev, trade="100.45", qqq=qqq_session(7), stale=True)
     ev = VwapBounceBreakMichelleCorrectedBuy().evaluate(stale_ctx, {}, state)
     assert ev.reason_codes == (ReasonCode.STALE_DATA,)
     held_ctx, held_state = ctx(
-        candles, developing=dev, trade="100.45", qqq=qqq_bars(7), qqq_price="408", eligibility=False
+        candles, developing=dev, trade="100.45", qqq=qqq_session(7), qqq_price="408", eligibility=False
     )
     ev = VwapBounceBreakMichelleCorrectedBuy().evaluate(held_ctx, {}, held_state)
     assert not ev.is_signal and ev.reason_codes == (ReasonCode.NOT_ELIGIBLE,)
     assert ev.state_updates["was_held"] == "1"  # the held position keeps the setup purged
 
 
-def test_one_setup_one_trade_consumption_and_exit_purge_need_a_fresh_setup() -> None:
+def test_rule38_49_one_setup_one_trade_consumption_and_exit_purge_need_a_fresh_setup() -> None:
     candles = regular_bars()
     dev = developing_candle(7, "100.35", "100.45", "100.35", "100.45")
-    context, state = ctx(candles, developing=dev, trade="100.45", qqq=qqq_bars(7), qqq_price="408")
+    context, state = ctx(candles, developing=dev, trade="100.45", qqq=qqq_session(7), qqq_price="408")
     strategy = VwapBounceBreakMichelleCorrectedBuy()
     first = strategy.evaluate(context, {}, state)
     assert first.is_signal
@@ -351,24 +407,43 @@ def test_one_setup_one_trade_consumption_and_exit_purge_need_a_fresh_setup() -> 
     again = strategy.evaluate(context, {}, state)
     assert not again.is_signal  # the filled setup is permanently consumed
     # hold (position open), then flat again: nothing before the exit may be reused
-    held_ctx, _ = ctx(candles, developing=dev, trade="100.45", qqq=qqq_bars(7), eligibility=False)
+    held_ctx, _ = ctx(candles, developing=dev, trade="100.45", qqq=qqq_session(7), eligibility=False)
     held = strategy.evaluate(held_ctx, {}, {**state, "eligibility": "HELD"})
     state.update(held.state_updates)
     flat_after_exit = strategy.evaluate(context, {}, state)
     assert not flat_after_exit.is_signal
 
 
-def test_buy_intrabar_dip_breach_purges_the_setup_and_persists_the_barrier() -> None:
+def test_rule50_setup_state_never_leaks_into_the_next_session() -> None:
+    candles = regular_bars()
+    dev = developing_candle(7, "100.35", "100.45", "100.35", "100.45")
+    context, state = ctx(candles, developing=dev, trade="100.45", qqq=qqq_session(7))
+    # yesterday's consumption / purge / held markers must not block (or resurrect) anything today
+    state.update(
+        {
+            "session_id": "2026-10-07",
+            "consumed_after": "2026-10-08T20:00:00+00:00",
+            "purge_barrier": "2026-10-08T20:00:00+00:00",
+            "was_held": "1",
+        }
+    )
+    ev = VwapBounceBreakMichelleCorrectedBuy().evaluate(context, {}, state)
+    assert ev.is_signal
+    assert ev.state_updates["session_id"] == "2026-10-08"
+    assert ev.state_updates["consumed_after"] == "" and ev.state_updates["purge_barrier"] == ""
+
+
+def test_rule10_buy_intrabar_dip_breach_purges_the_setup_and_persists_the_barrier() -> None:
     candles = regular_bars()
     # developing low 2.4 below the setup's low breaches $3.00 against the VWAP of that print
     dev = developing_candle(7, "100.35", "100.45", "95.00", "100.45")
-    context, state = ctx(candles, developing=dev, trade="100.45", qqq=qqq_bars(7), qqq_price="408")
+    context, state = ctx(candles, developing=dev, trade="100.45", qqq=qqq_session(7), qqq_price="408")
     ev = VwapBounceBreakMichelleCorrectedBuy().evaluate(context, {}, state)
     assert not ev.is_signal
     assert ev.state_updates["purge_barrier"] == dev.end.isoformat()
 
 
-def test_sell_adapter_stage_one_and_two_with_intrabar_ticks() -> None:
+def test_rule43_44_sell_adapter_stage_one_and_two_with_intrabar_ticks() -> None:
     candles = regular_bars()
     base_state = {
         "position_cycle_id": "cycle-1",
@@ -401,7 +476,7 @@ def test_sell_adapter_stage_one_and_two_with_intrabar_ticks() -> None:
     assert sell.evaluate(context, {}, state).state_updates["stage_two_active"] == "1"
 
 
-def test_sell_adapter_ema9_trailing_exit_uses_last_completed_candle_not_the_forming_one() -> None:
+def test_rule44_sell_adapter_ema9_trailing_exit_uses_last_completed_candle_not_the_forming_one() -> None:
     # price run-up long enough that the last completed candle's EMA9 sits above the fill
     run = [
         (str(100 + 0.2 * i - 0.1), str(100 + 0.2 * i + 0.1), str(100 + 0.2 * i - 0.15),
@@ -428,7 +503,7 @@ def test_sell_adapter_ema9_trailing_exit_uses_last_completed_candle_not_the_form
     assert not sell.evaluate(context, {}, dict(state)).is_signal  # not STRICTLY below
 
 
-def test_sell_adapter_bar_replay_resolves_a_both_touched_candle_as_the_initial_stop() -> None:
+def test_rule51_sell_adapter_bar_replay_resolves_a_both_touched_candle_as_the_initial_stop() -> None:
     candles = regular_bars([("100.4", "101.5", "99.2", "100.6", "1000")])  # spans stop and +0.50
     state = {
         "position_cycle_id": "c", "position_fill_price": "100.00",
@@ -436,7 +511,7 @@ def test_sell_adapter_bar_replay_resolves_a_both_touched_candle_as_the_initial_s
     }
     context, _ = ctx(candles)
     ev = VwapBounceBreakMichelleCorrectedSell().evaluate(context, {}, state)
-    assert ev.is_signal and ev.state_updates["exit_trigger"] == "INITIAL_STOP"  # rule 55
+    assert ev.is_signal and ev.state_updates["exit_trigger"] == "INITIAL_STOP"  # rule 51
 
 
 # --------------------------------------------------------------------- backtest lifecycle
@@ -451,8 +526,13 @@ def replay_event(candle: Candle) -> ReplayEvent:
     )
 
 
-def run_backtest(tmp_path, tail, *, quantity: str = "10", qqq: int = 24):  # noqa: ANN001, ANN202
-    abc = premarket() + regular_bars(list(tail))
+def run_backtest(  # noqa: ANN202
+    tmp_path, tail, *, quantity: str = "10", qqq: int = 24, confirmation=None  # noqa: ANN001
+):
+    regular = regular_bars(list(tail))
+    if confirmation is not None:  # replace Candle C (09:36) to select Scenario 2
+        regular[6] = cd("ABC", OPEN + 6 * MIN, *confirmation)
+    abc = premarket() + regular
     last_end = abc[-1].end
     events = [replay_event(c) for c in abc]
     events += [replay_event(c) for c in premarket("QQQ", "400")]
@@ -501,7 +581,7 @@ def run_backtest(tmp_path, tail, *, quantity: str = "10", qqq: int = 24):  # noq
     return result, abc
 
 
-def test_backtest_entry_is_modeled_at_the_c_plus_one_open_with_stage_one_stop(tmp_path) -> None:
+def test_rule33_42_backtest_entry_is_modeled_at_the_c_plus_one_open_with_stage_one_stop(tmp_path) -> None:
     result, bars = run_backtest(tmp_path, [("100.40", "100.60", "100.30", "100.50", "1000")])
     buys = [f for f in result.fills if f["side"] == "BUY"]
     assert len(buys) == 1
@@ -513,7 +593,7 @@ def test_backtest_entry_is_modeled_at_the_c_plus_one_open_with_stage_one_stop(tm
     assert result.cycles[0]["entry_strategy"] == BUY_ID
 
 
-def test_backtest_stage_two_moves_to_breakeven_then_breach_exits_as_a_protective_stop(tmp_path) -> None:
+def test_rule43_44_46_backtest_stage_two_moves_to_breakeven_then_breach_exits_as_a_protective_stop(tmp_path) -> None:
     result, bars = run_backtest(
         tmp_path,
         [
@@ -531,16 +611,16 @@ def test_backtest_stage_two_moves_to_breakeven_then_breach_exits_as_a_protective
     assert len([f for f in result.fills if f["side"] == "BUY"]) == 1
 
 
-def test_backtest_candle_touching_stop_and_activation_is_the_stop_first(tmp_path) -> None:
+def test_rule51_backtest_candle_touching_stop_and_activation_is_the_stop_first(tmp_path) -> None:
     result, _ = run_backtest(
         tmp_path, [("100.40", "101.50", "99.50", "100.60", "1000")]  # spans 99.65 and 100.90
     )
     sells = [f for f in result.fills if f["side"] == "SELL"]
-    assert len(sells) == 1 and sells[0]["price"] == D("99.65")  # rule 55: initial stop first
+    assert len(sells) == 1 and sells[0]["price"] == D("99.65")  # rule 51: initial stop first
     assert not [e for e in result.protection_events if e["event_type"] == "STOP_MOVED"]
 
 
-def test_backtest_deferred_trigger_fills_at_confirmation_close_inside_the_candle(tmp_path) -> None:
+def test_rule33_35_backtest_deferred_trigger_fills_at_confirmation_close_inside_the_candle(tmp_path) -> None:
     # C+1 opens below Confirmation_Close 100.30 and trades through it
     result, bars = run_backtest(tmp_path, [("100.10", "100.40", "100.05", "100.20", "1000")])
     buys = [f for f in result.fills if f["side"] == "BUY"]
@@ -549,12 +629,56 @@ def test_backtest_deferred_trigger_fills_at_confirmation_close_inside_the_candle
     assert buys[0]["time"] == bars[-1].end  # modeled at the latest possible instant
 
 
-def test_backtest_no_entry_when_c_plus_one_opens_above_the_vwap_ceiling(tmp_path) -> None:
+def test_rule33_backtest_no_entry_when_c_plus_one_stays_above_the_frozen_ceiling(tmp_path) -> None:
+    # ceiling = 100.1264 + 0.50 (Candle C's VWAP, frozen): the whole candle trades above it
     result, _ = run_backtest(tmp_path, [("101.50", "101.80", "101.40", "101.60", "1000")])
     assert not [f for f in result.fills if f["side"] == "BUY"]
 
 
-def test_backtest_candle_closing_below_vwap_in_the_window_purges_before_any_later_fill(tmp_path) -> None:
+def test_rule35_backtest_scenario_one_gap_above_the_ceiling_fills_when_price_falls_to_the_ceiling(
+    tmp_path,
+) -> None:
+    result, bars = run_backtest(tmp_path, [("101.00", "101.10", "100.50", "100.70", "1000")])
+    (buy,) = [f for f in result.fills if f["side"] == "BUY"]
+    assert buy["price"] == D("100.62")  # highest tick at/below the frozen ceiling 100.6264
+    assert buy["time"] == bars[-1].end  # modeled at the latest possible instant
+
+
+SCENARIO_TWO_C = ("98.7", "101.9", "98.6", "101.8", "9000")  # close 101.80 > ceiling 100.7764
+
+
+def test_rule34_backtest_scenario_two_enters_on_a_pullback_below_the_confirmation_close(tmp_path) -> None:
+    # opens above the ceiling, falls to it: entry BELOW the confirmation close (Scenario 2 only)
+    result, _ = run_backtest(
+        tmp_path, [("101.20", "101.30", "100.50", "100.60", "1000")], confirmation=SCENARIO_TWO_C
+    )
+    (buy,) = [f for f in result.fills if f["side"] == "BUY"]
+    assert buy["price"] == D("100.77") and buy["price"] < D("101.80")
+    # an opening print already inside the band is an exact open fill
+    result, bars = run_backtest(
+        tmp_path / "open", [("100.50", "100.70", "100.40", "100.60", "1000")],
+        confirmation=SCENARIO_TWO_C,
+    )
+    (buy,) = [f for f in result.fills if f["side"] == "BUY"]
+    assert buy["price"] == D("100.50") and buy["time"] == bars[-1].start
+
+
+def test_rule36_backtest_scenario_two_never_enters_at_or_below_the_vwap_benchmark(tmp_path) -> None:
+    # band is (100.2764, 100.7764]: the candle only trades at/under the last completed VWAP
+    result, _ = run_backtest(
+        tmp_path, [("100.25", "100.27", "100.10", "100.20", "1000")], confirmation=SCENARIO_TWO_C
+    )
+    assert not [f for f in result.fills if f["side"] == "BUY"]
+    # rising into the band: the first qualifying tick above the benchmark VWAP (100.28)
+    result, _ = run_backtest(
+        tmp_path / "rise", [("100.20", "100.40", "100.10", "100.30", "1000")],
+        confirmation=SCENARIO_TWO_C,
+    )
+    (buy,) = [f for f in result.fills if f["side"] == "BUY"]
+    assert buy["price"] == D("100.28")
+
+
+def test_rule37_backtest_candle_closing_below_vwap_in_the_window_purges_before_any_later_fill(tmp_path) -> None:
     tail = [
         ("100.0", "100.05", "99.20", "99.40", "1000"),  # C+1 gaps under the floor, closes below VWAP
         ("100.40", "100.60", "100.30", "100.50", "1000"),  # a later qualifying print: purged
@@ -563,7 +687,7 @@ def test_backtest_candle_closing_below_vwap_in_the_window_purges_before_any_late
     assert not [f for f in result.fills if f["side"] == "BUY"]
 
 
-def test_backtest_forces_end_of_day_liquidation_for_the_corrected_strategies(tmp_path) -> None:
+def test_rule48_backtest_forces_end_of_day_liquidation_for_the_corrected_strategies(tmp_path) -> None:
     # EOD is a property of the corrected strategies even when the run config does not enable it
     result, bars = run_backtest(
         tmp_path,

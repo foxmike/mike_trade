@@ -172,8 +172,8 @@ class BacktestRequest:
     result_directory: str | Path = ".backtest-runs"
 
     def __post_init__(self) -> None:
-        if not 1 <= len(self.symbols) <= 10:
-            raise ValueError("backtest requires 1-10 operator-supplied symbols")
+        if not 1 <= len(self.symbols) <= 100:
+            raise ValueError("backtest requires 1-100 operator-supplied symbols")
         if self.window_start.tzinfo is None or self.window_end.tzinfo is None:
             raise ValueError("backtest requires an explicit bounded aware window")
         if self.window_end <= self.window_start:
@@ -991,7 +991,7 @@ class BacktestRunner:
                     "Michelle SELL (its mandatory two-stage protective exit)"
                 )
         if corrected_active:
-            # Rule 52: no overnight positions - forced liquidation at 15:55 New York (or five
+            # Rule 48: no overnight positions - forced liquidation at 15:55 New York (or five
             # minutes before an early close, which the EOD helper derives from the session) is a
             # property of the corrected strategies, whatever the run configuration says.
             eod_enabled = True
@@ -1443,8 +1443,8 @@ class BacktestRunner:
             Called with a completed candle's information; the new level is in force from the
             following candle on (the simulator's own rule for replacements), which keeps OHLC
             replay causal and resolves a candle that spans the initial stop and the +$0.50
-            activation as stop-first (rule 55).  Stage 2's stop is ``max(breakeven, EMA9 level)``
-            where EMA9 is that of the last COMPLETED candle (rule 48): the breakeven part never
+            activation as stop-first (rule 51).  Stage 2's stop is ``max(breakeven, EMA9 level)``
+            where EMA9 is that of the last COMPLETED candle (rule 44): the breakeven part never
             moves down; the EMA9 part may ease back toward it, which a resting stop can only do
             by cancel-and-rearm.
             """
@@ -1874,7 +1874,7 @@ class BacktestRunner:
                 and evaluation.strategy_id in CORRECTED_BUY_IDS
                 and callable(getattr(self.execution, "require_entry_protection", None))
             ):
-                # Rule 46: an entry whose fill admits no valid Stage 1 stop is never accepted.
+                # Rule 42: an entry whose fill admits no valid Stage 1 stop is never accepted.
                 self.execution.require_entry_protection(
                     order.broker_order_id, michelle_corrected_stop.initial_stop
                 )
@@ -2051,7 +2051,7 @@ class BacktestRunner:
             )
 
         async def submit_forced_close(symbol: str, at: datetime, reason: str) -> None:
-            """Account-level market close of one open position (rule 51), retried until flat."""
+            """Account-level market close of one open position (rule 47), retried until flat."""
             if quantities[symbol] <= ZERO:
                 return
             existing = pending_exit.get(symbol)
@@ -2097,7 +2097,7 @@ class BacktestRunner:
             pending_exit[symbol] = order.broker_order_id
 
         async def observe_daily_loss(at: datetime, symbol: str, bar_low: Decimal) -> bool:
-            """Rule 51: realized + unrealized (adverse extreme of this candle) vs the limit."""
+            """Rule 47: realized + unrealized (adverse extreme of this candle) vs the limit."""
             if loss_guard is None or day_baseline is None:
                 return False
             unrealized_mark = ZERO

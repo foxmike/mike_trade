@@ -1,8 +1,9 @@
 """Synthetic one-session fixtures shared by the corrected Michelle tests (not a test module).
 
-The regular-session path is engineered so that the corrected rules see: setup start 09:33,
+The regular-session path is engineered so that the corrected rules (V2) see: setup start 09:33,
 hammer 09:35 (Pattern 1), three closes below VWAP, confirmation candle 09:36 closing 100.30
-(Confirmation_Close) above VWAP, then the entry window C+1 = 09:37.
+(Confirmation_Close) above VWAP with VWAP 100.1264 (frozen entry ceiling 100.6264, so Scenario 1),
+then the entry window C+1 = 09:37.
 """
 
 from __future__ import annotations
@@ -68,6 +69,11 @@ def qqq_bars(count: int, symbol: str = "QQQ") -> list[Candle]:
         cd(symbol, OPEN + i * MIN, str(400 + i), str(401 + i), str(399 + i), str(400.6 + i), "5000")
         for i in range(count)
     ]
+
+
+def qqq_session(count: int, symbol: str = "QQQ", base: str = "400") -> list[Candle]:
+    """QQQ premarket (seeds EMA9/EMA20, Rule 2) plus ``count`` rising regular-session candles."""
+    return premarket(symbol, base) + qqq_bars(count, symbol)
 
 
 def ctx(

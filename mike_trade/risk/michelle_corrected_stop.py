@@ -1,17 +1,17 @@
-"""Michelle's corrected two-stage protection (business rules 46-50), all ``Decimal``, long only.
+"""Michelle's corrected two-stage protection (business rules V2: 42-46), all ``Decimal``, long only.
 
-* **Stage 1 (Rule 46)** - ``InitialStop = Fill - $0.75``.  Fixed: it never follows VWAP and is
+* **Stage 1 (Rule 42)** - ``InitialStop = Fill - $0.75``.  Fixed: it never follows VWAP and is
   not the 0.5% trailing policy.  A stop is a price level on the exchange tick grid; trade prices
   sit on that grid too, so ``price <= Fill - 0.75`` is exactly ``price <= floor_tick(Fill - 0.75)``
   and the level is rounded DOWN (the trigger set is identical to the rule, never earlier).
-* **Stage 2 (Rule 47)** - once the market trades at or above ``Fill + $0.50`` the protective stop
+* **Stage 2 (Rule 43)** - once the market trades at or above ``Fill + $0.50`` the protective stop
   moves to breakeven (``Fill``; again ``floor_tick`` is the identical trigger set) and the EMA9
   trailing exit is armed.
-* **After Stage 2 (Rule 48)** the whole position exits the instant EITHER the market touches or
+* **After Stage 2 (Rule 44)** the whole position exits the instant EITHER the market touches or
   falls below breakeven (``price <= Fill``) OR crosses strictly below the EMA9 of the last
   COMPLETED one-minute candle (``price < EMA9``).  An intrabar breach is an immediate exit; no
   waiting for the candle to close.
-* The breakeven floor never moves down (Rule 49) and every exit closes 100% (Rule 50).
+* The breakeven floor never moves down (Rule 45) and every exit closes 100% (Rule 46).
 
 Stage 1 and the breakeven stop are broker-representable (a fixed STOP order, replaced once, upward).
 The EMA9 leg is *application-managed* because its level changes both ways each minute: it is
@@ -42,9 +42,9 @@ _ZERO = Decimal(0)
 
 
 class ExitTrigger(StrEnum):
-    BREAKEVEN = "BREAKEVEN"  # Rule 48(a): price <= Fill
-    EMA9 = "EMA9"  # Rule 48(b): price < EMA9 of the last completed candle
-    INITIAL_STOP = "INITIAL_STOP"  # Rule 46
+    BREAKEVEN = "BREAKEVEN"  # Rule 44: price <= Fill
+    EMA9 = "EMA9"  # Rule 44: price < EMA9 of the last completed candle
+    INITIAL_STOP = "INITIAL_STOP"  # Rule 42
 
 
 def protection_applies(buy_strategy_id: object, sell_strategy_ids: Iterable[str]) -> bool:
@@ -113,7 +113,7 @@ def is_current_policy(policy: ProtectionPolicy) -> bool:
 
 
 def stage_two_reached(highest_price_since_fill: Decimal | None, fill_price: Decimal) -> bool:
-    """Rule 47: the market traded at or above ``Fill + 0.50`` after the fill."""
+    """Rule 43: the market traded at or above ``Fill + 0.50`` after the fill."""
     return highest_price_since_fill is not None and highest_price_since_fill >= activation_price(
         fill_price
     )

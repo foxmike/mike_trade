@@ -1,4 +1,4 @@
-"""Michelle's corrected two-stage protective SELL (business rules 46-50).
+"""Michelle's corrected two-stage protective SELL (business rules V2: 42-46 and 51).
 
 Unlike the original Michelle SELL (an advisory mirror of an engine-owned trailing stop), this
 strategy produces the MANDATORY protective exits of the corrected rules.  The engines classify
@@ -80,7 +80,7 @@ _SPEC = StrategySpec(
         "price < EMA9 of the last completed one-minute candle, intrabar. No partial exits."
     ),
     source=(
-        "Michelle, vwap_bounce_break_business_rules_final.docx rules 46-50 and 55; "
+        "Michelle, vwap_bounce_break_business_rules_final_2.docx rules 42-46 and 51; "
         "docs/strategies/michelle/vwap_bounce_break_michelle_corrected.md."
     ),
     execution_limitations=(
@@ -90,7 +90,7 @@ _SPEC = StrategySpec(
         "the broker-held stop only.",
         "OHLC replay applies Stage 2 from the candle after the one that reached fill + $0.50 and, "
         "when one candle spans both the initial stop and the activation level, the initial stop "
-        "is assumed to trigger first (rule 55).",
+        "is assumed to trigger first (rule 51).",
     ),
     reason_codes=(
         ReasonCode.SIGNAL,
@@ -144,7 +144,7 @@ class VwapBounceBreakMichelleCorrectedSell(SellStrategy):
             latest = bars[-1]
             ema9 = bars[-2].ema9 if len(bars) >= 2 else None  # EMA9 in force while it traded
             # Stage 2 is known only from candles BEFORE this one (OHLC ordering is unknowable):
-            # a candle that reaches the activation level and also the initial stop is a stop (55).
+            # a candle that reaches the activation level and also the initial stop is a stop (51).
             before = max(
                 [fill, *(b.high for b in bars[:-1] if fill_time is None or b.start >= fill_time)]
             )

@@ -373,7 +373,7 @@ class LiveStrategyLifecycle(VwapReferenceLifecycle):
         trade = context.latest_trade
         self._marks[symbol] = trade.price if trade is not None else self._marks.get(symbol, ZERO)
         if self._check_daily_loss(context.as_of):
-            # Rule 51: the cumulative daily loss limit was reached - exits first, no new entries.
+            # Rule 47: the cumulative daily loss limit was reached - exits first, no new entries.
             return actions + await self._daily_loss_liquidate("evaluation", locked=True)
 
         # Keep the broker stop tight with whatever the market just printed.
@@ -906,7 +906,7 @@ class LiveStrategyLifecycle(VwapReferenceLifecycle):
             )
         self.executor.retire(cycle.cycle_id)
 
-    # ================================================== account-level daily loss (Rule 51)
+    # ================================================== account-level daily loss (Rule 47)
 
     def _realized_today(self, day: date) -> Decimal:
         """Realized net P&L of cycles closed on the New York ``day`` (DB-backed after restart)."""

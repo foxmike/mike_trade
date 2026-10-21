@@ -1,4 +1,4 @@
-"""Michelle's corrected VWAP Bounce/Break BUY (business rules 1-45, 53-55).
+"""Michelle's corrected VWAP Bounce/Break BUY (business rules V2: 1-41, 49-51).
 
 Independent of ``vwap_bounce_break_michelle_buy`` (which is left untouched).  All trading
 logic lives in :mod:`mike_trade.strategies.michelle_corrected`; this class adapts it to the
@@ -7,7 +7,7 @@ in SHADOW/PAPER/LIVE, and an OHLC emulation of that window for historical replay
 
 Persisted state is only a purge *barrier* (``consumed_after`` / ``purge_barrier``): the setup is a
 deterministic replay of the completed candles after the barrier, so a restart can never resurrect
-a purged or consumed setup, and a new trade needs a completely new setup cycle (Rules 40, 53-54).
+a purged or consumed setup, and a new trade needs a completely new setup cycle (Rules 38, 49-50).
 """
 
 from __future__ import annotations
@@ -43,7 +43,7 @@ if TYPE_CHECKING:
     from mike_trade.market_data.context import MarketContext
 
 STRATEGY_ID = CORRECTED_BUY_ID
-STRATEGY_VERSION = "1.0.0"
+STRATEGY_VERSION = "2.0.0"
 REFERENCE_SYMBOL = "QQQ"
 STATE_KEYS = (
     "session_id",
@@ -81,28 +81,35 @@ _SPEC = StrategySpec(
     parameter_schema=ParameterSchema(()),
     persistent_state_keys=STATE_KEYS,
     methodology=(
-        "Corrected VWAP bounce (55 rules). A completed candle closing below VWAP, EMA9 and EMA20 "
+        "Corrected VWAP bounce (V2, 51 rules). A completed candle closing below VWAP, EMA9 and EMA20 "
         "(both EMAs below VWAP) starts a setup; its low may not fall more than $3.00 below the VWAP "
-        "of the candle that printed it. A hammer, 3-6 candle support shelf (lows within $0.50) or "
-        "bullish engulfing below VWAP (a lower Pattern 2 once a lower low prints), three straight "
-        "closes below VWAP and then the first green candle that touches VWAP and closes above it "
-        "within 30 minutes confirm. Entry is a market buy during the next five candles when price "
-        "is at/above the confirmation close, strictly above VWAP and at most VWAP+$0.50, if EMA "
-        "momentum, the QQQ filter and the VWAP-crossing filter pass. One setup, one trade."
+        "of the candle that printed it. A hammer, a support shelf (2+ closes within $0.25) or a "
+        "bullish engulfing below VWAP (a lower Pattern 2 once a candle closes below Pattern 1's "
+        "low), three straight closes below VWAP and then the first green candle that touches VWAP "
+        "and closes above it within 30 minutes confirm; the confirmation close and the entry "
+        "ceiling (that candle's VWAP + $0.50) are frozen. Entry is a market buy during the next "
+        "five candles: Scenario 1 (close <= ceiling) when price is between the confirmation close "
+        "and the ceiling, Scenario 2 (close > ceiling) when price pulls back to the ceiling while "
+        "above VWAP, EMA9 and EMA20; both strictly above the last completed candle's VWAP, and "
+        "only if the stock's and QQQ's EMA momentum pass. One setup, one trade."
     ),
     source=(
-        "Michelle, vwap_bounce_break_business_rules_final.docx (55 numbered business rules), "
+        "Michelle, vwap_bounce_break_business_rules_final_2.docx (51 numbered business rules), "
         "docs/strategies/michelle/vwap_bounce_break_michelle_corrected.md."
     ),
     execution_limitations=(
         "SHADOW/PAPER/LIVE evaluate the entry window on every trade tick and send a market buy; "
-        "the broker/adapter fill can differ from the trigger print by slippage.",
-        "OHLC replay cannot see intrabar ordering: the C+1 open leg is exact, the deferred "
-        "trigger fills at Confirmation_Close stamped at the bar end only when the VWAP band holds "
-        "at both bounds of that bar's VWAP; other intrabar paths are never guessed into fills.",
-        "Premarket candles must be present in the context to seed EMA9/EMA20; without them the "
-        "strategy cannot start a setup (fails closed).",
-        "The QQQ filter needs QQQ one-minute candles in MarketContext.reference_candles.",
+        "the broker/adapter fill can differ from the trigger print by slippage, and a fresh ask "
+        "above the frozen entry ceiling defers the entry (an execution safeguard, not a rule).",
+        "OHLC replay cannot see intrabar ordering: an opening print that qualifies is exact; "
+        "otherwise the fill is modeled at the nearest edge of the qualifying price band (the "
+        "lowest qualifying price when price rises into it, the entry ceiling when it falls into "
+        "it), stamped at the candle end; paths that jump over the band, and candles whose own low "
+        "could have breached the $3.00 dip before a rising trigger, are never turned into fills.",
+        "Premarket candles must be present in the context to seed EMA9/EMA20 of the stock AND of "
+        "QQQ; without them the strategy cannot start a setup / the QQQ filter fails closed.",
+        "The QQQ momentum filter needs QQQ one-minute candles in MarketContext.reference_candles "
+        "whose latest completed candle is the one just before the entry candle.",
         "Account-level $150 daily loss and 15:55 / early-close liquidation are enforced by the "
         "shared risk layer, not by this strategy.",
     ),
@@ -138,7 +145,7 @@ class VwapBounceBreakMichelleCorrectedBuy(BuyStrategy):
     ) -> StrategyEvaluation:
         self.spec.parameter_schema.validate(params)
         symbol = context.symbol
-        if context.freshness.stale:  # Rule 6
+        if context.freshness.stale:  # Rule 5
             return StrategyEvaluation.no_signal(self.spec, symbol, (ReasonCode.STALE_DATA,))
         if context.session_status is not SessionStatus.REGULAR:  # Rule 2
             return StrategyEvaluation.no_signal(self.spec, symbol, (ReasonCode.NOT_ELIGIBLE,))
@@ -151,7 +158,7 @@ class VwapBounceBreakMichelleCorrectedBuy(BuyStrategy):
         if state.get("session_id") != session_key:  # a new trading day starts clean
             updates.update({"consumed_after": "", "purge_barrier": "", "was_held": ""})
         if state.get("eligibility") != ELIGIBILITY_WATCHING_BUY:
-            # Rule 6 / 53: a held position keeps the setup purged; its exit is the purge instant.
+            # Rules 5 / 49: a held position keeps the setup purged; its exit is the purge instant.
             stamp = developing.end if developing is not None else (bars[-1].end if bars else None)
             updates["was_held"] = "1"
             if stamp is not None:
@@ -173,7 +180,6 @@ class VwapBounceBreakMichelleCorrectedBuy(BuyStrategy):
         qqq_all = mc.prepare_session(
             (context.reference_candles or {}).get(REFERENCE_SYMBOL, ()), day
         )
-        qqq_now = (context.reference_prices or {}).get(REFERENCE_SYMBOL)
 
         if live is not None:
             price, event_time, candle = live
@@ -183,7 +189,7 @@ class VwapBounceBreakMichelleCorrectedBuy(BuyStrategy):
                 return StrategyEvaluation.no_signal(
                     self.spec, symbol, (ReasonCode.INSUFFICIENT_DATA,), state_updates=updates
                 )
-            if mc.live_dip_breached(snapshot, candle, vwap_now):  # Rule 11, continuously
+            if mc.live_dip_breached(snapshot, candle, vwap_now):  # Rule 10, until filled
                 updates["purge_barrier"] = candle.end.isoformat()
                 return StrategyEvaluation.no_signal(
                     self.spec, symbol, (ReasonCode.NO_SIGNAL,), bar_time=candle.start,
@@ -192,7 +198,7 @@ class VwapBounceBreakMichelleCorrectedBuy(BuyStrategy):
             quote = context.latest_quote
             ask = quote.ask if quote is not None and not context.freshness.stale else None
             decision = mc.live_entry(
-                snapshot, bars, candle, price, event_time, vwap_now, ask, qqq_all, qqq_now
+                snapshot, bars, candle, price, event_time, vwap_now, ask, qqq_all
             )
             bar_time = candle.start
             snapshot_facts = snapshot.facts()
@@ -200,12 +206,11 @@ class VwapBounceBreakMichelleCorrectedBuy(BuyStrategy):
             latest = bars[-1]
             before = mc.scan(bars[:-1], barrier)
             qqq_bars = [bar for bar in qqq_all if bar.end <= latest.start]
-            qqq_price = qqq_bars[-1].close if qqq_bars else None
-            decision = mc.bar_entry(before, bars[:-1], latest, qqq_bars, qqq_price)
+            decision = mc.bar_entry(before, bars[:-1], latest, qqq_bars)
             bar_time = latest.start
             snapshot_facts = before.facts()
 
-        # Rule 46: the Stage 1 stop must be establishable at the fill, so a price that admits no
+        # Rule 42: the Stage 1 stop must be establishable at the fill, so a price that admits no
         # valid stop below it (at or under $0.75) can never be entered.
         if decision.enter and (
             decision.price is None or stops.initial_stop(decision.price) is None

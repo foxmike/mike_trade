@@ -2498,8 +2498,8 @@ independent identifiers; each BUY and SELL can be configured separately:
 | `five_minute_orb_michelle_sell` | SELL | `Five_Minute_ORB_Formatted.docx` | [Implemented specification](strategies/michelle/five_minute_orb_michelle_sell.md) |
 | `vwap_bounce_break_michelle_buy` | BUY | `VWAP_Bounce_Break_Formatted.docx` | [Implemented specification](strategies/michelle/vwap_bounce_break_michelle_buy.md) |
 | `vwap_bounce_break_michelle_sell` | SELL | `VWAP_Bounce_Break_Formatted.docx` | [Implemented specification](strategies/michelle/vwap_bounce_break_michelle_sell.md) |
-| `vwap_bounce_break_michelle_corrected_buy` | BUY | `vwap_bounce_break_business_rules_final.docx` | [Corrected 55-rule specification](strategies/michelle/vwap_bounce_break_michelle_corrected.md) |
-| `vwap_bounce_break_michelle_corrected_sell` | SELL (protective) | `vwap_bounce_break_business_rules_final.docx` | [Corrected 55-rule specification](strategies/michelle/vwap_bounce_break_michelle_corrected.md) |
+| `vwap_bounce_break_michelle_corrected_buy` | BUY | `vwap_bounce_break_business_rules_final_2.docx` | [Corrected V2 51-rule specification](strategies/michelle/vwap_bounce_break_michelle_corrected.md) |
+| `vwap_bounce_break_michelle_corrected_sell` | SELL (protective) | `vwap_bounce_break_business_rules_final_2.docx` | [Corrected V2 51-rule specification](strategies/michelle/vwap_bounce_break_michelle_corrected.md) |
 
 The [source map and implementation notes](strategies/michelle/README.md) record the document audit,
 approved superseding clarifications, live trade-event timing, deterministic completed-M1 replay,

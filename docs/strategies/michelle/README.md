@@ -9,8 +9,7 @@ The approved October 2026 clarifications supersede contradictory source wording.
 |---|---|---|---|
 | `Five_Minute_ORB_Formatted.docx` | [`five_minute_orb_michelle_buy`](five_minute_orb_michelle_buy.md) | [`five_minute_orb_michelle_sell`](five_minute_orb_michelle_sell.md) | Implemented |
 | `VWAP_Bounce_Break_Formatted.docx` | [`vwap_bounce_break_michelle_buy`](vwap_bounce_break_michelle_buy.md) | [`vwap_bounce_break_michelle_sell`](vwap_bounce_break_michelle_sell.md) | Implemented |
-
-| `vwap_bounce_break_business_rules_final.docx` (55 rules, supersedes the row above) | [`vwap_bounce_break_michelle_corrected_buy`](vwap_bounce_break_michelle_corrected.md) | [`vwap_bounce_break_michelle_corrected_sell`](vwap_bounce_break_michelle_corrected.md) | Implemented (focused tests only) |
+| `vwap_bounce_break_business_rules_final_2.docx` (V2, 51 rules; supersedes `…_final.docx` (V1, 55 rules) and the row above) | [`vwap_bounce_break_michelle_corrected_buy`](vwap_bounce_break_michelle_corrected.md) | [`vwap_bounce_break_michelle_corrected_sell`](vwap_bounce_break_michelle_corrected.md) | Implemented to V2 (focused tests only) |
 
 All six identifiers are independent registry entries; the corrected pair follows its own rule set
 and protection (see its specification) and never shares the original attempt limiter.

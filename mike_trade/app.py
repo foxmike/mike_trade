@@ -2129,7 +2129,7 @@ class VwapReferenceLifecycle:
                     "(its mandatory two-stage protective exit) on the same symbol",
                     code="CORRECTED_SELL_REQUIRED",
                 )
-        #: Account-level $150 cumulative daily-loss control (rule 51), active for any SHADOW
+        #: Account-level $150 cumulative daily-loss control (rule 47), active for any SHADOW
         #: scenario that runs a corrected Michelle strategy; one latch per scenario account.
         self._daily_loss_limit = effective_limit(None)
         self._loss_guards: dict[str, DailyLossGuard] = {}
@@ -2475,7 +2475,7 @@ class VwapReferenceLifecycle:
             return actions
 
         if loss_latched:
-            # Rule 51: exits first, for every open position; no strategy may act afterwards.
+            # Rule 47: exits first, for every open position; no strategy may act afterwards.
             await self._liquidate_for_daily_loss(
                 scenario, {context.symbol: context}, context.as_of, actions, only=context.symbol
             )
@@ -3217,7 +3217,7 @@ class VwapReferenceLifecycle:
             level = logging.WARNING if reason.startswith("PREDICTION_UNAVAILABLE") else logging.INFO
             _MODEL_LOGGER.log(level, "Model strategy decision", extra={"model_audit": record})
 
-    # ---- account-level daily loss (business rule 51) ---------------------------------
+    # ---- account-level daily loss (business rule 47) ---------------------------------
 
     def _guard(self, scenario: _ShadowScenario) -> DailyLossGuard | None:
         if not self._corrected_active:
@@ -3267,7 +3267,7 @@ class VwapReferenceLifecycle:
         *,
         only: str | None = None,
     ) -> None:
-        """Rule 51: market-close every open position and cancel working entries now."""
+        """Rule 47: market-close every open position and cancel working entries now."""
         account = scenario.account
         for order in tuple(account.state.orders.values()):
             if order.is_open and order.side.is_entry:

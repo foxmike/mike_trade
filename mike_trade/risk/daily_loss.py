@@ -1,4 +1,4 @@
-"""Account-level cumulative daily-loss control (business rule 51).
+"""Account-level cumulative daily-loss control (business rule V2: 47).
 
 ``cumulative = realized trading-day P/L + unrealized P/L on open positions``.  When the
 cumulative LOSS reaches (or exceeds) the limit the account must
@@ -84,7 +84,7 @@ class DailyLossGuard:
         return self._latched_at is not None and self._day == trading_date(at)
 
     def entries_blocked(self, at: datetime) -> bool:
-        """Rule 51: no new entry for the rest of the trading day once the limit was reached."""
+        """Rule 47: no new entry for the rest of the trading day once the limit was reached."""
         return self.latched(at)
 
     def liquidation_required(self, at: datetime, open_positions: int) -> bool:

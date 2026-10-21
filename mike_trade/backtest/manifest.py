@@ -147,8 +147,8 @@ class RunManifest:
             object.__setattr__(self, name, dt.astimezone(UTC))
         if self.window_end <= self.window_start:
             raise ValueError("window must be bounded and non-empty")
-        if not 1 <= len(self.symbols) <= 10:
-            raise ValueError("manifest requires 1-10 symbols")
+        if not 1 <= len(self.symbols) <= 100:
+            raise ValueError("manifest requires 1-100 symbols")
         object.__setattr__(self, "symbols", tuple(sorted({s.upper() for s in self.symbols})))
         for name in ("code_revision", "data_provenance", "fee_assumptions", "slippage_assumptions",
                      "fill_assumptions", "ambiguity_assumptions", "holdout_access",
