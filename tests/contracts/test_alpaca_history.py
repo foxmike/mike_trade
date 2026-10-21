@@ -9,6 +9,8 @@ import pytest
 from mike_trade.market_data.alpaca_history import (
     Adjustment,
     AlpacaHistoricalBars,
+    AlpacaHistoryError,
+    AlpacaHistoryResponseError,
     BarProvenanceError,
     HistoricalBar,
     PaginationLimitError,
@@ -74,6 +76,25 @@ def test_history_honors_page_bound() -> None:
             "AAPL", "1Min", T0, T0 + timedelta(minutes=1)
         )
     assert len(client.calls) == 2
+
+
+def test_history_distinguishes_empty_bars_provider_error_and_malformed_payload() -> None:
+    assert AlpacaHistoricalBars(Pages([{"bars": {}}])).fetch_bars(
+        "AAPL", "1m", T0, T0 + timedelta(minutes=1)
+    ) == ()
+
+    with pytest.raises(AlpacaHistoryResponseError) as captured:
+        AlpacaHistoricalBars(
+            Pages([{"code": 42910000, "message": "rate limit exceeded"}])
+        ).fetch_bars("AAPL", "1m", T0, T0 + timedelta(minutes=1))
+    assert captured.value.retryable
+    assert "code=42910000" in str(captured.value)
+    assert "rate limit exceeded" in str(captured.value)
+
+    with pytest.raises(AlpacaHistoryError, match=r"malformed.*keys=unexpected"):
+        AlpacaHistoricalBars(Pages([{"unexpected": []}])).fetch_bars(
+            "AAPL", "1m", T0, T0 + timedelta(minutes=1)
+        )
 
 
 def test_mixed_feed_or_adjustment_provenance_is_rejected() -> None:

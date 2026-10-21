@@ -13,7 +13,10 @@ import httpx
 import pyarrow.parquet as pq
 import pytest
 
-from mike_trade.market_data.alpaca_history import AlpacaHistoricalBars
+from mike_trade.market_data.alpaca_history import (
+    AlpacaHistoricalBars,
+    AlpacaHistoryResponseError,
+)
 from mike_trade.research.universe_acquisition import (
     BoundedAlpacaClient,
     Universe,
@@ -250,6 +253,109 @@ def test_rate_limit_recovery_and_bounded_attempts() -> None:
     assert client.get("/v2/stocks/bars")
     assert inner.calls == 2
     assert delays == [2.0, 1.0]
+
+
+def test_sanitized_provider_rate_limit_retries_but_auth_error_does_not() -> None:
+    class ProviderErrors:
+        def __init__(self, error: AlpacaHistoryResponseError) -> None:
+            self.calls = 0
+            self.error = error
+
+        def get(self, path: str, params: object = None) -> object:
+            self.calls += 1
+            if self.calls == 1:
+                raise self.error
+            return {"bars": {}}
+
+    elapsed = 0.0
+    messages: list[str] = []
+
+    def sleep(seconds: float) -> None:
+        nonlocal elapsed
+        elapsed += seconds
+
+    limited = ProviderErrors(
+        AlpacaHistoryResponseError(
+            status_code=429,
+            provider_code=42910000,
+            provider_message="rate limit exceeded",
+            retry_after=2.0,
+        )
+    )
+    client = BoundedAlpacaClient(
+        limited,
+        requests_per_minute=20,
+        sleep=sleep,
+        monotonic=lambda: elapsed,
+        jitter=lambda: 0.0,
+        on_retry=messages.append,
+    )
+    assert client.get(
+        "/v2/stocks/bars",
+        params={"symbols": "TSLA", "start": "2025-03-10", "end": "2025-03-11"},
+    ) == {"bars": {}}
+    assert limited.calls == 2
+    assert "symbol=TSLA" in messages[0]
+    assert "retry=1/4" in messages[0]
+
+    denied = ProviderErrors(
+        AlpacaHistoryResponseError(
+            status_code=403,
+            provider_code=40310000,
+            provider_message="subscription does not permit this request",
+        )
+    )
+    permanent = BoundedAlpacaClient(
+        denied,
+        requests_per_minute=20,
+        sleep=lambda _seconds: None,
+        monotonic=lambda: 0.0,
+    )
+    with pytest.raises(AlpacaHistoryResponseError, match="subscription"):
+        permanent.get("/v2/stocks/bars")
+    assert denied.calls == 1
+
+
+def test_global_limiter_accepts_documented_archive_rate_below_provider_ceiling() -> None:
+    client = BoundedAlpacaClient(
+        _FakeBars(),
+        requests_per_minute=180,
+        sleep=lambda _seconds: None,
+        monotonic=lambda: 0.0,
+    )
+    assert client.requests_per_minute == 180
+    with pytest.raises(ValueError, match="rate"):
+        BoundedAlpacaClient(_FakeBars(), requests_per_minute=201)
+
+
+def test_historical_http_client_preserves_sanitized_status_code_and_message() -> None:
+    from mike_trade.app import _AlpacaDataHttpClient
+
+    def handler(request: httpx.Request) -> httpx.Response:
+        return httpx.Response(
+            429,
+            json={"code": 42910000, "message": "rate limit exceeded"},
+            headers={"Retry-After": "7"},
+            request=request,
+        )
+
+    client = _AlpacaDataHttpClient("test-key", "test-secret")
+    client._client.close()
+    client._client = httpx.Client(
+        base_url="https://data.alpaca.markets",
+        transport=httpx.MockTransport(handler),
+    )
+    try:
+        with pytest.raises(AlpacaHistoryResponseError) as captured:
+            client.get("/v2/stocks/bars", params={"symbols": "TSLA"})
+    finally:
+        client.close()
+    error = captured.value
+    assert error.status_code == 429
+    assert error.provider_code == "42910000"
+    assert error.provider_message == "rate limit exceeded"
+    assert error.retry_after == 7.0
+    assert "test-key" not in str(error) and "test-secret" not in str(error)
 
 
 def test_coverage_reports_missing_regular_minutes(tmp_path: Path) -> None:

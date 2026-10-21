@@ -8,6 +8,7 @@ import concurrent.futures
 import contextlib
 import hashlib
 import json
+import logging
 import os
 import tempfile
 import time
@@ -529,12 +530,42 @@ def register(subparsers: Any) -> None:
         help="1m: minute bars; 1d: completed RAW daily bars (the D1/W1 strategy history)",
     )
     acquire.add_argument("--root", default=os.environ.get("MIKE_TRADE_RESEARCH_DIR", "research"))
+    acquire.add_argument(
+        "--minimum-premarket-bars",
+        type=int,
+        default=0,
+        help="repair sessions with fewer than this many 04:00-to-open observations",
+    )
+    acquire.add_argument(
+        "--update-campaign",
+        type=Path,
+        help="atomically update dataset pins only after measured coverage passes",
+    )
+    acquire.add_argument("--requests-per-minute", type=int, default=20)
+    acquire.add_argument("--max-attempts", type=int, default=5)
     acquire.set_defaults(func=acquire_data)
+    coverage = actions.add_parser(
+        "verify-coverage", help="measure actual RTH/premarket observations in minute snapshots"
+    )
+    coverage.add_argument("--symbols", required=True, help="comma-separated symbols")
+    coverage.add_argument("--start", required=True)
+    coverage.add_argument("--end", required=True)
+    coverage.add_argument("--feed", default="iex", choices=("iex", "sip", "delayed_sip"))
+    coverage.add_argument("--adjustment", default="raw")
+    coverage.add_argument("--minimum-premarket-bars", type=int, default=20)
+    coverage.add_argument("--campaign-config", type=Path)
+    coverage.add_argument(
+        "--root", default=os.environ.get("MIKE_TRADE_RESEARCH_DIR", "research/data")
+    )
+    coverage.set_defaults(func=verify_minute_coverage)
     listing = actions.add_parser("list", help="list immutable datasets")
     listing.add_argument("--root", default=os.environ.get("MIKE_TRADE_RESEARCH_DIR", "research"))
     listing.set_defaults(func=list_data)
 
-    for action in ("plan", "preflight", "acquire-universe", "status", "verify"):
+    for action in (
+        "plan", "preflight", "acquire-universe", "status", "verify",
+        "repair-universe", "verify-universe-coverage",
+    ):
         command = actions.add_parser(action, help=f"100-symbol universe {action}")
         command.add_argument("--universe", default="config/research_universe_100_v1.json")
         command.add_argument(
@@ -543,6 +574,14 @@ def register(subparsers: Any) -> None:
         if action == "acquire-universe":
             command.add_argument("--workers", type=int, default=1, choices=(1, 2))
             command.add_argument("--requests-per-minute", type=int, default=20)
+        if action in {"repair-universe", "verify-universe-coverage"}:
+            command.add_argument("--start", required=True)
+            command.add_argument("--end", required=True)
+        if action == "repair-universe":
+            command.add_argument("--workers", type=int, default=4, choices=range(1, 9))
+            command.add_argument("--requests-per-minute", type=int, default=180)
+            command.add_argument("--max-attempts", type=int, default=5)
+            command.add_argument("--update-campaign", type=Path)
         command.set_defaults(func=run_universe_data)
 
     backtest = subparsers.add_parser("research-backtest", help="run a VWAP lifecycle backtest")
@@ -630,8 +669,13 @@ def run_universe_data(args: argparse.Namespace) -> int:
         UniverseAcquisition,
     )
 
-    operation = UniverseAcquisition(Universe.load(args.universe), args.root)
+    universe = Universe.load(args.universe)
     action = args.research_data_action
+    if action == "repair-universe":
+        return _repair_universe_data(args, universe)
+    if action == "verify-universe-coverage":
+        return _verify_universe_coverage(args, universe)
+    operation = UniverseAcquisition(universe, args.root)
     if action == "plan":
         print(json.dumps(operation.plan(), sort_keys=True))
         return 0
@@ -668,18 +712,205 @@ def run_universe_data(args: argparse.Namespace) -> int:
         client.close()
 
 
+def _repair_universe_data(args: argparse.Namespace, universe: Any) -> int:
+    """Repair observed RTH session gaps for one frozen universe, symbol by symbol."""
+    from mike_trade.research.datasets import _atomic_text
+    from mike_trade.research.universe_acquisition import BoundedAlpacaClient
+
+    start, end = _moment(args.start), _moment(args.end)
+    if start >= end:
+        raise ValueError("--start must precede --end")
+    logging.getLogger("httpx").setLevel(logging.WARNING)
+    logging.getLogger("httpcore").setLevel(logging.WARNING)
+    repo = HistoricalDatasetRepository(args.root)
+    progress_dir = Path(args.root) / "acquisition" / f"{universe.universe_id}-archive-repair"
+    progress_dir.mkdir(parents=True, exist_ok=True)
+    state_path = progress_dir / "state.json"
+    state: dict[str, Any] = {
+        "universe_id": universe.universe_id,
+        "universe_sha256": universe.sha256,
+        "start": start.isoformat(),
+        "end_exclusive": end.isoformat(),
+        "total_symbols": len(universe.symbols),
+        "completed": {},
+        "failures": {},
+        "updated_at": datetime.now(UTC).isoformat(),
+    }
+
+    def save_state() -> None:
+        state["updated_at"] = datetime.now(UTC).isoformat()
+        _atomic_text(state_path, json.dumps(state, indent=2, sort_keys=True) + "\n")
+
+    client = _client()
+    limited = BoundedAlpacaClient(
+        client,
+        requests_per_minute=args.requests_per_minute,
+        max_attempts=args.max_attempts,
+        on_retry=lambda message: print(f"[retry] {message}", flush=True),
+    )
+    reports: dict[str, dict[str, Any]] = {}
+
+    def repair(symbol: str) -> dict[str, Any]:
+        snapshots = repo.acquire(
+            limited,
+            [symbol],
+            start,
+            end,
+            feed="iex",
+            adjustment="raw",
+            minimum_premarket_bars=0,
+            asset_classes={symbol: universe.symbol_metadata[symbol]["asset_class"]},
+            sync_catalog_after=False,
+            progress=lambda message: print(f"[repair] {message}", flush=True),
+        )
+        if not snapshots:
+            raise ValueError(f"{symbol}: repair produced no usable immutable snapshot")
+        report = repo.minute_coverage_report(
+            symbol,
+            start,
+            end,
+            feed="iex",
+            adjustment="raw",
+            dataset_id=snapshots[-1].dataset_id,
+            minimum_premarket_bars=0,
+        )
+        if report["missing_rth_sessions"] or report["duplicate_timestamps"]:
+            raise ValueError(
+                f"{symbol}: integrity gate failed: "
+                f"missing_sessions={len(report['missing_rth_sessions'])} "
+                f"duplicate_timestamps={report['duplicate_timestamps']}"
+            )
+        return report
+
+    save_state()
+    print(
+        f"[repair] symbols={len(universe.symbols)} workers={args.workers} "
+        f"global_rpm={args.requests_per_minute} attempts={args.max_attempts}",
+        flush=True,
+    )
+    print(f"[repair] window={start.isoformat()}..{end.isoformat()} end_exclusive=true", flush=True)
+    try:
+        with concurrent.futures.ThreadPoolExecutor(max_workers=args.workers) as pool:
+            futures = {pool.submit(repair, symbol): symbol for symbol in universe.symbols}
+            finished = 0
+            for future in concurrent.futures.as_completed(futures):
+                symbol = futures[future]
+                finished += 1
+                try:
+                    report = future.result()
+                    reports[symbol] = report
+                    state["completed"][symbol] = {
+                        "dataset_id": report["dataset_id"],
+                        "actual_earliest_timestamp": report["actual_earliest_timestamp"],
+                        "actual_latest_timestamp": report["actual_latest_timestamp"],
+                        "rth_sessions": report["rth_sessions_represented"],
+                    }
+                    state["failures"].pop(symbol, None)
+                    outcome = f"dataset={report['dataset_id']}"
+                except Exception as exc:
+                    state["failures"][symbol] = {
+                        "type": type(exc).__name__,
+                        "message": str(exc)[:500],
+                        "at": datetime.now(UTC).isoformat(),
+                    }
+                    outcome = f"FAILED {type(exc).__name__}: {str(exc)[:240]}"
+                save_state()
+                print(
+                    f"[repair] symbol={symbol} {outcome} processed={finished}/100 "
+                    f"covered={len(reports)}/100 remaining={100 - finished} "
+                    f"failures={len(state['failures'])}",
+                    flush=True,
+                )
+    finally:
+        client.close()
+    repo.sync_catalog()
+    success = len(reports) == len(universe.symbols) and not state["failures"]
+    if success and args.update_campaign is not None:
+        _update_campaign_dataset_pins(
+            args.update_campaign, (reports[symbol] for symbol in ("TSLA", "QQQ"))
+        )
+        print(f"[campaign] updated verified TSLA/QQQ pins: {args.update_campaign}", flush=True)
+    print(
+        f"[repair] complete covered={len(reports)}/100 failures={len(state['failures'])}",
+        flush=True,
+    )
+    return 0 if success else 1
+
+
+def _verify_universe_coverage(args: argparse.Namespace, universe: Any) -> int:
+    """Sequential timestamp-only verification; never materializes the universe at once."""
+    start, end = _moment(args.start), _moment(args.end)
+    if start >= end:
+        raise ValueError("--start must precede --end")
+    repo = HistoricalDatasetRepository(args.root)
+    covered: list[str] = []
+    missing: dict[str, list[str]] = {}
+    errors: dict[str, str] = {}
+    for index, symbol in enumerate(universe.symbols, 1):
+        try:
+            report = repo.minute_coverage_report(
+                symbol, start, end, feed="iex", adjustment="raw", minimum_premarket_bars=0
+            )
+            dates = report["missing_rth_sessions"]
+            if dates or report["duplicate_timestamps"]:
+                missing[symbol] = dates
+            else:
+                covered.append(symbol)
+            concise = {
+                "symbol": symbol,
+                "dataset_id": report["dataset_id"],
+                "actual_earliest_timestamp": report["actual_earliest_timestamp"],
+                "actual_latest_timestamp": report["actual_latest_timestamp"],
+                "rth_sessions_represented": report["rth_sessions_represented"],
+                "expected_rth_sessions": report["expected_rth_sessions"],
+                "missing_rth_sessions": dates,
+                "duplicate_timestamps": report["duplicate_timestamps"],
+            }
+            print(json.dumps(concise, sort_keys=True), flush=True)
+        except Exception as exc:
+            errors[symbol] = f"{type(exc).__name__}: {str(exc)[:300]}"
+            print(json.dumps({"symbol": symbol, "error": errors[symbol]}), flush=True)
+        if index % 10 == 0 or index == len(universe.symbols):
+            print(f"[verify] checked={index}/100", flush=True)
+    summary = {
+        "total_configured_symbols": len(universe.symbols),
+        "successfully_covered_symbols": len(covered),
+        "covered_symbols": covered,
+        "symbols_with_missing_rth_sessions": missing,
+        "verification_errors": errors,
+        "remaining_iex_coverage_limitations": {
+            "missing_sessions": missing,
+            "unverifiable_symbols": errors,
+        },
+        "coverage_basis": "at least one actual IEX observation in each expected RTH session",
+        "premarket_requirement": "reported separately for Michelle; not an archive gate",
+    }
+    print(json.dumps({"summary": summary}, sort_keys=True), flush=True)
+    return 0 if len(covered) == len(universe.symbols) and not missing and not errors else 1
+
+
 def acquire_data(args: argparse.Namespace) -> int:
     start, end = _moment(args.start), _moment(args.end)
     if start >= end:
         raise ValueError("--start must precede --end")
+    logging.getLogger("httpx").setLevel(logging.WARNING)
+    logging.getLogger("httpcore").setLevel(logging.WARNING)
+    symbols = [s.strip().upper() for s in args.symbols.split(",") if s.strip()]
     client = _client()
+    from mike_trade.research.universe_acquisition import BoundedAlpacaClient
+
+    bounded = BoundedAlpacaClient(
+        client,
+        requests_per_minute=args.requests_per_minute,
+        max_attempts=args.max_attempts,
+        on_retry=lambda message: print(f"[retry] {message}", flush=True),
+    )
     try:
-        symbols = [s.strip() for s in args.symbols.split(",") if s.strip()]
         if getattr(args, "timeframe", "1m") == "1d":
             from mike_trade.market_data.candles import NY
 
             snapshots = HistoricalDatasetRepository(args.root).acquire_daily(
-                client,
+                bounded,
                 symbols,
                 start.astimezone(NY).date(),
                 (end - timedelta(microseconds=1)).astimezone(NY).date(),
@@ -688,12 +919,14 @@ def acquire_data(args: argparse.Namespace) -> int:
             )
         else:
             snapshots = HistoricalDatasetRepository(args.root).acquire(
-                client,
+                bounded,
                 symbols,
                 start,
                 end,
                 feed=args.feed,
                 adjustment=args.adjustment,
+                minimum_premarket_bars=args.minimum_premarket_bars,
+                progress=lambda message: print(f"[acquire] {message}", flush=True),
             )
     finally:
         client.close()
@@ -704,7 +937,105 @@ def acquire_data(args: argparse.Namespace) -> int:
                 sort_keys=True,
             )
         )
-    return 0
+    if getattr(args, "timeframe", "1m") == "1d":
+        return 0
+    reports = _minute_coverage_reports(
+        HistoricalDatasetRepository(args.root),
+        symbols,
+        start,
+        end,
+        feed=args.feed,
+        adjustment=args.adjustment,
+        minimum_premarket_bars=args.minimum_premarket_bars,
+        dataset_ids={snapshot.symbol: snapshot.dataset_id for snapshot in snapshots},
+    )
+    for report in reports:
+        print(json.dumps({"coverage": report}, sort_keys=True), flush=True)
+    complete = all(_coverage_passes(report) for report in reports)
+    if args.update_campaign is not None:
+        if complete:
+            _update_campaign_dataset_pins(args.update_campaign, reports)
+            print(f"[campaign] updated dataset pins: {args.update_campaign}", flush=True)
+        else:
+            print("[campaign] dataset pins unchanged because measured coverage failed", flush=True)
+    return 0 if complete else 1
+
+
+def _minute_coverage_reports(
+    repo: HistoricalDatasetRepository,
+    symbols: Iterable[str],
+    start: datetime,
+    end: datetime,
+    *,
+    feed: str,
+    adjustment: str,
+    minimum_premarket_bars: int,
+    dataset_ids: Mapping[str, str] | None = None,
+) -> list[dict[str, Any]]:
+    pins = dataset_ids or {}
+    return [
+        repo.minute_coverage_report(
+            symbol,
+            start,
+            end,
+            feed=feed,
+            adjustment=adjustment,
+            dataset_id=pins.get(symbol),
+            minimum_premarket_bars=minimum_premarket_bars,
+        )
+        for symbol in symbols
+    ]
+
+
+def _coverage_passes(report: Mapping[str, Any]) -> bool:
+    return (
+        not report["missing_rth_sessions"]
+        and int(report["duplicate_timestamps"]) == 0
+        and int(report["sufficient_ema_warmup_sessions"])
+        == int(report["expected_rth_sessions"])
+    )
+
+
+def _update_campaign_dataset_pins(path: Path, reports: Iterable[Mapping[str, Any]]) -> None:
+    config = json.loads(path.read_text(encoding="utf-8"))
+    pins = config.setdefault("data", {}).setdefault("dataset_ids", {})
+    for report in reports:
+        pins[str(report["symbol"])] = str(report["dataset_id"])
+    path.parent.mkdir(parents=True, exist_ok=True)
+    with tempfile.NamedTemporaryFile(
+        mode="w", encoding="utf-8", dir=path.parent, prefix=f".{path.name}.", delete=False
+    ) as stream:
+        temp = Path(stream.name)
+        json.dump(config, stream, indent=2, sort_keys=False)
+        stream.write("\n")
+        stream.flush()
+        os.fsync(stream.fileno())
+    try:
+        os.replace(temp, path)
+    finally:
+        temp.unlink(missing_ok=True)
+
+
+def verify_minute_coverage(args: argparse.Namespace) -> int:
+    start, end = _moment(args.start), _moment(args.end)
+    symbols = [s.strip().upper() for s in args.symbols.split(",") if s.strip()]
+    pins: dict[str, str] = {}
+    if args.campaign_config is not None:
+        config = json.loads(args.campaign_config.read_text(encoding="utf-8"))
+        pins = {str(key).upper(): str(value) for key, value in config["data"]["dataset_ids"].items()}
+    reports = _minute_coverage_reports(
+        HistoricalDatasetRepository(args.root),
+        symbols,
+        start,
+        end,
+        feed=args.feed,
+        adjustment=args.adjustment,
+        minimum_premarket_bars=args.minimum_premarket_bars,
+        dataset_ids=pins,
+    )
+    for report in reports:
+        print(json.dumps(report, sort_keys=True))
+    return 0 if all(_coverage_passes(report) for report in reports) else 1
 
 
 def list_data(args: argparse.Namespace) -> int:

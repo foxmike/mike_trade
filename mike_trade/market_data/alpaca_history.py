@@ -13,6 +13,7 @@ __all__ = [
     "Adjustment",
     "HistoricalBar",
     "AlpacaHistoryError",
+    "AlpacaHistoryResponseError",
     "BarProvenanceError",
     "PaginationLimitError",
     "AlpacaHistoricalBars",
@@ -29,6 +30,38 @@ class Adjustment(StrEnum):
 
 class AlpacaHistoryError(ValueError):
     """Invalid or incomplete Alpaca historical data response."""
+
+
+class AlpacaHistoryResponseError(AlpacaHistoryError):
+    """Sanitized Alpaca HTTP/provider error suitable for logs and retry policy."""
+
+    def __init__(
+        self,
+        *,
+        status_code: int | None,
+        provider_code: object = None,
+        provider_message: object = None,
+        retry_after: float | None = None,
+    ) -> None:
+        self.status_code = status_code
+        self.provider_code = None if provider_code is None else str(provider_code)[:80]
+        message = "provider returned an error without a message"
+        if provider_message is not None:
+            message = " ".join(str(provider_message).split())[:300]
+        self.provider_message = message
+        self.retry_after = retry_after
+        inferred_status: int | None = None
+        if status_code is None and self.provider_code is not None:
+            prefix = self.provider_code[:3]
+            if prefix.isdigit():
+                inferred_status = int(prefix)
+        effective_status = status_code if status_code is not None else inferred_status
+        self.retryable = effective_status == 429 or (
+            effective_status is not None and 500 <= effective_status <= 599
+        )
+        status = "unknown" if status_code is None else str(status_code)
+        code = f" code={self.provider_code}" if self.provider_code is not None else ""
+        super().__init__(f"Alpaca historical API error: HTTP {status}{code} message={message}")
 
 
 class BarProvenanceError(AlpacaHistoryError):
@@ -200,6 +233,12 @@ class AlpacaHistoricalBars:
             data = self._client.get("/v2/stocks/bars", params=params.copy())
             if not isinstance(data, Mapping):
                 raise AlpacaHistoryError("historical bars response must be an object")
+            if "bars" not in data and ("code" in data or "message" in data):
+                raise AlpacaHistoryResponseError(
+                    status_code=None,
+                    provider_code=data.get("code"),
+                    provider_message=data.get("message"),
+                )
             response_feed = data.get("feed")
             response_adjustment = data.get("adjustment")
             if response_feed is not None and str(response_feed).lower() != feed:
@@ -209,9 +248,15 @@ class AlpacaHistoricalBars:
                 and str(response_adjustment).lower() != adjustment.value
             ):
                 raise BarProvenanceError("response adjustment differs from requested adjustment")
-            result = data.get("bars")
+            if "bars" not in data:
+                keys = ",".join(sorted(str(key) for key in data)[:10]) or "none"
+                raise AlpacaHistoryError(
+                    f"malformed historical bars response; keys={keys}"
+                )
+            result = data["bars"]
             if isinstance(result, Mapping):
-                result = result.get(symbol)
+                # A valid multi-symbol response may omit a symbol when it has no trades.
+                result = result.get(symbol, [])
             if not isinstance(result, list):
                 raise AlpacaHistoryError("historical bars response must contain a bars array")
             for item in result:

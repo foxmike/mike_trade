@@ -1000,9 +1000,39 @@ class _AlpacaDataHttpClient:
         )
 
     def get(self, path: str, params: Mapping[str, object] | None = None) -> object:
+        import httpx
+
+        from mike_trade.market_data.alpaca_history import AlpacaHistoryResponseError
+
         response = self._client.get(path, params=params)
-        response.raise_for_status()
-        return response.json()
+        try:
+            payload = response.json()
+        except ValueError:
+            payload = None
+        try:
+            response.raise_for_status()
+        except httpx.HTTPStatusError:
+            code = payload.get("code") if isinstance(payload, Mapping) else None
+            message = payload.get("message") if isinstance(payload, Mapping) else None
+            if message is None:
+                message = response.reason_phrase or "non-JSON error response"
+            retry_after: float | None = None
+            try:
+                retry_after = max(0.0, float(response.headers.get("retry-after", "")))
+            except ValueError:
+                pass
+            raise AlpacaHistoryResponseError(
+                status_code=response.status_code,
+                provider_code=code,
+                provider_message=message,
+                retry_after=retry_after,
+            ) from None
+        if payload is None:
+            raise AlpacaHistoryResponseError(
+                status_code=response.status_code,
+                provider_message="response body is not valid JSON",
+            )
+        return payload
 
     def close(self) -> None:
         self._client.close()

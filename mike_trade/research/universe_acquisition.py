@@ -25,7 +25,11 @@ from typing import Any
 import duckdb
 import httpx
 
-from mike_trade.market_data.alpaca_history import AlpacaHistoricalBars, HistoricalBar
+from mike_trade.market_data.alpaca_history import (
+    AlpacaHistoricalBars,
+    AlpacaHistoryResponseError,
+    HistoricalBar,
+)
 from mike_trade.research.datasets import (
     DatasetSnapshot,
     HistoricalDatasetRepository,
@@ -137,8 +141,11 @@ class BoundedAlpacaClient:
         sleep: Callable[[float], None] = time.sleep,
         monotonic: Callable[[], float] = time.monotonic,
         jitter: Callable[[], float] = random.random,
+        on_retry: Callable[[str], None] | None = None,
     ) -> None:
-        if not 1 <= requests_per_minute <= 60 or not 1 <= max_attempts <= 10:
+        # Alpaca Basic's documented market-data allowance is 200 requests/minute.
+        # The archive launcher defaults below that ceiling and shares this one limiter.
+        if not 1 <= requests_per_minute <= 200 or not 1 <= max_attempts <= 10:
             raise ValueError("request rate or retry bound is invalid")
         self.inner, self.requests_per_minute = inner, requests_per_minute
         self.max_attempts, self.sleep, self.monotonic, self.jitter = (
@@ -150,6 +157,7 @@ class BoundedAlpacaClient:
         self._lock = threading.Lock()
         self._next_request = 0.0
         self._cooldown_until = 0.0
+        self.on_retry = on_retry or (lambda _message: None)
 
     def get(self, path: str, params: Mapping[str, object] | None = None) -> Any:
         for attempt in range(self.max_attempts):
@@ -166,21 +174,31 @@ class BoundedAlpacaClient:
                 self.sleep(deferred)
             try:
                 return self.inner.get(path, params=params)
-            except (httpx.HTTPStatusError, httpx.TransportError) as exc:
+            except (AlpacaHistoryResponseError, httpx.HTTPStatusError, httpx.TransportError) as exc:
                 response = getattr(exc, "response", None)
-                status = getattr(response, "status_code", None)
-                retryable = status in {429, 500, 502, 503, 504} or isinstance(
-                    exc, httpx.TransportError
+                status = (
+                    exc.status_code
+                    if isinstance(exc, AlpacaHistoryResponseError)
+                    else getattr(response, "status_code", None)
+                )
+                retryable = (
+                    exc.retryable
+                    if isinstance(exc, AlpacaHistoryResponseError)
+                    else status in {429, 500, 502, 503, 504}
+                    or isinstance(exc, httpx.TransportError)
                 )
                 if not retryable:
-                    raise RuntimeError(
-                        f"Alpaca historical API rejected request (HTTP {status})"
-                    ) from None
+                    raise
                 if attempt + 1 == self.max_attempts:
                     raise RuntimeError(
-                        f"Alpaca historical API exhausted retries (HTTP {status or 'transport'})"
+                        f"Alpaca historical API exhausted {self.max_attempts} attempts "
+                        f"(HTTP {status or 'transport'}): {exc}"
                     ) from None
-                header = response.headers.get("retry-after") if response is not None else None
+                header = (
+                    exc.retry_after
+                    if isinstance(exc, AlpacaHistoryResponseError)
+                    else response.headers.get("retry-after") if response is not None else None
+                )
                 try:
                     retry_after = max(0.0, float(header)) if header is not None else 0.0
                 except ValueError:
@@ -196,6 +214,13 @@ class BoundedAlpacaClient:
                 backoff = max(retry_after, min(60.0, 2**attempt + self.jitter()))
                 with self._lock:
                     self._cooldown_until = max(self._cooldown_until, self.monotonic() + backoff)
+                details = params or {}
+                self.on_retry(
+                    f"symbol={details.get('symbols', '?')} "
+                    f"range={details.get('start', '?')}..{details.get('end', '?')} "
+                    f"retry={attempt + 1}/{self.max_attempts - 1} "
+                    f"after={backoff:.1f}s error={exc}"
+                )
                 self.sleep(backoff)
         raise AssertionError("unreachable retry loop")
 

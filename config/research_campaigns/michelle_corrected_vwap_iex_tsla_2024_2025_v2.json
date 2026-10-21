@@ -1,0 +1,83 @@
+{
+  "schema_version": 1,
+  "campaign_id": "michelle_corrected_vwap_iex_tsla_2024_2025_v2",
+  "description": "One shared-account TSLA replay of Michelle's corrected 51-rule VWAP Bounce/Break V2 strategy, with QQQ supplied only as market context.",
+  "symbols": [
+    "TSLA"
+  ],
+  "reference_symbols": [
+    "QQQ"
+  ],
+  "symbols_expected": 1,
+  "window": {
+    "start": "2024-10-09T00:00:00Z",
+    "end": "2025-10-09T00:00:00Z",
+    "end_exclusive": true
+  },
+  "data": {
+    "root": "research/data",
+    "provider": "alpaca",
+    "feed": "iex",
+    "adjustment": "raw",
+    "timeframe": "1m",
+    "session_input": "extended_hours_for_ema_seed",
+    "dataset_ids": {
+      "TSLA": "alpaca-iex-TSLA-1m-raw-c01cc9e12ac61789f3d3",
+      "QQQ": "alpaca-iex-QQQ-1m-raw-03421092dc91216c7125"
+    }
+  },
+  "strategies": {
+    "buy": "vwap_bounce_break_michelle_corrected_buy",
+    "sell": "vwap_bounce_break_michelle_corrected_sell",
+    "parameters": {}
+  },
+  "portfolio": {
+    "starting_capital": "25000",
+    "max_gross_exposure": "25000",
+    "account_daily_loss_limit": "150",
+    "shared_account": true,
+    "one_position_per_symbol": true,
+    "pyramiding_enabled": false,
+    "partial_exits_enabled": false,
+    "short_selling_enabled": false
+  },
+  "position_sizing": {
+    "method": "existing_research",
+    "maximum_capital_allocation": "3000",
+    "planned_loss_budget": "30",
+    "sizing_distance_percent": "1.5",
+    "whole_shares": true
+  },
+  "execution": {
+    "bar_fill_policy": "NEXT_BAR_OPEN",
+    "ambiguity_policy": "STOP_FIRST",
+    "slippage_bps": "5",
+    "slippage_ticks": "0",
+    "fee_per_order": "0",
+    "fee_per_share": "0",
+    "fee_bps": "0",
+    "participation": "1"
+  },
+  "risk": {
+    "strategy_owned_protection": true,
+    "initial_stop_amount": "0.75",
+    "breakeven_trigger_amount": "0.50",
+    "end_of_day_close": {
+      "enabled": true,
+      "at": "15:55",
+      "timezone": "America/New_York",
+      "early_close_aware": true
+    }
+  },
+  "runner": {
+    "seed": 271828,
+    "context_history_bars": 500,
+    "max_events": 1000000,
+    "heartbeat_seconds": 60
+  },
+  "known_data_limitations": [
+    "WARNING: The pinned immutable TSLA and QQQ snapshots each contain regular-session observations for 249 of 250 expected sessions. Both lack IEX observations for 2025-03-10; this single missing session is reported in coverage output and does not prevent replay of the other sessions.",
+    "Premarket IEX observations remain sparse. TSLA has premarket observations on 148 sessions and at least 20 observations on 4 sessions; QQQ has premarket observations on 217 sessions and at least 20 observations on 3 sessions. The V2 implementation remains unchanged: it uses available same-day premarket and regular candles to seed EMA9/EMA20 and fails closed until each EMA is available."
+  ],
+  "output_root": "research/results/michelle_corrected_vwap_iex_tsla_2024_2025_v2"
+}
