@@ -726,12 +726,12 @@ def _research_registry() -> Any:
     from mike_trade.strategies.buy.vwap_bounce import VwapBounceBuy
     from mike_trade.strategies.buy.five_minute_orb_michelle import FiveMinuteOrbMichelleBuy
     from mike_trade.strategies.buy.vwap_bounce_break_michelle import VwapBounceBreakMichelleBuy
-    from mike_trade.strategies.buy.vwap_bounce_break_michelle_corrected import (
+    from mike_trade.strategies.buy.vwap_bounce_break_michelle_corrected_buy import (
         VwapBounceBreakMichelleCorrectedBuy,
     )
     from mike_trade.strategies.sell.five_minute_orb_michelle import FiveMinuteOrbMichelleSell
     from mike_trade.strategies.sell.vwap_bounce_break_michelle import VwapBounceBreakMichelleSell
-    from mike_trade.strategies.sell.vwap_bounce_break_michelle_corrected import (
+    from mike_trade.strategies.sell.vwap_bounce_break_michelle_corrected_sell import (
         VwapBounceBreakMichelleCorrectedSell,
     )
     from mike_trade.strategies.buy.aroon_trend import AroonTrendBuy

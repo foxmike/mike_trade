@@ -29,10 +29,10 @@ from tests.live_support import start_paper
 from tests.support.fake_alpaca import FakeAlpacaExchange, FakeClock
 
 from mike_trade.market_data.context import MarketContext
-from mike_trade.strategies.buy.vwap_bounce_break_michelle_corrected import (
+from mike_trade.strategies.buy.vwap_bounce_break_michelle_corrected_buy import (
     VwapBounceBreakMichelleCorrectedBuy,
 )
-from mike_trade.strategies.sell.vwap_bounce_break_michelle_corrected import (
+from mike_trade.strategies.sell.vwap_bounce_break_michelle_corrected_sell import (
     VwapBounceBreakMichelleCorrectedSell,
 )
 

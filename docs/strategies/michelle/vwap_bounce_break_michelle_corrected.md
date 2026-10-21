@@ -10,8 +10,8 @@
   `vwap_bounce_break_michelle_corrected_sell` (SELL, 1.0.0 — its rules are unchanged; only the rule
   numbers moved). Results of V1 runs are not comparable with V2 runs; the BUY version records which
   rule set produced a run.
-- Modules: `mike_trade/strategies/buy/vwap_bounce_break_michelle_corrected.py`,
-  `mike_trade/strategies/sell/vwap_bounce_break_michelle_corrected.py`; pure rules in
+- Modules: `mike_trade/strategies/buy/vwap_bounce_break_michelle_corrected_buy.py`,
+  `mike_trade/strategies/sell/vwap_bounce_break_michelle_corrected_sell.py`; pure rules in
   `mike_trade/strategies/michelle_corrected.py` and `mike_trade/risk/michelle_corrected_stop.py`;
   account control in `mike_trade/risk/daily_loss.py`.
 - Status: implemented and verified by focused tests (`tests/unit/test_michelle_corrected_*.py`).

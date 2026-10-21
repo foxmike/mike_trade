@@ -201,7 +201,7 @@ from mike_trade.strategies.buy.higher_high_higher_low import HigherHighHigherLow
 from mike_trade.strategies.buy.holy_grail_pullback import HolyGrailPullbackBuy
 from mike_trade.strategies.buy.hull_moving_average import HullMovingAverageBuy
 from mike_trade.strategies.buy.vwap_bounce_break_michelle import VwapBounceBreakMichelleBuy
-from mike_trade.strategies.buy.vwap_bounce_break_michelle_corrected import (
+from mike_trade.strategies.buy.vwap_bounce_break_michelle_corrected_buy import (
     VwapBounceBreakMichelleCorrectedBuy,
 )
 from mike_trade.strategies.buy.ichimoku_cloud_breakout import IchimokuCloudBreakoutBuy
@@ -368,7 +368,7 @@ from mike_trade.strategies.sell.lightgbm_probability_sell import LightgbmProbabi
 from mike_trade.strategies.sell.xgboost_probability_sell import XgboostProbabilitySell
 from mike_trade.strategies.sell.five_minute_orb_michelle import FiveMinuteOrbMichelleSell
 from mike_trade.strategies.sell.vwap_bounce_break_michelle import VwapBounceBreakMichelleSell
-from mike_trade.strategies.sell.vwap_bounce_break_michelle_corrected import (
+from mike_trade.strategies.sell.vwap_bounce_break_michelle_corrected_sell import (
     VwapBounceBreakMichelleCorrectedSell,
 )
 from mike_trade.strategies.sell.williams_r_reversal import WilliamsRReversalSell

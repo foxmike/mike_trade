@@ -48,13 +48,13 @@ from mike_trade.signals.decisions import ExitCandidate, arbitrate_exit_decisions
 from mike_trade.strategies import michelle_corrected as mc
 from mike_trade.strategies.base import ReasonCode
 from mike_trade.strategies.buy.vwap_bounce_break_michelle import VwapBounceBreakMichelleBuy
-from mike_trade.strategies.buy.vwap_bounce_break_michelle_corrected import (
+from mike_trade.strategies.buy.vwap_bounce_break_michelle_corrected_buy import (
     VwapBounceBreakMichelleCorrectedBuy,
 )
 from mike_trade.strategies.registry import StrategyRegistry
 from mike_trade.strategies.sell.base import EXIT_PRIORITY, ExitSource
 from mike_trade.strategies.sell.vwap_bounce_break_michelle import VwapBounceBreakMichelleSell
-from mike_trade.strategies.sell.vwap_bounce_break_michelle_corrected import (
+from mike_trade.strategies.sell.vwap_bounce_break_michelle_corrected_sell import (
     VwapBounceBreakMichelleCorrectedSell,
 )
 
