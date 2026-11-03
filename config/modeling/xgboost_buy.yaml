@@ -61,7 +61,7 @@ objective:
   exit_bps: "1.0"
 
 resources:
-  device: cpu
+  device: gpu
   threads: 12
 
 hyperparameters:

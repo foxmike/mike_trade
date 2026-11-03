@@ -1,0 +1,15 @@
+Updated Mike_Trade — Remaining Work
+
+1. Final strategy integration: Merge the last three branches into the reviewed 184-strategy library, producing 192 strategies, then merge into main.
+2. R730 deployment: Update the server in SHADOW mode, preserve existing trading history, and test the running application.
+3. PAPER/LIVE execution: Complete autonomous strategy evaluation for all four roles, including SHORT/COVER. Keep LIVE disabled until explicitly authorized.
+4. Historical crash/recovery simulations: Test long and short strategies across market crashes, stabilization, and recovery periods.
+5. Historical warmup: Provide pre-period reference data to the Market Status Monitor so early backtest signals aren't unnecessarily blocked.
+6. SHADOW/BACKTEST consistency: Reconcile missing-reference-candle handling and the existing 60-second SHADOW grace period.
+7. Signal timing: Investigate the roughly one-minute delay in candle finalization and strategy evaluation.
+8. Dashboard improvements: Show the strategy responsible for each trade, BUY/SELL or SHORT/COVER prices, exit reason, and trade visualization.
+9. Backtesting and profitability: Resolve relevant reproducibility issues, benchmark strategy combinations, account for trading costs, and determine readiness for real trading.
+10. Michelle documentation: Prepare comprehensive documentation covering architecture, strategies, configuration, operations, deployment, and research workflows.
+11. Custom strategies: Implement and objectively backtest your sister's 5–10 trading methods.
+
+That's our consolidated remaining-work list. We don't need another exhaustive verification milestone.
